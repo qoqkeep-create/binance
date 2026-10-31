@@ -1,6 +1,6 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
-核对日期：2026-10-31。工程配置以当前源码为准，Apple 操作依据文末官方文档。已补主 App 隐私清单，并核对 Xcode Cloud 所需的共享 Scheme、Metal 准备脚本和自动构建号机制。Apple 团队已核实为 GUANGDONG ZHANG / `756Y5JKBUD`；新 App ID 已注册并启用 Push Notifications，App Store Connect 已创建 `TradeTools USDT`（App ID `6829222305`）。已保存新应用的 `iOS TestFlight` 工作流，仓库授权、分支 / 路径触发、必过单测、App Store Connect 归档和内部测试自动分发均已配置；下一个构建号已设为 `4`，首次云端运行待验收。
+核对日期：2026-10-31。工程配置以当前源码为准，Apple 操作依据文末官方文档。已补主 App 隐私清单，并核对 Xcode Cloud 所需的共享 Scheme、Metal 准备脚本和自动构建号机制。Apple 团队已核实为 GUANGDONG ZHANG / `756Y5JKBUD`；新 App ID 已注册并启用 Push Notifications，App Store Connect 已创建 `TradeTools USDT`（App ID `6829222305`）。已保存新应用的 `iOS TestFlight` 工作流，仓库授权、分支 / 路径触发、必过单测、App Store Connect 归档和内部测试自动分发均已配置；编号从 `4` 开始自动递增；构建 `7` 已完成云端测试、归档、上传和内部自动分发，TestFlight 显示 `1.0.1 (7)`“正在测试”。手机接受邀请和安装由测试者完成，尚无本轮 iPhone 实机结果。
 
 ## 本项目固定信息与待办
 
@@ -99,7 +99,7 @@ open frontend/ios-app/TradeTool.xcodeproj
 1. 完成前述付费团队、独立 App ID 和 App Store Connect App 记录核对；团队应有 Xcode Cloud 使用权限和可用额度。确认 `756Y5JKBUD` 是该 App 所属团队，Push Notifications capability 与自动签名匹配。
 2. 授权 Xcode Cloud 访问 `qoqkeep-create/binance` GitHub 仓库。本机 GitHub Deploy key 不等于 Apple 服务已获授权；云端只能构建已经推送的提交。
 3. 已在 TestFlight 建立 `内部测试` 组，加入当前 Apple 账号，工作流 post-action 已绑定该组。
-4. 首次启动前，在 Cloud Settings → Build Number 保存下一个构建号 `4`；后续由平台递增。首次运行仍需核对归档、上传、Apple 处理与组内可用状态。
+4. 首次启动前，在 Cloud Settings → Build Number 保存下一个构建号 `4`；后续由平台递增。本轮构建 7 已核对归档、上传、Apple 处理与组内“正在测试”状态。
 
 用户确认后已在仓库所有者 `qoqkeep-create` 下安装官方 Xcode Cloud GitHub App，仅选择 `binance`。权限为读取代码 / 元数据 / PR，读写 checks 和 commit statuses；未修改 `td0328` 原有安装范围。下表为已保存配置，可在[工作流后台](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/xcode-cloud/products/f01be7a9-f719-4ecc-932e-17c7bac455a6/workflows/E3D5006F-507F-48D4-9B29-6DBD7D9C4CEB)维护。
 
@@ -119,9 +119,15 @@ open frontend/ios-app/TradeTool.xcodeproj
 
 `TradeTool Release` 的 TestAction 没有测试列表，不能把它选为 Test action 后就认为运行了单测。`TradeTool` 提供单测列表，Archive 仍用独立 Release Scheme。真实登录 UI 检查需要专用无绑定 QA 账户，单独配置；默认云端不依赖本机 ASGI、`.env` 或 QA 密码。
 
-Cloud 首次启用测试时，构建 6 的图表压力测试出现 426ms P95，超过本地模拟器 150ms 阈值，归档成功但测试未通过。现将共享云端运行器的耗时保留为报告，继续执行所有确定性的帧数 / 并发 / 错误检查，本地保留原耗时断言；不把 Cloud 模拟器计时当作实机性能结论。自动编号已通过此前默认编译构建 4 → 5 及完整流程构建 6 验证。
+Cloud 首次启用测试时，构建 6 的图表压力测试出现 426ms P95，超过本地模拟器 150ms 阈值，归档成功但测试未通过；新推送随后自动取消该构建。现将共享云端运行器的耗时保留为报告，继续执行所有确定性的帧数 / 并发 / 错误检查，本地保留原耗时断言；不把 Cloud 模拟器计时当作实机性能结论。修正提交 `509f2da` 自动触发构建 7，测试、Archive 与 TestFlight Internal Testing 后续操作全部成功，耗时约 4 分钟。
 
 `frontend/ios-app/ci_scripts/ci_pre_xcodebuild.sh` 已位于工程旁且以 Git 可执行文件追踪，Xcode Cloud 自动识别。它检查并按需安装 Metal Toolchain，对下载失败最多尝试三次；无需在后台重复粘贴脚本。当前无 CocoaPods 或第三方 Swift Package 依赖安装步骤。自动签名和上传由 Xcode Cloud 完成，无需额外上传脚本或在仓库保存 `.p8`、`.p12` 和描述文件。
+
+### 本轮分发结果
+
+- [Cloud 构建 7](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/xcode-cloud/products/f01be7a9-f719-4ecc-932e-17c7bac455a6/builds/3684c2fc-6c88-4ba5-b126-a539694097f5/summary)：代码推送触发，提交 `509f2da`，Test / Archive / TestFlight Internal Testing 均成功。
+- [内部测试组](https://appstoreconnect.apple.com/apps/6829222305/testflight/groups/df7e47dd-6266-41c0-9e5c-344dac1ad6f1/builds)：`1.0.1 (7)` 已自动加入，状态“正在测试”，1 名测试员已邀请，Apple 处理已完成。未手工绕过测试门槛分发构建 6。
+- 当前测试者在 iPhone 使用被邀请的 Apple 账号接受 TestFlight 邀请并安装。后台分发完成不代表手机已接受邀请、安装或运行；此三项仍由测试者实机验收。
 
 ### 构建号自动递增
 
@@ -148,7 +154,7 @@ App Store Connect → 新 App → TestFlight → iOS Builds。
 - 上传后先经过 Processing，完成后才可加入测试。时长取决于 Apple，不能把 Xcode 上传成功当作已经可安装。
 - 若显示 Missing Compliance / 缺少合规信息，打开对应构建按真实加密用途回答。现有 `ITSAppUsesNonExemptEncryption = NO` 是工程声明，不应解释为不使用 HTTPS 或 Keychain；如果最终依赖引入其他加密，需要重新核对。
 - Invalid Binary / 处理失败时，查看 Apple 邮件和上传日志，按具体错误修复、提高 Build 后重新归档。
-- 使用 Apple 允许上传的 Xcode / SDK。本轮本机 Xcode 为 27.1（27A9275），未签名 Release Archive 通过；历史 27.2 测试记录属于先前环境，是否接受最终签名归档仍以 Apple 的校验为准。
+- 使用 Apple 允许上传的 Xcode / SDK。本轮本机及云端使用 Xcode 27.1（27A9275）；构建 7 的云端签名归档已获 Apple 接受并完成处理。历史 27.2 测试记录属于另一环境，后续仍按 Apple 当前要求选择可用版本。
 
 ## 8. 先给自己内部测试
 
@@ -199,7 +205,7 @@ Apple Account 用于 TestFlight 安装；应用邮箱 / 密码用于登录 Trade
 
 ## 11. 后续更新及常见问题
 
-Cloud 工作流配置完成后，每次客户端更新：修改本整合副本 → 推送至配置的分支 → Cloud 测试 / 自动增加 Build / Archive → 上传并处理 → 自动分配内部组 → 手机 TestFlight 更新。若手动使用 Organizer，仍按第 6 节归档上传并协调构建号。每个构建自上传起最多测试 90 天，继续测试要提供新构建。只有后端更新且接口兼容时，通常无需重发客户端。
+Cloud 工作流现已配置，每次客户端更新：修改本整合副本 → 推送至配置的分支 → Cloud 测试 / 自动增加 Build / Archive → 上传并处理 → 自动分配内部组 → 手机 TestFlight 更新。若手动使用 Organizer，仍按第 6 节归档上传并协调构建号。每个构建自上传起最多测试 90 天，继续测试要提供新构建。只有后端更新且接口兼容时，通常无需重发客户端。
 
 | 问题 | 处理 |
 | --- | --- |
