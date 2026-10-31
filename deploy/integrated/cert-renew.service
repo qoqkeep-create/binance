@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew integrated API public IP TLS certificate
+Wants=network-online.target
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/certbot/bin/certbot renew --quiet --cert-name trade-tool-seoul-ip

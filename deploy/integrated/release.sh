@@ -8,7 +8,7 @@ compose=(docker compose --project-name tradetools-integrated --env-file "$root/s
 test -s "$root/server.env"
 ln -sfn "$root/server.env" "$release_dir/server.env"
 "${compose[@]}" build api
-"${compose[@]}" up -d redis
+"${compose[@]}" up -d --wait mysql redis
 "${compose[@]}" run --rm --no-deps api python manage.py migrate --noinput
 "${compose[@]}" run --rm --no-deps api python manage.py bootstrap_mobile
 "${compose[@]}" up -d --no-build api market worker scheduler

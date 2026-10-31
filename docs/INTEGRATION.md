@@ -1,6 +1,6 @@
 # Python 与原生 iOS 整合
 
-核对日期：2026-10-31。用户已批准在当前目录整合、在本机 Xcode 运行并部署到 `47.80.22.243`。原 USDT、USDC 源码只读；首尔旧 Java 服务和数据库不做迁移或替换。
+核对日期：2026-10-31。用户已批准在当前目录整合、在本机 Xcode 运行并部署到 47.80.22.243（首尔服务器）。原 USDT、USDC 本地源码只读。按后续授权，目标机的旧 USDC Java 环境已退役，整合数据库已逻辑迁入项目内独立 MySQL；迁移和清理范围见 [运维](operations.md)。
 
 ## 当前实现
 
@@ -78,13 +78,13 @@ Bundle ID 使用 `com.oovso.trade.integrated`，与旧客户端隔离。iOS / Re
 
 2026-10-31 17:08（北京时间），`IntegratedNativeUITests` 完整流程通过：本地无绑定 QA 会话、真实 BTC 行情及 Metal 图表、持仓、禁用开仓、信号、我的和 API 绑定表单。已实际查看行情、图表、开仓及账户截图。系统“保存密码”提示由测试处理；我的菜单行使用完整矩形点击区域和 44pt 最小高度，修复点击行中间空白不能导航的问题。完整 XCTest 166 项及随后独立 Keychain 读写测试通过；没有 iPhone 实机或实盘验证。
 
-`Debug-Seoul` 与 `Release` 均默认使用首尔整合入口。UI 测试通过启动参数临时选择本地 API；该结果不代表 iOS 已逐页面验收线上所有业务。测试结束后关闭本轮模拟器并清理其生成缓存，运行报告保留在忽略目录 `.integration-runtime/UIVerified.xcresult`。
+`Debug-Seoul` 与 `Release` 均默认连接 47.80.22.243（首尔服务器）的整合入口。上述 17:08 UI 结果使用本地 API；本轮远程 UI 验收另见 [变更](changes.md)，不将模拟器结果扩大为所有线上业务、实机或实盘通过。历史运行报告保留在忽略目录 `.integration-runtime/`。
 
 TestFlight 分发尚未执行。工程未包含 `PrivacyInfo.xcprivacy`，现有 UserDefaults 与图表 `systemUptime` 使用理由需要在归档前声明；Apple 团队权限、分发签名和后台 App 记录待核实。操作步骤与内部 / 外部测试见 [手机发布指南](testflight.md)。
 
 ## 本次服务器验收与性能范围
 
-2026-10-31 已部署 `integrated-20261031-ddec4af96a86`。HTTPS 登录、Secure refresh cookie、历史分页、认证拒绝及真实 K 线 / ticker WSS 通过。线上私有推送用临时无交易事件验证用户、普通 / 带单模式隔离；事件未创建交易命令或交易所订单。详细发布和隔离证据见 [变更](changes.md)。
+2026-10-31 首次部署 `integrated-20261031-ddec4af96a86`，随后在 47.80.22.243（首尔服务器）切换为独立数据库版本 `integrated-20261031-d2498172efa6`。HTTPS 登录、Secure refresh cookie、历史分页、认证拒绝及真实 K 线 / ticker WSS 通过。首次部署的私有推送用临时无交易事件验证用户、普通 / 带单模式隔离，未创建交易命令或交易所订单；本轮结果见 [变更](changes.md)。
 
 | 短时采样路径 | 列表读取中位数（5 次） | 300 根 1m / 1h 读取 | 事件延迟中位数 / P95 / 最大值 |
 | --- | --- | --- | --- |

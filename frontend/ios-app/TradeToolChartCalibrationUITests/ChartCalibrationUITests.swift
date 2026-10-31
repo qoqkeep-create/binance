@@ -2727,12 +2727,15 @@ final class ChartCalibrationUITests: XCTestCase {
     }
 }
 
-/// Opt-in smoke against an isolated local account without an exchange binding.
+/// Opt-in smoke against a configured account without an exchange binding.
 final class IntegratedNativeUITests: XCTestCase {
-    func testLocalLoginMarketAndBusinessPages() throws {
-        guard let password = ProcessInfo.processInfo.environment["INTEGRATION_LOCAL_QA_PASSWORD"], !password.isEmpty else {
-            throw XCTSkip("Set the isolated local QA credential in the test-run environment")
+    func testConfiguredLoginMarketAndBusinessPages() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let password = environment["INTEGRATION_QA_PASSWORD"] ?? environment["INTEGRATION_LOCAL_QA_PASSWORD"], !password.isEmpty else {
+            throw XCTSkip("Set the isolated QA credential in the test-run environment")
         }
+        let baseURL = environment["INTEGRATION_QA_API_BASE"] ?? "http://127.0.0.1:8787/"
+        let accountName = environment["INTEGRATION_QA_ACCOUNT"] ?? "local-qa@example.invalid"
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.oovso.trade.integrated")
         addUIInterruptionMonitor(withDescription: "System password save prompt") { alert in
@@ -2742,12 +2745,22 @@ final class IntegratedNativeUITests: XCTestCase {
             }
             return false
         }
-        app.launchArguments = ["-selectedAPIOrigin", "http://127.0.0.1:8787/"]
+        app.launchArguments = ["-selectedAPIOrigin", baseURL]
         app.terminate()
         app.launch()
+        if !app.secureTextFields.firstMatch.waitForExistence(timeout: 8) {
+            app.buttons["我的"].firstMatch.tap()
+            let logout = app.buttons["退出登录"].firstMatch
+            for _ in 0..<5 where !logout.isHittable { app.swipeUp() }
+            XCTAssertTrue(logout.isHittable)
+            logout.tap()
+            let confirmLogout = app.sheets.buttons["退出登录"].firstMatch
+            XCTAssertTrue(confirmLogout.waitForExistence(timeout: 5))
+            confirmLogout.tap()
+        }
         if app.secureTextFields.firstMatch.waitForExistence(timeout: 8) {
             let account = app.textFields.firstMatch
-            account.tap(); account.typeText("local-qa@example.invalid")
+            account.tap(); account.typeText(accountName)
             let secure = app.secureTextFields.firstMatch
             secure.tap(); secure.typeText(password)
             let agreement = app.switches["我已阅读并同意用户协议与风险提示"]
@@ -2762,7 +2775,12 @@ final class IntegratedNativeUITests: XCTestCase {
         let market = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "BTCUSDT、")).firstMatch
         XCTAssertTrue(market.waitForExistence(timeout: 30), "Real BTC ticker should appear")
         let postponePasswordSave = app.buttons["以后"]
-        if postponePasswordSave.waitForExistence(timeout: 5) { postponePasswordSave.tap() }
+        if postponePasswordSave.waitForExistence(timeout: 5) {
+            postponePasswordSave.tap()
+            XCTAssertTrue(postponePasswordSave.waitForNonExistence(timeout: 5))
+        }
+        let marketReady = expectation(for: NSPredicate(format: "hittable == true"), evaluatedWith: market)
+        wait(for: [marketReady], timeout: 5)
         capture(app, "integrated-ios-market")
         market.tap()
         let chart = app.descendants(matching: .any)["market-chart-plot"].firstMatch

@@ -11,10 +11,10 @@
 | worker | `manage.py mobile_worker`：账户用户流、持久化命令、Inbox / Outbox 与对账 |
 | scheduler | `manage.py run_scheduler`：已有订单保护、结算、资金及业务维护 |
 | Redis | 热数据、PubSub、账户 lease、请求预算和心跳 |
-| MySQL | 复用数据库引擎，独立 `tradetools_integrated` schema 和受限用户 |
+| MySQL | 项目内独立 MySQL 8.4 服务、命名卷、`tradetools_integrated` schema 和受限用户 |
 | iOS | SwiftUI 页面、Metal 图表、Keychain 会话、HTTP 与 WSS |
 
-五个 Compose 服务及资源约束见 [整合 Compose](../compose.integrated.yaml)；MySQL 是外部网络中的既有服务。宿主 Nginx 仅代理整合前缀，运行结构见 [运维](operations.md)。
+六个 Compose 服务及资源约束见 [整合 Compose](../compose.integrated.yaml)，均使用项目默认网络；MySQL / Redis 不发布宿主端口。47.80.22.243（首尔服务器）的宿主 Nginx 仅代理整合前缀，旧 Java 环境已退役，运行结构与迁移验证见 [运维](operations.md)。
 
 ## 后端模块
 
