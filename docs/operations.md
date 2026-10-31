@@ -56,8 +56,8 @@ API 健康检查数据库、迁移和 scheduler heartbeat；market 健康同时�
 
 ## GitHub 源码交付
 
-用户指定的整合版仓库为 `https://github.com/qoqkeep-create/binance.git`。本目录位于原 Gitee 仓库内部，因此首次交付使用独立 Git 元数据 `.integration-runtime/github-publish.git`，工作树仍为本整合目录，分支为 `codex/integrated-ios`。仅将本目录已追踪的交付文件放在新仓库根目录；父项目的提交历史、远程配置和其他改动不随之上传。
+用户指定的整合版仓库为 `https://github.com/qoqkeep-create/binance.git`，交付分支为 `codex/integrated-ios`。最初交付目录位于原 Gitee 仓库内部，使用独立 Git 元数据 `.integration-runtime/github-publish.git`；这是历史交付方式。2026-10-31 本轮检查的本机目录已经是正常独立 clone：根目录 `.git`，origin 指向上述 GitHub，旧独立元数据目录不存在。仅将整合目录的交付文件放在仓库根目录，父项目历史和其他改动不随之上传。
 
-后续维护该独立记录时，在本目录使用 `git --git-dir=.integration-runtime/github-publish.git --work-tree=.`。提交前检查文件范围；忽略的环境文件、凭证、构建和运行目录不得加入。GitHub 认证使用有仓库写权限的 SSH 密钥或 HTTPS 凭证，服务器登录密钥不代表已有 GitHub 权限。推送源码与服务器部署、TestFlight 上传分别执行，实际完成状态以对应交付记录为准。
+正常 clone 在本目录使用普通 `git` 命令；操作前用 `git rev-parse --show-toplevel`、`git remote -v` 核对仓库。只有仍保留历史独立元数据的原交付目录，才使用 `git --git-dir=.integration-runtime/github-publish.git --work-tree=.`，不要重建不存在的元数据。提交前检查文件范围；忽略的环境文件、凭证、构建和运行目录不得加入。GitHub 认证使用有仓库写权限的 SSH 密钥或 HTTPS 凭证，服务器登录密钥不代表已有 GitHub 权限。Xcode Cloud 还需独立取得该仓库的访问授权，不能用本机 Deploy key 可推送来推断。推送源码与服务器部署、TestFlight 上传分别执行，实际完成状态以对应交付记录为准。
 
 2026-10-31 仓库管理员添加专用 Deploy key 后，写入权限检查通过，首次提交 `1118eaa` 已推送到 `codex/integrated-ios`，并通过远程分支 SHA 核对。共 974 个文件放在仓库根目录，详细范围见 [变更](changes.md)。公钥位于忽略目录 `.integration-runtime/github-binance-ed25519.pub`，私钥不上传、不加入追踪。本机网络使用已有代理，独立 Git 配置使用 SSH 443；这些本机元数据不会包含在交付代码中。其他机器首次取代码时正常 clone GitHub 仓库即可，无需沿用本机独立元数据路径。

@@ -12,7 +12,7 @@ final class ChartMetricKitSubscriber:
     private var isStarted = false
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier
-            ?? "com.oovso.tradetool",
+            ?? "com.waibao2025.trade.integrated",
         category: "KlineChartMetricKit"
     )
 

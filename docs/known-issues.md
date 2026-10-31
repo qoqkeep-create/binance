@@ -4,7 +4,7 @@
 
 | 事项 | 当前状态与下一步 |
 | --- | --- |
-| TestFlight | 尚未完成 Apple 分发签名或上传；需补 `PrivacyInfo.xcprivacy` 并核实团队、App 记录，见 [指南](testflight.md) |
+| TestFlight | 隐私清单已补齐；尚未完成云端分发签名或上传，需核实团队、App 记录、Cloud 分支触发 / 测试组及 Next Build Number，见 [指南](testflight.md) |
 | Python APNs | 原生已有部分通知基础代码，Python 尚未接通 APNs；前台 WSS 通过不代表后台系统通知通过 |
 | SMTP / AI / 外部通知 | 当前整合环境未配置相应真实服务；页面和后端能力保留，发送或生成结果待专门验收 |
 | 真机与真实交易 | 已有模拟器、HTTPS / WSS 与隔离测试证据，未做 iPhone 实机和真实资金操作验收 |

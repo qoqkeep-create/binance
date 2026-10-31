@@ -2,6 +2,13 @@
 
 此处保留值得长期维护的里程碑，不替代 Git 日志或全量聊天历史。每条说明来源和范围；历史通过不代表本轮重新测试。
 
+## 2026-10-31：Xcode Cloud / TestFlight 源码准备
+
+- 核对已有共享 Scheme、Cloud 关联 manifest 和工程旁可执行的 Metal 准备脚本；补充主 App `PrivacyInfo.xcprivacy` 与资源引用，声明 UserDefaults `CA92.1` 和图表 systemUptime `35F9.1`，不据此宣称 App 不收集数据。保留工程文件原有改动。
+- 发布指南增加 Cloud 分支触发、Test action 使用 `TradeTool`、Archive 使用 `TradeTool Release`、自动签名和 TestFlight 分发组配置。构建号采用 Cloud 原生递增，首次后台核对 Next Build Number；无需自增脚本或提交版本回 Git。同步更新开发、已知事项、整合说明及当前独立 Git clone 的维护方式。
+- 本机 Xcode 27.1（27A9275）/ iOS 27.1 SDK，`TradeTool Release` 的 generic iOS 未签名 Archive 成功，核对包内隐私清单与源码一致、`default.metallib` 和可执行文件存在，Bundle ID 为 `com.oovso.trade.integrated`、Version / 本地 Build 为 `1.0.1` / `3`、API 指向首尔整合入口。首次沙箱内无法访问 Metal 组件，允许 Xcode 访问已安装组件和缓存后归档成功，未下载或替换工具链。
+- Metal 准备脚本四项替身测试、plist / 工程语法、资源引用、文档链接、`git diff --check` 和未追踪文件检查通过；新增隐私清单加入追踪。本轮没有修改 Apple 后台、执行云端签名归档、推送源码、上传 TestFlight 或验收手机安装，也没有重跑 XCTest 或后端测试。
+
 ## 2026-10-31：清理旧项目副本，仅保留整合实现
 
 - 按用户要求删除 526 个旧文件，包括 Java 后端、React Web、原部署 / Compose / Jenkins、历史文档和环境模板、网络对比材料，以及未接入导航的旧原生页面和 LAN Scheme。整合后端、原生业务 / 行情 / Metal、共享模型、迁移与测试保留；当前交付共 449 个文件。

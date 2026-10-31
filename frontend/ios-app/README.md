@@ -1,6 +1,6 @@
 # TradeTools 原生 iOS
 
-当前整合客户端使用 SwiftUI / Metal，最低 iOS 17.0，独立 Bundle ID `com.oovso.trade.integrated`。导航为行情、持仓、开仓、信号、我的。
+当前整合客户端使用 SwiftUI / Metal，最低 iOS 17.0，独立 Bundle ID `com.waibao2025.trade.integrated`。导航为行情、持仓、开仓、信号、我的。
 
 打开 `TradeTool.xcodeproj`。可用 Scheme：
 

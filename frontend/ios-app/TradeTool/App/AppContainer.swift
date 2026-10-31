@@ -67,7 +67,7 @@ final class AppContainer: ObservableObject {
 
     init(
         baseURL: URL = AppEnvironment.apiBaseURL,
-        bundleIdentifier: String = Bundle.main.bundleIdentifier ?? "com.oovso.trade"
+        bundleIdentifier: String = Bundle.main.bundleIdentifier ?? "com.waibao2025.trade.integrated"
     ) {
         self.baseURL = baseURL
         let networkSession = URLSession(configuration: .default)

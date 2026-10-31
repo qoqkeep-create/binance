@@ -60,7 +60,7 @@ WSS 分发行情及 `trading.account/position/order/fill`，按用户和交易�
 | 资金、历史、日志 | 我的；金额 / 路径 / 地址确认、固定归集流水跟进、分页与筛选 |
 | 协议、注册、密码重置 | 原生认证及协议页面；沿用邮件服务配置 |
 
-Bundle ID 使用 `com.oovso.trade.integrated`，与旧客户端隔离。iOS / Release 会话使用 Keychain。仅 Debug Mac Catalyst 且显式传入 `--integration-ephemeral-session` 时允许内存会话，用于本地无 Apple 签名身份的临时 UI 验证。
+Bundle ID 使用 `com.waibao2025.trade.integrated`，与旧客户端隔离。iOS / Release 会话使用 Keychain。仅 Debug Mac Catalyst 且显式传入 `--integration-ephemeral-session` 时允许内存会话，用于本地无 Apple 签名身份的临时 UI 验证。
 
 ## 配置与边界
 
@@ -80,7 +80,7 @@ Bundle ID 使用 `com.oovso.trade.integrated`，与旧客户端隔离。iOS / Re
 
 `Debug-Seoul` 与 `Release` 均默认使用首尔整合入口。UI 测试通过启动参数临时选择本地 API；该结果不代表 iOS 已逐页面验收线上所有业务。测试结束后关闭本轮模拟器并清理其生成缓存，运行报告保留在忽略目录 `.integration-runtime/UIVerified.xcresult`。
 
-TestFlight 分发尚未执行。工程未包含 `PrivacyInfo.xcprivacy`，现有 UserDefaults 与图表 `systemUptime` 使用理由需要在归档前声明；Apple 团队权限、分发签名和后台 App 记录待核实。操作步骤与内部 / 外部测试见 [手机发布指南](testflight.md)。
+TestFlight 分发尚未执行。已添加 `PrivacyInfo.xcprivacy` 并加入主 App 资源，声明现有 UserDefaults 与图表 `systemUptime` 的访问理由。工程已有 Xcode Cloud 关联文件、共享 Release Scheme 和 Metal 准备脚本；云端 Build 使用 Cloud 原生自动递增，后台工作流、团队权限、分发签名和 App 记录仍待核实。配置与内部 / 外部测试见 [手机发布指南](testflight.md)。
 
 ## 本次服务器验收与性能范围
 

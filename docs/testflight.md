@@ -1,6 +1,6 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
-核对日期：2026-10-31。工程配置以当前源码为准，Apple 操作依据文末官方文档。本轮只整理发布步骤，尚未制作 Apple 分发签名归档、创建苹果后台记录或上传 TestFlight。苹果账号、团队权限和后台已有构建尚未核实。
+核对日期：2026-10-31。工程配置以当前源码为准，Apple 操作依据文末官方文档。已补主 App 隐私清单，并核对 Xcode Cloud 所需的共享 Scheme、Metal 准备脚本和自动构建号机制。Apple 团队已核实为 GUANGDONG ZHANG / `756Y5JKBUD`；新 App ID 已注册并启用 Push Notifications，App Store Connect 已创建 `TradeTools USDT`（App ID `6829222305`）。正在配置新应用的 Cloud 工作流，尚未完成云端签名归档或上传 TestFlight。
 
 ## 本项目固定信息与待办
 
@@ -9,16 +9,16 @@
 | Xcode 工程 | `frontend/ios-app/TradeTool.xcodeproj` |
 | 主 Target | `TradeTool` |
 | 建议归档 Scheme | `TradeTool Release`；其 Archive 配置为 `Release` |
-| Bundle ID | `com.oovso.trade.integrated`；使用独立 App 记录 |
-| Version / Build | `1.0.1` / `3`；下一次上传可使用未占用的更大 Build，例如 `4` |
-| Team | 工程预填 `756Y5JKBUD`；必须核实当前 Apple 账号具有该团队权限 |
+| Bundle ID | `com.waibao2025.trade.integrated`；使用独立 App 记录 |
+| Version / Build | 源码为 `1.0.1` / `3`；云端分发使用 Xcode Cloud 自动递增的 Build，接入时核对起始号 |
+| Team | `756Y5JKBUD` / GUANGDONG ZHANG；已在开发者后台核实 |
 | 签名 | Automatic；TestFlight 需要 Apple Developer Program 的有效分发签名 |
 | 手机系统 | 最低 iOS 17.0；当前目标设备族为 iPhone |
 | Release API | `https://47.80.22.243/integrated/` |
 | APNs 环境 | Release 为 `production`；新 App ID 与描述文件需要匹配 Push Notifications capability |
 | 加密声明 | 现有 `ITSAppUsesNonExemptEncryption = NO`，表示不使用需声明的非豁免加密，不代表使用明文网络 |
 | 应用图标 | 已有 1024 图标，检查结果无 Alpha 通道 |
-| 隐私清单 | **待补**：工程未包含 `PrivacyInfo.xcprivacy`；实际使用 UserDefaults 和 `systemUptime` |
+| 隐私清单 | 已有 `TradeTool/Resources/PrivacyInfo.xcprivacy`，已加入主 App Copy Bundle Resources，并在本地未签名归档中确认存在 |
 
 旧项目目录保持只读。所有打包准备只修改当前整合副本，Apple 后台使用新 Bundle ID 对应的 App。模拟器临时签名不能用于 TestFlight。
 
@@ -40,7 +40,7 @@ Apple Developer → Certificates, Identifiers & Profiles → Identifiers → `+`
 | --- | --- |
 | Description | `TradeTools Integrated iOS` |
 | Bundle ID 类型 | Explicit |
-| Bundle ID | `com.oovso.trade.integrated` |
+| Bundle ID | `com.waibao2025.trade.integrated` |
 | Capabilities | 与工程匹配；当前保留 Push Notifications |
 
 点击 Continue / Register。若标识已在当前团队存在，核对后直接使用。Xcode 自动签名也可能在权限允许时完成注册；创建 App Store Connect 记录前要能选择正确标识。
@@ -54,10 +54,10 @@ App Store Connect → Apps → `+` → New App。
 | 字段 | 建议内容 |
 | --- | --- |
 | Platforms | iOS |
-| Name | `TradeTools USDT`，如被占用则使用另一个可用名称 |
+| Name | `TradeTools USDT`（用户已确认，App Store Connect 已创建） |
 | Primary Language | Simplified Chinese / 简体中文 |
-| Bundle ID | `com.oovso.trade.integrated` |
-| SKU | `tradetools-integrated-ios`，团队内唯一的内部编号 |
+| Bundle ID | `com.waibao2025.trade.integrated` |
+| SKU | `waibao2025-trade-integrated-ios`，团队内唯一的内部编号 |
 | User Access | 按实际团队人员选择 Full Access 或 Limited Access |
 
 创建完成后保留新 App 的 TestFlight 页面。上传构建本身不会自动把应用公开发布到 App Store。
@@ -67,58 +67,65 @@ App Store Connect → Apps → `+` → New App。
 打开当前工程：
 
 ```bash
-open "/Users/apple/work/TradeTools-Binance/TradeTools-Binance-iOS/frontend/ios-app/TradeTool.xcodeproj"
+open frontend/ios-app/TradeTool.xcodeproj
 ```
 
 1. 左侧蓝色项目 → TARGETS → `TradeTool` → Signing & Capabilities。
-2. 保持 Automatically manage signing，Team 选择实际有权限的团队，Bundle Identifier 核对为 `com.oovso.trade.integrated`。消除签名红色错误；自动分发签名由后续 Organizer 流程完成。
-3. General → Identity：Version 现为 `1.0.1`，Build 现为 `3`。首次未上传可使用该编号；后续每个新上传包使用未占用的新 Build，例如 `4`、`5`。如让 Xcode 自动管理构建号，以 Organizer 实际上传号为准。
+2. 保持 Automatically manage signing，Team 选择实际有权限的团队，Bundle Identifier 核对为 `com.waibao2025.trade.integrated`。消除签名红色错误；自动分发签名由后续 Organizer 流程完成。
+3. General → Identity：Version 现为 `1.0.1`，本地 Build 现为 `3`。Xcode Cloud 分发按下节自动编号，无需每次修改源码；本地手动上传仍需使用未占用且足够大的 Build，不能与云端编号冲突。
 4. 选择 `TradeTool Release` Scheme；Product → Scheme → Edit Scheme → Archive，确认 Build Configuration 为 `Release`。
 5. 顶部运行目的地选 Any iOS Device / Generic iOS Device（arm64）或可归档的 iPhone 设备。
 6. `Config/Release.xcconfig` 当前已指向首尔 HTTPS；不要在发布配置中保留本地 QA 的 `127.0.0.1` 启动覆盖。
 7. 如需区别手机图标名称，可在本整合副本调整 Display Name 为 `TradeTools USDT`；当前名称为 `Trade Tool`。
 
-## 5. 归档前补隐私清单
+## 5. 隐私清单与披露
 
-当前源码使用 UserDefaults 保存本 App 的偏好、自选和交易模式；Metal 图表使用 `ProcessInfo.systemUptime` 计算帧和事件之间的耗时。工程里尚无隐私清单，需要先添加到主 App 的资源。
+当前源码使用 UserDefaults 保存本 App 的偏好、自选和交易模式；Metal 图表使用 `ProcessInfo.systemUptime` 计算帧和事件之间的耗时。`TradeTool/Resources/PrivacyInfo.xcprivacy` 已声明以下实际访问理由，并通过主 App 的 Copy Bundle Resources 打包。
 
-1. Xcode 选中主 App 的 Resources 组 → File → New → File；选择 App Privacy / Privacy Manifest 模板（名称随 Xcode 语言版本显示）。
-2. 文件名为 `PrivacyInfo.xcprivacy`，保存到 `TradeTool/Resources/`。
-3. Target Membership 勾选 `TradeTool`；在 Build Phases → Copy Bundle Resources 中确认被打包。
-4. 至少按真实用途补齐以下访问 API 条目：
 
 | API 类别 | Reason | 本项目用途 |
 | --- | --- | --- |
 | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | 读写仅本 App 可访问的偏好 |
 | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | 测量 App 内事件间隔与图表计时 |
 
-只包含上述访问理由的 plist 结构示例：
+归档后确认清单实际进入 `.app`，如依赖发生变化同时检查依赖声明。App Store Connect 的 App Privacy 是另一份披露，按邮箱、账户标识和交易数据等实际收集用途填写；此清单不声明 App“不收集数据”。
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>NSPrivacyAccessedAPITypes</key>
-    <array>
-        <dict>
-            <key>NSPrivacyAccessedAPIType</key>
-            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
-            <key>NSPrivacyAccessedAPITypeReasons</key>
-            <array><string>CA92.1</string></array>
-        </dict>
-        <dict>
-            <key>NSPrivacyAccessedAPIType</key>
-            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
-            <key>NSPrivacyAccessedAPITypeReasons</key>
-            <array><string>35F9.1</string></array>
-        </dict>
-    </array>
-</dict>
-</plist>
-```
+## Xcode Cloud：自动构建与 TestFlight 分发
 
-这段只说明已定位的访问理由，不替代完整隐私核对；归档后确认清单实际进入 `.app`，如依赖发生变化同时检查依赖声明。App Store Connect 的 App Privacy 是另一份披露，按邮箱、账户标识和交易数据等实际收集用途填写，不把示例当作“不收集数据”的结论。
+推荐日常更新使用这一流程。首次从 Xcode 的 Report navigator → Cloud → Get Started / Manage Workflows 连接本产品，后续可在 App Store Connect 的 Xcode Cloud 页面维护。本地原有 manifest 指向旧 `td0328/trade-tool` 产品，本次为新 App ID 重建 Cloud 关联，不修改旧产品的工作流或历史构建。
+
+### 一次性后台设置
+
+1. 完成前述付费团队、独立 App ID 和 App Store Connect App 记录核对；团队应有 Xcode Cloud 使用权限和可用额度。确认 `756Y5JKBUD` 是该 App 所属团队，Push Notifications capability 与自动签名匹配。
+2. 授权 Xcode Cloud 访问 `qoqkeep-create/binance` GitHub 仓库。本机 GitHub Deploy key 不等于 Apple 服务已获授权；云端只能构建已经推送的提交。
+3. 在 TestFlight 建立内部测试组并加入测试账号，例如 `本人真机测试`，再配置工作流中的分发 post-action。
+4. 核对 App 的现有 TestFlight 构建号，按下节设置 Next Build Number；本轮没有读取 Apple 后台，不能假定最大号就是源码中的 `3`。
+
+### 建议工作流
+
+| 设置 | 本项目建议 |
+| --- | --- |
+| 名称 | `iOS TestFlight` |
+| Repository / Branch | `qoqkeep-create/binance` / `codex/integrated-ios`（当前交付分支；发布分支改变时同步修改） |
+| Project | `frontend/ios-app/TradeTool.xcodeproj` |
+| Start Conditions | 当前交付分支有提交时触发；可加 Files and Folders 条件，仅 iOS 目录变更时构建 |
+| Environment | 固定云端可用且已验证的 Xcode / macOS 版本；本轮本机是 Xcode 27.1，不把历史 27.2 验证当作当前环境 |
+| Test action | Scheme `TradeTool`，选择可用 iPhone 模拟器，设为 Required To Pass |
+| Archive action | Scheme `TradeTool Release`，iOS / Release，Deployment Preparation 选 `TestFlight and App Store` |
+| Post-actions | TestFlight Internal Testing，选择上述内部组；测试和归档成功后自动分发 |
+| 外部测试 | 如需外测，配置外部组及相应 post-action，Environment 开启 Clean；仍受 TestFlight App Review 约束 |
+
+`TradeTool Release` 的 TestAction 没有测试列表，不能把它选为 Test action 后就认为运行了单测。`TradeTool` 提供单测列表，Archive 仍用独立 Release Scheme。真实登录 UI 检查需要专用无绑定 QA 账户，单独配置；默认云端不依赖本机 ASGI、`.env` 或 QA 密码。
+
+`frontend/ios-app/ci_scripts/ci_pre_xcodebuild.sh` 已位于工程旁且以 Git 可执行文件追踪，Xcode Cloud 自动识别。它检查并按需安装 Metal Toolchain，对下载失败最多尝试三次；无需在后台重复粘贴脚本。当前无 CocoaPods 或第三方 Swift Package 依赖安装步骤。自动签名和上传由 Xcode Cloud 完成，无需额外上传脚本或在仓库保存 `.p8`、`.p12` 和描述文件。
+
+### 构建号自动递增
+
+使用 Xcode Cloud 原生编号：每次云端构建自动增加整数 Build，TestFlight 使用该编号。`MARKETING_VERSION = 1.0.1` 仍由发布时按需调整；源码的 `CURRENT_PROJECT_VERSION = 3` 仅作本地构建基线，不需要自动写回 Git，也不叠加 `agvtool`、时间戳或“当前值 + 1”脚本。
+
+由 Admin / App Manager 在 App Store Connect → 本 App → Xcode Cloud → Settings → Build Number → Next Build Number 设置起始值。为延续当前源码编号，且避免和同版本已有上传冲突，首次设为 **大于 `3`、同版本已上传最大 Build、以及已分配云端 Build 的整数**；若都没有更大编号，可以设为 `4`。之后由 Cloud 持续递增。失败的云构建也可能留下编号空缺，按递增理解，不要求每个编号都有可安装包。
+
+如交替使用本地 Organizer 和 Cloud 上传，先协调编号并在必要时提高 Next Build Number。首次成功后核对 Cloud build number、TestFlight 显示号和归档元数据；只有 Apple 处理完成、构建分配到测试组、手机可安装，才记为分发验收通过。
 
 ## 6. Archive 与上传
 
@@ -137,7 +144,7 @@ App Store Connect → 新 App → TestFlight → iOS Builds。
 - 上传后先经过 Processing，完成后才可加入测试。时长取决于 Apple，不能把 Xcode 上传成功当作已经可安装。
 - 若显示 Missing Compliance / 缺少合规信息，打开对应构建按真实加密用途回答。现有 `ITSAppUsesNonExemptEncryption = NO` 是工程声明，不应解释为不使用 HTTPS 或 Keychain；如果最终依赖引入其他加密，需要重新核对。
 - Invalid Binary / 处理失败时，查看 Apple 邮件和上传日志，按具体错误修复、提高 Build 后重新归档。
-- 使用 Apple 允许上传的 Xcode / SDK。当前本机 Xcode 为 27.2（27B52），是否接受最终归档仍以 Apple 的校验为准。
+- 使用 Apple 允许上传的 Xcode / SDK。本轮本机 Xcode 为 27.1（27A9275），未签名 Release Archive 通过；历史 27.2 测试记录属于先前环境，是否接受最终签名归档仍以 Apple 的校验为准。
 
 ## 8. 先给自己内部测试
 
@@ -188,7 +195,7 @@ Apple Account 用于 TestFlight 安装；应用邮箱 / 密码用于登录 Trade
 
 ## 11. 后续更新及常见问题
 
-每次客户端更新：修改本整合副本 → 增加 Build → Release Archive → 上传 → 处理完成 → 加入测试组 → 手机 TestFlight 更新。每个构建自上传起最多测试 90 天，继续测试要提供新构建。只有后端更新且接口兼容时，通常无需重发客户端。
+Cloud 工作流配置完成后，每次客户端更新：修改本整合副本 → 推送至配置的分支 → Cloud 测试 / 自动增加 Build / Archive → 上传并处理 → 自动分配内部组 → 手机 TestFlight 更新。若手动使用 Organizer，仍按第 6 节归档上传并协调构建号。每个构建自上传起最多测试 90 天，继续测试要提供新构建。只有后端更新且接口兼容时，通常无需重发客户端。
 
 | 问题 | 处理 |
 | --- | --- |
@@ -214,3 +221,9 @@ Apple Account 用于 TestFlight 安装；应用邮箱 / 密码用于登录 Trade
 - [API 使用理由](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype)
 - [添加 API 理由条目](https://developer.apple.com/documentation/technotes/tn3183-adding-required-reason-api-entries-to-your-privacy-manifest)
 - [加密出口声明](https://developer.apple.com/help/app-store-connect/manage-app-information/overview-of-export-compliance)
+- [配置首个 Xcode Cloud 工作流](https://developer.apple.com/documentation/xcode/configuring-your-first-xcode-cloud-workflow)
+- [Cloud actions 与分发签名](https://developer.apple.com/documentation/xcode/configuring-your-xcode-cloud-workflow-s-actions)
+- [Cloud 工作流与外测 Clean 要求](https://developer.apple.com/documentation/xcode/xcode-cloud-workflow-reference)
+- [Cloud 自动构建号与起始号](https://developer.apple.com/documentation/xcode/setting-the-next-build-number-for-xcode-cloud-builds)
+- [Cloud 自定义构建脚本](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts)
+- [Cloud 的 TestFlight 分发](https://developer.apple.com/documentation/xcode/distributing-your-xcode-cloud-builds-through-testflight)
