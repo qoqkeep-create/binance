@@ -35,7 +35,7 @@ final class ChartCalibrationUITests: XCTestCase {
 
     private enum AppID {
         static let binance = "com.czzhao.binance"
-        static let tradeTool = "com.oovso.trade"
+        static let tradeTool = "com.waibao2025.trade.integrated"
     }
 
     private let calibrationRoundCount = 5
@@ -2737,7 +2737,7 @@ final class IntegratedNativeUITests: XCTestCase {
         let baseURL = environment["INTEGRATION_QA_API_BASE"] ?? "http://127.0.0.1:8787/"
         let accountName = environment["INTEGRATION_QA_ACCOUNT"] ?? "local-qa@example.invalid"
         continueAfterFailure = false
-        let app = XCUIApplication(bundleIdentifier: "com.oovso.trade.integrated")
+        let app = XCUIApplication(bundleIdentifier: "com.waibao2025.trade.integrated")
         addUIInterruptionMonitor(withDescription: "System password save prompt") { alert in
             for title in ["以后", "暂不", "Not Now"] where alert.buttons[title].exists {
                 alert.buttons[title].tap()
