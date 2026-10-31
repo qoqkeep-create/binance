@@ -72,7 +72,7 @@ Bundle ID 使用 `com.waibao2025.trade.integrated`，与旧客户端隔离。iOS
 
 ## 本地 iOS 验证
 
-使用 Xcode 27.2 / iOS 27.2 的 iPhone 18 Pro 模拟器。单元和 Metal 测试通过 `TradeTool` scheme 执行；真实登录及页面 smoke 使用 `TradeTool Chart Calibration` scheme 下的 `IntegratedNativeUITests`，必须显式提供本地无绑定 QA 账户密码环境变量。缺少该变量时跳过此 opt-in 测试，不在源码保存密码。
+使用 Xcode 27.2 / iOS 27.2 的 iPhone 18 Pro 模拟器。单元和 Metal 测试通过 `TradeTool` scheme 执行；真实登录及页面 smoke 使用 `TradeTool Chart Calibration` scheme 下的 `IntegratedNativeUITests`，必须显式提供配置化的无绑定 QA 账号、密码和 API 地址，参数见 [开发验证](development.md)。缺少密码时跳过此 opt-in 测试，不在源码保存密码。
 
 模拟器登录验证必须保留 Xcode 的临时签名和 simulated entitlements：`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`。使用 `CODE_SIGNING_ALLOWED=NO` 虽可执行纯测试，但会令登录后 Keychain 保存不可用。原生 iOS 会话不使用内存回退。离屏测试的背景色已按当前 `#212731` 暗色画布校准，像素命中判断比较未绘制角落背景，避免将整块画布当成最新价线。
 
