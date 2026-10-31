@@ -1,6 +1,6 @@
 # Python 与原生 iOS 整合
 
-核对日期：2026-10-31。用户已批准在当前目录整合、在本机 Xcode 运行并部署到 `47.80.22.243`。原 USDT、USDC 源码只读；首尔旧 Java 服务和数据库不做迁移或替换。
+核对日期：2026-10-31。用户已批准在当前目录整合、在本机 Xcode 运行并部署到 47.80.22.243（首尔服务器）。原 USDT、USDC 本地源码只读。按后续授权，目标机的旧 USDC Java 环境已退役，整合数据库已逻辑迁入项目内独立 MySQL；迁移和清理范围见 [运维](operations.md)。
 
 ## 当前实现
 
@@ -72,19 +72,19 @@ Bundle ID 使用 `com.waibao2025.trade.integrated`，与旧客户端隔离。iOS
 
 ## 本地 iOS 验证
 
-使用 Xcode 27.2 / iOS 27.2 的 iPhone 18 Pro 模拟器。单元和 Metal 测试通过 `TradeTool` scheme 执行；真实登录及页面 smoke 使用 `TradeTool Chart Calibration` scheme 下的 `IntegratedNativeUITests`，必须显式提供本地无绑定 QA 账户密码环境变量。缺少该变量时跳过此 opt-in 测试，不在源码保存密码。
+使用 Xcode 27.2 / iOS 27.2 的 iPhone 18 Pro 模拟器。单元和 Metal 测试通过 `TradeTool` scheme 执行；真实登录及页面 smoke 使用 `TradeTool Chart Calibration` scheme 下的 `IntegratedNativeUITests`，必须显式提供配置化的无绑定 QA 账号、密码和 API 地址，参数见 [开发验证](development.md)。缺少密码时跳过此 opt-in 测试，不在源码保存密码。
 
 模拟器登录验证必须保留 Xcode 的临时签名和 simulated entitlements：`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`。使用 `CODE_SIGNING_ALLOWED=NO` 虽可执行纯测试，但会令登录后 Keychain 保存不可用。原生 iOS 会话不使用内存回退。离屏测试的背景色已按当前 `#212731` 暗色画布校准，像素命中判断比较未绘制角落背景，避免将整块画布当成最新价线。
 
 2026-10-31 17:08（北京时间），`IntegratedNativeUITests` 完整流程通过：本地无绑定 QA 会话、真实 BTC 行情及 Metal 图表、持仓、禁用开仓、信号、我的和 API 绑定表单。已实际查看行情、图表、开仓及账户截图。系统“保存密码”提示由测试处理；我的菜单行使用完整矩形点击区域和 44pt 最小高度，修复点击行中间空白不能导航的问题。完整 XCTest 166 项及随后独立 Keychain 读写测试通过；没有 iPhone 实机或实盘验证。
 
-`Debug-Seoul` 与 `Release` 均默认使用首尔整合入口。UI 测试通过启动参数临时选择本地 API；该结果不代表 iOS 已逐页面验收线上所有业务。测试结束后关闭本轮模拟器并清理其生成缓存，运行报告保留在忽略目录 `.integration-runtime/UIVerified.xcresult`。
+`Debug-Seoul` 与 `Release` 均默认连接 47.80.22.243（首尔服务器）的整合入口。上述 17:08 UI 结果使用本地 API；本轮远程 UI 验收另见 [变更](changes.md)，不将模拟器结果扩大为所有线上业务、实机或实盘通过。历史运行报告保留在忽略目录 `.integration-runtime/`。
 
 TestFlight 分发尚未执行。已添加 `PrivacyInfo.xcprivacy` 并加入主 App 资源，声明现有 UserDefaults 与图表 `systemUptime` 的访问理由。新 Bundle ID 已注册且启用 Push Notifications，团队、App Store Connect App 记录和内部测试组已建立；本地开发签名 Release Archive 及 162 项单测通过。已重新生成新应用 Cloud manifest，仓库所有者授权与 `iOS TestFlight` 工作流均已保存，包含必过单测、Release 归档及内部测试自动分发。云端 Build 起始号已设为 4，之后原生递增；实际云端分发签名和上传仍需独立验收，见 [手机发布指南](testflight.md)。
 
 ## 本次服务器验收与性能范围
 
-2026-10-31 已部署 `integrated-20261031-ddec4af96a86`。HTTPS 登录、Secure refresh cookie、历史分页、认证拒绝及真实 K 线 / ticker WSS 通过。线上私有推送用临时无交易事件验证用户、普通 / 带单模式隔离；事件未创建交易命令或交易所订单。详细发布和隔离证据见 [变更](changes.md)。
+2026-10-31 首次部署 `integrated-20261031-ddec4af96a86`，随后在 47.80.22.243（首尔服务器）切换为独立数据库版本 `integrated-20261031-d2498172efa6`。HTTPS 登录、Secure refresh cookie、历史分页、认证拒绝及真实 K 线 / ticker WSS 通过。首次部署的私有推送用临时无交易事件验证用户、普通 / 带单模式隔离，未创建交易命令或交易所订单；本轮结果见 [变更](changes.md)。
 
 | 短时采样路径 | 列表读取中位数（5 次） | 300 根 1m / 1h 读取 | 事件延迟中位数 / P95 / 最大值 |
 | --- | --- | --- | --- |

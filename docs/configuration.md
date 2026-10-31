@@ -5,7 +5,7 @@
 ## 配置入口
 
 - 本地 Python 使用 [server/.env.example](../server/.env.example) 创建忽略的 `server/.env`。
-- 服务器配置保存在 `/opt/trade-tools-integrated/server.env`，发布目录通过链接读取；文件权限 600，保留现有值。
+- 47.80.22.243（首尔服务器）的配置保存在 `/opt/trade-tools-integrated/server.env`，发布目录通过链接读取；文件权限 600，保留现有值。
 - Compose 的 `--env-file` 用于变量替换，`env_file: ./server.env` 将配置注入 Python 容器。
 - iOS 使用 xcconfig 展开 `Info.plist` 的 `API_BASE_URL`；Debug、Debug-Seoul 与 Release 默认是 `https://47.80.22.243/integrated/`。运行时服务器选择可以覆盖默认值。
 
@@ -16,7 +16,8 @@
 | `SECRET_KEY` / `AES_SECRET_KEY` | 独立随机密钥，生产至少 32 字符且彼此不同；密码哈希与交易所凭证加密是两种机制 |
 | `AES_PREVIOUS_SECRET_KEY` | 轮换窗口读取上一代密文，迁移和独立解密验证后清空 |
 | `DEBUG` / `ALLOWED_HOSTS` | 生产关闭调试并明确主机，不能用通配符 |
-| `DB_ENGINE` / `DB_*` | 服务器为 MySQL 独立 schema；本地可用 SQLite |
+| `DB_ENGINE` / `DB_*` | 47.80.22.243（首尔服务器）使用项目内独立 MySQL，`DB_HOST=mysql`；本地可用 SQLite |
+| `MYSQL_ROOT_PASSWORD` | 仅用于独立 MySQL 的初始化和健康检查；与应用 `DB_PASSWORD` 分开生成并保留，变更 env 不会自动修改已有卷内密码 |
 | `USE_REDIS_CACHE` / `REDIS_URL` | 共享缓存、账户锁、预算及心跳 |
 | `MARKET_REDIS_URL` / `CACHE_KEY_PREFIX` | 整合行情分发与缓存命名空间 |
 | `BINANCE_QUOTE_ASSET` | 整合环境默认 USDT，影响行情发现和订阅 |

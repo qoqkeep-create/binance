@@ -191,7 +191,7 @@ Apple Account 用于 TestFlight 安装；应用邮箱 / 密码用于登录 Trade
 | 现阶段边界 | TestFlight 测试不自动把币安切为测试网；真实绑定仍由首尔后端连接实际环境 |
 | 推送 | 当前 Python 尚未接 Java APNs 链路，暂不能把系统通知送达列为已通过；前台 WSS 独立验证 |
 
-手机 Safari 可先打开 `https://47.80.22.243/integrated/v1/health` 检查 HTTPS。`/integrated/` 是 API 基址，不是 Web 首页。手机中的 `127.0.0.1` 指手机自身。
+当前唯一后端是 47.80.22.243（首尔服务器），旧 USDC Java 环境已退役；应用端继续使用同一整合 API，无需切换到旧接口。部署与独立数据库说明见 [运维](operations.md)。手机 Safari 可先打开 `https://47.80.22.243/integrated/v1/health` 检查 HTTPS。`/integrated/` 是 API 基址，不是 Web 首页。手机中的 `127.0.0.1` 指手机自身。
 
 本轮普通验收继续使用无交易绑定账户；真实开平仓、划转和撤保护单不作为安装测试步骤。
 
