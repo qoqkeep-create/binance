@@ -2,6 +2,13 @@
 
 此处保留值得长期维护的里程碑，不替代 Git 日志或全量聊天历史。每条说明来源和范围；历史通过不代表本轮重新测试。
 
+## 2026-10-31：新应用 Cloud 自动构建与内部测试分发配置
+
+- 已保存新 Cloud 产品 `f01be7a9-f719-4ecc-932e-17c7bac455a6` 的 `iOS TestFlight` 工作流，GitHub 授权仅选择 `qoqkeep-create/binance`，关联 App Store Connect `TradeTools USDT` / `6829222305`。发布身份、Push capability、工作流及编号细节见 [TestFlight](testflight.md)。
+- 首次将 Next Build Number 保存为 4；同时发生的远端源码推送自动产生默认编译构建 4、5，均成功。保留并合并另一批服务器运维提交后，`e7734bb` 已推送，分支 SHA 与远端一致，自动触发完整流程构建 6。
+- 构建 6 的 Metal 脚本、云端 Release Archive、app-store 导出与 App Store Connect 准备均成功；图表压力测试的 P95 为 426ms，超过本地模拟器 150ms 阈值。仅对 Apple 明确标识的 Cloud 环境改为记录耗时，保留覆盖率、帧并发、缓冲区和命令错误检查；本地仍执行原耗时断言。修改后本地常规模式与 `TEST_RUNNER_CI_XCODE_CLOUD=TRUE` 模式各 3 项压力测试通过，报告为 `/tmp/binance-cloud-setup/LocalStressBudget.xcresult` 与 `CloudStressMode.xcresult`。
+- Cloud 完整测试与自动分发修正后待再次验收；不将此前编译成功、归档成功或本地模拟器结果表述为 TestFlight 可安装或 iPhone 实机通过。工程语法、文档链接及差异检查通过，原有工程排序改动仍保持未提交。
+
 ## 2026-10-31：退役首尔旧 Java 环境，独立数据库与远程模拟器验收
 
 - 用户确认唯一目标为 **47.80.22.243（首尔服务器）**，并授权删除旧 USDC Java 系统及其专属支撑环境。协作规则已记录：向用户提及目标机操作或状态时写 IP＋备注。本地 USDT 456 个、USDC 476 个来源文件哈希再次核对一致。

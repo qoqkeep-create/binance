@@ -56,8 +56,15 @@ final class ChartEngineOnscreenStressTests: XCTestCase {
         XCTAssertEqual(snapshot.currentInFlightFrames, 0)
         XCTAssertLessThanOrEqual(snapshot.peakInFlightFrames, 3)
 #if targetEnvironment(simulator)
-        XCTAssertLessThan(fourHertzP95, 0.150)
-        XCTAssertLessThan(twentyHertzP95, 0.150)
+        // Shared Cloud runners don't provide a stable presentation-time baseline.
+        // Keep the frame/error checks above and the timing attachment in Cloud;
+        // enforce this simulator latency budget on the local performance host.
+        let recordsCloudLatency =
+            ProcessInfo.processInfo.environment["CI_XCODE_CLOUD"] == "TRUE"
+        if !recordsCloudLatency {
+            XCTAssertLessThan(fourHertzP95, 0.150)
+            XCTAssertLessThan(twentyHertzP95, 0.150)
+        }
 #else
         XCTAssertLessThan(fourHertzP95, 0.050)
         XCTAssertLessThan(twentyHertzP95, 0.050)

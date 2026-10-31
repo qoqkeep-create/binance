@@ -119,6 +119,8 @@ open frontend/ios-app/TradeTool.xcodeproj
 
 `TradeTool Release` 的 TestAction 没有测试列表，不能把它选为 Test action 后就认为运行了单测。`TradeTool` 提供单测列表，Archive 仍用独立 Release Scheme。真实登录 UI 检查需要专用无绑定 QA 账户，单独配置；默认云端不依赖本机 ASGI、`.env` 或 QA 密码。
 
+Cloud 首次启用测试时，构建 6 的图表压力测试出现 426ms P95，超过本地模拟器 150ms 阈值，归档成功但测试未通过。现将共享云端运行器的耗时保留为报告，继续执行所有确定性的帧数 / 并发 / 错误检查，本地保留原耗时断言；不把 Cloud 模拟器计时当作实机性能结论。自动编号已通过此前默认编译构建 4 → 5 及完整流程构建 6 验证。
+
 `frontend/ios-app/ci_scripts/ci_pre_xcodebuild.sh` 已位于工程旁且以 Git 可执行文件追踪，Xcode Cloud 自动识别。它检查并按需安装 Metal Toolchain，对下载失败最多尝试三次；无需在后台重复粘贴脚本。当前无 CocoaPods 或第三方 Swift Package 依赖安装步骤。自动签名和上传由 Xcode Cloud 完成，无需额外上传脚本或在仓库保存 `.p8`、`.p12` 和描述文件。
 
 ### 构建号自动递增
