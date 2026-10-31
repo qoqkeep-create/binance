@@ -1,6 +1,6 @@
 # 原 Web 页面与原生 iOS 对照
 
-本主题维护原 USDT Web 的原生复刻方式。SwiftUI 实现位于 `frontend/ios-app/TradeTool/Features/USDT/`，认证入口在 `Features/Auth/LoginView.swift`。原项目来源及只读路径见 [来源索引](sources.md)，本地参考副本和截图不属于发布资源。
+本主题维护原 USDT Web 的原生业务页面复刻方式。SwiftUI 实现位于 `frontend/ios-app/TradeTool/Features/USDT/`；2026-11-01 按用户新要求，认证入口 `Features/Auth/LoginView.swift` 改为 USDC 原生布局和底部 sheet，名称与图标见 [品牌与认证](ios-authentication.md)。原项目来源及只读路径见 [来源索引](sources.md)，本地参考副本和截图不属于发布资源。
 
 ## 当前实现
 
@@ -12,7 +12,7 @@
 
 | 原 Web 页面 / 组件 | 原生实现 | 对照范围 |
 | --- | --- | --- |
-| login、注册、找回密码 | `LoginView` | RISKON 标志、标题、字段、复选框、登录卡、注册关闭状态、重置密码参数 |
+| login、注册、找回密码 | `LoginView` | 已按新要求改为 USDC 原生布局与底部 sheet；保留整合后端协议、注册开关和重置参数，见 [品牌与认证](ios-authentication.md) |
 | trading | `USDTTradeView` | 双卡片、报价、订单类型、止损、估算、手续费、策略入口、方向初筛、开仓确认 |
 | holdings | `USDTPositionsView` / `USDTPositionControls` | 持仓、限价、历史、策略日志、保本损、手动止盈、追单及平仓确认 |
 | profile | `USDTProfileView` | 资产、API、模式、归集及补资入口、菜单 |

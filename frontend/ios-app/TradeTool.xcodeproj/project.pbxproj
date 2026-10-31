@@ -108,6 +108,7 @@
 		CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63133A17E8871350B079F81 /* USDTResearchViews.swift */; };
 		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
 		010000000000000000000057 /* Lucide-ISC.txt in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* Lucide-ISC.txt */; };
+		010000000000000000000059 /* BrandLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000060 /* BrandLaunchScreen.storyboard */; };
 		A17000000000000000000001 /* FloatingPositionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000002 /* FloatingPositionsView.swift */; };
 		A17000000000000000000005 /* FloatingPositionsPiP.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000006 /* FloatingPositionsPiP.swift */; };
 		A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000004 /* FloatingPositionsTests.swift */; };
@@ -131,6 +132,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		020000000000000000000060 /* BrandLaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = BrandLaunchScreen.storyboard; sourceTree = "<group>"; };
 		020000000000000000000001 /* TradeToolApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeToolApp.swift; sourceTree = "<group>"; };
 		020000000000000000000002 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		020000000000000000000003 /* MarketSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSnapshot.swift; sourceTree = "<group>"; };
@@ -385,6 +387,7 @@
 				020000000000000000000055 /* TradeTool.entitlements */,
 				02000000000000000000005D /* PrivacyInfo.xcprivacy */,
 				02000000000000000000005E /* Lucide-ISC.txt */,
+				020000000000000000000060 /* BrandLaunchScreen.storyboard */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -731,6 +734,7 @@
 				010000000000000000000018 /* Localizable.strings in Resources */,
 				010000000000000000000056 /* PrivacyInfo.xcprivacy in Resources */,
 				010000000000000000000057 /* Lucide-ISC.txt in Resources */,
+				010000000000000000000059 /* BrandLaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1023,10 +1027,10 @@
 				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
 				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
-				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
+				INFOPLIST_KEY_CFBundleDisplayName = "Binance Tools";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Binance Tools 开发服务";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -1063,10 +1067,10 @@
 				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
 				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
-				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
+				INFOPLIST_KEY_CFBundleDisplayName = "Binance Tools";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Binance Tools 开发服务";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -1160,10 +1164,10 @@
 				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
 				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
-				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
+				INFOPLIST_KEY_CFBundleDisplayName = "Binance Tools";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Binance Tools 开发服务";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

@@ -232,6 +232,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
   private struct WebParityFixtureAPI: APIClient {
     static var empty: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-empty") }
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+      if request.path == "/v1/auth/admin-settings",
+        ProcessInfo.processInfo.arguments.contains("--fixture-registration-unavailable") {
+        throw APIError.business(code: "VISUAL_FIXTURE", message: "注册状态测试不可用")
+      }
       guard
         request.method == .get
           || ["/v1/trade/capital/precheck", "/v1/trade/ema-check"].contains(request.path)
@@ -243,6 +247,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         all[
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if request.path == "/v1/auth/admin-settings",
+        ProcessInfo.processInfo.arguments.contains("--fixture-registration-open") {
+        value = .object(["open_registration": .bool(true)])
+      }
       if Self.empty
         && [
           "/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list",

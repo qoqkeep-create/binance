@@ -338,15 +338,10 @@ private struct InteractivePopGestureInstaller:
 private struct AppLaunchView: View {
     var body: some View {
         ZStack {
-            BinanceTheme.background
+            Color.white
                 .ignoresSafeArea()
 
-            VStack(spacing: 18) {
-                BinanceLogoMark(size: 58)
-
-                ProgressView()
-                    .tint(BinanceTheme.accent)
-            }
+            BinanceLogoMark(size: 64)
         }
     }
 }

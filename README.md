@@ -2,6 +2,8 @@
 
 Python / Django 负责交易、资金、行情采集和订单维护，SwiftUI / Metal 提供原生 iPhone 客户端。导航依次为行情、持仓、开仓、信号、我的；带单模式隐藏信号。
 
+手机显示名称为 **Binance Tools**，使用橙红渐变图标；登录与注册采用 USDC 原生布局及底部弹窗，详情见 [品牌与认证](docs/ios-authentication.md)。
+
 | 路径 | 当前用途 |
 | --- | --- |
 | `server/` | HTTP / ASGI WSS、行情采集、账户命令和调度维护 |

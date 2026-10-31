@@ -183,15 +183,11 @@ struct BinanceLogoMark: View {
     var size: CGFloat = 44
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.22)
-                .fill(BinanceTheme.accent)
-
-            Image(systemName: "chart.xyaxis.line")
-                .font(.system(size: size * 0.46, weight: .bold))
-                .foregroundStyle(BinanceTheme.onAccent)
-        }
-        .frame(width: size, height: size)
+        Image("BrandMark")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
         .accessibilityHidden(true)
     }
 }

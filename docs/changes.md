@@ -2,6 +2,17 @@
 
 此处保留值得长期维护的里程碑，不替代 Git 日志或全量聊天历史。每条说明来源和范围；历史通过不代表本轮重新测试。
 
+## 2026-11-01：Binance Tools 名称、渐变图标与 USDC 认证界面
+
+- 手机显示名在 Debug / Debug-Seoul / Release 统一改为 `Binance Tools`，Bundle ID 保留；使用内置 imagegen 设计橙红渐变与白色折带 B 标记，替换桌面及启动资源。已实际查看模拟器主屏，图标与完整名称显示正确。资源及最终生成提示词见 [品牌与认证](ios-authentication.md)。
+- 登录 / 注册采用只读 USDC iOS 来源的品牌区、左对齐表单、字体、间距、输入框和主按钮；按新要求将注册、找回 / 重置密码、协议和隐私改为从底部展开的系统 sheet。使用现有整合接口，遵守协议同意与注册开关，读取失败可重试且禁止提交；保留重置参数解析。邮箱 / 密码统一使用稳定的 UIKit 编辑器与焦点桥接，密码显隐不替换编辑器，避免 SwiftUI 与 UIKit 焦点混用造成输入失焦；协议完成操作放在自定义标题区域，避免隐藏的系统 toolbar 丢失按钮。只修改整合目录，未修改原 USDT / USDC 文件及 Python 交易规则。
+- 本地 SQLite / LocMem 的 `users.tests.AuthApiTests` 与 `mobile.tests.MobileAuthTests` 共 26 项通过，覆盖原有登录 / 注册协议、开关、限流及重置单次使用等；报告 `.integration-runtime/brand-auth-api.log`。测试不使用生产账号，邮件使用 locmem，不执行交易操作。
+- 注册 UI 的快速密文输入会被系统复杂密码建议打断，按用户要求先绕过这一系统交互：测试先显示密码并核对完整文本，再隐藏并检查本地不一致提示；产品保留 AutoFill 和后端校验。四组认证 UI 最终全部通过，0 失败（80.6 秒，`.integration-runtime/BrandAuthCompletedUI.xcresult`），覆盖浅深色、注册开关及读取失败、密码显隐、注册校验、关闭 / 下拉 / 重开、协议往返和找回密码无效邮箱；已实际打开主要截图。`TradeTool` 全量 175 项单测通过，0 失败（25.9 秒，`.integration-runtime/BrandAuthUnit.xcresult`）。
+- 按用户补充要求修复系统启动与会话恢复页：固定白底、新图标居中 64 pt；原字典式启动页在冷启动时仍显示旧资源，改为新 `BrandLaunchScreen.storyboard`，图集更名 `BrandMark` 并取消旧背景资源的引用。认证回归之后只调整了启动资源与图集身份，最终模拟器 Debug 与 generic iOS Release 未签名构建通过（`.integration-runtime/brand-launch-final-debug.log` / `brand-launch-final-release.log`）；没有把这一阶段写为再次全量运行单测。
+- 启动截图检查发现同一本地构建号的资源缓存：替换、重装甚至模拟器重启后仍有旧图或白底无图。保持相同源码，以命令行临时构建号 4 编译后冷启动，已实际打开浅色和深色系统模式的截图确认均为白底、64 pt 新图标（`.integration-runtime/brand-launch-version4-dark/02.png`、`brand-launch-version4-light/02.png`）；工程发布编号与 Cloud 自动递增策略未修改。包内核对显示名、Bundle ID、启动 storyboard、Metal、隐私清单和许可，DEBUG 认证替身及诊断探针不进入 Release。
+- 2026-11-01 03:04（北京时间）在 47.80.22.243（首尔服务器）通过已有 SSH 认证调用当前 API 容器的 `SystemSetting.set_open_registration(True)`，持久化开关从 false 改为 true。公网匿名 `/integrated/v1/auth/admin-settings` 返回 true，健康入口 200，六个整合容器 healthy；当前 release 仍为 `integrated-20261031-d2498172efa6`，本轮没有重建后端、迁移数据库或进行真实注册 / 邮件 / 交易操作。可由管理员关闭同一开关，详见 [运维](operations.md#注册开关)。
+- 已在协作规则和运维主文档记录用户新偏好：后续改动等用户明确说“推送”再上传 GitHub，本轮整批获单次推送授权。新包的 Xcode Cloud / TestFlight 处理和手机安装需分别核对，不能用本地构建或源码推送代替。
+
 ## 2026-11-01：按补充要求接入跨 App 持仓画中画
 
 - 用户明确浮窗需在其他 App 上方显示。新增公开 AVKit / AVSampleBufferDisplayLayer 画中画适配器，接入“我的”开关及卡片上的重开按钮，保留 App 内浮窗；外部窗口采用 640 × 320 的简略深色视频帧，包含币种、方向、市价、浮盈和更新时间，多仓每 5 秒轮播。iOS 控制实际窗口大小和系统按钮，不能把 App 内的 184 × 82 pt 直接当作外部窗口尺寸。配置及使用见 [持仓浮窗](ios-floating-positions.md)。

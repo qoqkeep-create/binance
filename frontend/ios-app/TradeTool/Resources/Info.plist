@@ -17,14 +17,7 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIColorName</key>
-		<string>LaunchBackground</string>
-		<key>UIImageName</key>
-		<string>LaunchMark</string>
-		<key>UIImageRespectsSafeAreaInsets</key>
-		<true/>
-	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>BrandLaunchScreen</string>
 </dict>
 </plist>

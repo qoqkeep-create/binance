@@ -2979,7 +2979,7 @@ final class WebParityUITests: XCTestCase {
       ("strategies", "我的策略"), ("strategy-editor", "不移动止损位"), ("operations", "北京时间 · 最新记录在前"),
       ("transfers", "累计转出"), ("watch", "记录"), ("watch-editor", "写计划"), ("research", "录入一个已收盘信号样本"),
       ("settings", "颜色模式"), ("legal", "用户协议"), ("privacy", "隐私政策"), ("stop-loss", "止损设置"),
-      ("collect", "资金归集账号"), ("login", "RISKON"),
+      ("collect", "资金归集账号"), ("login", "Binance Tools"),
     ]
     for (page, text) in pages {
       launch(page)
@@ -3099,6 +3099,8 @@ final class WebParityUITests: XCTestCase {
   }
   func testLoginAndLocalIndicatorEditing() {
     launch("login")
+    XCTAssertTrue(app.staticTexts["Binance Tools"].waitForExistence(timeout: 10))
+    capture("binance-tools-login")
     app.buttons["注册账号"].tap()
     XCTAssertTrue(app.staticTexts["暂未开放注册，请联系管理员"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["注册"].isEnabled)
@@ -3107,9 +3109,103 @@ final class WebParityUITests: XCTestCase {
     app.buttons["忘记密码？"].tap()
     XCTAssertTrue(app.buttons["发送重置邮件"].waitForExistence(timeout: 5))
     capture("password-reset-request")
+    app.buttons["passwordReset.submit"].tap()
+    XCTAssertTrue(app.staticTexts["请输入有效的邮箱地址"].waitForExistence(timeout: 5))
+    app.buttons["auth.sheet.close"].tap()
+    XCTAssertTrue(app.buttons["注册账号"].waitForExistence(timeout: 5))
     launch("indicators")
     app.buttons["创建指标"].tap()
     XCTAssertTrue(app.buttons["保存指标"].waitForExistence(timeout: 5))
     capture("indicator-editor")
+  }
+
+  func testAuthenticationSheetsPasswordVisibilityAndValidation() {
+    launch("login", ["--fixture-registration-open"])
+    app.buttons["auth.submit"].tap()
+    XCTAssertTrue(app.staticTexts["请先阅读并同意用户协议和隐私政策"].waitForExistence(timeout: 5))
+    let account = app.textFields["login.account"]
+    account.tap()
+    account.typeText("auth-ui@example.invalid")
+    let password = app.secureTextFields["login.password"]
+    password.tap()
+    password.typeText("isolated-test-only\n")
+    app.buttons["auth.passwordVisibility"].tap()
+    XCTAssertEqual(app.textFields["login.password"].value as? String, "isolated-test-only")
+    let hidePassword = app.buttons["auth.passwordVisibility"]
+    XCTAssertEqual(hidePassword.label, "隐藏密码")
+    XCTAssertTrue(hidePassword.isHittable)
+    hidePassword.tap()
+    XCTAssertTrue(app.secureTextFields["login.password"].waitForExistence(timeout: 5))
+    app.swipeUp()
+    app.buttons["注册账号"].tap()
+    XCTAssertTrue(app.secureTextFields["register.confirmPassword"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.textFields["register.account"].value as? String, "auth-ui@example.invalid")
+    XCTAssertEqual(app.secureTextFields["register.password"].value as? String, "至少 8 位密码")
+    capture("binance-tools-registration-open")
+    app.buttons["register.agreement"].tap()
+    XCTAssertEqual(app.buttons["register.agreement"].value as? String, "已同意")
+    // Enter visible text to avoid system strong-password suggestions interrupting rapid automation.
+    // Production keeps the normal password AutoFill content types.
+    app.buttons["register.passwordVisibility"].tap()
+    let registrationPassword = app.textFields["register.password"]
+    registrationPassword.tap()
+    registrationPassword.typeText("isolated-test-only")
+    XCTAssertEqual(registrationPassword.value as? String, "isolated-test-only")
+    let confirmation = app.textFields["register.confirmPassword"]
+    confirmation.tap()
+    confirmation.typeText("different-test-only")
+    XCTAssertEqual(confirmation.value as? String, "different-test-only")
+    app.buttons["register.confirmVisibility"].tap()
+    app.swipeUp()
+    app.buttons["register.submit"].tap()
+    capture("binance-tools-registration-validation")
+    XCTAssertTrue(app.staticTexts["两次密码不一致"].waitForExistence(timeout: 5))
+    // Validation must finish before the authentication service performs any network request.
+    app.buttons["auth.sheet.close"].tap()
+    XCTAssertTrue(app.buttons["注册账号"].waitForExistence(timeout: 5))
+    app.buttons["注册账号"].tap()
+    XCTAssertEqual(app.secureTextFields["register.confirmPassword"].value as? String, "请再次输入密码")
+    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+    start.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+    XCTAssertFalse(app.buttons["auth.sheet.close"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["注册账号"].isHittable)
+  }
+
+  func testAuthenticationDarkAndUnavailableRegistration() {
+    launch("login", ["--fixture-dark", "--fixture-registration-unavailable"])
+    XCTAssertTrue(app.staticTexts["Binance Tools"].waitForExistence(timeout: 10))
+    capture("binance-tools-login-dark")
+    app.buttons["注册账号"].tap()
+    XCTAssertTrue(app.staticTexts["暂时无法获取注册状态，请重试"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["register.submit"].isEnabled)
+    app.buttons["重试"].tap()
+    XCTAssertTrue(app.staticTexts["暂时无法获取注册状态，请重试"].waitForExistence(timeout: 5))
+    capture("binance-tools-registration-unavailable-dark")
+    app.buttons["auth.sheet.close"].tap()
+    app.buttons["忘记密码？"].tap()
+    XCTAssertTrue(app.buttons["发送重置邮件"].waitForExistence(timeout: 5))
+    capture("binance-tools-reset-dark")
+    app.buttons["auth.sheet.close"].tap()
+  }
+
+  func testAuthenticationLegalSheetsReturnToRegistration() throws {
+    launch("login", ["--fixture-registration-open"])
+    app.buttons["注册账号"].tap()
+    XCTAssertTrue(app.secureTextFields["register.confirmPassword"].waitForExistence(timeout: 5))
+    let terms = try XCTUnwrap(app.links.matching(identifier: "用户协议")
+      .allElementsBoundByIndex.first(where: { $0.isHittable }))
+    terms.tap()
+    XCTAssertTrue(app.staticTexts["欢迎使用Binance Tools"].waitForExistence(timeout: 5))
+    capture("binance-tools-terms-sheet")
+    app.buttons["auth.legal.close"].tap()
+    XCTAssertTrue(app.secureTextFields["register.confirmPassword"].waitForExistence(timeout: 5))
+    let privacy = try XCTUnwrap(app.links.matching(identifier: "隐私政策")
+      .allElementsBoundByIndex.first(where: { $0.isHittable }))
+    privacy.tap()
+    XCTAssertTrue(app.staticTexts["Binance Tools隐私政策"].waitForExistence(timeout: 5))
+    capture("binance-tools-privacy-sheet")
+    app.buttons["auth.legal.close"].tap()
+    XCTAssertTrue(app.buttons["auth.sheet.close"].isHittable)
+    app.buttons["auth.sheet.close"].tap()
   }
 }

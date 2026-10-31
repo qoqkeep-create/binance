@@ -1,0 +1,48 @@
+# iOS 品牌与认证界面
+
+## 当前实现
+
+手机桌面名称为 **Binance Tools**，Debug、Debug-Seoul、Release 均一致；Bundle ID 仍为 `com.waibao2025.trade.integrated`，更新安装继续使用同一个应用身份。桌面名称由 Xcode 工程的 `INFOPLIST_KEY_CFBundleDisplayName` 指定，不等同于 App Store Connect 中的商店名称。
+
+App 图标采用橙色到珊瑚红的渐变底色与象牙白折带 B 标记。`Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` 是 1024 × 1024、无透明通道的发布图标；`BrandMark.imageset` 保存同源的 64 / 128 / 192 像素标记，对应 1× / 2× / 3× 的 64 pt，供系统启动页、会话恢复页和认证页使用。桌面圆角由系统裁切，App 内标记由 `BinanceLogoMark` 裁切。
+
+系统启动页使用 `Info.plist` 的 `UILaunchStoryboardName = BrandLaunchScreen`，由新 `BrandLaunchScreen.storyboard` 指定固定 RGB 纯白与居中、宽高均 64 pt 的新 `BrandMark`；会话恢复页 `AppLaunchView` 同样使用固定白底与居中的 64 pt 新标记，深色模式也保持白底。启动背景独立于业务主题，不能只修改登录页背景。最终删除旧 `LaunchBackground` 颜色，使用新图集名称与独立 storyboard。
+
+同一个本地构建号反复更换启动资源会复用旧资源缓存：本轮在替换图集并重装后仍见旧黑底图标，更换图集名称后曾只显示白底；重启模拟器也未解除。以相同源码、命令行临时 `CURRENT_PROJECT_VERSION=4` 重新安装后，冷启动实际显示白底、64 pt 橙红新图标。未改工程中的发布版本号或 Cloud 自动递增规则。后续启动页验收需使用新构建号，不能把相同构建号的旧缓存当成包内资源；手机需安装此次新的 TestFlight 构建后再核对。
+
+登录、注册布局依据 [USDC 原始工程](sources.md) 的 `Features/Auth/LoginView.swift`，使用现有 `BinanceTheme`：左右 24 pt、品牌标记 42 pt、品牌区下方间距 48 pt、标题 32 pt、字段标签与输入间距 9 pt、字段间距 18 pt、输入和主按钮圆角 10 pt，保留来源黄色主按钮与浅深色。新增品牌色用于图标，其他业务页面沿用原主题。
+
+登录是根页面；注册、找回密码、重置密码通过原生 `.sheet` 从底部展开，使用 large detent、拖动条、24 pt 顶角与关闭按钮，支持下拉关闭。协议和隐私页也使用 sheet，在注册 sheet 内阅读时继续从底部展示，完成后回到原表单。表单过高或键盘弹出时可以滚动。提交期间禁止重复提交与手势关闭，显式关闭会取消当前页面请求；切到其他表单清空密码，新开注册表单不沿用上一次输入的密码。
+
+协议内容复用 `USDTLegalView`；该页面隐藏系统导航栏并使用自定义标题，因此认证 sheet 的“完成”操作直接放在标题右侧，不能仅依赖 NavigationStack 的 toolbar。每种认证表单使用独立的控件标识，避免注册 sheet 与背后的登录页混淆。
+
+邮箱与密码通过 `AuthTextInput` 使用同一套 UIKit 编辑与焦点桥接；密码保持同一个 UITextField 与右侧显隐按钮，切换时修改 secure entry 并保留文本和选区。SwiftUI 负责来源布局，原生事件确认当前焦点；避免在显隐切换时替换编辑器或混用两套焦点系统。
+
+## 对应接口
+
+| 功能 | 整合后端接口 | 行为 |
+| --- | --- | --- |
+| 登录 | `POST /api/auth/login` | `account` 为邮箱，提交 `password` 和 `agreed`，沿用 AuthStore / Keychain 与刷新机制 |
+| 注册状态 | `GET /v1/auth/admin-settings` | 读取 `open_registration`；关闭、加载中或获取失败时禁止注册，失败可重试 |
+| 注册 | `POST /api/auth/register` | 沿用邮箱、密码、确认密码和同意协议字段；后端仍执行开关、限流和密码校验 |
+| 找回密码 | `POST /v1/auth/password-reset/request` | 提交 `email`，统一提示避免泄露账号是否存在；禁用重复请求 |
+| 确认重置 | `POST /v1/auth/password-reset/confirm` | 解析已交给 App 的 `reset_uid` / `reset_token`，提交 `uid`、`token`、`new_password`、`confirm_password` |
+| 用户协议 / 隐私政策 | 本地原生内容 | 不依赖新接口，品牌名称同步更新 |
+
+仅呈现上述已有能力，不增加第三方登录、短信或验证码入口。UI 使用邮箱字段以符合当前后端的 EmailField，未沿用来源“账号或邮箱”中后端不支持的任意用户名含义。认证沿用原有服务模块，未修改 Python 资金、交易与订单业务。
+
+SMTP 实际投递与邮件 HTTPS 自动唤起不由界面改造自动完成；Universal Links 仍待配置和验收。外部链接需要先由 iOS 路由交给 App，才能打开重置 sheet；限制见 [已知事项](known-issues.md) 和 [TestFlight](testflight.md)。
+
+2026-11-01 已按用户授权在 47.80.22.243（首尔服务器）将持久化的 `SystemSetting.open_registration` 从关闭改为开启，公网匿名状态接口已核对为 true。开关保存在数据库，不通过客户端写死或修改默认策略；管理员仍可在设置中关闭。操作及最后核对时间见 [运维](operations.md#注册开关) 和 [变更与验收](changes.md)。
+
+## 验证与维护
+
+`WebParityUITests` 的认证流程使用 DEBUG 无网络页面替身。`--fixture-registration-open` / `--fixture-registration-unavailable` 分别模拟开放和状态读取失败，默认模拟关闭；这些标记不进入 Release。测试使用保留的邮箱 / 密码验证与无效表单，不注册真实账号、不发送真实邮件、不调用交易写接口。界面结果与构建报告记录在 [变更与验收](changes.md)，截图需实际打开检查。
+
+自动化注册输入先切换为明文并核对完整文本，避开系统复杂密码建议打断快速输入的情况，再切回密文检查不一致提示。生产继续保留系统密码自动填充，未禁用后端复杂度校验；该自动化绕过不代表系统密码建议在真机上已专项验收。
+
+图标由内置 imagegen 生成，交付资源保存在工程内。原图仅做发布尺寸缩放；最终生成提示词如下，后续换图时同步更新本节与资源，不依赖个人生成缓存目录。
+
+```text
+Use case: logo-brand. Asset type: final iOS app icon for Binance Tools, one single square icon, 1024 by 1024. Create a premium, exceptionally minimal financial tools icon. Full bleed smooth warm gradient background flowing from luminous tangerine orange at upper left through vivid vermilion to deep coral red at lower right. Center a single bold ivory-white abstract geometric mark: an elegant ascending folded ribbon forming a subtle capital B, with two precise negative-space cuts. Flat crisp vector-like silhouette, balanced proportions, large readable at tiny app-icon size, centered with generous optical padding. Understated, refined, precise, modern. Gradient is soft and rich with a restrained diffuse glow; foreground mark has no bulky extrusion. Fill the entire square edge to edge, no rounded outer corners, no frame, no device mockup, no surrounding canvas, no lettering, no words, no numbers, no watermarks.
+```

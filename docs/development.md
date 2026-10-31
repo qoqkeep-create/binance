@@ -62,6 +62,8 @@ Cloud 分发使用平台自动递增的构建号，首次在后台核对 Next Bu
 
 业务页面的原 Web 对照、DEBUG 隔离数据和 `WebParityUITests` 命令见 [Web 原生复刻](ios-web-parity.md)。该模式无需账号，不连接真实交易；只有本地资金预检和 EMA 预览返回静态响应。Release 不包含该入口。
 
+认证页现采用 USDC 原生布局和底部 sheet；显示名、图标、已有接口及注册开关替身见 [品牌与认证](ios-authentication.md)。认证 UI 测试只提交本地验证失败的表单，后端协议用 SQLite / LocMem 的 `users.tests.AuthApiTests` 和 `mobile.tests.MobileAuthTests` 验证，重置邮件使用 locmem。
+
 持仓浮窗的数据生命周期、单测、两项 App 内与一项跨 App UI 测试见 [持仓浮窗](ios-floating-positions.md)。视觉模式使用独立 UserDefaults suite，每次启动重置开关和位置；普通运行的浮窗偏好保持不变。App 内测试显式传 `--fixture-inline-floating`；跨 App 测试使用系统 AVKit，仅在明确不支持时跳过，不能把跳过当作画中画通过。
 
 ## 回归范围
