@@ -6,6 +6,7 @@
 | --- | --- |
 | [整合说明](INTEGRATION.md) | 数据链路、协议、页面映射与验证边界 |
 | [架构](architecture.md) | 运行单元、模块责任和账户身份 |
+| [Web 原生复刻](ios-web-parity.md) | 页面映射、尺寸、主题、截图回归及验证边界 |
 | [开发验证](development.md) | 后端、Xcode、测试与回归范围 |
 | [配置](configuration.md) | 整合环境的配置入口和关键参数 |
 | [部署运维](operations.md) | 独立部署、回滚、GitHub 源码交付 |

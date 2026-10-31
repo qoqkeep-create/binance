@@ -1,9 +1,11 @@
 # 当前已知事项
 
-核对日期：2026-10-31。本文只维护整合版当前状态；原 USDT / USDC 历史审阅、Web/CDN 和旧部署问题从 [来源索引](sources.md) 查询。
+核对日期：2026-11-01。本文只维护整合版当前状态；原 USDT / USDC 历史审阅、Web/CDN 和旧部署问题从 [来源索引](sources.md) 查询。
 
 | 事项 | 当前状态与下一步 |
 | --- | --- |
+| Web 原生复刻 | 已按来源重做业务页面及主要弹窗；164 项单测和 8 个独立 UI 流程分轮通过，已查看同宽模拟器截图，范围见 [变更记录](changes.md)。不能将其写为所有设备逐像素一致；原 Web 看盘计划在窄屏的十二列拥挤布局按源保留，真机、系统控件及动态状态需继续验收，见 [对照说明](ios-web-parity.md) |
+| 密码重置唤起 | App 可处理已有重置参数；邮件 HTTPS Universal Links 自动唤起尚未配置和验收 |
 | TestFlight | 新 App ID、Push capability、App 记录及内部测试组已建立，本地签名归档和 162 项单测通过；Cloud 仍待 `qoqkeep-create` 仓库所有者授权，分支触发、自动分发及 Next Build Number 尚未完成，见 [指南](testflight.md) |
 | Python APNs | 原生已有部分通知基础代码，Python 尚未接通 APNs；前台 WSS 通过不代表后台系统通知通过 |
 | SMTP / AI / 外部通知 | 当前整合环境未配置相应真实服务；页面和后端能力保留，发送或生成结果待专门验收 |

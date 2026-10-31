@@ -2754,7 +2754,7 @@ final class IntegratedNativeUITests: XCTestCase {
             for _ in 0..<5 where !logout.isHittable { app.swipeUp() }
             XCTAssertTrue(logout.isHittable)
             logout.tap()
-            let confirmLogout = app.sheets.buttons["退出登录"].firstMatch
+            let confirmLogout = app.buttons["退出登录"].firstMatch
             XCTAssertTrue(confirmLogout.waitForExistence(timeout: 5))
             confirmLogout.tap()
         }
@@ -2763,7 +2763,7 @@ final class IntegratedNativeUITests: XCTestCase {
             account.tap(); account.typeText(accountName)
             let secure = app.secureTextFields.firstMatch
             secure.tap(); secure.typeText(password)
-            let agreement = app.switches["我已阅读并同意用户协议与风险提示"]
+            let agreement = app.buttons["login.agreement"]
             XCTAssertTrue(agreement.exists)
             if (agreement.value as? String) != "1" { agreement.tap() }
             XCTAssertTrue(app.buttons["登录"].isEnabled)
@@ -2790,20 +2790,20 @@ final class IntegratedNativeUITests: XCTestCase {
         capture(app, "integrated-ios-chart")
         app.buttons["返回"].firstMatch.tap()
         app.buttons["持仓"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["命令记录"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["限价委托"].waitForExistence(timeout: 10))
         app.buttons["开仓"].firstMatch.tap()
-        let submit = app.buttons["确认开仓"].firstMatch
+        let submit = app.buttons["输入止损价开仓"].firstMatch
         XCTAssertTrue(submit.waitForExistence(timeout: 10))
         XCTAssertFalse(submit.isEnabled, "Unbound account must not place an order")
         capture(app, "integrated-ios-open")
         app.buttons["信号"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["观察计划"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["外部"].waitForExistence(timeout: 10))
         app.buttons["我的"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["API 管理"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["profile.bind"].waitForExistence(timeout: 10))
         capture(app, "integrated-ios-profile")
-        app.buttons["API 管理"].tap()
-        XCTAssertTrue(app.buttons["验证并绑定"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["验证并绑定"].isEnabled)
+        app.buttons["profile.bind"].tap()
+        XCTAssertTrue(app.buttons["确认绑定"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["确认绑定"].isEnabled)
     }
 
     private func capture(_ app: XCUIApplication, _ name: String) {
@@ -2812,4 +2812,195 @@ final class IntegratedNativeUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+}
+
+/// Deterministic native visual checks. Only local static capital / EMA previews allow POST.
+final class WebParityUITests: XCTestCase {
+  private let app = XCUIApplication(bundleIdentifier: "com.waibao2025.trade.integrated")
+  override func setUpWithError() throws {
+    continueAfterFailure = false
+    XCUIDevice.shared.orientation = .portrait
+  }
+  private func launch(_ page: String, _ options: [String] = []) {
+    app.terminate()
+    app.launchArguments = ["--web-parity-fixture", page] + options
+    app.launch()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+  }
+  private func capture(_ name: String) {
+    let image = XCTAttachment(screenshot: app.screenshot())
+    image.name = "web-parity-" + name
+    image.lifetime = .keepAlways
+    add(image)
+  }
+  func testWatchEditingAndResearchModel() {
+    launch("watch-editor")
+    XCTAssertTrue(app.staticTexts["写计划"].waitForExistence(timeout: 10))
+    capture("watch-editor-final")
+    launch("watch-score")
+    let save = app.buttons["确定"]
+    XCTAssertTrue(save.waitForExistence(timeout: 10))
+    capture("watch-score-initial")
+    XCTAssertTrue(app.staticTexts["评分"].isHittable)
+    XCTAssertTrue(save.isHittable)
+    let pinnedY = save.frame.minY
+    app.swipeUp()
+    XCTAssertEqual(save.frame.minY, pinnedY, accuracy: 1)
+    capture("watch-score-pinned")
+    launch("watch-review")
+    XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 10))
+    XCTAssertTrue((app.textViews.firstMatch.value as? String)?.contains("严格按计划执行") == true)
+    XCTAssertLessThan(app.textViews.firstMatch.frame.minY - app.buttons["关闭"].frame.maxY, 50)
+    capture("watch-review")
+    launch("watch-result")
+    XCTAssertTrue(app.textFields["usdt.field.止盈止损金额"].waitForExistence(timeout: 10))
+    XCTAssertEqual(app.textFields["usdt.field.止盈止损金额"].value as? String, "25")
+    XCTAssertTrue(app.buttons["确定"].isHittable)
+    capture("watch-result")
+    launch("research-rules")
+    let model = app.buttons["选择大模型"]
+    XCTAssertTrue(model.waitForExistence(timeout: 10))
+    model.tap()
+    XCTAssertTrue(app.buttons["确定使用"].waitForExistence(timeout: 5))
+    capture("research-model")
+  }
+  func testCorePagesAndDialogs() {
+    let pages: [(String, String)] = [
+      ("trade", "币价"), ("positions", "开仓额度："), ("signals", "外部"), ("profile", "止损额设置"),
+      ("strategies", "我的策略"), ("strategy-editor", "不移动止损位"), ("operations", "北京时间 · 最新记录在前"),
+      ("transfers", "累计转出"), ("watch", "记录"), ("watch-editor", "写计划"), ("research", "录入一个已收盘信号样本"),
+      ("settings", "颜色模式"), ("legal", "用户协议"), ("privacy", "隐私政策"), ("stop-loss", "止损设置"),
+      ("collect", "资金归集账号"), ("login", "RISKON"),
+    ]
+    for (page, text) in pages {
+      launch(page)
+      XCTAssertTrue(
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text))
+          .firstMatch.waitForExistence(timeout: 10), "Missing content on \(page)")
+      capture(page + "-light")
+    }
+  }
+  func testEmptyDarkAndLeadStates() {
+    launch("positions", ["--fixture-empty", "--fixture-dark"])
+    XCTAssertTrue(app.staticTexts["暂无持仓"].waitForExistence(timeout: 10))
+    capture("positions-empty-dark")
+    launch("trade", ["--fixture-dark", "--fixture-unbound"])
+    XCTAssertTrue(app.buttons["输入止损价开仓"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["输入止损价开仓"].isEnabled)
+    capture("trade-unbound-dark")
+    launch("profile", ["--fixture-dark", "--fixture-lead"])
+    XCTAssertTrue(app.staticTexts["带单组合可用余额 (USDT)"].waitForExistence(timeout: 10))
+    capture("profile-lead-dark")
+    XCTAssertFalse(app.buttons["信号"].exists)
+  }
+  func testNativeNavigationAndModalControls() {
+    launch("profile", ["--fixture-unbound"])
+    let bind = app.buttons["profile.bind"]
+    XCTAssertTrue(bind.waitForExistence(timeout: 10))
+    bind.tap()
+    let confirm = app.buttons["确认绑定"]
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+    XCTAssertFalse(confirm.isEnabled)
+    capture("binding-empty")
+    app.buttons["关闭"].firstMatch.tap()
+    app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止损额设置")).firstMatch.tap()
+    XCTAssertTrue(app.staticTexts["止损设置"].waitForExistence(timeout: 5))
+    capture("stop-loss-bottom-modal")
+    app.buttons["关闭"].firstMatch.tap()
+    app.buttons["信号"].firstMatch.tap()
+    app.buttons["内部"].firstMatch.tap()
+    app.buttons["内部信号规则"].tap()
+    XCTAssertTrue(app.staticTexts["信号规则"].waitForExistence(timeout: 5))
+    capture("signal-rules-modal")
+  }
+  func testSecondaryResearchCapitalAndPreflight() {
+    for (page, text) in [
+      ("research-analysis", "量化特征快照"), ("research-rules", "AI 生成策略草案"),
+      ("research-backtest", "运行策略回测"), ("capital", "调整账户资金"), ("reminder", "补资提醒"),
+      ("indicators", "创建指标"), ("preflight", "交易前校准"),
+    ] {
+      launch(page)
+      XCTAssertTrue(
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text))
+          .firstMatch.waitForExistence(timeout: 10), page)
+      capture(page + "-light")
+    }
+  }
+  func testPositionControlsAndTradingPicker() {
+    launch("positions")
+    let strategy = app.buttons["自动止盈中"]
+    XCTAssertTrue(strategy.waitForExistence(timeout: 10))
+    strategy.tap()
+    XCTAssertTrue(app.staticTexts["策略和执行日志"].waitForExistence(timeout: 5))
+    capture("strategy-execution")
+    app.buttons["关闭"].firstMatch.tap()
+    app.buttons["设置保本损"].tap()
+    XCTAssertTrue(app.staticTexts["当前浮盈"].waitForExistence(timeout: 5))
+    capture("break-even")
+    app.buttons["关闭"].firstMatch.tap()
+    app.buttons["设置"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["确认设置"].waitForExistence(timeout: 5))
+    capture("take-profit")
+    app.buttons["关闭"].firstMatch.tap()
+    app.buttons["限价委托"].tap()
+    XCTAssertTrue(app.buttons["追单"].waitForExistence(timeout: 5))
+    capture("limit-orders")
+    app.buttons["历史仓位"].tap()
+    XCTAssertTrue(app.staticTexts["平仓盈亏"].waitForExistence(timeout: 5))
+    capture("position-history")
+    launch("trade")
+    let picker = app.buttons["trade.strategy"]
+    XCTAssertTrue(picker.waitForExistence(timeout: 10))
+    picker.tap()
+    XCTAssertTrue(app.staticTexts["我的策略"].waitForExistence(timeout: 5))
+    capture("trade-strategy-navigation")
+  }
+  func testResearchDateCapitalAndBatchPreview() {
+    launch("research-analysis")
+    let chart = app.buttons["查看蜡烛图"]
+    XCTAssertTrue(chart.waitForExistence(timeout: 10))
+    chart.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["research.candles"].waitForExistence(timeout: 10))
+    capture("research-candles")
+    launch("capital", ["--fixture-capital-refill"])
+    XCTAssertTrue(app.buttons["确认调整"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["确认调整"].isEnabled)
+    capture("capital-refill-only")
+    launch("positions", ["--fixture-multiple"])
+    let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "全部平仓(")).firstMatch
+    if !all.isHittable { app.swipeUp() }
+    XCTAssertTrue(all.waitForExistence(timeout: 10))
+    all.tap()
+    XCTAssertTrue(app.staticTexts["全部平仓"].waitForExistence(timeout: 5))
+    capture("close-all-confirmation")
+    XCTAssertTrue(app.buttons["取消"].exists)
+    launch("trade")
+    let stop = app.textFields["usdt.field.止损价"]
+    XCTAssertTrue(stop.waitForExistence(timeout: 10))
+    stop.tap()
+    stop.typeText("66000")
+    let done = app.buttons["完成"].firstMatch
+    if done.waitForExistence(timeout: 3) { done.tap() }
+    app.buttons["方向初筛"].tap()
+    let open = app.buttons["市价开多"]
+    if !open.isHittable { app.swipeUp() }
+    XCTAssertTrue(open.waitForExistence(timeout: 10))
+    XCTAssertTrue(open.isHittable)
+    capture("ema-passed")
+  }
+  func testLoginAndLocalIndicatorEditing() {
+    launch("login")
+    app.buttons["注册账号"].tap()
+    XCTAssertTrue(app.staticTexts["暂未开放注册，请联系管理员"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["注册"].isEnabled)
+    capture("registration-closed")
+    app.buttons["返回登录"].tap()
+    app.buttons["忘记密码？"].tap()
+    XCTAssertTrue(app.buttons["发送重置邮件"].waitForExistence(timeout: 5))
+    capture("password-reset-request")
+    launch("indicators")
+    app.buttons["创建指标"].tap()
+    XCTAssertTrue(app.buttons["保存指标"].waitForExistence(timeout: 5))
+    capture("indicator-editor")
+  }
 }

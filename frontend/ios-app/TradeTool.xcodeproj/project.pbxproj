@@ -107,6 +107,7 @@
 		3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */; };
 		51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */; };
 		010000000000000000000056 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005D /* PrivacyInfo.xcprivacy */; };
+		010000000000000000000057 /* Lucide-ISC.txt in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* Lucide-ISC.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -234,6 +235,7 @@
 		F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTTradingViews.swift; sourceTree = "<group>"; };
 		72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTWatchViews.swift; sourceTree = "<group>"; };
 		02000000000000000000005D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		02000000000000000000005E /* Lucide-ISC.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "Lucide-ISC.txt"; path = "../../docs/licenses/Lucide-ISC.txt"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -376,6 +378,7 @@
 				02000000000000000000001E /* Info.plist */,
 				020000000000000000000055 /* TradeTool.entitlements */,
 				02000000000000000000005D /* PrivacyInfo.xcprivacy */,
+				02000000000000000000005E /* Lucide-ISC.txt */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -718,6 +721,7 @@
 				01000000000000000000000A /* Assets.xcassets in Resources */,
 				010000000000000000000018 /* Localizable.strings in Resources */,
 				010000000000000000000056 /* PrivacyInfo.xcprivacy in Resources */,
+				010000000000000000000057 /* Lucide-ISC.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -57,7 +57,9 @@ struct TradeToolApp: App {
     @ViewBuilder
     private var appContent: some View {
 #if DEBUG
-        if ChartCalibrationLaunchConfiguration.isEnabled {
+        if ProcessInfo.processInfo.arguments.contains("--web-parity-fixture") {
+            WebParityFixtureView()
+        } else if ChartCalibrationLaunchConfiguration.isEnabled {
             ChartCalibrationFixtureView()
                 .preferredColorScheme(appearance.colorScheme)
         } else if ChartStressLaunchConfiguration.isEnabled {
@@ -223,4 +225,604 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         return Int64(value.duration * 1_000)
     }
 }
+#endif
+
+#if DEBUG
+  /// Isolated visual states. This API has no network transport; only local precheck / EMA previews allow POST.
+  private struct WebParityFixtureAPI: APIClient {
+    static var empty: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-empty") }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+      guard
+        request.method == .get
+          || ["/v1/trade/capital/precheck", "/v1/trade/ema-check"].contains(request.path)
+      else {
+        throw APIError.business(code: "VISUAL_FIXTURE", message: "视觉校准模式不执行写操作")
+      }
+      let all = try JSONDecoder().decode([String: JSONValue].self, from: Data(Self.payload.utf8))
+      var value =
+        all[
+          request.path == "/v1/trade/capital/precheck"
+            ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if Self.empty
+        && [
+          "/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list",
+          "/v1/trade/tradingview/signals", "/v1/watch-plan/list", "/v1/signal-research/samples",
+          "/v1/strategy/list",
+        ].contains(request.path)
+      {
+        value = .array([])
+      }
+      if request.path == "/v1/api/info"
+        && ProcessInfo.processInfo.arguments.contains("--fixture-unbound")
+      {
+        value = .null
+      }
+      if request.path == "/v1/trade/ema-check" {
+        value = .object([
+          "check_id": .string("visual-fixture-only"), "symbol": .string("BTCUSDT"),
+          "side": .string("long"), "has_any_matching_interval": .bool(true),
+          "expires_at": .string(
+            ISO8601DateFormatter().string(from: Date().addingTimeInterval(180))),
+          "items": .array(
+            ["15m", "1h", "4h", "1d"].map {
+              .object([
+                "interval": .string($0), "label": .string($0), "supported": .bool(true),
+                "matches_direction": .bool(true), "relation": .string("EMA21 > EMA55 > EMA144"),
+              ])
+            }),
+        ])
+      }
+      if request.path == "/v1/position/list",
+        ProcessInfo.processInfo.arguments.contains("--fixture-multiple"),
+        let first = value.rows.first
+      {
+        var second = first.fields
+        second["id"] = .number(2)
+        second["symbol"] = .string("ETHUSDT")
+        value = .array([first, .object(second)])
+      }
+      if request.path == "/v1/trade/capital/precheck",
+        ProcessInfo.processInfo.arguments.contains("--fixture-capital-refill")
+      {
+        var plan = value.fields
+        plan["transfer_amount"] = .string("0")
+        plan["futures_collect"] = .string("0")
+        plan["funding_to_futures"] = .string("40")
+        plan["futures_balance"] = .string("10")
+        plan["collection_total"] = .string("0")
+        value = .object(plan)
+      }
+      if request.path == "/v1/signal-research/chart" {
+        let candles: [JSONValue] = (0..<50).map { i in
+          let center = Double(67000 + i * 12)
+          return .object([
+            "time": .number(Double(1_793_200_000 + i * 3600)),
+            "close_time": .number(Double(1_793_200_000 + (i + 1) * 3600) * 1000),
+            "open": .number(center),
+            "high": .number(center + 200), "low": .number(center - 200),
+            "close": .number(center + 100), "ema21": .number(center),
+            "ema55": .number(center - 200), "ema144": .number(center - 400),
+            "supertrend": .number(center - 600),
+          ])
+        }
+        value = .object(["candles": .array(candles), "signal_time": .number(1_793_415_600_000)])
+      }
+      return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+    static let payload = #"""
+      {
+        "/v1/api/info": {
+          "id": 1,
+          "alias": "视觉校准",
+          "status": 1
+        },
+        "/v1/account/info": {
+          "balance": "100",
+          "spot_balance": "0",
+          "funding_balance": "0",
+          "stop_loss_amount": "10",
+          "pending_capital_collection": false,
+          "capital_trigger_multiplier": "1.5",
+          "capital_target_multiplier": "5"
+        },
+        "/v1/account/profile": {
+          "display_name": "视觉校准",
+          "account_label": "主账户",
+          "account_type": "master"
+        },
+        "/v1/account/version": {
+          "version": "1.0.0",
+          "lead_trading_enabled": true,
+          "lead_trading_bound": false
+        },
+        "/v1/strategy/list": [
+          {
+            "id": 1,
+            "name": "30-20-50",
+            "is_active": true,
+            "levels": [
+              {
+                "profitRR": "1",
+                "reducePosition": "30",
+                "stopLossType": "absoluteRR",
+                "stopLossAbsoluteRR": "0"
+              },
+              {
+                "profitRR": "2",
+                "reducePosition": "20",
+                "stopLossType": "absoluteRR",
+                "stopLossAbsoluteRR": "1"
+              },
+              {
+                "profitRR": "3",
+                "reducePosition": "50",
+                "stopLossType": "none"
+              }
+            ]
+          }
+        ],
+        "/v1/trade/symbol/info": {
+          "symbol": "BTCUSDT",
+          "current_price": "68000"
+        },
+        "/v1/trade/symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ],
+        "/v1/position/list": [
+          {
+            "id": 101,
+            "symbol": "BTCUSDT",
+            "side": 0,
+            "leverage": 10,
+            "stop_loss_amount": "10",
+            "position_amount": "1000.00",
+            "pnl": "25.00",
+            "open_price": "66341.46",
+            "current_price": "68000.00",
+            "stop_loss_price": "65678.05",
+            "manual_take_profit_price": "未设置",
+            "fee": "0.50",
+            "opened_at": "2026-10-31T02:00:00Z",
+            "created_at": "2026-10-31T02:00:00Z",
+            "strategy_name": "30-20-50",
+            "strategy_id": 1,
+            "has_strategy_logs": true,
+            "strategy_status": 1,
+            "can_bind_strategy": true,
+            "strategy_config": [
+              {
+                "profitRR": "1",
+                "reducePosition": "30",
+                "stopLossType": "absoluteRR",
+                "stopLossAbsoluteRR": "0"
+              },
+              {
+                "profitRR": "2",
+                "reducePosition": "20",
+                "stopLossType": "absoluteRR",
+                "stopLossAbsoluteRR": "1"
+              },
+              {
+                "profitRR": "3",
+                "reducePosition": "50",
+                "stopLossType": "none"
+              }
+            ],
+            "strategy_snapshot_id": 1,
+            "estimated_total_fee": "1.00",
+            "entry_realized_fee": "-0.50",
+            "entry_fee_asset": "USDT",
+            "entry_fee_status": "confirmed",
+            "market_stop_set": true,
+            "market_stop_price": "65678.05",
+            "manual_take_profit_set": false,
+            "stop_protection_status": "complete",
+            "position_origin": "web"
+          }
+        ],
+        "/v1/position/history": {
+          "items": [
+            {
+              "id": 101,
+              "symbol": "BTCUSDT",
+              "side": 0,
+              "leverage": 10,
+              "stop_loss_amount": "10",
+              "position_amount": "1000.00",
+              "pnl": "25.00",
+              "open_price": "66341.46",
+              "current_price": "68000.00",
+              "stop_loss_price": "65678.05",
+              "manual_take_profit_price": "未设置",
+              "fee": "0.50",
+              "opened_at": "2026-10-31T02:00:00Z",
+              "created_at": "2026-10-31T02:00:00Z",
+              "strategy_name": "30-20-50",
+              "strategy_id": 1,
+              "has_strategy_logs": true,
+              "closed_at": "2026-10-31T03:00:00Z",
+              "close_price": "68000",
+              "settlement_status": "settled"
+            }
+          ],
+          "pagination": {
+            "total": 1,
+            "has_next": false
+          }
+        },
+        "/v1/trade/limit-order/list": [
+          {
+            "id": 101,
+            "symbol": "BTCUSDT",
+            "side": 0,
+            "leverage": 10,
+            "stop_loss_amount": "10",
+            "position_amount": "1000.00",
+            "pnl": "25.00",
+            "open_price": "66341.46",
+            "current_price": "68000.00",
+            "stop_loss_price": "65678.05",
+            "manual_take_profit_price": "未设置",
+            "fee": "0.50",
+            "opened_at": "2026-10-31T02:00:00Z",
+            "created_at": "2026-10-31T02:00:00Z",
+            "strategy_name": "30-20-50",
+            "strategy_id": 1,
+            "has_strategy_logs": true,
+            "limit_price": "67000",
+            "size": "0.01",
+            "filled_size": "0",
+            "status_text": "等待成交",
+            "can_chase": true
+          }
+        ],
+        "/v1/trade/tradingview/signals": [
+          {
+            "id": 1,
+            "source": "external",
+            "symbol": "BTCUSDT",
+            "direction": "LONG",
+            "interval": "1h",
+            "strategy": "EMA144 回踩",
+            "price_display": "68000",
+            "comment": "趋势回踩后收回关键位置",
+            "signal_time": "2026-10-31T03:00:00Z"
+          }
+        ],
+        "/v1/account/operation-logs": {
+          "records": [
+            {
+              "id": 1,
+              "symbol": "BTCUSDT",
+              "side": "long",
+              "status": "success",
+              "source": "strategy",
+              "order_id": 101,
+              "occurred_at": "2026-10-31T03:00:00Z",
+              "message": "已执行 L1 止盈，止损位同步更新。"
+            }
+          ],
+          "has_more": false
+        },
+        "/v1/account/transfer-history": {
+          "start_at": "2026-10-01T00:00:00Z",
+          "account_type": "master",
+          "net_amount": "50.00",
+          "outgoing_total": "100.00",
+          "incoming_total": "50.00",
+          "pagination": {
+            "total": 1,
+            "has_next": false
+          },
+          "records": [
+            {
+              "id": 1,
+              "direction": "outgoing",
+              "amount": "100.00",
+              "asset": "USDT",
+              "route": "合约 → 现货",
+              "channel": "内部划转",
+              "occurred_at": "2026-10-31T03:00:00Z"
+            }
+          ]
+        },
+        "/v1/watch-plan/list": [
+          {
+            "id": 1,
+            "symbol": "BTCUSDT",
+            "plan_date": "2026-10-31",
+            "plan_type": 0,
+            "timeframe": "1h",
+            "direction": 0,
+            "content": "回踩 EMA144，等待关键位置确认",
+            "take_profit_expectation": "前高附近分批止盈",
+            "review_content": "严格按计划执行",
+            "status": 1,
+            "result": 2,
+            "result_amount": "25",
+            "score": 85,
+            "score_payload": {
+              "checks": [],
+              "vetoes": []
+            },
+            "created_at": "2026-10-31T02:00:00Z"
+          }
+        ],
+        "/v1/signal-research/samples": [
+          {
+            "id": 1,
+            "symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "signal_time": "2026-10-31T03:00:00Z",
+            "expected_direction": "long",
+            "note": "趋势回踩 EMA144 后收回关键位置",
+            "trusted": true,
+            "fetched_at": "2026-10-31T03:01:00Z",
+            "features": {
+              "trend": "long",
+              "supertrend_flip": false,
+              "ema_alignment": "bullish",
+              "close_to_ema21_atr": "0.32",
+              "close_to_ema55_atr": "0.48",
+              "close_to_ema144_atr": "0.05",
+              "atr_percent": "1.25",
+              "volume_ratio_20": "1.42",
+              "return_20_pct": "2.1",
+              "supertrend_age_bars": 8
+            }
+          }
+        ],
+        "/v1/signal-research/strategies": [
+          {
+            "id": 1,
+            "name": "趋势回踩研究",
+            "version": 1,
+            "status": "published",
+            "natural_rules": [
+              "SuperTrend 多头趋势下等待回踩 EMA144",
+              "收盘价回到关键均线之上且成交量放大"
+            ],
+            "rationale": "只使用已收盘的数据，避免未来信息。",
+            "code": "def signal(features):\n    return features[\"trend\"] == \"long\"",
+            "research_packet": {
+              "trusted_count": 1
+            },
+            "definition": {}
+          }
+        ],
+        "/v1/auth/admin-settings": {
+          "open_registration": false
+        },
+        "/v1/account/capital-collect-account": {
+          "account_type": "master",
+          "capital_collect_address": "",
+          "capital_collect_network": ""
+        },
+        "/v1/account/stop-loss": {
+          "stop_loss_amount": "10",
+          "balance": "100",
+          "total_balance": "100",
+          "current_amount": "10",
+          "percentage": 10,
+          "pending_amount": null
+        },
+        "/v1/trade/capital/remind": {
+          "status": "shortfall",
+          "total_balance": "10",
+          "minimum_topup": "5",
+          "maximum_topup": "40",
+          "account_total": "10",
+          "futures_balance": "10",
+          "funding_balance": "0",
+          "spot_balance": "0",
+          "refill_trigger": "15",
+          "target": "50",
+          "minimum_open_balance": "15",
+          "maximum_futures_balance": "50",
+          "email_title": "账户补资提醒",
+          "email_body": "当前账户总资产低于开仓最低线。建议补充 5 至 40 USDT。",
+          "email": "visual@example.invalid"
+        },
+        "/v1/trade/capital/normalize": {
+          "status": "normalization_required",
+          "message": "请核对本次资金调整计划",
+          "total_balance": "100",
+          "account_total": "100",
+          "futures_balance": "100",
+          "refill_trigger": "15",
+          "target": "50",
+          "minimum_open_balance": "15",
+          "maximum_futures_balance": "50",
+          "plan_token": "visual-fixture-plan-only",
+          "futures_collect": "50",
+            "transfer_amount": "50",
+            "collection_total": "50",
+            "destination_address": "0x0000000000000000000000000000000000000000",
+            "destination_network": "BSC"
+        },
+        "/v1/auth/preflight-status": {
+          "preflight_completed_at": "2026-10-31T23:59:59Z"
+        },
+        "/api/commands": [],
+        "/v1/strategy/log": {
+          "strategy_name": "30-20-50",
+          "strategy_config": [
+            {
+              "profitRR": "1",
+              "reducePosition": "30",
+              "stopLossType": "absoluteRR",
+              "stopLossAbsoluteRR": "0"
+            },
+            {
+              "profitRR": "2",
+              "reducePosition": "20",
+              "stopLossType": "absoluteRR",
+              "stopLossAbsoluteRR": "1"
+            },
+            {
+              "profitRR": "3",
+              "reducePosition": "50",
+              "stopLossType": "none"
+            }
+          ],
+          "logs": [
+            {
+              "result": "成功",
+              "behavior_desc": "已执行 L1 止盈，止损位移动到 0R 处。",
+              "error": ""
+            }
+          ]
+        },
+        "/v1/signal-research/samples/1": {
+          "id": 1,
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "signal_time": "2026-10-31T03:00:00Z",
+          "expected_direction": "long",
+          "note": "趋势回踩 EMA144 后收回关键位置",
+          "trusted": true,
+          "fetched_at": "2026-10-31T03:01:00Z",
+          "features": {
+            "trend": "long",
+            "supertrend_flip": false,
+            "ema_alignment": "bullish",
+            "close_to_ema21_atr": "0.32",
+            "close_to_ema55_atr": "0.48",
+            "close_to_ema144_atr": "0.05",
+            "atr_percent": "1.25",
+            "volume_ratio_20": "1.42",
+            "return_20_pct": "2.1",
+            "supertrend_age_bars": 8
+          }
+        },
+        "/v1/signal-research/ai-models": [
+          {
+            "id": 1,
+            "name": "研究模型",
+            "provider": "fixture",
+            "model": "visual-only",
+            "is_active": true
+          }
+        ],
+        "/v1/signal-research/strategies/preview": {
+          "trusted_count": 1,
+          "untrusted_count": 0,
+          "samples": [
+            {
+              "id": 1,
+              "symbol": "BTCUSDT",
+              "timeframe": "1h",
+              "signal_time": "2026-10-31T03:00:00Z",
+              "expected_direction": "long",
+              "note": "趋势回踩 EMA144 后收回关键位置",
+              "trusted": true,
+              "fetched_at": "2026-10-31T03:01:00Z",
+              "features": {
+                "trend": "long",
+                "supertrend_flip": false,
+                "ema_alignment": "bullish",
+                "close_to_ema21_atr": "0.32",
+                "close_to_ema55_atr": "0.48",
+                "close_to_ema144_atr": "0.05",
+                "atr_percent": "1.25",
+                "volume_ratio_20": "1.42",
+                "return_20_pct": "2.1",
+                "supertrend_age_bars": 8
+              }
+            }
+          ]
+        },
+        "/v1/signal-research/chart": {
+          "signal_time": 1793415600000,
+          "candles": []
+        }
+      }
+      """#
+  }
+
+  private struct WebParityFixtureView: View {
+    @StateObject private var container = AppContainer(
+      baseURL: URL(string: "http://127.0.0.1:1/")!, bundleIdentifier: "com.riskon.visual-fixture")
+    @StateObject private var store = USDTStore(api: WebParityFixtureAPI())
+    @State private var tab: AppTab = .trade
+    private var page: String {
+      let args = ProcessInfo.processInfo.arguments
+      guard let index = args.firstIndex(of: "--web-parity-fixture"),
+        args.indices.contains(index + 1)
+      else { return "trade" }
+      return args[index + 1]
+    }
+    private var dark: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-dark") }
+    private var watchPlan: JSONValue? {
+      (try? JSONDecoder().decode(
+        [String: JSONValue].self, from: Data(WebParityFixtureAPI.payload.utf8)))?[
+          "/v1/watch-plan/list"]?.rows.first
+    }
+    var body: some View {
+      NavigationStack {
+        VStack(spacing: 0) {
+          content.frame(maxWidth: .infinity, maxHeight: .infinity)
+          if ["trade", "positions", "signals", "profile"].contains(page) {
+            BottomNavigationBar(
+              selection: $tab,
+              tabs: [.markets, .positions, .trade] + (store.mode == "lead" ? [] : [.signals]) + [
+                .settings
+              ])
+          }
+        }
+      }
+      .environmentObject(container).environmentObject(container.authStore).environmentObject(
+        container.toastCenter
+      ).environmentObject(store)
+      .preferredColorScheme(dark ? .dark : .light)
+      .task {
+        await store.begin(userID: "_web_visual_fixture")
+        if ProcessInfo.processInfo.arguments.contains("--fixture-lead") {
+          store.switchMode("lead")
+        } else if store.mode != "ordinary" {
+          store.switchMode("ordinary")
+        }
+        tab =
+          page == "positions"
+          ? .positions : page == "signals" ? .signals : page == "profile" ? .settings : .trade
+      }
+    }
+    @ViewBuilder private var content: some View {
+      switch page {
+      case "login": LoginView()
+      case "strategies": USDTStrategiesView()
+      case "strategy-editor": USDTStrategyEditor(strategy: nil)
+      case "operations": USDTRecordsView(kind: .operations)
+      case "transfers": USDTRecordsView(kind: .transfers)
+      case "watch": USDTWatchPlansView()
+      case "watch-editor": USDTWatchEditor(plan: nil)
+      case "watch-score": USDTWatchEditor(plan: watchPlan, pane: "score")
+      case "watch-review": USDTWatchEditor(plan: watchPlan, pane: "review")
+      case "watch-result": USDTWatchEditor(plan: watchPlan, pane: "result")
+      case "indicators": USDTIndicatorsView()
+      case "preflight": USDTPreflightView(completed: {})
+      case "research": USDTResearchView()
+      case "research-analysis": USDTResearchView(initialPage: "analysis")
+      case "research-rules": USDTResearchView(initialPage: "rules")
+      case "research-backtest": USDTResearchView(initialPage: "backtest")
+      case "settings": USDTSettingsView()
+      case "legal": USDTLegalView()
+      case "privacy": USDTLegalView(document: "隐私政策")
+      case "binding": USDTBindingView()
+      case "stop-loss": USDTStopLossView()
+      case "collect": USDTCollectAccountView()
+      case "capital": USDTCapitalView()
+      case "reminder": USDTCapitalReminderView()
+      default:
+        switch tab {
+        case .positions: USDTPositionsView()
+        case .signals: USDTSignalsView(openChart: { _, _ in })
+        case .settings: USDTProfileView()
+        default: USDTTradeView()
+        }
+      }
+    }
+  }
 #endif

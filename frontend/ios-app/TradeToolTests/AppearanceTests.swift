@@ -151,3 +151,25 @@ final class AppearanceTests: XCTestCase {
         return (max(lhs, rhs) + 0.05) / (min(lhs, rhs) + 0.05)
     }
 }
+
+final class WebParityFormattingTests: XCTestCase {
+  func testStopLossPreviewRoundsAcrossWebStepBoundaries() {
+    let examples = [
+      ("0", "1"), ("19.01", "20"), ("20", "20"), ("20.01", "25"), ("99.01", "100"), ("100", "100"),
+      ("100.01", "110"),
+    ]
+    for (input, expected) in examples {
+      XCTAssertEqual(
+        WebStopLossAmount.roundUp(Decimal(string: input)!), Decimal(string: expected)!, input)
+    }
+  }
+  func testResearchAndRecordTimesAcceptFractionalISOAndExchangeMilliseconds() throws {
+    let fractional = try XCTUnwrap(WebFormat.date("2026-10-31T02:00:00.123Z"))
+    let milliseconds = String(Int64((fractional.timeIntervalSince1970 * 1000).rounded()))
+    XCTAssertEqual(
+      try XCTUnwrap(WebFormat.date(milliseconds)).timeIntervalSince1970,
+      fractional.timeIntervalSince1970, accuracy: 0.001)
+    XCTAssertNotNil(WebFormat.date("2026-10-31T02:00:00Z"))
+    XCTAssertNil(WebFormat.date("--"))
+  }
+}

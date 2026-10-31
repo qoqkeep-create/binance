@@ -1,112 +1,604 @@
 import SwiftUI
 
 struct USDTStrategiesView: View {
-    @EnvironmentObject private var store: USDTStore
-    @State private var notice = ""
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                NavigationLink { USDTStrategyEditor(strategy: nil) } label: { Label("新增止盈策略", systemImage: "plus") }.buttonStyle(.bordered)
-                ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
-                    USDTCard {
-                        HStack { Text(strategy.value("name")).font(.headline); Spacer(); if strategy["is_active"]?.flag == true { Text("使用中").foregroundStyle(BinanceTheme.accentText) } }
-                        ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) { i, level in
-                            USDTMetric(title: "L\(i + 1) · \(level.value("profitRR"))R", value: "减仓 \(level.value("reducePosition"))%")
-                        }
-                        HStack {
-                            NavigationLink("编辑") { USDTStrategyEditor(strategy: strategy) }
-                            Spacer()
-                            Button("设为当前") { Task { do { _ = try await store.send("/v1/strategy/set-active", ["strategy_id": strategy["id"] ?? .null]); await store.refresh() } catch { notice = error.localizedDescription } } }
-                        }
-                    }
-                }
-                USDTNotice(text: notice)
-                if store.strategies.isEmpty { USDTEmptyState(title: "暂无策略", error: store.notice) { Task { await store.refresh() } } }
-            }.padding(16)
-        }.usdtPage("止盈策略").task { await store.refresh() }
+  var returnAfterSelection = false
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: USDTStore
+  @State private var notice = ""
+  @State private var selected: JSONValue = .null
+  @State private var selecting = false
+  @State private var deleting = false
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 16) {
+        ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
+          VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+              Button {
+                selected = strategy
+                selecting = true
+              } label: {
+                Text(strategy.value("name")).font(.system(size: 18, weight: .medium)).frame(
+                  maxWidth: .infinity, alignment: .leading)
+              }
+              Button {
+                selected = strategy
+                deleting = true
+              } label: {
+                WebIcon("trash", size: 16).foregroundStyle(WebTheme.danger).frame(
+                  width: 28, height: 28)
+              }
+              NavigationLink {
+                USDTStrategyEditor(strategy: strategy)
+              } label: {
+                WebIcon("square.and.pencil", size: 16).foregroundStyle(WebTheme.secondary).frame(
+                  width: 28, height: 28)
+              }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+              ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) {
+                index, level in
+                Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
+                  .foregroundStyle(WebTheme.secondary)
+              }
+            }.onTapGesture {
+              selected = strategy
+              selecting = true
+            }
+          }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(
+            WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)
+          ).overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+        }
+        NavigationLink {
+          USDTStrategyEditor(strategy: nil)
+        } label: {
+          Text("新建策略")
+        }.buttonStyle(WebButtonStyle(height: 52, radius: 14))
+        USDTNotice(text: notice)
+      }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
+    }.scrollIndicators(.hidden).usdtPage("我的策略").task { await store.refresh() }
+      .webModal(isPresented: $selecting) {
+        WebModal(title: "确认选择策略") {
+          Text("确定要选择策略 \(selected.value("name")) 吗？").foregroundStyle(WebTheme.secondary)
+          HStack(spacing: 12) {
+            Button("取消") { selecting = false }.buttonStyle(
+              WebButtonStyle(kind: .secondary, radius: 14))
+            Button("确认选择") {
+              selecting = false
+              mutate("set-active")
+            }.buttonStyle(WebButtonStyle(radius: 14))
+          }
+        }
+      }
+      .webModal(isPresented: $deleting) {
+        WebModal(title: "确认删除") {
+          Text("确定要删除这个策略吗？").foregroundStyle(WebTheme.secondary)
+          HStack(spacing: 12) {
+            Button("取消") { deleting = false }.buttonStyle(
+              WebButtonStyle(kind: .secondary, radius: 14))
+            Button("删除") {
+              deleting = false
+              mutate("delete")
+            }.buttonStyle(WebButtonStyle(kind: .danger, radius: 14))
+          }
+        }
+      }
+  }
+  private func mutate(_ action: String) {
+    Task {
+      do {
+        _ = try await store.send("/v1/strategy/" + action, ["strategy_id": selected["id"] ?? .null])
+        await store.refresh()
+        if action == "set-active" && returnAfterSelection { dismiss() }
+      } catch { notice = error.localizedDescription }
     }
+  }
 }
 
 private struct USDTStrategyLevel: Identifiable {
-    let id = UUID()
-    var profit = "1"
-    var reduce = "20"
-    var stopType = "none"
-    var stopValue = "0"
-    var payload: JSONValue {
-        var result: [String: JSONValue] = ["profitRR": .string(profit), "reducePosition": .string(reduce), "stopLossType": .string(stopType)]
-        if stopType == "fixedRR" { result["stopLossRR"] = .string(stopValue) }
-        if stopType == "absoluteRR" { result["stopLossAbsoluteRR"] = .string(stopValue) }
-        return .object(result)
-    }
+  let id = UUID()
+  var profit = "1"
+  var reduce = "20"
+  var stopType = "none"
+  var stopValue = "0"
+  var payload: JSONValue {
+    var result: [String: JSONValue] = [
+      "profitRR": .string(profit), "reducePosition": .string(reduce),
+      "stopLossType": .string(stopType),
+    ]
+    if stopType == "fixedRR" { result["stopLossRR"] = .string(stopValue) }
+    if stopType == "absoluteRR" { result["stopLossAbsoluteRR"] = .string(stopValue) }
+    return .object(result)
+  }
 }
 
 struct USDTStrategyEditor: View {
-    @EnvironmentObject private var store: USDTStore
-    @Environment(\.dismiss) private var dismiss
-    let strategy: JSONValue?
-    @State private var name = ""
-    @State private var levels = [USDTStrategyLevel()]
-    @State private var notice = ""
-    @State private var busy = false
-    @State private var delete = false
-    var body: some View {
-        Form {
-            Section("策略名称") { TextField("名称", text: $name) }
-            ForEach($levels) { $level in
-                Section("层级 \((levels.firstIndex(where: { $0.id == level.id }) ?? 0) + 1)") {
-                    USDTField(title: "盈利达到 R", text: $level.profit, numeric: true)
-                    USDTField(title: "减仓比例 %", text: $level.reduce, numeric: true)
-                    Picker("止损移动", selection: $level.stopType) {
-                        Text("保持原止损").tag("none"); Text("当前浮盈减 xR").tag("fixedRR"); Text("移动到 xR").tag("absoluteRR")
-                    }
-                    if level.stopType != "none" { USDTField(title: "xR", text: $level.stopValue, numeric: true) }
-                    if levels.count > 1 { Button("删除此层", role: .destructive) { levels.removeAll { $0.id == level.id } } }
-                }
-            }
-            if levels.count < 5 { Button("添加层级") { levels.append(USDTStrategyLevel(profit: String(levels.count + 1))) } }
-            Section {
-                Button(busy ? "保存中…" : "保存策略") { save() }.disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
-                if strategy != nil { Button("删除策略", role: .destructive) { delete = true } }
-                USDTNotice(text: notice)
-            }
-        }.usdtPage(strategy == nil ? "新增策略" : "编辑策略").onAppear {
-            guard let strategy else { return }
-            name = strategy.value("name")
-            levels = (strategy["levels"]?.rows ?? []).map { row in
-                USDTStrategyLevel(profit: row.value("profitRR"), reduce: row.value("reducePosition"), stopType: row.value("stopLossType"), stopValue: row.value(row.value("stopLossType") == "fixedRR" ? "stopLossRR" : "stopLossAbsoluteRR", fallback: "0"))
-            }
-        }.confirmationDialog("删除此策略？", isPresented: $delete) {
-            Button("删除", role: .destructive) { Task { do { _ = try await store.send("/v1/strategy/delete", ["strategy_id": strategy?["id"] ?? .null]); await store.refresh(); dismiss() } catch { notice = error.localizedDescription } } }
+  @EnvironmentObject private var store: USDTStore
+  @Environment(\.dismiss) private var dismiss
+  let strategy: JSONValue?
+  @State private var name = "新策略"
+  @State private var editingName = false
+  @State private var levels = [USDTStrategyLevel()]
+  @State private var notice = ""
+  @State private var busy = false
+  @State private var delete = false
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 12) {
+        Text("说明：R是指基准止损金额，您当前的基准止损金额为\(store.riskAmount)U").font(.system(size: 14))
+          .foregroundStyle(WebTheme.brand).frame(maxWidth: .infinity, alignment: .leading).padding(
+            .horizontal, 12
+          ).padding(.vertical, 8).background(
+            WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        ForEach($levels) { $level in
+          levelCard($level)
         }
+        if levels.count < 5 {
+          Button {
+            levels.append(USDTStrategyLevel(profit: String(levels.count + 1)))
+          } label: {
+            WebLabel("添加层级", "plus")
+          }.buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
+        }
+        USDTNotice(text: notice)
+      }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
+    }.scrollIndicators(.hidden)
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        Button(busy ? "保存中…" : "保存策略") { save() }.buttonStyle(
+          WebButtonStyle(height: 52, radius: 14)
+        ).disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty).padding(16)
+          .background(WebTheme.surface)
+      }.background(WebTheme.page.ignoresSafeArea()).foregroundStyle(WebTheme.text).toolbar(
+        .hidden, for: .navigationBar
+      )
+      .safeAreaInset(edge: .top, spacing: 0) {
+        ZStack {
+          WebPageHeader("")
+          HStack(spacing: 8) {
+            if editingName {
+              TextField("策略名称", text: $name).font(.system(size: 18, weight: .bold))
+                .multilineTextAlignment(.center).frame(maxWidth: 220).onSubmit {
+                  editingName = false
+                }.accessibilityIdentifier("strategy.name")
+            } else {
+              Text(name).font(.system(size: 18, weight: .bold))
+              Button {
+                editingName = true
+              } label: {
+                WebIcon("pencil", size: 16).foregroundStyle(WebTheme.muted)
+              }.accessibilityLabel("编辑策略名称")
+            }
+          }.padding(.bottom, 16)
+        }
+      }.onAppear {
+        guard let strategy else { return }
+        name = strategy.value("name")
+        levels = (strategy["levels"]?.rows ?? []).map { row in
+          USDTStrategyLevel(
+            profit: row.value("profitRR"), reduce: row.value("reducePosition"),
+            stopType: row.value("stopLossType"),
+            stopValue: row.value(
+              row.value("stopLossType") == "fixedRR" ? "stopLossRR" : "stopLossAbsoluteRR",
+              fallback: "0"))
+        }
+      }
+  }
+
+  private func levelCard(_ binding: Binding<USDTStrategyLevel>) -> some View {
+    let index = levels.firstIndex { $0.id == binding.wrappedValue.id } ?? 0
+    let remaining =
+      100 - levels.prefix(index).reduce(Decimal.zero) { $0 + (Decimal(string: $1.reduce) ?? 0) }
+    return USDTCard(radius: 16, spacing: 12) {
+      HStack(spacing: 8) {
+        Text("L\(index + 1):").font(.system(size: 16, weight: .semibold))
+        Text("剩余仓位 \(NSDecimalNumber(decimal: remaining).stringValue)%").font(.system(size: 14))
+          .foregroundStyle(WebTheme.brand).padding(.horizontal, 8).padding(.vertical, 2).background(
+            WebTheme.brand.opacity(0.1), in: Capsule())
+        Spacer()
+        if levels.count > 1 {
+          Button {
+            levels.removeAll { $0.id == binding.wrappedValue.id }
+          } label: {
+            WebIcon("trash", size: 16).foregroundStyle(WebTheme.danger)
+          }
+        }
+      }
+      HStack(spacing: 8) {
+        Text("当盈利达到").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+        WebNumberInput(text: binding.profit, suffix: "R")
+        Text("时").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+        Spacer()
+      }
+      Rectangle().fill(WebTheme.border).frame(height: 1)
+      WebRadio(selected: (Decimal(string: binding.wrappedValue.reduce) ?? 0) == 0, title: "不减仓") {
+        binding.wrappedValue.reduce = "0"
+      }
+      HStack(spacing: 10) {
+        WebRadio(selected: (Decimal(string: binding.wrappedValue.reduce) ?? 0) > 0, title: "减仓") {
+          if (Decimal(string: binding.wrappedValue.reduce) ?? 0) == 0 {
+            binding.wrappedValue.reduce = "20"
+          }
+        }
+        if (Decimal(string: binding.wrappedValue.reduce) ?? 0) > 0 {
+          WebNumberInput(text: binding.reduce, suffix: "%", width: 64)
+        }
+        Spacer()
+      }
+      ZStack {
+        Rectangle().fill(WebTheme.border).frame(height: 1)
+        Text("同时").font(.system(size: 12)).foregroundStyle(WebTheme.muted).padding(.horizontal, 8)
+          .background(WebTheme.surface)
+      }.padding(.vertical, 6)
+      WebRadio(selected: binding.wrappedValue.stopType == "none", title: "不移动止损位") {
+        binding.wrappedValue.stopType = "none"
+      }
+      WebRadio(selected: binding.wrappedValue.stopType != "none", title: "移动止损位") {
+        if binding.wrappedValue.stopType == "none" { binding.wrappedValue.stopType = "absoluteRR" }
+      }
+      if binding.wrappedValue.stopType != "none" {
+        HStack(spacing: 8) {
+          WebRadio(selected: binding.wrappedValue.stopType == "absoluteRR", title: "移动到") {
+            binding.wrappedValue.stopType = "absoluteRR"
+          }
+          WebNumberInput(text: binding.stopValue, suffix: "R")
+          Text("一次").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+          Spacer()
+        }.padding(.leading, 24)
+        HStack(spacing: 8) {
+          WebRadio(selected: binding.wrappedValue.stopType == "fixedRR", title: "当前浮盈减") {
+            binding.wrappedValue.stopType = "fixedRR"
+          }
+          WebNumberInput(text: binding.stopValue, suffix: "R")
+          Text("持续").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+          Spacer()
+        }.padding(.leading, 24)
+      }
+    }.overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+  }
+  private func save() {
+    var previous = Decimal.zero
+    var total = Decimal.zero
+    for level in levels {
+      guard let profit = Decimal(string: level.profit), profit > previous,
+        let reduce = Decimal(string: level.reduce), reduce >= 0
+      else {
+        notice = "层级盈利 R 必须递增，减仓比例不能为负数"
+        return
+      }
+      previous = profit
+      total += reduce
     }
-    private func save() {
-        var previous = Decimal.zero, total = Decimal.zero
-        for level in levels {
-            guard let profit = Decimal(string: level.profit), profit > previous,
-                  let reduce = Decimal(string: level.reduce), reduce >= 0 else { notice = "层级盈利 R 必须递增，减仓比例不能为负数"; return }
-            previous = profit; total += reduce
-        }
-        guard total <= 100 else { notice = "累计减仓不能超过 100%"; return }
-        busy = true
-        Task {
-            defer { busy = false }
-            do {
-                var body: [String: JSONValue] = ["name": .string(name), "levels": .array(levels.map(\.payload))]
-                body["strategy_id"] = strategy?["id"]
-                _ = try await store.send("/v1/strategy/save", body); await store.refresh(); dismiss()
-            } catch { notice = error.localizedDescription }
-        }
+    guard total <= 100 else {
+      notice = "累计减仓不能超过 100%"
+      return
     }
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        var body: [String: JSONValue] = [
+          "name": .string(name), "levels": .array(levels.map(\.payload)),
+        ]
+        body["strategy_id"] = strategy?["id"]
+        _ = try await store.send("/v1/strategy/save", body)
+        await store.refresh()
+        dismiss()
+      } catch { notice = error.localizedDescription }
+    }
+  }
 }
 
 struct USDTChartOrderSettingsView: View {
-    @AppStorage("integrated.chart.orderType") private var orderType = "limit"
-    var body: some View {
-        Form {
-            Picker("图表开仓类型", selection: $orderType) { Text("限价").tag("limit"); Text("市价").tag("market") }
-            NavigationLink("止损金额", destination: USDTStopLossView())
-            NavigationLink("止盈策略", destination: USDTStrategiesView())
-        }.usdtPage("下单设置")
+  @AppStorage("integrated.chart.orderType") private var orderType = "limit"
+  var body: some View {
+    WebForm {
+      WebSelect(
+        title: "图表开仓类型", selection: $orderType, options: [("limit", "限价"), ("market", "市价")])
+      NavigationLink("止损金额", destination: USDTStopLossView())
+      NavigationLink("止盈策略", destination: USDTStrategiesView())
+    }.usdtPage("下单设置")
+  }
+}
+
+private struct WebIndicator: Codable, Identifiable {
+  var id = UUID().uuidString
+  var name: String
+  var conditions: [String]
+}
+
+struct USDTIndicatorsView: View {
+  @Environment(\.dismiss) private var dismiss
+  @State private var indicators: [WebIndicator] = []
+  @State private var screen = "list"
+  @State private var selected: WebIndicator? = nil
+  @State private var name = ""
+  @State private var conditions: [String] = []
+  @State private var input = ""
+  @State private var checked: Set<Int> = []
+  @State private var notice = ""
+  private var storageKey: String { "integrated.indicators.\(NativeTradingMode.userID)" }
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 16) {
+        HStack(spacing: 12) {
+          Button {
+            if screen == "list" { dismiss() } else { screen = "list" }
+          } label: {
+            WebIcon("chevron-left", size: 24).foregroundStyle(WebTheme.muted)
+          }.accessibilityLabel("返回")
+          if screen != "edit" {
+            Text(screen == "verify" ? selected?.name ?? "指标校验" : "开仓理由/指标校验").font(
+              .system(size: 20))
+          }
+          Spacer()
+        }.frame(height: 28).overlay {
+          if screen == "edit" { Text("开仓理由/指标校验").font(.system(size: 20)).allowsHitTesting(false) }
+        }.padding(.bottom, 8)
+        if screen == "list" {
+          ForEach(indicators) { indicator in
+            USDTCard(spacing: 12) {
+              HStack {
+                Button(indicator.name) {
+                  selected = indicator
+                  checked = []
+                  screen = "verify"
+                }.font(.system(size: 18))
+                Spacer()
+                Button {
+                  selected = indicator
+                  name = indicator.name
+                  conditions = indicator.conditions
+                  screen = "edit"
+                } label: {
+                  WebIcon("pencil", size: 18).foregroundStyle(WebTheme.muted)
+                }
+                Button {
+                  indicators.removeAll { $0.id == indicator.id }
+                  persist()
+                } label: {
+                  WebIcon("trash-2", size: 18).foregroundStyle(WebTheme.muted)
+                }
+              }
+              Text("条件: \(indicator.conditions.count)").font(.system(size: 14)).foregroundStyle(
+                WebTheme.muted)
+            }
+          }
+          USDTCard(padding: 24) {
+            Text("请创建你擅长做的指标，在每一次开仓前，手动检查是否符合指标，避免情绪开仓。在平仓后，作为复盘的依据。").font(.system(size: 14))
+              .foregroundStyle(WebTheme.placeholder).lineSpacing(5)
+            Button {
+              selected = nil
+              name = ""
+              conditions = []
+              input = ""
+              screen = "edit"
+            } label: {
+              WebLabel("创建指标", "plus")
+            }.buttonStyle(WebButtonStyle())
+          }
+        } else if screen == "edit" {
+          USDTField(title: "指标名称", text: $name, placeholder: "例如：趋势突破策略", fill: WebTheme.surface)
+            .padding(.bottom, 8)
+          USDTCard(spacing: 12) {
+            HStack {
+              Text("条件")
+              Spacer()
+              Text("*必须全部满足").font(.system(size: 12)).foregroundStyle(WebTheme.danger)
+            }
+            ForEach(Array(conditions.enumerated()), id: \.offset) { index, condition in
+              HStack(alignment: .top, spacing: 12) {
+                WebIcon("circle", size: 16).foregroundStyle(WebTheme.danger)
+                Text(condition).font(.system(size: 14))
+                Spacer()
+                Button {
+                  conditions.remove(at: index)
+                } label: {
+                  WebIcon("trash-2", size: 16).foregroundStyle(WebTheme.muted)
+                }
+              }.padding(12).background(WebTheme.input, in: RoundedRectangle(cornerRadius: 10))
+            }
+            WebTextArea(text: $input, placeholder: "输入条件（可换行）", height: 68, fontSize: 14)
+            Button {
+              appendCondition()
+            } label: {
+              WebLabel("添加条件", "plus")
+            }.buttonStyle(WebButtonStyle(height: 36, fontSize: 14))
+          }
+        } else if let selected {
+          USDTCard(spacing: 12) {
+            HStack {
+              Text("条件")
+              Spacer()
+              Text("*必须全部满足").font(.system(size: 12)).foregroundStyle(WebTheme.danger)
+            }
+            ForEach(Array(selected.conditions.enumerated()), id: \.offset) { index, condition in
+              Button {
+                if checked.contains(index) { checked.remove(index) } else { checked.insert(index) }
+              } label: {
+                HStack(alignment: .top, spacing: 12) {
+                  WebIcon(checked.contains(index) ? "check-circle-2" : "circle", size: 20)
+                    .foregroundStyle(
+                      checked.contains(index) ? WebTheme.danger : WebTheme.placeholder)
+                  Text(condition).font(.system(size: 14)).frame(
+                    maxWidth: .infinity, alignment: .leading
+                  ).opacity(checked.contains(index) ? 0.6 : 1)
+                }.padding(12).background(
+                  checked.contains(index) ? WebTheme.danger.opacity(0.1) : WebTheme.input,
+                  in: RoundedRectangle(cornerRadius: 10))
+              }
+            }
+          }
+        }
+        USDTNotice(text: notice)
+      }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
+    }.background(WebTheme.page.ignoresSafeArea()).foregroundStyle(WebTheme.text).toolbar(
+      .hidden, for: .navigationBar
+    ).buttonStyle(.plain)
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        if screen != "list" {
+          Button(screen == "edit" ? "保存指标" : "确定") {
+            if screen == "edit" { save() } else { dismiss() }
+          }
+          .buttonStyle(WebButtonStyle(height: 56))
+          .disabled(
+            screen == "verify"
+              && (selected?.conditions.isEmpty != false
+                || checked.count != selected?.conditions.count)
+          )
+          .frame(maxWidth: 448).padding(16).frame(maxWidth: .infinity)
+          .background(
+            LinearGradient(
+              colors: [Color(red: 11 / 255, green: 14 / 255, blue: 17 / 255), .clear],
+              startPoint: .bottom, endPoint: .top
+            ).ignoresSafeArea(edges: .bottom))
+        }
+      }
+      .task {
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+          let saved = try? JSONDecoder().decode([WebIndicator].self, from: data)
+        {
+          indicators = saved
+        }
+      }
+  }
+  private func appendCondition() {
+    let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !value.isEmpty {
+      conditions.append(value)
+      input = ""
     }
+  }
+  private func persist() {
+    if let data = try? JSONEncoder().encode(indicators) {
+      UserDefaults.standard.set(data, forKey: storageKey)
+    }
+  }
+  private func save() {
+    appendCondition()
+    guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      notice = "请输入指标名称"
+      return
+    }
+    guard !conditions.isEmpty else {
+      notice = "请至少添加一个条件"
+      return
+    }
+    if let selected, let index = indicators.firstIndex(where: { $0.id == selected.id }) {
+      indicators[index].name = name
+      indicators[index].conditions = conditions
+    } else {
+      indicators.append(WebIndicator(name: name, conditions: conditions))
+    }
+    persist()
+    notice = ""
+    screen = "list"
+  }
+}
+
+/// Wording shared by the Web strategy cards, picker, and execution log.
+enum WebStrategyText {
+  static func level(_ value: JSONValue, index: Int) -> String {
+    var parts = ["L\(index + 1)：当 RR≥" + value.value("profitRR", fallback: "0")]
+    if (value["reducePosition"]?.decimal ?? 0) > 0 {
+      parts.append("卖出 " + value.value("reducePosition") + "%")
+    }
+    if value.value("stopLossType") == "absoluteRR" {
+      parts.append("止损位移动到 " + value.value("stopLossAbsoluteRR", fallback: "0") + "R 处")
+    }
+    if value.value("stopLossType") == "fixedRR" {
+      parts.append("止损位移动到浮盈- " + value.value("stopLossRR", fallback: "0") + "R 处")
+    }
+    return parts.joined(separator: "，")
+  }
+}
+
+struct WebStrategyPicker: View {
+  @EnvironmentObject private var store: USDTStore
+  @Environment(\.dismiss) private var dismiss
+  @Binding var selection: String
+  @Binding var enabled: Bool
+  var autoOnly = false
+  var busy = false
+  var notice = ""
+  let confirmed: () -> Void
+  @State private var manage = false
+  var body: some View {
+    GeometryReader { geometry in
+      ZStack(alignment: .bottom) {
+        Color.black.opacity(0.6).ignoresSafeArea().onTapGesture { if !busy { dismiss() } }
+        VStack(spacing: 0) {
+          HStack {
+            Text("止盈止损策略").font(.system(size: 18, weight: .bold))
+            Spacer()
+            Button {
+              dismiss()
+            } label: {
+              WebIcon("x", size: 20).padding(4)
+            }.accessibilityLabel("关闭")
+          }.padding(16).background(WebTheme.surface)
+          Rectangle().fill(WebTheme.border).frame(height: 1)
+          ScrollView {
+            VStack(spacing: 16) {
+              if !autoOnly {
+                HStack {
+                  Text("手动止盈").fontWeight(.medium)
+                  Spacer()
+                  WebRadio(selected: !enabled, title: "") { enabled = false }
+                }.padding(.bottom, 12)
+                Rectangle().fill(WebTheme.border).frame(height: 1)
+                HStack {
+                  Text("自动止盈").fontWeight(.medium)
+                  Spacer()
+                  WebRadio(selected: enabled, title: "") { enabled = true }
+                }
+              }
+              if store.strategies.isEmpty {
+                Text("暂无策略").font(.system(size: 14)).foregroundStyle(WebTheme.muted).frame(
+                  maxWidth: .infinity, alignment: .leading
+                ).padding(16).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+              }
+              ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
+                Button {
+                  selection = strategy.value("id")
+                  enabled = true
+                } label: {
+                  VStack(alignment: .leading, spacing: 12) {
+                    Text(strategy.value("name")).font(.system(size: 16, weight: .medium))
+                    VStack(alignment: .leading, spacing: 6) {
+                      ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) {
+                        index, level in
+                        Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
+                          .foregroundStyle(WebTheme.secondary)
+                      }
+                    }
+                  }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(
+                    WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)
+                  ).overlay {
+                    RoundedRectangle(cornerRadius: 16).stroke(
+                      enabled && selection == strategy.value("id")
+                        ? WebTheme.brand : WebTheme.border, lineWidth: 1)
+                  }
+                }.buttonStyle(.plain)
+              }
+              Button("添加/编辑策略") { manage = true }.font(.system(size: 16)).foregroundStyle(
+                Color(red: 74 / 255, green: 158 / 255, blue: 255 / 255)
+              ).frame(maxWidth: .infinity).padding(.vertical, 4)
+              USDTNotice(text: notice)
+            }.padding(16)
+          }.fixedSize(horizontal: false, vertical: true).frame(
+            maxHeight: geometry.size.height * 0.6
+          ).scrollIndicators(.hidden)
+          Button(busy ? "处理中..." : "确定", action: confirmed).buttonStyle(
+            WebButtonStyle(height: 52, radius: 14)
+          ).disabled(busy || ((enabled || autoOnly) && selection.isEmpty)).padding(.horizontal, 16)
+            .padding(.bottom, 24)
+        }.font(.system(size: 16)).foregroundStyle(WebTheme.text).background(
+          WebTheme.color(0xF8FAFC, 0x0B0E11)
+        ).clipShape(UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)).frame(
+          maxWidth: 448
+        ).padding(.bottom, -geometry.safeAreaInsets.bottom)
+      }
+    }.presentationBackground(.clear).buttonStyle(.plain)
+      .fullScreenCover(isPresented: $manage) { NavigationStack { USDTStrategiesView() } }
+  }
 }

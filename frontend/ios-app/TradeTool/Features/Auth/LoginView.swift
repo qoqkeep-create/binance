@@ -1,370 +1,250 @@
 import SwiftUI
-import UIKit
 
 struct LoginView: View {
-    private static let modeSwitchPromptWidth: CGFloat = 58
-    private static let modeSwitchActionWidth: CGFloat = 68
+  @EnvironmentObject private var authStore: AuthStore
+  @EnvironmentObject private var container: AppContainer
+  @EnvironmentObject private var store: USDTStore
+  @State private var register = false
+  @State private var reset = false
+  @State private var account = ""
+  @State private var password = ""
+  @State private var confirmPassword = ""
+  @State private var agreed = false
+  @State private var legal: String? = nil
+  @State private var agreementPrompt = false
+  @State private var notice = ""
+  @State private var resetSent = false
+  @State private var registrationClosed = false
+  @State private var resetUID = ""
+  @State private var resetToken = ""
+  @Environment(\.colorScheme) private var colorScheme
 
-    private enum Mode {
-        case login
-        case register
-
-        var title: String {
-            switch self {
-            case .login:
-                return "登录"
-            case .register:
-                return "注册"
-            }
-        }
-
-        var subtitle: String {
-            switch self {
-            case .login:
-                return "登录后查看 USD-M 永续行情与策略信号"
-            case .register:
-                return "注册账号后查看 USD-M 永续行情与策略信号"
-            }
-        }
-
-        var primaryActionTitle: String {
-            switch self {
-            case .login:
-                return "登录"
-            case .register:
-                return "注册"
-            }
-        }
-
-        var secondaryPrompt: String {
-            switch self {
-            case .login:
-                return "没有账号"
-            case .register:
-                return "已有账号"
-            }
-        }
-
-        var secondaryActionTitle: String {
-            switch self {
-            case .login:
-                return "注册账号"
-            case .register:
-                return "返回登录"
-            }
-        }
-    }
-
-    private enum Field {
-        case account
-        case password
-        case confirmPassword
-    }
-
-    @EnvironmentObject private var authStore: AuthStore
-    @EnvironmentObject private var runtime: AppRuntime
-    @State private var showsServerSettings = false
-
-    @State private var mode: Mode = .login
-    @State private var account = ""
-    @State private var password = ""
-    @State private var confirmPassword = ""
-    @State private var showsPassword = false
-    @State private var agreed = false
-    @State private var showsLegal = false
-    @State private var showsPasswordReset = false
-    @FocusState private var focusedField: Field?
-
-    var body: some View {
-        ZStack {
-            BinanceTheme.background
-                .ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    brandHeader
-                        .padding(.bottom, 48)
-
-                    Text(mode.title)
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(BinanceTheme.primaryText)
-
-                    Text(mode.subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(BinanceTheme.secondaryText)
-                        .padding(.top, 9)
-                        .padding(.bottom, 32)
-
-                    accountField
-                    passwordField
-                        .padding(.top, 18)
-
-                    if mode == .register {
-                        confirmPasswordField
-                            .padding(.top, 18)
-                            .transition(.identity)
-                    }
-
-                    Toggle("我已阅读并同意用户协议与风险提示", isOn: $agreed)
-                        .font(.footnote).padding(.top, 20)
-                    HStack {
-                        Button("查看协议") { showsLegal = true }
-                        Spacer()
-                        Button("忘记密码") { showsPasswordReset = true }
-                    }.font(.footnote).padding(.top, 12)
-
-                    Button {
-                        submit()
-                    } label: {
-                        if authStore.isSubmitting {
-                            ProgressView()
-                                .tint(BinanceTheme.onAccent)
-                        } else {
-                            Text(mode.primaryActionTitle)
-                        }
-                    }
-                    .buttonStyle(BinancePrimaryButtonStyle())
-                    .disabled(authStore.isSubmitting || !agreed)
-                    .opacity(authStore.isSubmitting ? 0.72 : 1)
-                    .padding(.top, 28)
-
-                    modeSwitch
-                        .padding(.top, 18)
-                        .transaction { transaction in
-                            transaction.disablesAnimations = true
-                            transaction.animation = nil
-                        }
-
-                    securityNotice
-                        .padding(.top, 28)
-                    Button {
-                        focusedField = nil
-                        showsServerSettings = true
-                    } label: {
-                        Label(runtime.currentServer.name, systemImage: "server.rack")
-                            .font(BinanceTheme.Typography.text(.caption))
-                            .foregroundStyle(BinanceTheme.secondaryText)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .padding(.top, 12)
-                    .accessibilityIdentifier("login.server")
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 36)
-                .padding(.bottom, 40)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        }
-        .sheet(isPresented: $showsLegal) { NavigationStack { USDTLegalView() } }
-        .sheet(isPresented: $showsPasswordReset) { NavigationStack { USDTPasswordResetView() } }
-        .sheet(isPresented: $showsServerSettings) {
-            ServerSettingsView()
-                .environmentObject(runtime)
-        }
-    }
-
-    private var brandHeader: some View {
-        HStack(spacing: 12) {
-            BinanceLogoMark(size: 42)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("TRADE TOOL")
-                    .font(.headline.weight(.bold))
-                    .tracking(1.1)
-                    .foregroundStyle(BinanceTheme.primaryText)
-
-                Text("MARKET & SIGNALS")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(BinanceTheme.secondaryText)
-            }
-        }
-    }
-
-    private var accountField: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("账号或邮箱")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(BinanceTheme.primaryText)
-
-            TextField(
-                "",
-                text: $account,
-                prompt: Text("请输入账号或邮箱")
-                    .foregroundColor(BinanceTheme.secondaryText)
-            )
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .keyboardType(.default)
-            .textContentType(.username)
-            .submitLabel(.next)
-            .focused($focusedField, equals: .account)
-            .binanceInput(isFocused: focusedField == .account)
-            .onSubmit {
-                focusedField = .password
-            }
-        }
-    }
-
-    private var passwordField: some View {
-        passwordInput(
-            title: "密码",
-            text: $password,
-            prompt: "请输入密码",
-            contentType: mode == .register ? .newPassword : .password,
-            field: .password,
-            submitLabel: mode == .register ? .next : .go
-        ) {
-            if mode == .register {
-                focusedField = .confirmPassword
-            } else {
-                submit()
-            }
-        }
-    }
-
-    private var confirmPasswordField: some View {
-        passwordInput(
-            title: "确认密码",
-            text: $confirmPassword,
-            prompt: "请再次输入密码",
-            contentType: .newPassword,
-            field: .confirmPassword,
-            submitLabel: .go
-        ) {
-            submit()
-        }
-    }
-
-    private func passwordInput(
-        title: String,
-        text: Binding<String>,
-        prompt: String,
-        contentType: UITextContentType,
-        field: Field,
-        submitLabel: SubmitLabel,
-        onSubmit: @escaping () -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(BinanceTheme.primaryText)
-
-            HStack(spacing: 8) {
-                Group {
-                    if showsPassword {
-                        TextField(
-                            "",
-                            text: text,
-                            prompt: passwordPrompt(prompt)
-                        )
-                    } else {
-                        SecureField(
-                            "",
-                            text: text,
-                            prompt: passwordPrompt(prompt)
-                        )
+  var body: some View {
+    GeometryReader { geometry in
+      ScrollView {
+        VStack(spacing: 0) {
+          VStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 24).fill(WebTheme.gradient).frame(width: 80, height: 80)
+              .overlay {
+                WebTrendIcon().stroke(
+                  .black, style: StrokeStyle(lineWidth: 3.3, lineCap: .round, lineJoin: .round)
+                ).frame(width: 40, height: 40)
+              }
+              .shadow(color: WebTheme.brand.opacity(0.2), radius: 8, y: 4).padding(.bottom, 24)
+            Text("RISKON").font(.system(size: 30, weight: .bold)).foregroundStyle(WebTheme.text)
+              .frame(height: 36).padding(.bottom, 8)
+            Text(reset ? "重置密码" : register ? "创建新账号" : "欢迎回来").font(.system(size: 16))
+              .foregroundStyle(
+                Color(uiColor: .init(red: 156 / 255, green: 163 / 255, blue: 175 / 255, alpha: 1))
+              ).frame(height: 24).padding(.bottom, 32)
+            VStack(spacing: 20) {
+              if resetSent {
+                USDTNotice(text: "如果该邮箱已注册，重置邮件会在几分钟内发送。请在 30 分钟内打开邮件中的链接。")
+              } else {
+                if register && registrationClosed {
+                  Text("暂未开放注册，请联系管理员").font(.system(size: 14, weight: .medium)).foregroundStyle(
+                    WebTheme.danger
+                  ).frame(maxWidth: .infinity).padding(.vertical, 12).padding(.horizontal, 16)
+                    .background(
+                      WebTheme.danger.opacity(0.1), in: RoundedRectangle(cornerRadius: 14)
+                    ).overlay {
+                      RoundedRectangle(cornerRadius: 14).stroke(
+                        WebTheme.danger.opacity(0.3), lineWidth: 1)
                     }
                 }
-                .textContentType(contentType)
-                .submitLabel(submitLabel)
-                .focused($focusedField, equals: field)
-                .onSubmit(onSubmit)
-
-                Button {
-                    showsPassword.toggle()
-                } label: {
-                    Image(
-                        systemName: showsPassword
-                            ? "eye.slash"
-                            : "eye"
-                    )
-                    .foregroundStyle(BinanceTheme.secondaryText)
-                    .frame(width: 28, height: 28)
+                if resetToken.isEmpty {
+                  loginField(
+                    register ? "邮箱" : reset ? "邮箱账号" : "账号",
+                    placeholder: register || reset ? "请输入邮箱" : "请输入邮箱账号", text: $account)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(
-                    showsPassword ? "隐藏密码" : "显示密码"
-                )
+                if !reset || !resetToken.isEmpty {
+                  loginField(
+                    reset ? "新密码" : "密码", placeholder: reset ? "请输入新密码" : "请输入密码", text: $password,
+                    secure: true)
+                  if register {
+                    loginField("确认密码", placeholder: "请再次输入密码", text: $confirmPassword, secure: true)
+                  }
+                  if !resetToken.isEmpty {
+                    loginField(
+                      "确认新密码", placeholder: "请再次输入新密码", text: $confirmPassword, secure: true)
+                  }
+                  if !reset { agreement }
+                }
+                Button(
+                  authStore.isSubmitting
+                    ? "正在进入..."
+                    : !resetToken.isEmpty ? "确认重置密码" : reset ? "发送重置邮件" : register ? "注册" : "登录"
+                ) { submit() }
+                .buttonStyle(WebButtonStyle(height: 52, radius: 14, weight: .bold)).disabled(
+                  authStore.isSubmitting || (register && registrationClosed)
+                ).padding(.top, 12)
+              }
+              HStack(spacing: 16) {
+                if !reset && !register {
+                  Button("忘记密码？") {
+                    reset = true
+                    notice = ""
+                  }
+                  Text("|").foregroundStyle(WebTheme.secondary)
+                  Button("注册账号") {
+                    register = true
+                    password = ""
+                    notice = ""
+                  }
+                } else {
+                  Button("返回登录") {
+                    reset = false
+                    register = false
+                    resetSent = false
+                    resetUID = ""
+                    resetToken = ""
+                    password = ""
+                    notice = ""
+                  }
+                }
+              }.font(.system(size: 14)).foregroundStyle(WebTheme.brand).buttonStyle(.plain).frame(
+                maxWidth: .infinity)
+              USDTNotice(text: notice)
             }
-            .binanceInput(isFocused: focusedField == field)
+          }.padding(32).frame(maxWidth: 448)
+            .background {
+              RoundedRectangle(cornerRadius: 24).fill(
+                colorScheme == .dark
+                  ? AnyShapeStyle(
+                    LinearGradient(
+                      colors: [WebTheme.surface, WebTheme.page], startPoint: .topLeading,
+                      endPoint: .bottomTrailing)) : AnyShapeStyle(WebTheme.surface))
+            }.shadow(color: .black.opacity(0.25), radius: 25, y: 25)
+        }.padding(16).frame(maxWidth: .infinity).frame(minHeight: geometry.size.height)
+      }.scrollDismissesKeyboard(.interactively).scrollIndicators(.hidden)
+    }.background(WebTheme.page.ignoresSafeArea()).tint(WebTheme.brand)
+      .fullScreenCover(isPresented: Binding(get: { legal != nil }, set: { if !$0 { legal = nil } }))
+    { NavigationStack { USDTLegalView(document: legal ?? "用户协议") } }
+      .task {
+        if let settings = try? await store.get("/v1/auth/admin-settings") {
+          registrationClosed = settings["open_registration"]?.flag == false
         }
-    }
-
-    private func passwordPrompt(_ value: String) -> Text {
-        Text(value)
-            .foregroundColor(BinanceTheme.secondaryText)
-    }
-
-    private var modeSwitch: some View {
-        HStack(spacing: 8) {
-            Text(mode.secondaryPrompt)
-                .font(.footnote)
-                .foregroundStyle(BinanceTheme.secondaryText)
-                .contentTransition(.identity)
-                .frame(
-                    width: Self.modeSwitchPromptWidth,
-                    alignment: .trailing
-                )
-
-            Button {
-                switchMode()
-            } label: {
-                Text(mode.secondaryActionTitle)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(BinanceTheme.accentText)
-                    .contentTransition(.identity)
-                    .frame(
-                        width: Self.modeSwitchActionWidth,
-                        alignment: .leading
-                    )
-            }
-            .buttonStyle(.plain)
+      }
+      .onOpenURL { url in
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if let uid = items.first(where: { $0.name == "reset_uid" })?.value,
+          let token = items.first(where: { $0.name == "reset_token" })?.value, !uid.isEmpty,
+          !token.isEmpty
+        {
+          resetUID = uid
+          resetToken = token
+          reset = true
+          register = false
+          resetSent = false
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var securityNotice: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "lock.shield.fill")
-                .foregroundStyle(BinanceTheme.accentText)
-
-            Text("登录令牌仅保存在本机 Keychain，不会写入普通偏好设置")
-                .font(.caption)
-                .foregroundStyle(BinanceTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+      }
+      .webModal(isPresented: $agreementPrompt) {
+        WebModal(title: "用户协议与隐私政策") {
+          Text("您还没有阅读和同意用户协议和隐私政策，确认已阅读并同意？").font(.system(size: 16)).lineSpacing(6)
+          HStack(spacing: 12) {
+            Button("不同意") { agreementPrompt = false }.buttonStyle(
+              WebButtonStyle(kind: .secondary, radius: 14))
+            Button("同意") {
+              agreed = true
+              agreementPrompt = false
+            }.buttonStyle(WebButtonStyle(radius: 14))
+          }
         }
+      }
+  }
+  private var agreement: some View {
+    HStack(alignment: .top, spacing: 8) {
+      WebCheckbox(checked: $agreed, size: 16).padding(.top, 2).accessibilityIdentifier(
+        "login.agreement")
+      Text(agreementText).font(.system(size: 14)).lineSpacing(2)
+        .environment(
+          \.openURL,
+          OpenURLAction { url in
+            legal = url.host == "privacy" ? "隐私政策" : "用户协议"
+            return .handled
+          })
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+  private var agreementText: AttributedString {
+    var result = AttributedString("我已阅读并同意 ")
+    result.foregroundColor = WebTheme.secondary
+    var terms = AttributedString("用户协议")
+    terms.link = URL(string: "riskon://terms")
+    terms.foregroundColor = WebTheme.brand
+    terms.underlineStyle = .single
+    var and = AttributedString(" 和 ")
+    and.foregroundColor = WebTheme.secondary
+    var privacy = AttributedString("隐私政策")
+    privacy.link = URL(string: "riskon://privacy")
+    privacy.foregroundColor = WebTheme.brand
+    privacy.underlineStyle = .single
+    result += terms
+    result += and
+    result += privacy
+    return result
+  }
+  private func loginField(
+    _ title: String, placeholder: String, text: Binding<String>, secure: Bool = false
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title).font(.system(size: 14)).foregroundStyle(WebTheme.secondary).frame(height: 20)
+      USDTField(title: "", text: text, secure: secure, placeholder: placeholder, radius: 14)
+        .accessibilityIdentifier(secure ? "login.password" : "login.account")
     }
-
-    private func switchMode() {
-        focusedField = nil
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            mode = mode == .login ? .register : .login
+  }
+  private func submit() {
+    if reset {
+      Task {
+        do {
+          if resetToken.isEmpty {
+            _ = try await store.send("/v1/auth/password-reset/request", ["email": .string(account)])
+            resetSent = true
+          } else {
+            _ = try await store.send(
+              "/v1/auth/password-reset/confirm",
+              [
+                "uid": .string(resetUID), "token": .string(resetToken),
+                "new_password": .string(password), "confirm_password": .string(confirmPassword),
+              ])
+            reset = false
+            resetUID = ""
+            resetToken = ""
             password = ""
             confirmPassword = ""
-        }
+            notice = "密码已重置，请重新登录"
+          }
+        } catch { notice = error.localizedDescription }
+      }
+      return
     }
-
-    private func submit() {
-        guard agreed else { return }
-        focusedField = nil
-        Task {
-            switch mode {
-            case .login:
-                await authStore.login(
-                    account: account,
-                    password: password
-                )
-
-            case .register:
-                await authStore.register(
-                    account: account,
-                    password: password,
-                    confirmPassword: confirmPassword
-                )
-            }
-        }
+    guard agreed else {
+      agreementPrompt = true
+      return
     }
+    Task {
+      if register {
+        await authStore.register(
+          account: account, password: password, confirmPassword: confirmPassword)
+      } else {
+        await authStore.login(account: account, password: password)
+      }
+    }
+  }
+}
+
+private struct WebTrendIcon: Shape {
+  func path(in rect: CGRect) -> Path {
+    var p = Path()
+    func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+      CGPoint(x: x / 24 * rect.width, y: y / 24 * rect.height)
+    }
+    p.move(to: point(22, 7))
+    p.addLine(to: point(13.5, 15.5))
+    p.addLine(to: point(8.5, 10.5))
+    p.addLine(to: point(2, 17))
+    p.move(to: point(16, 7))
+    p.addLine(to: point(22, 7))
+    p.addLine(to: point(22, 13))
+    return p
+  }
 }
