@@ -10,6 +10,14 @@
 - 本地 iPhone 18 Pro / iOS 27.2 的 8 个独立 `WebParityUITests` 流程分轮通过。`WebParityScreens4.xcresult` 的 7 组中 6 组通过；剩余组在启动回测页时 App 崩溃，缺少详细 crashlog，随后该模拟器也出现启动和显示超时，未据此判定根因为系统或代码。新建专用 `TradeTools Web Review` 模拟器后，`WebParityFinal6.xcresult` 的研究 / 资金 / 初筛及附属页面两组通过；新增评分组暴露真实布局问题，修复后 `WebParityWatch8.xcresult` 完整通过（34.5 秒），覆盖评分按钮可点击和滚动位置、复盘内容、结果金额及模型选择。已实际打开导出的核心页、浅深色、空态、带单和弹窗截图校对；没有把按钮存在的断言当作全部像素验收。
 - DEBUG 视觉模式只使用隔离静态账号、数据与无网络 transport 的 API；允许资金预检 / EMA 的本地预览，其余写请求拒绝。最终 iOS 设备 Release 未签名构建通过，包内含隐私清单、Metal 库与图标许可，不含视觉 fixture 入口和样本标记。真机、TestFlight、邮件链接自动唤起、真实 AI / 通知发送与实盘仍需分别验收。本轮仅修改整合目录，未提交、推送、连接远程环境或上传 TestFlight。
 
+## 2026-10-31：新应用 Cloud 自动构建与内部测试分发配置
+
+- 已保存新 Cloud 产品 `f01be7a9-f719-4ecc-932e-17c7bac455a6` 的 `iOS TestFlight` 工作流，GitHub 授权仅选择 `qoqkeep-create/binance`，关联 App Store Connect `TradeTools USDT` / `6829222305`。发布身份、Push capability、工作流及编号细节见 [TestFlight](testflight.md)。
+- 首次将 Next Build Number 保存为 4；同时发生的远端源码推送自动产生默认编译构建 4、5，均成功。保留并合并另一批服务器运维提交后，`e7734bb` 已推送，分支 SHA 与远端一致，自动触发完整流程构建 6。
+- 构建 6 的 Metal 脚本、云端 Release Archive、app-store 导出与 App Store Connect 准备均成功；图表压力测试的 P95 为 426ms，超过本地模拟器 150ms 阈值。仅对 Apple 明确标识的 Cloud 环境改为记录耗时，保留覆盖率、帧并发、缓冲区和命令错误检查；本地仍执行原耗时断言。修改后本地常规模式与 `TEST_RUNNER_CI_XCODE_CLOUD=TRUE` 模式各 3 项压力测试通过，报告为 `/tmp/binance-cloud-setup/LocalStressBudget.xcresult` 与 `CloudStressMode.xcresult`。
+- 修正提交 `509f2da` 已推送并自动触发构建 7：云端测试、Release Archive 和 TestFlight Internal Testing 后续操作全部成功，约 4 分钟完成。Apple 处理已结束，`1.0.1 (7)` 自动加入“内部测试”组并显示“正在测试”，1 名测试员状态“已邀请”；构建 6 被新推送自动取消，未人工将其分配到组。Cloud 构建与 TestFlight 页面链接见 [指南](testflight.md#本轮分发结果)。
+- 手机接受邀请、安装和运行尚待测试者完成，不将后台“正在测试”表述为 iPhone 实机通过。工程语法、文档链接及差异检查通过，原有工程排序改动仍保持未提交；通过 OpenStep plist 转 JSON 比较确认剩余工程差异只有顺序变化。
+
 ## 2026-10-31：退役首尔旧 Java 环境，独立数据库与远程模拟器验收
 
 - 用户确认唯一目标为 **47.80.22.243（首尔服务器）**，并授权删除旧 USDC Java 系统及其专属支撑环境。协作规则已记录：向用户提及目标机操作或状态时写 IP＋备注。本地 USDT 456 个、USDC 476 个来源文件哈希再次核对一致。
@@ -29,7 +37,7 @@
 - 核实 Apple 团队 GUANGDONG ZHANG / `756Y5JKBUD`，新 App ID 已注册且 Push Notifications 已开启。用户明确要求本轮只预留 Push capability，暂不开发 Python APNs 投递功能。App Store Connect 已创建用户确认的 `TradeTools USDT`，App ID 为 `6829222305`，SKU 为 `waibao2025-trade-integrated-ios`；内部测试组已创建并加入当前 Apple 账号。
 - 新身份的本地 Release Archive 成功，使用该 App ID 的 Xcode 自动管理开发描述文件；`codesign --verify --deep --strict` 通过，签名中的 application identifier 为 `756Y5JKBUD.com.waibao2025.trade.integrated`。这是本地开发签名归档，APNs entitlement 为 development，不代表已完成 TestFlight 分发签名或生产推送验收。
 - 同身份在 Xcode 27.1 / iOS 27.0 的 iPhone 18 Pro 模拟器执行 `TradeTool` 单测，162 项全部通过，0 失败、0 跳过；结果位于本机 `/tmp/binance-cloud-setup/IdentityTests.xcresult`。本轮没有操作真实交易账户或开发 APNs 服务端投递。
-- 提交 `bd2ea0d` 已推送到指定 GitHub 的 `codex/integrated-ios` 分支。本地旧 Cloud manifest 指向旧 `td0328/trade-tool` 产品，已移除本地关联以便为新应用设置工作流；旧产品、工作流和构建记录未改动。Cloud 源码授权仍需仓库所有者 `qoqkeep-create` 完成，当前 `td0328` 的个人安装不能覆盖该仓库。
+- 提交 `bd2ea0d` 已推送到指定 GitHub 的 `codex/integrated-ios` 分支。本地旧 Cloud manifest 指向旧 `td0328/trade-tool` 产品，已移除本地关联以便为新应用设置工作流；旧产品、工作流和构建记录未改动。随后用户确认并完成 `qoqkeep-create/binance` 的独立 Xcode Cloud GitHub App 授权，新 Cloud manifest 已生成。保存 `iOS TestFlight` 工作流：仅交付分支的 iOS 目录变更触发，Xcode 27.1 / macOS 27.0.1 / Clean、iPhone 18 Pro 必过单测、Release 归档及内部测试组自动分发；首个 Cloud Build 已设为 4；后续完整云端与分发结果见本文上方的 Cloud 交付记录。
 
 ## 2026-10-31：Xcode Cloud / TestFlight 源码准备
 

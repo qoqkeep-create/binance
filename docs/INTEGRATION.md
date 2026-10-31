@@ -80,7 +80,7 @@ Bundle ID 使用 `com.waibao2025.trade.integrated`，与旧客户端隔离。iOS
 
 `Debug-Seoul` 与 `Release` 均默认连接 47.80.22.243（首尔服务器）的整合入口。上述 17:08 UI 结果使用本地 API；本轮远程 UI 验收另见 [变更](changes.md)，不将模拟器结果扩大为所有线上业务、实机或实盘通过。历史运行报告保留在忽略目录 `.integration-runtime/`。
 
-TestFlight 分发尚未执行。已添加 `PrivacyInfo.xcprivacy` 并加入主 App 资源，声明现有 UserDefaults 与图表 `systemUptime` 的访问理由。新 Bundle ID 已注册且启用 Push Notifications，团队、App Store Connect App 记录和内部测试组已建立；本地开发签名 Release Archive 及 162 项单测通过。原有 Cloud 关联属于旧产品，已移除本地 manifest，正在为本应用重新接入；仍需 `qoqkeep-create` 仓库所有者授权及后台工作流配置。云端 Build 计划采用 Cloud 原生递增，实际分发签名和上传需独立验收，见 [手机发布指南](testflight.md)。
+TestFlight 内部分发已完成：`TradeTools USDT` 的 `1.0.1 (7)` 已自动加入“内部测试”组，后台状态为“正在测试”，测试员已邀请；尚未验收 iPhone 接受邀请、安装和运行。已添加 `PrivacyInfo.xcprivacy` 并加入主 App 资源，声明现有 UserDefaults 与图表 `systemUptime` 的访问理由。新 Bundle ID 已注册且启用 Push Notifications，团队、App Store Connect App 记录和内部测试组已建立；本地开发签名 Release Archive 及 162 项单测通过。已重新生成新应用 Cloud manifest，仓库所有者授权与 `iOS TestFlight` 工作流均已保存，包含必过单测、Release 归档及内部测试自动分发。云端 Build 起始号为 4，之后原生递增；修正 Cloud 模拟器耗时测试条件后，提交 `509f2da` 的构建 7 已通过云端测试、分发签名归档、上传和组内自动分发，见 [手机发布指南](testflight.md)。
 
 ## 本次服务器验收与性能范围
 

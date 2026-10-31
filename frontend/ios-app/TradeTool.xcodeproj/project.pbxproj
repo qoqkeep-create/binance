@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0F0000000000000000000001 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0000000000000000000002 /* AppAppearance.swift */; };
-		0F0000000000000000000003 /* AppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0000000000000000000004 /* AppearanceTests.swift */; };
 		010000000000000000000001 /* TradeToolApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000001 /* TradeToolApp.swift */; };
 		010000000000000000000002 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000002 /* RootView.swift */; };
 		010000000000000000000003 /* MarketSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000003 /* MarketSnapshot.swift */; };
@@ -87,26 +85,28 @@
 		010000000000000000000053 /* TechnicalPanelIndicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005A /* TechnicalPanelIndicators.swift */; };
 		010000000000000000000054 /* TradingDataPanelIndicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005B /* TradingDataPanelIndicators.swift */; };
 		010000000000000000000055 /* ReferenceTradeNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005C /* ReferenceTradeNotification.swift */; };
+		010000000000000000000056 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005D /* PrivacyInfo.xcprivacy */; };
+		059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C443B8F02115C83974CD29 /* USDTStore.swift */; };
 		0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0000000000000000000002 /* ChartEngineCoreTests.swift */; };
-		0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */; };
 		0C0000000000000000000001 /* ChartEngineOnscreenStressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */; };
 		0D0000000000000000000001 /* ChartCalibrationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0000000000000000000002 /* ChartCalibrationUITests.swift */; };
+		0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */; };
+		0F0000000000000000000001 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0000000000000000000002 /* AppAppearance.swift */; };
+		0F0000000000000000000003 /* AppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0000000000000000000004 /* AppearanceTests.swift */; };
 		130000000000000000000001 /* ServerSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000001 /* ServerSelection.swift */; };
 		130000000000000000000002 /* AppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000002 /* AppRuntime.swift */; };
 		130000000000000000000003 /* ServerNetworkProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000003 /* ServerNetworkProbe.swift */; };
 		130000000000000000000004 /* ServerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000004 /* ServerSettingsView.swift */; };
 		130000000000000000000005 /* ServerSwitchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000005 /* ServerSwitchingTests.swift */; };
-		4ADC1ECF7B1D2C2AF8904860 /* USDTAccountViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */; };
-		9CD0D87DCEBB99A36EE4B57C /* USDTComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33600721399D7B8EDD04A732 /* USDTComponents.swift */; };
-		2F352AA3E4A8195216FCFEA7 /* USDTLegalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */; };
 		20EBABF2268F5C781A0B85C5 /* USDTRecordsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */; };
-		CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63133A17E8871350B079F81 /* USDTResearchViews.swift */; };
-		4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7B56A4F1642013DF78DC36 /* USDTSession.swift */; };
-		059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C443B8F02115C83974CD29 /* USDTStore.swift */; };
-		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
+		2F352AA3E4A8195216FCFEA7 /* USDTLegalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */; };
 		3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */; };
+		4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7B56A4F1642013DF78DC36 /* USDTSession.swift */; };
+		4ADC1ECF7B1D2C2AF8904860 /* USDTAccountViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */; };
 		51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */; };
-		010000000000000000000056 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005D /* PrivacyInfo.xcprivacy */; };
+		9CD0D87DCEBB99A36EE4B57C /* USDTComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33600721399D7B8EDD04A732 /* USDTComponents.swift */; };
+		CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63133A17E8871350B079F81 /* USDTResearchViews.swift */; };
+		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
 		010000000000000000000057 /* Lucide-ISC.txt in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* Lucide-ISC.txt */; };
 /* End PBXBuildFile section */
 
@@ -128,8 +128,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		0F0000000000000000000002 /* AppAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearance.swift; sourceTree = "<group>"; };
-		0F0000000000000000000004 /* AppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceTests.swift; sourceTree = "<group>"; };
 		020000000000000000000001 /* TradeToolApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeToolApp.swift; sourceTree = "<group>"; };
 		020000000000000000000002 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		020000000000000000000003 /* MarketSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSnapshot.swift; sourceTree = "<group>"; };
@@ -212,29 +210,31 @@
 		02000000000000000000005A /* TechnicalPanelIndicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TechnicalPanelIndicators.swift; sourceTree = "<group>"; };
 		02000000000000000000005B /* TradingDataPanelIndicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingDataPanelIndicators.swift; sourceTree = "<group>"; };
 		02000000000000000000005C /* ReferenceTradeNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceTradeNotification.swift; sourceTree = "<group>"; };
+		02000000000000000000005D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0200000000000000000000F1 /* Debug-Seoul.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-Seoul.xcconfig"; sourceTree = "<group>"; };
 		0B0000000000000000000002 /* ChartEngineCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartEngineCoreTests.swift; sourceTree = "<group>"; };
-		0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSignalPreferencesTests.swift; sourceTree = "<group>"; };
 		0B0000000000000000000004 /* TradeToolTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TradeToolTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartEngineOnscreenStressTests.swift; sourceTree = "<group>"; };
 		0D0000000000000000000002 /* ChartCalibrationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCalibrationUITests.swift; sourceTree = "<group>"; };
 		0D0000000000000000000004 /* TradeToolChartCalibrationUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TradeToolChartCalibrationUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		0200000000000000000000F1 /* Debug-Seoul.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-Seoul.xcconfig"; sourceTree = "<group>"; };
+		0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSignalPreferencesTests.swift; sourceTree = "<group>"; };
+		0F0000000000000000000002 /* AppAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearance.swift; sourceTree = "<group>"; };
+		0F0000000000000000000004 /* AppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceTests.swift; sourceTree = "<group>"; };
 		120000000000000000000001 /* ServerSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSelection.swift; sourceTree = "<group>"; };
 		120000000000000000000002 /* AppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRuntime.swift; sourceTree = "<group>"; };
 		120000000000000000000003 /* ServerNetworkProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerNetworkProbe.swift; sourceTree = "<group>"; };
 		120000000000000000000004 /* ServerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsView.swift; sourceTree = "<group>"; };
 		120000000000000000000005 /* ServerSwitchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSwitchingTests.swift; sourceTree = "<group>"; };
-		7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTAccountViews.swift; sourceTree = "<group>"; };
-		33600721399D7B8EDD04A732 /* USDTComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTComponents.swift; sourceTree = "<group>"; };
-		BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTLegalView.swift; sourceTree = "<group>"; };
-		7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTRecordsViews.swift; sourceTree = "<group>"; };
-		E63133A17E8871350B079F81 /* USDTResearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTResearchViews.swift; sourceTree = "<group>"; };
-		DD7B56A4F1642013DF78DC36 /* USDTSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTSession.swift; sourceTree = "<group>"; };
 		18C443B8F02115C83974CD29 /* USDTStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStore.swift; sourceTree = "<group>"; };
-		9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStrategyViews.swift; sourceTree = "<group>"; };
-		F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTTradingViews.swift; sourceTree = "<group>"; };
+		33600721399D7B8EDD04A732 /* USDTComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTComponents.swift; sourceTree = "<group>"; };
 		72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTWatchViews.swift; sourceTree = "<group>"; };
-		02000000000000000000005D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTRecordsViews.swift; sourceTree = "<group>"; };
+		7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTAccountViews.swift; sourceTree = "<group>"; };
+		9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStrategyViews.swift; sourceTree = "<group>"; };
+		BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTLegalView.swift; sourceTree = "<group>"; };
+		DD7B56A4F1642013DF78DC36 /* USDTSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTSession.swift; sourceTree = "<group>"; };
+		E63133A17E8871350B079F81 /* USDTResearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTResearchViews.swift; sourceTree = "<group>"; };
+		F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTTradingViews.swift; sourceTree = "<group>"; };
 		02000000000000000000005E /* Lucide-ISC.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "Lucide-ISC.txt"; path = "../../docs/licenses/Lucide-ISC.txt"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -1075,96 +1075,6 @@
 			};
 			name = Release;
 		};
-		0B000000000000000000000E /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 756Y5JKBUD;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
-			};
-			name = Debug;
-		};
-		0B0000000000000000000010 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 756Y5JKBUD;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
-			};
-			name = Release;
-		};
-		0D000000000000000000000E /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 756Y5JKBUD;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.chartcalibrationuitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_TARGET_NAME = TradeTool;
-			};
-			name = Debug;
-		};
-		0D0000000000000000000010 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 756Y5JKBUD;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.chartcalibrationuitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_TARGET_NAME = TradeTool;
-			};
-			name = Release;
-		};
 		090000000000000000000007 /* Debug-Seoul */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1262,6 +1172,52 @@
 			};
 			name = "Debug-Seoul";
 		};
+		0B000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
+			};
+			name = Debug;
+		};
+		0B0000000000000000000010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
+			};
+			name = Release;
+		};
 		0B0000000000000000000011 /* Debug-Seoul */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1284,6 +1240,50 @@
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
 			};
 			name = "Debug-Seoul";
+		};
+		0D000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.chartcalibrationuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = TradeTool;
+			};
+			name = Debug;
+		};
+		0D0000000000000000000010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.chartcalibrationuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = TradeTool;
+			};
+			name = Release;
 		};
 		0D0000000000000000000011 /* Debug-Seoul */ = {
 			isa = XCBuildConfiguration;
