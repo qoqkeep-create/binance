@@ -108,6 +108,8 @@
 		CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63133A17E8871350B079F81 /* USDTResearchViews.swift */; };
 		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
 		010000000000000000000057 /* Lucide-ISC.txt in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* Lucide-ISC.txt */; };
+		A17000000000000000000001 /* FloatingPositionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000002 /* FloatingPositionsView.swift */; };
+		A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000004 /* FloatingPositionsTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -236,6 +238,8 @@
 		E63133A17E8871350B079F81 /* USDTResearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTResearchViews.swift; sourceTree = "<group>"; };
 		F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTTradingViews.swift; sourceTree = "<group>"; };
 		02000000000000000000005E /* Lucide-ISC.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "Lucide-ISC.txt"; path = "../../docs/licenses/Lucide-ISC.txt"; sourceTree = SOURCE_ROOT; };
+		A17000000000000000000002 /* FloatingPositionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsView.swift; sourceTree = "<group>"; };
+		A17000000000000000000004 /* FloatingPositionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -576,6 +580,7 @@
 			isa = PBXGroup;
 			children = (
 				120000000000000000000005 /* ServerSwitchingTests.swift */,
+				A17000000000000000000004 /* FloatingPositionsTests.swift */,
 				0B0000000000000000000002 /* ChartEngineCoreTests.swift */,
 				0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */,
 				0F0000000000000000000004 /* AppearanceTests.swift */,
@@ -602,6 +607,7 @@
 				E63133A17E8871350B079F81 /* USDTResearchViews.swift */,
 				DD7B56A4F1642013DF78DC36 /* USDTSession.swift */,
 				18C443B8F02115C83974CD29 /* USDTStore.swift */,
+				A17000000000000000000002 /* FloatingPositionsView.swift */,
 				9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */,
 				F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */,
 				72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */,
@@ -753,6 +759,7 @@
 				CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */,
 				4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */,
 				059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */,
+				A17000000000000000000001 /* FloatingPositionsView.swift in Sources */,
 				F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */,
 				3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */,
 				51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */,
@@ -845,6 +852,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				130000000000000000000005 /* ServerSwitchingTests.swift in Sources */,
+				A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */,
 				0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */,
 				0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */,
 				0F0000000000000000000003 /* AppearanceTests.swift in Sources */,

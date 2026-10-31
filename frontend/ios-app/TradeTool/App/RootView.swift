@@ -73,6 +73,7 @@ private struct MainAppView: View {
         }
         .background(BinanceTheme.navigationBackground)
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .floatingPositionsOverlay()
         .task {
             guard let userID = container.authStore.session?.user.id else { return }
             await store.begin(userID: userID)

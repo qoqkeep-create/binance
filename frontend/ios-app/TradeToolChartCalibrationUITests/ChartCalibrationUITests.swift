@@ -2833,6 +2833,64 @@ final class WebParityUITests: XCTestCase {
     image.lifetime = .keepAlways
     add(image)
   }
+  func testFloatingPositionsAcrossPagesAndDragging() {
+    launch("profile", ["--fixture-multiple"])
+    let toggle = app.buttons["profile.floatingPositions"]
+    XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+    if !toggle.isHittable { app.swipeUp() }
+    toggle.tap()
+    let panel = app.otherElements["floating.positions.panel"]
+    let price = app.staticTexts["floating.position.price"]
+    let profit = app.staticTexts["floating.position.profit"]
+    XCTAssertTrue(price.waitForExistence(timeout: 10))
+    XCTAssertEqual(price.label, "68000")
+    XCTAssertEqual(profit.label, "+25.00 U")
+    capture("floating-profile")
+    app.buttons["floating.positions.next"].tap()
+    XCTAssertEqual(price.label, "2600.5")
+    XCTAssertEqual(profit.label, "-3.50 U")
+    app.buttons["持仓"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["限价委托"].waitForExistence(timeout: 5))
+    XCTAssertEqual(price.label, "2600.5")
+    capture("floating-positions")
+    app.buttons["我的"].firstMatch.tap()
+    let strategy = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止盈止损策略")).firstMatch
+    XCTAssertTrue(strategy.waitForExistence(timeout: 5))
+    if !strategy.isHittable { app.swipeUp() }
+    strategy.tap()
+    XCTAssertTrue(app.staticTexts["我的策略"].waitForExistence(timeout: 5))
+    XCTAssertEqual(price.label, "2600.5")
+    let before = panel.frame
+    let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+    let target = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: before.midX - 100, dy: before.midY + 160))
+    start.press(forDuration: 0.1, thenDragTo: target)
+    XCTAssertLessThan(panel.frame.minX, before.minX - 40)
+    capture("floating-dragged-detail")
+    app.buttons["floating.positions.close"].tap()
+    XCTAssertFalse(panel.exists)
+    app.buttons["返回"].firstMatch.tap()
+    XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+    XCTAssertEqual(toggle.value as? String, "未开启")
+  }
+
+  func testFloatingPositionsEmptyUnboundAndDarkStates() {
+    for (options, expected, name) in [
+      (["--fixture-empty"], "暂无持仓", "floating-empty"),
+      (["--fixture-unbound"], "请先绑定 API", "floating-unbound"),
+      (["--fixture-dark", "--fixture-lead"], "+25.00 U", "floating-lead-dark"),
+    ] {
+      launch("profile", options)
+      let toggle = app.buttons["profile.floatingPositions"]
+      XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+      if !toggle.isHittable { app.swipeUp() }
+      toggle.tap()
+      XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 10))
+      capture(name)
+      app.buttons["floating.positions.close"].tap()
+      XCTAssertFalse(app.otherElements["floating.positions.panel"].exists)
+    }
+  }
+
   func testWatchEditingAndResearchModel() {
     launch("watch-editor")
     XCTAssertTrue(app.staticTexts["写计划"].waitForExistence(timeout: 10))

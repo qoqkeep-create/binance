@@ -3,6 +3,8 @@ import SwiftUI
 struct USDTProfileView: View {
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var auth: AuthStore
+  @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
+  private var floatingPositions = false
   @State private var logout = false
   @State private var more = false
   @State private var binding = false
@@ -197,6 +199,13 @@ struct USDTProfileView: View {
               menuRow("交易命令", "clock", small: true)
             }
           }
+          separator
+          Button {
+            floatingPositions.toggle()
+          } label: {
+            menuRow("持仓浮窗", "rectangle.on.rectangle", value: floatingPositions ? "已开启" : "未开启")
+          }.accessibilityIdentifier("profile.floatingPositions")
+            .accessibilityValue(floatingPositions ? "已开启" : "未开启")
           separator
           NavigationLink {
             USDTSettingsView()

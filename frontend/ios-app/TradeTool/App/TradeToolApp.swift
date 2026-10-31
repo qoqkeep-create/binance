@@ -279,6 +279,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         var second = first.fields
         second["id"] = .number(2)
         second["symbol"] = .string("ETHUSDT")
+        second["current_price"] = .string("2600.50")
+        second["pnl"] = .string("-3.50")
+        second["side"] = .number(1)
         value = .array([first, .object(second)])
       }
       if request.path == "/v1/trade/capital/precheck",
@@ -773,11 +776,15 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           }
         }
       }
+      .floatingPositionsOverlay()
       .environmentObject(container).environmentObject(container.authStore).environmentObject(
         container.toastCenter
       ).environmentObject(store)
       .preferredColorScheme(dark ? .dark : .light)
       .task {
+        FloatingPositionsPreferences.defaults.set(false, forKey: FloatingPositionsPreferences.enabledKey)
+        FloatingPositionsPreferences.defaults.set(1.0, forKey: "integrated.floatingPositions.x")
+        FloatingPositionsPreferences.defaults.set(0.22, forKey: "integrated.floatingPositions.y")
         await store.begin(userID: "_web_visual_fixture")
         if ProcessInfo.processInfo.arguments.contains("--fixture-lead") {
           store.switchMode("lead")

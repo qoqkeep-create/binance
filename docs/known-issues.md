@@ -5,6 +5,7 @@
 | 事项 | 当前状态与下一步 |
 | --- | --- |
 | Web 原生复刻 | 已按来源重做业务页面及主要弹窗；164 项单测和 8 个独立 UI 流程分轮通过，已查看同宽模拟器截图，范围见 [变更记录](changes.md)。不能将其写为所有设备逐像素一致；原 Web 看盘计划在窄屏的十二列拥挤布局按源保留，真机、系统控件及动态状态需继续验收，见 [对照说明](ios-web-parity.md) |
+| 持仓浮窗 | App 内跨页的紧凑浮窗已实现，单测与两项隔离 UI 流程通过并检查截图。跨 App / 后台展示未实现；真实有仓账户、iPhone 和本次 TestFlight 构建待分别验收，见 [持仓浮窗](ios-floating-positions.md) |
 | 密码重置唤起 | App 可处理已有重置参数；邮件 HTTPS Universal Links 自动唤起尚未配置和验收 |
 | TestFlight | 新 App ID、Push capability、App 记录及内部测试组已建立，本地签名归档和 162 项单测通过；Cloud 已授权 `qoqkeep-create/binance`，自动编号从 4 递增，构建 7 的测试 / 归档 / 内部分发成功；TestFlight `1.0.1 (7)`“正在测试”，手机接受邀请与实机安装仍待测试者完成，见 [指南](testflight.md) |
 | Python APNs | 原生已有部分通知基础代码，Python 尚未接通 APNs；前台 WSS 通过不代表后台系统通知通过 |

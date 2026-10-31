@@ -2,6 +2,13 @@
 
 此处保留值得长期维护的里程碑，不替代 Git 日志或全量聊天历史。每条说明来源和范围；历史通过不代表本轮重新测试。
 
+## 2026-11-01：同步最新配置与新增持仓浮窗
+
+- 从指定 GitHub 的 `codex/integrated-ios` 拉取至 `8afaa9b`，保留 Cloud / TestFlight 配置、工程排序和云端压力测试规则；本地 Web 复刻先提交为 `fb2e14f`，再合并为 `409e059`。合并前后 13 个业务 / 认证 / 导航源码的 SHA-256 一致；文档冲突保留双方记录，工程同时保留图标许可资源。只使用整合目录的独立 Git 元数据，来源项目与父仓库保持原状。
+- “我的”新增“持仓浮窗”开关，184 × 82 pt 的 App 内原生卡片显示交易对、方向、市价与浮盈，可拖动、关闭和点击切换多笔持仓，跨底部页面及导航详情显示。只调用已有持仓查询，使用 Decimal 和同一服务端快照；前台定时与账户事件刷新，关闭 / 后台 / 换身份废弃旧响应，失败不显示旧价格。UI 偏好与持仓数据分开，详情见 [持仓浮窗](ios-floating-positions.md)。
+- 本地 `TradeTool` 全量单测 172 项通过，新增 8 项覆盖精度、空仓、失败、身份与请求隔离及拖动边界，结果为 `.integration-runtime/FloatingUnit.xcresult`。首次 UI 测试暴露 DEBUG 独立 UserDefaults 的多个实例无法同步 AppStorage，改为共享实例后，两项浮窗 UI 流程全部通过（42.7 秒），结果为 `.integration-runtime/FloatingUI2.xcresult`；已实际打开浅色多仓、持仓页、拖动后详情页、深色带单、无仓和未绑定截图。
+- 最终代码的 8 项浮窗单测再次通过（`.integration-runtime/FloatingFocusedUnit.xcresult`）；generic iOS 的 Release 未签名构建通过，包内存在浮窗功能、Metal 库、隐私清单和 Lucide 许可，未包含 DEBUG 视觉 fixture 入口、测试账号或独立偏好 suite。工程语法、59 个本地文档链接及差异检查通过；新增源码、测试和主题文档 3 个文件纳入 Git。源码交付分支仍为 `codex/integrated-ios`，本次推送后的 Cloud 构建 / TestFlight 分发结果待另行核对，没有把源码推送或模拟器替身数据描述成 iPhone 或真实有仓验收。
+
 ## 2026-11-01：按原 USDT Web 重做原生业务页面
 
 - 以原 Web 移动端源码、DOM、样式及 402 逻辑宽度截图为依据，重做认证、开仓、持仓 / 委托 / 历史、信号、我的、设置、策略、资金、日志、指标、看盘计划、交易前校准和信号研究页面及主要弹窗。对齐字体、间距、颜色、圆角、字段高度、固定底部操作和图标；Lucide 原路径用原生 Path 绘制，许可同时纳入源码和 App 资源。首个行情入口及 SwiftUI + Metal 图表沿用现有实现，研究历史图使用 Swift Charts。具体页面及平台差异见 [Web 原生复刻](ios-web-parity.md)。
