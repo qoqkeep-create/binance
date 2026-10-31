@@ -1,0 +1,9 @@
+{
+  "id" : "37f7a642-66d7-43eb-9703-6273b4768c76",
+  "targets" : [
+    {
+      "id" : "f01be7a9-f719-4ecc-932e-17c7bac455a6",
+      "name" : "TradeTool"
+    }
+  ]
+}

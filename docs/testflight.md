@@ -1,6 +1,6 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
-核对日期：2026-10-31。工程配置以当前源码为准，Apple 操作依据文末官方文档。已补主 App 隐私清单，并核对 Xcode Cloud 所需的共享 Scheme、Metal 准备脚本和自动构建号机制。Apple 团队已核实为 GUANGDONG ZHANG / `756Y5JKBUD`；新 App ID 已注册并启用 Push Notifications，App Store Connect 已创建 `TradeTools USDT`（App ID `6829222305`）。正在配置新应用的 Cloud 工作流，尚未完成云端签名归档或上传 TestFlight。
+核对日期：2026-10-31。工程配置以当前源码为准，Apple 操作依据文末官方文档。已补主 App 隐私清单，并核对 Xcode Cloud 所需的共享 Scheme、Metal 准备脚本和自动构建号机制。Apple 团队已核实为 GUANGDONG ZHANG / `756Y5JKBUD`；新 App ID 已注册并启用 Push Notifications，App Store Connect 已创建 `TradeTools USDT`（App ID `6829222305`）。已保存新应用的 `iOS TestFlight` 工作流，仓库授权、分支 / 路径触发、必过单测、App Store Connect 归档和内部测试自动分发均已配置；下一个构建号已设为 `4`，首次云端运行待验收。
 
 ## 本项目固定信息与待办
 
@@ -10,7 +10,7 @@
 | 主 Target | `TradeTool` |
 | 建议归档 Scheme | `TradeTool Release`；其 Archive 配置为 `Release` |
 | Bundle ID | `com.waibao2025.trade.integrated`；使用独立 App 记录 |
-| Version / Build | 源码为 `1.0.1` / `3`；云端分发使用 Xcode Cloud 自动递增的 Build，接入时核对起始号 |
+| Version / Build | 源码为 `1.0.1` / `3`；Cloud 起始 Build 已保存为 `4`，随后平台自动递增 |
 | Team | `756Y5JKBUD` / GUANGDONG ZHANG；已在开发者后台核实 |
 | 签名 | Automatic；TestFlight 需要 Apple Developer Program 的有效分发签名 |
 | 手机系统 | 最低 iOS 17.0；当前目标设备族为 iPhone |
@@ -92,29 +92,29 @@ open frontend/ios-app/TradeTool.xcodeproj
 
 ## Xcode Cloud：自动构建与 TestFlight 分发
 
-推荐日常更新使用这一流程。首次从 Xcode 的 Report navigator → Cloud → Get Started / Manage Workflows 连接本产品，后续可在 App Store Connect 的 Xcode Cloud 页面维护。本地原有 manifest 指向旧 `td0328/trade-tool` 产品，本次为新 App ID 重建 Cloud 关联，不修改旧产品的工作流或历史构建。
+推荐日常更新使用这一流程。首次从 Xcode 的 Report navigator → Cloud → Get Started / Manage Workflows 连接本产品，后续可在 App Store Connect 的 Xcode Cloud 页面维护。本地原有 manifest 指向旧 `td0328/trade-tool` 产品，本次已为新 App ID 重建 Cloud 关联，不修改旧产品的工作流或历史构建。新 product ID 为 `f01be7a9-f719-4ecc-932e-17c7bac455a6`，新 manifest 由 Xcode 生成并加入追踪。
 
 ### 一次性后台设置
 
 1. 完成前述付费团队、独立 App ID 和 App Store Connect App 记录核对；团队应有 Xcode Cloud 使用权限和可用额度。确认 `756Y5JKBUD` 是该 App 所属团队，Push Notifications capability 与自动签名匹配。
 2. 授权 Xcode Cloud 访问 `qoqkeep-create/binance` GitHub 仓库。本机 GitHub Deploy key 不等于 Apple 服务已获授权；云端只能构建已经推送的提交。
-3. 在 TestFlight 建立内部测试组并加入测试账号，例如 `本人真机测试`，再配置工作流中的分发 post-action。
-4. 本轮已核对新 App 的 TestFlight 页面：暂无构建版本，已建立 `内部测试` 群组并加入当前 Apple 账号。Cloud 起始号计划设为 `4`，须在完成仓库授权及新工作流创建后实际保存；目前尚未设置。
+3. 已在 TestFlight 建立 `内部测试` 组，加入当前 Apple 账号，工作流 post-action 已绑定该组。
+4. 首次启动前，在 Cloud Settings → Build Number 保存下一个构建号 `4`；后续由平台递增。首次运行仍需核对归档、上传、Apple 处理与组内可用状态。
 
-当前接入阻塞：Chrome 原登录的 `td0328` 已有个人 Xcode Cloud 安装，但目标仓库属于 `qoqkeep-create`，需要仓库所有者完成安装 / 授权。只为 `qoqkeep-create/binance` 授权，不扩大或修改 `td0328` 原有安装范围。新的 Cloud 分支触发、测试 / 归档、自动分发仍未保存，不能把下表建议视为已完成配置。
+用户确认后已在仓库所有者 `qoqkeep-create` 下安装官方 Xcode Cloud GitHub App，仅选择 `binance`。权限为读取代码 / 元数据 / PR，读写 checks 和 commit statuses；未修改 `td0328` 原有安装范围。下表为已保存配置，可在[工作流后台](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/xcode-cloud/products/f01be7a9-f719-4ecc-932e-17c7bac455a6/workflows/E3D5006F-507F-48D4-9B29-6DBD7D9C4CEB)维护。
 
-### 建议工作流
+### 已保存工作流
 
-| 设置 | 本项目建议 |
+| 设置 | 当前配置 |
 | --- | --- |
 | 名称 | `iOS TestFlight` |
 | Repository / Branch | `qoqkeep-create/binance` / `codex/integrated-ios`（当前交付分支；发布分支改变时同步修改） |
 | Project | `frontend/ios-app/TradeTool.xcodeproj` |
-| Start Conditions | 当前交付分支有提交时触发；可加 Files and Folders 条件，仅 iOS 目录变更时构建 |
-| Environment | 固定云端可用且已验证的 Xcode / macOS 版本；本轮本机是 Xcode 27.1，不把历史 27.2 验证当作当前环境 |
-| Test action | Scheme `TradeTool`，选择可用 iPhone 模拟器，设为 Required To Pass |
-| Archive action | Scheme `TradeTool Release`，iOS / Release，Deployment Preparation 选 `TestFlight and App Store` |
-| Post-actions | TestFlight Internal Testing，选择上述内部组；测试和归档成功后自动分发 |
+| Start Conditions | `codex/integrated-ios` 有提交且 `frontend/ios-app` 内文件变更时触发；同分支新推送自动取消旧构建 |
+| Environment | 固定 Xcode 27.1（27A9275）/ macOS Golden Gate 27.0.1（26A434），Clean 已开启 |
+| Test action | Scheme `TradeTool`，iPhone 18 Pro / 所选 Xcode 最新 iOS（27.1），Required To Pass |
+| Archive action | Scheme `TradeTool Release`，iOS / Release，Distribution Preparation 选 `App Store Connect`（普通 TestFlight / App Store 分发资格） |
+| Post-actions | TestFlight Internal Testing，工件 Archive - iOS，绑定 `内部测试`（1 名成员）；成功后自动分发 |
 | 外部测试 | 如需外测，配置外部组及相应 post-action，Environment 开启 Clean；仍受 TestFlight App Review 约束 |
 
 `TradeTool Release` 的 TestAction 没有测试列表，不能把它选为 Test action 后就认为运行了单测。`TradeTool` 提供单测列表，Archive 仍用独立 Release Scheme。真实登录 UI 检查需要专用无绑定 QA 账户，单独配置；默认云端不依赖本机 ASGI、`.env` 或 QA 密码。

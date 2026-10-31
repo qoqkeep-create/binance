@@ -80,7 +80,7 @@ Bundle ID 使用 `com.waibao2025.trade.integrated`，与旧客户端隔离。iOS
 
 `Debug-Seoul` 与 `Release` 均默认使用首尔整合入口。UI 测试通过启动参数临时选择本地 API；该结果不代表 iOS 已逐页面验收线上所有业务。测试结束后关闭本轮模拟器并清理其生成缓存，运行报告保留在忽略目录 `.integration-runtime/UIVerified.xcresult`。
 
-TestFlight 分发尚未执行。已添加 `PrivacyInfo.xcprivacy` 并加入主 App 资源，声明现有 UserDefaults 与图表 `systemUptime` 的访问理由。新 Bundle ID 已注册且启用 Push Notifications，团队、App Store Connect App 记录和内部测试组已建立；本地开发签名 Release Archive 及 162 项单测通过。原有 Cloud 关联属于旧产品，已移除本地 manifest，正在为本应用重新接入；仍需 `qoqkeep-create` 仓库所有者授权及后台工作流配置。云端 Build 计划采用 Cloud 原生递增，实际分发签名和上传需独立验收，见 [手机发布指南](testflight.md)。
+TestFlight 分发尚未执行。已添加 `PrivacyInfo.xcprivacy` 并加入主 App 资源，声明现有 UserDefaults 与图表 `systemUptime` 的访问理由。新 Bundle ID 已注册且启用 Push Notifications，团队、App Store Connect App 记录和内部测试组已建立；本地开发签名 Release Archive 及 162 项单测通过。已重新生成新应用 Cloud manifest，仓库所有者授权与 `iOS TestFlight` 工作流均已保存，包含必过单测、Release 归档及内部测试自动分发。云端 Build 起始号已设为 4，之后原生递增；实际云端分发签名和上传仍需独立验收，见 [手机发布指南](testflight.md)。
 
 ## 本次服务器验收与性能范围
 
