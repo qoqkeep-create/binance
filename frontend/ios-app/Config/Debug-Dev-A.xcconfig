@@ -1,0 +1,3 @@
+// Dev A: first development network.
+// Update this when the backend LAN address changes at this location.
+API_BASE_URL = http:/$()/192.168.1.110:8686

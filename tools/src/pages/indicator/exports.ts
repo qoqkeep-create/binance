@@ -1,0 +1,1 @@
+export { IndicatorVerificationPage } from './index'

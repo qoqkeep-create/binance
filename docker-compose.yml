@@ -1,0 +1,187 @@
+x-app-environment: &app-environment
+  SECRET_KEY: ${SECRET_KEY:-dev-only-replace-with-long-secret}
+  AES_SECRET_KEY: ${AES_SECRET_KEY:-}
+  AES_PREVIOUS_SECRET_KEY: ${AES_PREVIOUS_SECRET_KEY:-}
+  DEBUG: ${DEBUG:-False}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-ba.wow211.com,www.ba.wow211.com,47.236.86.243,127.0.0.1}
+  CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-False}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://ba.wow211.com,https://www.ba.wow211.com}
+  PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://ba.wow211.com}
+  AUTH_REFRESH_COOKIE_SECURE: ${AUTH_REFRESH_COOKIE_SECURE:-True}
+  SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-True}
+  CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-True}
+  PASSWORD_RESET_TIMEOUT: ${PASSWORD_RESET_TIMEOUT:-1800}
+  AUTH_LOGIN_FAILURE_WINDOW_SECONDS: ${AUTH_LOGIN_FAILURE_WINDOW_SECONDS:-3600}
+  AUTH_LOGIN_LOCK_SECONDS: ${AUTH_LOGIN_LOCK_SECONDS:-180}
+  AUTH_LOGIN_ACCOUNT_MAX_FAILURES: ${AUTH_LOGIN_ACCOUNT_MAX_FAILURES:-10}
+  AUTH_LOGIN_IP_MAX_FAILURES: ${AUTH_LOGIN_IP_MAX_FAILURES:-50}
+  AUTH_REGISTER_IP_MAX_ATTEMPTS: ${AUTH_REGISTER_IP_MAX_ATTEMPTS:-10}
+  AUTH_REGISTER_RATE_WINDOW_SECONDS: ${AUTH_REGISTER_RATE_WINDOW_SECONDS:-3600}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DB_ENGINE: ${DB_ENGINE:-mysql}
+  DB_HOST: ${DB_HOST:-mysql}
+  DB_PORT: ${DB_PORT:-3306}
+  DB_NAME: ${DB_NAME:-riskon}
+  DB_USER: ${DB_USER:-riskon}
+  DB_PASSWORD: ${DB_PASSWORD:-dev-only-db-password}
+  USE_REDIS_CACHE: ${USE_REDIS_CACHE:-True}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  BINANCE_FUTURES_BASE_URL: ${BINANCE_FUTURES_BASE_URL:-https://fapi.binance.com}
+  BINANCE_TIMEOUT_SECONDS: ${BINANCE_TIMEOUT_SECONDS:-10}
+  BINANCE_RECV_WINDOW: ${BINANCE_RECV_WINDOW:-5000}
+  BINANCE_DEFAULT_MAX_LEVERAGE: ${BINANCE_DEFAULT_MAX_LEVERAGE:-125}
+  BINANCE_FUTURES_WEIGHT_LIMIT_PER_MINUTE: ${BINANCE_FUTURES_WEIGHT_LIMIT_PER_MINUTE:-2400}
+  BINANCE_SPOT_WEIGHT_LIMIT_PER_MINUTE: ${BINANCE_SPOT_WEIGHT_LIMIT_PER_MINUTE:-6000}
+  BINANCE_SAPI_WEIGHT_LIMIT_PER_MINUTE: ${BINANCE_SAPI_WEIGHT_LIMIT_PER_MINUTE:-12000}
+  BINANCE_BACKGROUND_WEIGHT_RATIO: ${BINANCE_BACKGROUND_WEIGHT_RATIO:-0.65}
+  BINANCE_NORMAL_WEIGHT_RATIO: ${BINANCE_NORMAL_WEIGHT_RATIO:-0.85}
+  BINANCE_CRITICAL_WEIGHT_RATIO: ${BINANCE_CRITICAL_WEIGHT_RATIO:-0.96}
+  BINANCE_ORDER_LIMIT_PER_MINUTE: ${BINANCE_ORDER_LIMIT_PER_MINUTE:-1200}
+  BINANCE_ORDER_LIMIT_RATIO: ${BINANCE_ORDER_LIMIT_RATIO:-0.95}
+  LEAD_TRADING_ENABLED: ${LEAD_TRADING_ENABLED:-true}
+  BINANCE_AUTH_FAILURE_THRESHOLD: ${BINANCE_AUTH_FAILURE_THRESHOLD:-3}
+  BINANCE_AUTH_FAILURE_WINDOW_SECONDS: ${BINANCE_AUTH_FAILURE_WINDOW_SECONDS:-21600}
+  SERVER_PUBLIC_IP: ${SERVER_PUBLIC_IP:-}
+  APP_VERSION: ${APP_VERSION:-}
+  AI_PROVIDER: ${AI_PROVIDER:-}
+  AI_BASE_URL: ${AI_BASE_URL:-}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-}
+  AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-90}
+  TV_MESSAGE_API_TOKEN: ${TV_MESSAGE_API_TOKEN:-}
+  TV_WEBHOOK_API_KEY: ${TV_WEBHOOK_API_KEY:-}
+  MARKET_ANALYSIS_SIGNAL_RETENTION_DAYS: ${MARKET_ANALYSIS_SIGNAL_RETENTION_DAYS:-90}
+  MARKET_ANALYSIS_ALERT_URL: ${MARKET_ANALYSIS_ALERT_URL:-http://tradingview-webhook:3000/internal/market-scan}
+  MARKET_ANALYSIS_ALERT_TOKEN: ${MARKET_ANALYSIS_ALERT_TOKEN:-}
+  MARKET_SNAPSHOT_PREWARM_ENABLED: ${MARKET_SNAPSHOT_PREWARM_ENABLED:-true}
+  MARKET_SNAPSHOT_PREWARM_URL: ${MARKET_SNAPSHOT_PREWARM_URL:-https://ba.wow211.com}
+  OPS_ALERT_URL: ${OPS_ALERT_URL:-http://tradingview-webhook:3000/internal/ops-alert}
+  OPS_ALERT_TOKEN: ${OPS_ALERT_TOKEN:-}
+  OPS_ALERT_TIMEOUT_SECONDS: ${OPS_ALERT_TIMEOUT_SECONDS:-5}
+  TRADE_NOTIFICATION_URL: ${TRADE_NOTIFICATION_URL:-http://tradingview-webhook:3000/internal/trade-notification}
+  TRADE_NOTIFICATION_TOKEN: ${TRADE_NOTIFICATION_TOKEN:-}
+  TRADE_NOTIFICATION_TIMEOUT_SECONDS: ${TRADE_NOTIFICATION_TIMEOUT_SECONDS:-5}
+  EXTERNAL_TRADE_SIGNAL_ENABLED: ${EXTERNAL_TRADE_SIGNAL_ENABLED:-False}
+  EXTERNAL_TRADE_SIGNAL_URL: ${EXTERNAL_TRADE_SIGNAL_URL:-}
+  EXTERNAL_TRADE_SIGNAL_API_KEY: ${EXTERNAL_TRADE_SIGNAL_API_KEY:-}
+  EXTERNAL_TRADE_SIGNAL_TIMEOUT_SECONDS: ${EXTERNAL_TRADE_SIGNAL_TIMEOUT_SECONDS:-5}
+  GUNICORN_WORKERS: ${GUNICORN_WORKERS:-8}
+  GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
+  RUN_SCHEDULER_IN_WEB: "false"
+  EMAIL_HOST: ${EMAIL_HOST:-}
+  EMAIL_PORT: ${EMAIL_PORT:-465}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  EMAIL_USE_SSL: ${EMAIL_USE_SSL:-True}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-False}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+
+services:
+  mysql:
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-riskon}
+      MYSQL_USER: ${DB_USER:-riskon}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-dev-only-db-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-dev-only-root-password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+    environment: *app-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: ["/app/docker/server/web.sh"]
+    volumes:
+      - static_data:/app/server/staticfiles
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+    environment: *app-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: ["/app/docker/server/scheduler.sh"]
+    restart: unless-stopped
+
+  tradingview-webhook:
+    build:
+      context: .
+      dockerfile: docker/tradingview/Dockerfile
+    environment:
+      TV_WEBHOOK_HOST: 0.0.0.0
+      TV_WEBHOOK_PORT: 3000
+      TV_WEBHOOK_API_KEY: ${TV_WEBHOOK_API_KEY-}
+      EXTERNAL_SIGNAL_API_KEY: ${EXTERNAL_SIGNAL_API_KEY:-}
+      MARKET_ANALYSIS_ALERT_TOKEN: ${MARKET_ANALYSIS_ALERT_TOKEN:-}
+      TRADE_NOTIFICATION_TOKEN: ${TRADE_NOTIFICATION_TOKEN:-}
+      TRADE_NOTIFICATION_STATE_PATH: ${TRADE_NOTIFICATION_STATE_PATH:-/data/trade-notification-idempotency.sqlite3}
+      TV_WEBHOOK_WECOM_URL: ${TV_WEBHOOK_WECOM_URL:-}
+      TV_WEBHOOK_WECOM_SECRET: ${TV_WEBHOOK_WECOM_SECRET:-}
+      TV_WEBHOOK_TIMEOUT_SECONDS: ${TV_WEBHOOK_TIMEOUT_SECONDS:-10}
+      TV_WEBHOOK_LOG_LEVEL: ${TV_WEBHOOK_LOG_LEVEL:-INFO}
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
+      TG_CHAT_ID: ${TG_CHAT_ID:-}
+      TV_MESSAGE_INGEST_URL: ${TV_MESSAGE_INGEST_URL:-http://backend:8000/v1/trade/tradingview/messages/ingest}
+      TV_MESSAGE_API_TOKEN: ${TV_MESSAGE_API_TOKEN:-}
+    expose:
+      - "3000"
+    volumes:
+      - tradingview_data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    depends_on:
+      - backend
+      - tradingview-webhook
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - static_data:/var/www/static:ro
+      - ${SSL_CERT_PATH:-/etc/letsencrypt/live/ba.wow211.com/fullchain.pem}:/etc/nginx/certs/fullchain.pem:ro
+      - ${SSL_KEY_PATH:-/etc/letsencrypt/live/ba.wow211.com/privkey.pem}:/etc/nginx/certs/privkey.pem:ro
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+  static_data:
+  tradingview_data:

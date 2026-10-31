@@ -1,0 +1,12 @@
+[Unit]
+Description=TradeTools Binance auto pull and docker deploy
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/riskon/deploy.sh
+# 总闸：任何环节（fetch/build/健康校验/回滚）挂死最多 15 分钟即被强杀，
+# flock 锁随进程退出自动释放，杜绝残锁卡死后续部署
+TimeoutStartSec=900
+KillMode=control-group

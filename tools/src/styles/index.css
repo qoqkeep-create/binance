@@ -1,0 +1,26 @@
+@import './tailwind.css';
+@import './theme.css';
+
+html,
+body,
+#root {
+  width: 100%;
+  height: var(--app-height, 100dvh);
+  min-height: var(--app-height, 100dvh);
+}
+
+body {
+  overflow: hidden;
+  overscroll-behavior-y: none;
+}
+
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

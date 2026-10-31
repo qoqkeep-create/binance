@@ -1,0 +1,28 @@
+{
+  "name": "交易平台",
+  "short_name": "交易平台",
+  "description": "虚拟货币交易平台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0E11",
+  "theme_color": "#0B0E11",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192-v3.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512-v3.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512-v3.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

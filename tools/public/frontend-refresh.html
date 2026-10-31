@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>更新网页界面</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0b0e11; color: #eaecef; }
+      body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
+      main { margin: 24px; padding: 28px; max-width: 340px; border: 1px solid #2b3139; border-radius: 20px; background: #1a1d23; }
+      h1 { font-size: 20px; margin: 0 0 16px; }
+      p { font-size: 14px; color: #b7bdc6; line-height: 1.7; }
+      button { width: 100%; border: 0; border-radius: 12px; padding: 14px; background: #f0b90b; color: #111; font-size: 16px; font-weight: 600; }
+      button:disabled { opacity: .5; }
+    </style>
+    <script src="/frontend-refresh.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>更新网页界面</h1>
+      <p id="status" role="status">正在加载最新界面，完成后自动返回“我的”。</p>
+      <p>保留登录信息、API 绑定和账户设置。</p>
+      <button id="retry" type="button" hidden>重新加载</button>
+      <noscript>请启用浏览器 JavaScript 后重新打开此页面。</noscript>
+    </main>
+  </body>
+</html>

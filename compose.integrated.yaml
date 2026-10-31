@@ -1,0 +1,80 @@
+x-python: &python
+  image: tradetools-integrated:${INTEGRATED_RELEASE:-local}
+  build:
+    context: .
+    dockerfile: deploy/integrated/Dockerfile
+  env_file: ./server.env
+  restart: unless-stopped
+  profiles: [pro]
+  init: true
+  read_only: true
+  tmpfs: [/tmp:size=32m]
+  networks: [default, mysql]
+  depends_on:
+    redis:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+services:
+  api:
+    <<: *python
+    ports: ['127.0.0.1:8787:8787']
+    mem_limit: 256m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/v1/health', timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      start_period: 90s
+      retries: 3
+  market:
+    <<: *python
+    command: [python, manage.py, market_stream]
+    mem_limit: 192m
+    healthcheck:
+      test: [CMD, python, manage.py, integration_health, market]
+      interval: 30s
+      timeout: 8s
+      start_period: 120s
+      retries: 3
+  worker:
+    <<: *python
+    command: [python, manage.py, mobile_worker]
+    mem_limit: 192m
+    healthcheck:
+      test: [CMD, python, manage.py, integration_health, worker]
+      interval: 30s
+      timeout: 8s
+      start_period: 60s
+      retries: 3
+  scheduler:
+    <<: *python
+    command: [python, manage.py, run_scheduler]
+    mem_limit: 192m
+    healthcheck:
+      test: [CMD, python, manage.py, integration_health, scheduler]
+      interval: 30s
+      timeout: 8s
+      start_period: 60s
+      retries: 3
+  redis:
+    image: redis:7.4-alpine
+    profiles: [pro]
+    restart: unless-stopped
+    command: [redis-server, --appendonly, 'yes', --maxmemory, 80mb, --maxmemory-policy, noeviction]
+    mem_limit: 128m
+    volumes: [integrated-redis:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
+networks:
+  mysql:
+    external: true
+    name: trade_network
+volumes:
+  integrated-redis:

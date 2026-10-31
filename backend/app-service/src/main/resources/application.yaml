@@ -1,0 +1,241 @@
+server:
+  port: ${SERVER_PORT:8686} # 后端 HTTP 启动端口，默认 8686；需要临时覆盖时设置 SERVER_PORT
+
+spring:
+  application:
+    name: app-service # Spring Boot 应用名称
+  profiles:
+    active: pro # 默认启用生产配置 application-pro.yml；本地开发或测试通过显式 profile 覆盖
+  http:
+    client:
+      factory: jdk # 币安 SDK 固定 Jetty 11；Spring Boot 自身 HTTP 客户端使用 JDK，避免误按 Jetty 12 API 自动探测
+  data:
+    redis:
+      repositories:
+        enabled: false # 项目只使用 RedisTemplate，不启用 Redis Repository 扫描，减少启动噪音
+  sql:
+    init:
+      mode: never # 数据库结构只由 Flyway 管理，禁止 Spring SQL 初始化与迁移重复执行
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/mysql,classpath:db/migration/common
+    baseline-on-migrate: true # 首次接管已有非空数据库时建立基线
+    baseline-version: 0 # 基线后仍会执行 V1 及后续兼容迁移
+    validate-on-migrate: true
+    clean-disabled: true # 任何环境都不允许 Flyway clean 删除业务表
+sa-token:
+  token-name: Authorization # iOS 使用 Authorization: Bearer <token>
+  token-prefix: Bearer
+  timeout: 2592000 # Token 最长有效期 30 天，单位秒
+  active-timeout: 259200 # 连续 72 小时无请求则会话失效
+  is-concurrent: true # 允许同一账号多设备登录
+  is-share: false # 每次登录生成独立 Token，便于单设备退出
+  max-login-count: 5 # 单账号最多同时保留 5 个登录
+  is-read-header: true
+  is-read-cookie: false
+  is-read-body: false
+  is-write-header: false # Token 由登录 JSON 响应显式返回
+  token-style: uuid
+  is-print: false
+  is-log: false
+app:
+  auth:
+    bootstrap-account: ${APP_ADMIN_ACCOUNT:}
+    bootstrap-password: ${APP_ADMIN_PASSWORD:}
+    bootstrap-email: ${APP_ADMIN_EMAIL:}
+    bootstrap-display-name: ${APP_ADMIN_DISPLAY_NAME:Administrator}
+    registration-enabled: ${APP_REGISTRATION_ENABLED:true} # 是否开放账号密码注册，默认开启
+  realtime:
+    enabled: true # 是否启用面向 APP 的实时 WebSocket
+    endpoint: /ws/v1 # WebSocket 协议 v1 入口，iOS 使用与 API 相同域名和端口
+    heartbeat-interval-millis: 20000 # 客户端发送应用层 ping 的建议间隔
+    client-timeout-millis: 60000 # 超过该时间没有收到客户端消息则关闭假活连接
+    max-text-message-bytes: 65536 # 单条客户端 JSON 消息上限
+    send-time-limit-millis: 10000 # 单个客户端一次发送允许占用的最长时间
+    send-buffer-bytes: 1048576 # 单个慢客户端待发送缓冲上限
+    max-subscriptions-per-session: 16 # 单连接最多订阅的频道数
+    max-symbols-per-subscription: 200 # 单频道最多订阅的交易对数量
+    dispatcher-threads: 4 # 实时事件发送线程数，避免阻塞行情和策略线程
+    dispatcher-queue-capacity: 5000 # 待发送任务有界队列，满时丢弃实时更新而不反压行情链路
+    market-ticker-enabled: true # 行情列表 ticker 快照和增量频道；关闭后不连接币安全市场 ticker 流
+    market-ticker-message-max-bytes: ${BINANCE_MARKET_TICKER_MESSAGE_MAX_BYTES:1048576} # 币安全市场 ticker 数组单条消息上限，需高于 Jetty 默认 64KB
+trading:
+  enabled: true # 启用服务器端账户与仓位只读能力
+  credential-master-key: ${TRADING_CREDENTIAL_MASTER_KEY:} # 32字节Base64主密钥；缺失时服务器拒绝绑定，绝不明文保存
+  credential-key-version: ${TRADING_CREDENTIAL_KEY_VERSION:v1} # 支持后续主密钥轮换
+  binance:
+    rest-base-url: ${BINANCE_TRADING_REST_BASE_URL:https://fapi.binance.com} # 私有账户主网REST；生产必须HTTPS
+    recv-window-millis: 5000
+    request-timeout-millis: 12000
+    private-rest-weight-budget-per-minute: 1800 # 公共行情与全部账户共享IP权重预算，低于交易所上限并为人工请求预留余量
+    diagnostic-rest-logging-enabled: ${BINANCE_PRIVATE_REST_DIAGNOSTIC_LOGGING:false} # 脱敏打印私有REST参数和响应；仅排障时开启
+  sync:
+    enabled: ${TRADING_ACCOUNT_SYNC_ENABLED:true} # Phase 2账户监听总开关；Testnet/主网共用同一同步链路
+    user-stream-base-url: ${BINANCE_TRADING_USER_STREAM_BASE_URL:wss://fstream.binance.com/private} # 必须与私有REST处于同一环境
+    keepalive-interval-millis: 1800000 # listenKey每30分钟续期，不等待60分钟过期
+    connection-rollover-millis: 82800000 # 23小时主动滚动连接并REST对账
+    event-queue-capacity: 10000 # 单账户有界事件队列，溢出即降级重连而不静默丢事件
+    max-message-bytes: 1048576 # 单条Binance私有事件最大字节数
+    reconnect-initial-backoff-millis: 1000
+    reconnect-max-backoff-millis: 60000
+    active-reconcile-interval-millis: 60000
+    idle-reconcile-interval-millis: 300000
+    full-discovery-interval-millis: 1800000
+    max-convergence-passes: 3
+    unresolved-order-timeout-millis: 30000
+    lease-ttl-millis: 30000
+    lease-renew-interval-millis: 10000
+    outbox-batch-size: 100
+    outbox-poll-interval-millis: 250
+  execution:
+    command-batch-size: 10 # 单账户串行工作线程每轮最多处理的交易命令数
+    strategy-interval-millis: 60000 # 持仓R策略与持续移动止损固定每分钟评估一次
+    unknown-resolution-timeout-millis: 30000 # 写请求结果未知时先查询，禁止盲目重发
+    order-health-check-interval-millis: ${TRADING_ORDER_HEALTH_CHECK_INTERVAL_MILLIS:5000} # 串行worker默认每5秒通过REST检查保护单和全部已配置止盈单
+    order-repair-backoff-millis: ${TRADING_ORDER_REPAIR_BACKOFF_MILLIS:15000} # 已确认失败或缺失后至少等待15秒再使用新客户端ID补挂
+mybatis-plus:
+  global-config:
+    banner: false # 关闭 MyBatis-Plus 启动 ASCII banner
+logging:
+  file:
+    name: ${LOG_FILE:} # 设置后同时输出到文件；Docker 部署默认写入 /app/logs/trade-tool.log
+  pattern:
+    dateformat: 'yyyy-MM-dd HH:mm:ss.SSS'
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_MAX_FILE_SIZE:50MB} # 单个日志文件滚动大小
+      max-history: ${LOG_MAX_HISTORY:30} # 保留最近多少天的滚动日志
+      total-size-cap: ${LOG_TOTAL_SIZE_CAP:2GB} # 日志文件总大小上限
+binance:
+  usdm:
+    continuous-kline:
+      enabled: true # 是否启用币安 USD-M 永续连续 K 线订阅
+      interval: 1m # 基础行情订阅周期；策略所需 1h K 线由本地 1m 聚合并在整点收盘后触发
+      contract-type: PERPETUAL # 合约类型，PERPETUAL 表示永续合约
+      quote-asset: ${BINANCE_QUOTE_ASSET:USDC} # 全系统报价资产唯一开关，例如 USDC 或 USDT
+      status: TRADING # 只订阅当前处于交易中的合约
+      rest-base-url: https://fapi.binance.com # USD-M Futures 主网 REST 地址，历史补线和交易对刷新必须与 WebSocket 使用同一环境
+      stream-base-url: wss://fstream.binance.com/market/stream # USD-M Futures 主网常规行情路由；连续K线属于 /market，旧 /stream 只握手但不再推送该数据
+      streams-per-connection: 50 # 每个 WebSocket 连接承载的 stream 数量
+      subscribe-delay-millis: 250 # 批量订阅请求之间的全局间隔，避免触发 1008 限流
+      reconnect-enabled: true # 是否启用断线检测和自动重连
+      reconnect-monitor-interval-millis: 15000 # 连接健康检查间隔，单位毫秒
+      silent-reconnect-timeout-millis: 120000 # WebSocket 连接仍打开但超过该时间没有收到任何业务消息时主动重连，避免长连接假活
+      reconnect-initial-backoff-millis: 1000 # 首次重连失败后的退避时间，单位毫秒
+      reconnect-max-backoff-millis: 60000 # 重连退避时间上限，单位毫秒
+      symbol-refresh-enabled: true # 是否定时刷新交易对列表，处理新上架和下架
+      symbol-refresh-interval-millis: 300000 # 交易对列表刷新间隔，单位毫秒
+market:
+  kline:
+    enabled: true # 是否启用 K 线持久化和 Redis 缓存
+    exchange: BINANCE # K 线所属交易所
+    market-type: USDM # 市场类型，USDM 表示 U 本位合约
+    redis-key-prefix: kline:BINANCE:USDM # Redis K 线缓存 key 前缀
+    cache-size-1m: 3000 # Redis 中每个交易对保留的 1m K 线数量，用于前端短周期展示和聚合补齐
+    cache-size-5m: 3000 # Redis 中每个交易对保留的 5m K 线数量
+    cache-size-15m: 3000 # Redis 中每个交易对保留的 15m K 线数量
+    cache-size-1h: 3000 # Redis 中每个交易对保留的 1h K 线数量，满足 EMA144 和 SuperTrend 策略历史窗口；默认补线巡检不再主动按该窗口重建1h
+    cache-size-4h: 1000 # Redis 中每个交易对保留的 4h K 线数量
+    cache-size-1d: 730 # Redis 中每个交易对保留的 1d K 线数量
+    redis-key-expire-days: 180 # Redis K 线缓存 key 的过期天数，用于清理下架交易对的旧缓存
+    aggregation-enabled: true # 是否启用实时本地 K 线聚合；只用于 WebSocket 1m 收盘后提前生成 5m/15m/1h/4h/1d
+    aggregation-source-interval: 1m # 聚合源周期，当前使用 WebSocket 订阅到的 1m 收盘 K 线
+    aggregation-intervals: [5m, 15m, 1h, 4h, 1d] # 需要提前聚合并保存的周期；15m/1h 收线后触发主策略，4h 另有盘中分析
+    backfill-enabled: true # 是否启用历史 K 线补线能力，关闭后只保存 WebSocket 实时 K 线
+    backfill-intervals: [1m, 5m, 15m, 1h, 4h, 1d] # 常规巡检这些周期；补线缺哪个周期就直接从 Binance REST 拉哪个周期
+    startup-backfill-enabled: true # 是否在项目启动后立即检查并补足各周期最近 K 线
+    startup-historical-backfill-enabled: false # 是否启动后按 historical-backfill-start-date 起从近到远分窗口补历史 K 线；默认关闭，避免长跨度全市场补线压垮MySQL
+    historical-backfill-start-date: 2018-01-01 # 历史补线最早检查日期，使用 UTC 日边界；币种实际上线晚于该日期时从上线后开始
+    historical-backfill-window-days: 10 # 历史补线窗口大小，从当前时间往前每10天补齐后再继续推进到更早窗口
+    historical-backfill-intervals: [1m, 5m, 15m, 1h, 4h, 1d] # 启动历史补线检查这些周期；每个周期都直接从 Binance REST 拉同周期数据
+    continuity-guard-enabled: true # 是否启用 K 线连续性守护线程，定时检查断线导致的缺口
+    continuity-guard-interval-millis: 60000 # K 线连续性守护线程检查间隔，单位毫秒
+    closed-kline-safety-delay-millis: 30000 # 只补距离当前时间足够远的已收盘 K 线，避免请求尚未稳定的最新 K 线
+    backfill-request-limit: 1500 # 单次 REST 补线请求最多拉取的 K 线数量，币安接口上限通常为 1500
+    backfill-request-delay-millis: 300 # 每次 REST 补线请求后的暂停时间，避免补线时触发限流
+    startup-redis-warmup-enabled: true # 启动补线后是否用 MySQL 中最近 K 线预热 Redis 缓存
+
+strategy:
+  super-ema-pullback:
+    enabled: true # 是否启用 SuperTrend 翻转后 EMA144 回踩反转策略；15m 与 1h 使用相同规则，EMA55 和 SuperTrend 只计算和展示
+    interval: 1h # 主策略周期，在完整 1h K 线收盘后计算
+    history-size: 1500 # 每次计算加载的 1h K 线数量，满足 EMA144 和 SuperTrend 的稳定计算窗口
+    fifteen-minute:
+      enabled: true # 同时对完整 15m 收盘 K 线运行与 1h 相同的提醒逻辑
+      history-size: 3000 # 覆盖至少30天15m K线，满足白名单外币种的本地质量筛选
+    four-hour:
+      enabled: true # 4h须严格EMA21>EMA55>EMA144或反向空头排列；不依赖SuperTrend翻转和30根窗口
+      history-size: 500 # 4h 指标稳定计算窗口，约覆盖83天
+      intrabar-alert-enabled: true # 盘中触达即判断；同交易对4h主提醒滚动24小时最多一次，重启和多空切换不重置；二次提醒仍消费完整1h收盘K线
+      intrabar-analysis-interval-millis: 250 # 同交易对高频1m更新合并后按现有250ms行情节奏分析，慢消费时只保留最新值，不堆积过期任务
+    ema-middle-period: 55 # 中速 EMA 周期，仅用于指标记录和提醒内容展示，不作为独立回踩提醒目标
+    ema-period: 144 # 慢速 EMA 周期，作为独立回踩目标
+    super-atr-period: 10 # SuperTrend ATR 周期
+    super-multiplier: 6 # SuperTrend 倍数，用于识别趋势方向和翻转，不作为独立回踩提醒目标
+    pullback-touch-tolerance-atr-multiple: 0.1 # 接近目标线的 ATR10 容差倍数，0.1 表示允许距离不超过当根 K 线 ATR10 的 10%
+    pullback-touch-tolerance-max-rate: 0.002 # 接近容差的价格比例上限，0.002 表示即使 ATR 较大也不超过目标价的 0.2%
+    ema-close-confirmation-required: false # 是否要求回踩K收盘价重新回到目标线容许范围内；false 表示影线触达目标线即成立
+    ema-break-allow-rate: 0.003 # 开启收盘确认时，允许收盘价轻微穿越目标线的比例
+    reversal-lookahead-bars: 3 # 仅在开启反转形态过滤时生效，表示第一次回踩后最多等待多少根 1h K 线
+    reversal-pattern-required: false # 不强制要求反转K线形态；首次触达目标线即可触发，识别到的形态仍会记录
+    max-wait-pullback-bars: 30 # SuperTrend 翻转后，每个回踩目标最多等待多少根 1h K 线
+    relative-extreme-lookback-bars: 5 # 回踩候选K与此前多少根趋势内K线比较；多头看低点，空头看高点
+    relative-extreme-min-comparison-bars: 3 # Super翻转初期不足3根历史时放行，避免漏掉刚翻转后的有效回踩
+    relative-extreme-min-qualifying-ratio: 0.6 # 候选极值需优于至少60%的对比K线；宽松保留次低点/次高点
+    relative-extreme-tolerance-atr-multiple: 0.5 # 比较局部极值时允许0.5 ATR误差
+    relative-extreme-tolerance-max-rate: 0.005 # 局部极值误差最多为候选价的0.5%
+    max-post-touch-move-away-atr: 2.5 # 首次回踩/回抽目标线后到触发K收盘，允许离开回踩极值的最大 ATR 倍数
+    max-post-touch-move-away-rate: 0.05 # 首次回踩/回抽目标线后到触发K收盘，允许离开回踩极值的最大价格比例
+    max-terminal-pattern-extreme-distance-atr: 0.35 # 上吊线、射击之星、锤形线、十字星等单根末端反转K，必须距离本轮回踩/回抽极值不超过该 ATR 倍数
+    symbol-whitelist: [BTC, ETH, SOL, SUI, BCH, NEAR, WLFI, HBAR, ETC, DOGE, ASTER, LINK, WLD, LTC, DOT, AVAX, 1000SHIB, ADA, ZEC, BNB, AAVE, XLM, TRX, 1000PEPE, TRUMP, UNI, TON, TAO, XRP] # 配置基础币；系统按 quote-asset 拼接交易对，并自动过滤当前不存在的目标永续合约
+    indicator-periods:
+      ema-fast-period: 21 # EMA21 指标周期；不再生成金叉/死叉提醒
+      macd-short-period: 12 # MACD 快线周期，只用于指标记录和K线展示
+      macd-long-period: 26 # MACD 慢线周期
+      macd-signal-period: 9 # MACD 信号线周期；二次提醒比较最新两根12/26/9柱距零轴的绝对距离
+    symbol-filter:
+      enabled: true # 是否允许白名单外币种通过动态筛选进入策略；关闭后只分析显式白名单
+      initial-delay-millis: 60000 # 应用启动后延迟刷新，避免与启动补线同时集中请求 Binance REST
+      refresh-interval-millis: 3600000 # 动态币池刷新间隔，默认每小时一次
+      max-snapshot-age-millis: 7200000 # 快照超过该时间视为失效，白名单外币种保守跳过
+      min-listing-days: 180 # 上市时间过短的币种容易缺乏稳定趋势结构
+      min-quote-volume-24h: 30000000 # 最近24小时最小成交额，单位为当前 quote-asset
+      min-median-daily-quote-volume-30d: 30000000 # 本地最近30天每日成交额中位数下限，单位为当前 quote-asset
+      min-open-interest-value: 10000000 # 合约最小持仓价值，单位为当前 quote-asset
+      max-spread-rate: 0.0005 # 买一卖一最大相对价差，0.0005 表示 0.05%
+      max-abs-funding-rate: 0.0005 # 单期资金费率绝对值上限，0.0005 表示 0.05%
+      max-abs-price-change-rate-24h: 0.20 # 24小时涨跌幅绝对值上限，0.20 表示 20%
+      max-abs-open-interest-change-rate-24h: 0.40 # 24小时持仓价值变化率绝对值上限
+      open-interest-request-delay-millis: 25 # 逐币读取持仓历史时的请求间隔
+      kline-quality-lookback-days: 30 # 本地 K 线质量检查窗口
+      max-abnormal-candle-atr-multiple: 4.0 # 单根1h振幅超过当前 ATR 的该倍数时记为异常K
+      max-abnormal-candle-count: 3 # 质量窗口内允许的异常K数量
+      ema-slope-lookback-bars: 6 # EMA144 斜率比较窗口，单位1h K线
+      adx-period: 14 # ADX 周期
+      min-adx: 20 # 白名单外币种趋势强度下限
+
+external-message:
+  enabled: ${EXTERNAL_MESSAGE_ENABLED:${EXTERNAL_TRADE_SIGNAL_ENABLED:false}} # 通用外部JSON接收入口；旧变量仅用于平滑升级
+  api-key: ${EXTERNAL_MESSAGE_API_KEY:${EXTERNAL_TRADE_SIGNAL_API_KEY:}} # 至少32字节随机密钥，只能通过环境变量注入
+reference-trade-notification:
+  target-email: ${REFERENCE_TRADE_NOTIFICATION_TARGET_EMAIL:475842526@qq.com} # 参考通知列表与APNs仅面向该账号
+notification:
+  apns:
+    enabled: ${APNS_NOTIFICATION_ENABLED:false} # 开启后由 Java 直连 Apple APNs HTTP/2，不依赖 APP WebSocket 在线
+    team-id: ${APNS_TEAM_ID:} # Apple Developer Team ID
+    key-id: ${APNS_KEY_ID:} # APNs Auth Key ID
+    private-key-base64: ${APNS_PRIVATE_KEY_BASE64:} # AuthKey_*.p8 文件整体做 Base64；不得提交原始私钥
+    topic: ${APNS_TOPIC:com.oovso.trade} # 必须与 iOS PRODUCT_BUNDLE_IDENTIFIER 一致
+    request-timeout-millis: ${APNS_REQUEST_TIMEOUT_MILLIS:10000}
+    expiration-seconds: ${APNS_EXPIRATION_SECONDS:21600} # 离线设备最多保留6小时，避免过期交易信号延迟送达
+    max-attempts: ${APNS_MAX_ATTEMPTS:3}
+    retry-delay-millis: ${APNS_RETRY_DELAY_MILLIS:1000}
+  webhook:
+    enabled: ${WEBHOOK_NOTIFICATION_ENABLED:false} # 开启后按站点 JSON 协议 POST，comment 字段为 UTF-8 纯文本信号
+    url: ${STRATEGY_SIGNAL_WEBHOOK_URL:} # 不带查询参数的 HTTPS Webhook 地址
+    key: ${STRATEGY_SIGNAL_WEBHOOK_KEY:} # Webhook 访问 key，只能通过环境变量注入
+    zone-id: ${WEBHOOK_NOTIFICATION_ZONE_ID:Asia/Shanghai}
+    connect-timeout-millis: ${WEBHOOK_CONNECT_TIMEOUT_MILLIS:5000}
+    request-timeout-millis: ${WEBHOOK_REQUEST_TIMEOUT_MILLIS:10000}
+    max-attempts: ${WEBHOOK_MAX_ATTEMPTS:3}
+    retry-delay-millis: ${WEBHOOK_RETRY_DELAY_MILLIS:1000}

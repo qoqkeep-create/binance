@@ -1,0 +1,1554 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0F0000000000000000000001 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0000000000000000000002 /* AppAppearance.swift */; };
+		0F0000000000000000000003 /* AppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0000000000000000000004 /* AppearanceTests.swift */; };
+		010000000000000000000001 /* TradeToolApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000001 /* TradeToolApp.swift */; };
+		010000000000000000000002 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000002 /* RootView.swift */; };
+		010000000000000000000003 /* MarketSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000003 /* MarketSnapshot.swift */; };
+		010000000000000000000004 /* StrategySignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000004 /* StrategySignal.swift */; };
+		010000000000000000000005 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000005 /* APIClient.swift */; };
+		010000000000000000000006 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000006 /* DashboardView.swift */; };
+		010000000000000000000007 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000007 /* DashboardViewModel.swift */; };
+		010000000000000000000008 /* SignalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000008 /* SignalsView.swift */; };
+		010000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000009 /* SettingsView.swift */; };
+		01000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000A /* Assets.xcassets */; };
+		01000000000000000000000B /* BottomNavigationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000C /* BottomNavigationBar.swift */; };
+		01000000000000000000000C /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000D /* APIError.swift */; };
+		01000000000000000000000D /* APIRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000E /* APIRequest.swift */; };
+		01000000000000000000000E /* APIEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000F /* APIEnvelope.swift */; };
+		01000000000000000000000F /* APIInterceptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000010 /* APIInterceptor.swift */; };
+		010000000000000000000010 /* AppToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000011 /* AppToastCenter.swift */; };
+		010000000000000000000011 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000012 /* AppContainer.swift */; };
+		010000000000000000000012 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000013 /* AuthModels.swift */; };
+		010000000000000000000013 /* KeychainAuthSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000014 /* KeychainAuthSessionStore.swift */; };
+		010000000000000000000014 /* AuthenticationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000015 /* AuthenticationService.swift */; };
+		010000000000000000000015 /* AuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000016 /* AuthStore.swift */; };
+		010000000000000000000016 /* BinanceTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000017 /* BinanceTheme.swift */; };
+		010000000000000000000017 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000018 /* LoginView.swift */; };
+		010000000000000000000018 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000019 /* Localizable.strings */; };
+		010000000000000000000019 /* MarketListSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001F /* MarketListSettingsView.swift */; };
+		01000000000000000000001A /* RealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000020 /* RealtimeClient.swift */; };
+		01000000000000000000001B /* MarketWatchlistStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000021 /* MarketWatchlistStore.swift */; };
+		01000000000000000000001C /* MarketSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000022 /* MarketSearchView.swift */; };
+		01000000000000000000001D /* MarketKline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000023 /* MarketKline.swift */; };
+		01000000000000000000001E /* MarketChartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000024 /* MarketChartViewModel.swift */; };
+		010000000000000000000020 /* MarketChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000026 /* MarketChartView.swift */; };
+		010000000000000000000021 /* ChartCandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000027 /* ChartCandle.swift */; };
+		010000000000000000000022 /* KlineIngressState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000028 /* KlineIngressState.swift */; };
+		010000000000000000000023 /* RealtimeKlineIngress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000029 /* RealtimeKlineIngress.swift */; };
+		010000000000000000000024 /* CandleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002A /* CandleStore.swift */; };
+		010000000000000000000025 /* ChartInvalidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002B /* ChartInvalidation.swift */; };
+		010000000000000000000026 /* ChartRenderBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002C /* ChartRenderBatch.swift */; };
+		010000000000000000000027 /* RenderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002D /* RenderState.swift */; };
+		010000000000000000000028 /* RelativeChartCoordinateSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002E /* RelativeChartCoordinateSpace.swift */; };
+		010000000000000000000029 /* MetalResourceRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002F /* MetalResourceRing.swift */; };
+		01000000000000000000002A /* MetalRendererHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000030 /* MetalRendererHealth.swift */; };
+		01000000000000000000002B /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000031 /* MetalRenderer.swift */; };
+		01000000000000000000002C /* ChartShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000032 /* ChartShaders.metal */; };
+		01000000000000000000002D /* MetalFrameCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MetalFrameCoordinator.swift */; };
+		01000000000000000000002E /* KlineChartHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* KlineChartHostView.swift */; };
+		01000000000000000000002F /* KlineChartRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* KlineChartRepresentable.swift */; };
+		010000000000000000000030 /* ChartSignposts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* ChartSignposts.swift */; };
+		010000000000000000000031 /* ChartFigure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000037 /* ChartFigure.swift */; };
+		010000000000000000000032 /* ChartText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000038 /* ChartText.swift */; };
+		010000000000000000000033 /* MetalGlyphAtlas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000039 /* MetalGlyphAtlas.swift */; };
+		010000000000000000000034 /* MetalGlyphTextureCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003A /* MetalGlyphTextureCache.swift */; };
+		010000000000000000000035 /* EMAIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003B /* EMAIndicator.swift */; };
+		010000000000000000000036 /* MetalRendererFailurePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003C /* MetalRendererFailurePolicy.swift */; };
+		010000000000000000000037 /* ChartMetricKitSubscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003D /* ChartMetricKitSubscriber.swift */; };
+		010000000000000000000038 /* ChartStressHarnessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003E /* ChartStressHarnessView.swift */; };
+		010000000000000000000039 /* ChartDataPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003F /* ChartDataPipeline.swift */; };
+		01000000000000000000003A /* ChartSceneBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* ChartSceneBuilder.swift */; };
+		01000000000000000000003B /* KlineChartSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000041 /* KlineChartSceneView.swift */; };
+		01000000000000000000003C /* ChartIndicatorPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000042 /* ChartIndicatorPlugin.swift */; };
+		01000000000000000000003D /* SuperTrendIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000043 /* SuperTrendIndicator.swift */; };
+		01000000000000000000003E /* VolumeIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000044 /* VolumeIndicator.swift */; };
+		01000000000000000000003F /* MACDIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000045 /* MACDIndicator.swift */; };
+		010000000000000000000040 /* PanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000046 /* PanelLayout.swift */; };
+		010000000000000000000041 /* ChartIndicatorSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000047 /* ChartIndicatorSelection.swift */; };
+		010000000000000000000042 /* ChartIndicatorSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000048 /* ChartIndicatorSettingsView.swift */; };
+		010000000000000000000043 /* ChartIndicatorParameters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000049 /* ChartIndicatorParameters.swift */; };
+		010000000000000000000044 /* ChartTimelineViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004A /* ChartTimelineViewport.swift */; };
+		010000000000000000000045 /* ChartCrosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004B /* ChartCrosshair.swift */; };
+		010000000000000000000046 /* RSIIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004C /* RSIIndicator.swift */; };
+		010000000000000000000047 /* ChartDrawingTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004D /* ChartDrawingTools.swift */; };
+		010000000000000000000048 /* TradingSettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004E /* TradingSettingsModels.swift */; };
+		010000000000000000000049 /* ExitStrategyManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004F /* ExitStrategyManagementView.swift */; };
+		01000000000000000000004A /* OrderSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000050 /* OrderSettingsView.swift */; };
+		01000000000000000000004B /* ChartOrderDrawingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000051 /* ChartOrderDrawingView.swift */; };
+		01000000000000000000004C /* PositionCenterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000052 /* PositionCenterModels.swift */; };
+		01000000000000000000004D /* PositionCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000053 /* PositionCenterView.swift */; };
+		01000000000000000000004E /* ChartLeverageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000054 /* ChartLeverageSettingsView.swift */; };
+		01000000000000000000004F /* SimpleMovingAverageIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000056 /* SimpleMovingAverageIndicator.swift */; };
+		010000000000000000000050 /* BollingerBandsIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000057 /* BollingerBandsIndicator.swift */; };
+		010000000000000000000051 /* ParabolicSARIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000058 /* ParabolicSARIndicator.swift */; };
+		010000000000000000000052 /* AveragePriceIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000059 /* AveragePriceIndicator.swift */; };
+		010000000000000000000053 /* TechnicalPanelIndicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005A /* TechnicalPanelIndicators.swift */; };
+		010000000000000000000054 /* TradingDataPanelIndicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005B /* TradingDataPanelIndicators.swift */; };
+		010000000000000000000055 /* ReferenceTradeNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005C /* ReferenceTradeNotification.swift */; };
+		010000000000000000000056 /* ReferenceNotificationsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005D /* ReferenceNotificationsViewModel.swift */; };
+		010000000000000000000057 /* ReferenceNotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* ReferenceNotificationsView.swift */; };
+		0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0000000000000000000002 /* ChartEngineCoreTests.swift */; };
+		0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */; };
+		0C0000000000000000000001 /* ChartEngineOnscreenStressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */; };
+		0D0000000000000000000001 /* ChartCalibrationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0000000000000000000002 /* ChartCalibrationUITests.swift */; };
+		130000000000000000000001 /* ServerSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000001 /* ServerSelection.swift */; };
+		130000000000000000000002 /* AppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000002 /* AppRuntime.swift */; };
+		130000000000000000000003 /* ServerNetworkProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000003 /* ServerNetworkProbe.swift */; };
+		130000000000000000000004 /* ServerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000004 /* ServerSettingsView.swift */; };
+		130000000000000000000005 /* ServerSwitchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000005 /* ServerSwitchingTests.swift */; };
+		4ADC1ECF7B1D2C2AF8904860 /* USDTAccountViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */; };
+		9CD0D87DCEBB99A36EE4B57C /* USDTComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33600721399D7B8EDD04A732 /* USDTComponents.swift */; };
+		2F352AA3E4A8195216FCFEA7 /* USDTLegalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */; };
+		20EBABF2268F5C781A0B85C5 /* USDTRecordsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */; };
+		CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63133A17E8871350B079F81 /* USDTResearchViews.swift */; };
+		4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7B56A4F1642013DF78DC36 /* USDTSession.swift */; };
+		059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C443B8F02115C83974CD29 /* USDTStore.swift */; };
+		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
+		3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */; };
+		51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0B0000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 060000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 050000000000000000000001;
+			remoteInfo = TradeTool;
+		};
+		0D0000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 060000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 050000000000000000000001;
+			remoteInfo = TradeTool;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0F0000000000000000000002 /* AppAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearance.swift; sourceTree = "<group>"; };
+		0F0000000000000000000004 /* AppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceTests.swift; sourceTree = "<group>"; };
+		020000000000000000000001 /* TradeToolApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeToolApp.swift; sourceTree = "<group>"; };
+		020000000000000000000002 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		020000000000000000000003 /* MarketSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSnapshot.swift; sourceTree = "<group>"; };
+		020000000000000000000004 /* StrategySignal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrategySignal.swift; sourceTree = "<group>"; };
+		020000000000000000000005 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		020000000000000000000006 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		020000000000000000000007 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
+		020000000000000000000008 /* SignalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalsView.swift; sourceTree = "<group>"; };
+		020000000000000000000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		02000000000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		02000000000000000000000B /* TradeTool.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TradeTool.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		02000000000000000000000C /* BottomNavigationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavigationBar.swift; sourceTree = "<group>"; };
+		02000000000000000000000D /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
+		02000000000000000000000E /* APIRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequest.swift; sourceTree = "<group>"; };
+		02000000000000000000000F /* APIEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIEnvelope.swift; sourceTree = "<group>"; };
+		020000000000000000000010 /* APIInterceptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIInterceptor.swift; sourceTree = "<group>"; };
+		020000000000000000000011 /* AppToastCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppToastCenter.swift; sourceTree = "<group>"; };
+		020000000000000000000012 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
+		020000000000000000000013 /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
+		020000000000000000000014 /* KeychainAuthSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainAuthSessionStore.swift; sourceTree = "<group>"; };
+		020000000000000000000015 /* AuthenticationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationService.swift; sourceTree = "<group>"; };
+		020000000000000000000016 /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
+		020000000000000000000017 /* BinanceTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceTheme.swift; sourceTree = "<group>"; };
+		020000000000000000000018 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		02000000000000000000001A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		02000000000000000000001B /* Debug-Dev-A.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-Dev-A.xcconfig"; sourceTree = "<group>"; };
+		02000000000000000000001C /* Debug-Dev-B.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-Dev-B.xcconfig"; sourceTree = "<group>"; };
+		02000000000000000000001D /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		02000000000000000000001E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		02000000000000000000001F /* MarketListSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketListSettingsView.swift; sourceTree = "<group>"; };
+		020000000000000000000020 /* RealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeClient.swift; sourceTree = "<group>"; };
+		020000000000000000000021 /* MarketWatchlistStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketWatchlistStore.swift; sourceTree = "<group>"; };
+		020000000000000000000022 /* MarketSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSearchView.swift; sourceTree = "<group>"; };
+		020000000000000000000023 /* MarketKline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketKline.swift; sourceTree = "<group>"; };
+		020000000000000000000024 /* MarketChartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketChartViewModel.swift; sourceTree = "<group>"; };
+		020000000000000000000026 /* MarketChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketChartView.swift; sourceTree = "<group>"; };
+		020000000000000000000027 /* ChartCandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCandle.swift; sourceTree = "<group>"; };
+		020000000000000000000028 /* KlineIngressState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineIngressState.swift; sourceTree = "<group>"; };
+		020000000000000000000029 /* RealtimeKlineIngress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeKlineIngress.swift; sourceTree = "<group>"; };
+		02000000000000000000002A /* CandleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleStore.swift; sourceTree = "<group>"; };
+		02000000000000000000002B /* ChartInvalidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartInvalidation.swift; sourceTree = "<group>"; };
+		02000000000000000000002C /* ChartRenderBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartRenderBatch.swift; sourceTree = "<group>"; };
+		02000000000000000000002D /* RenderState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderState.swift; sourceTree = "<group>"; };
+		02000000000000000000002E /* RelativeChartCoordinateSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeChartCoordinateSpace.swift; sourceTree = "<group>"; };
+		02000000000000000000002F /* MetalResourceRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalResourceRing.swift; sourceTree = "<group>"; };
+		020000000000000000000030 /* MetalRendererHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRendererHealth.swift; sourceTree = "<group>"; };
+		020000000000000000000031 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
+		020000000000000000000032 /* ChartShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = ChartShaders.metal; sourceTree = "<group>"; };
+		020000000000000000000033 /* MetalFrameCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalFrameCoordinator.swift; sourceTree = "<group>"; };
+		020000000000000000000034 /* KlineChartHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineChartHostView.swift; sourceTree = "<group>"; };
+		020000000000000000000035 /* KlineChartRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineChartRepresentable.swift; sourceTree = "<group>"; };
+		020000000000000000000036 /* ChartSignposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSignposts.swift; sourceTree = "<group>"; };
+		020000000000000000000037 /* ChartFigure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartFigure.swift; sourceTree = "<group>"; };
+		020000000000000000000038 /* ChartText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartText.swift; sourceTree = "<group>"; };
+		020000000000000000000039 /* MetalGlyphAtlas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalGlyphAtlas.swift; sourceTree = "<group>"; };
+		02000000000000000000003A /* MetalGlyphTextureCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalGlyphTextureCache.swift; sourceTree = "<group>"; };
+		02000000000000000000003B /* EMAIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EMAIndicator.swift; sourceTree = "<group>"; };
+		02000000000000000000003C /* MetalRendererFailurePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRendererFailurePolicy.swift; sourceTree = "<group>"; };
+		02000000000000000000003D /* ChartMetricKitSubscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartMetricKitSubscriber.swift; sourceTree = "<group>"; };
+		02000000000000000000003E /* ChartStressHarnessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartStressHarnessView.swift; sourceTree = "<group>"; };
+		02000000000000000000003F /* ChartDataPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDataPipeline.swift; sourceTree = "<group>"; };
+		020000000000000000000040 /* ChartSceneBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSceneBuilder.swift; sourceTree = "<group>"; };
+		020000000000000000000041 /* KlineChartSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineChartSceneView.swift; sourceTree = "<group>"; };
+		020000000000000000000042 /* ChartIndicatorPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorPlugin.swift; sourceTree = "<group>"; };
+		020000000000000000000043 /* SuperTrendIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperTrendIndicator.swift; sourceTree = "<group>"; };
+		020000000000000000000044 /* VolumeIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeIndicator.swift; sourceTree = "<group>"; };
+		020000000000000000000045 /* MACDIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MACDIndicator.swift; sourceTree = "<group>"; };
+		020000000000000000000046 /* PanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLayout.swift; sourceTree = "<group>"; };
+		020000000000000000000047 /* ChartIndicatorSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorSelection.swift; sourceTree = "<group>"; };
+		020000000000000000000048 /* ChartIndicatorSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorSettingsView.swift; sourceTree = "<group>"; };
+		020000000000000000000049 /* ChartIndicatorParameters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorParameters.swift; sourceTree = "<group>"; };
+		02000000000000000000004A /* ChartTimelineViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartTimelineViewport.swift; sourceTree = "<group>"; };
+		02000000000000000000004B /* ChartCrosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCrosshair.swift; sourceTree = "<group>"; };
+		02000000000000000000004C /* RSIIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSIIndicator.swift; sourceTree = "<group>"; };
+		02000000000000000000004D /* ChartDrawingTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDrawingTools.swift; sourceTree = "<group>"; };
+		02000000000000000000004E /* TradingSettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingSettingsModels.swift; sourceTree = "<group>"; };
+		02000000000000000000004F /* ExitStrategyManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExitStrategyManagementView.swift; sourceTree = "<group>"; };
+		020000000000000000000050 /* OrderSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderSettingsView.swift; sourceTree = "<group>"; };
+		020000000000000000000051 /* ChartOrderDrawingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartOrderDrawingView.swift; sourceTree = "<group>"; };
+		020000000000000000000052 /* PositionCenterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionCenterModels.swift; sourceTree = "<group>"; };
+		020000000000000000000053 /* PositionCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionCenterView.swift; sourceTree = "<group>"; };
+		020000000000000000000054 /* ChartLeverageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLeverageSettingsView.swift; sourceTree = "<group>"; };
+		020000000000000000000055 /* TradeTool.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TradeTool.entitlements; sourceTree = "<group>"; };
+		020000000000000000000056 /* SimpleMovingAverageIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMovingAverageIndicator.swift; sourceTree = "<group>"; };
+		020000000000000000000057 /* BollingerBandsIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BollingerBandsIndicator.swift; sourceTree = "<group>"; };
+		020000000000000000000058 /* ParabolicSARIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParabolicSARIndicator.swift; sourceTree = "<group>"; };
+		020000000000000000000059 /* AveragePriceIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AveragePriceIndicator.swift; sourceTree = "<group>"; };
+		02000000000000000000005A /* TechnicalPanelIndicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TechnicalPanelIndicators.swift; sourceTree = "<group>"; };
+		02000000000000000000005B /* TradingDataPanelIndicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingDataPanelIndicators.swift; sourceTree = "<group>"; };
+		02000000000000000000005C /* ReferenceTradeNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceTradeNotification.swift; sourceTree = "<group>"; };
+		02000000000000000000005D /* ReferenceNotificationsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceNotificationsViewModel.swift; sourceTree = "<group>"; };
+		02000000000000000000005E /* ReferenceNotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceNotificationsView.swift; sourceTree = "<group>"; };
+		0B0000000000000000000002 /* ChartEngineCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartEngineCoreTests.swift; sourceTree = "<group>"; };
+		0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSignalPreferencesTests.swift; sourceTree = "<group>"; };
+		0B0000000000000000000004 /* TradeToolTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TradeToolTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartEngineOnscreenStressTests.swift; sourceTree = "<group>"; };
+		0D0000000000000000000002 /* ChartCalibrationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCalibrationUITests.swift; sourceTree = "<group>"; };
+		0D0000000000000000000004 /* TradeToolChartCalibrationUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TradeToolChartCalibrationUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0200000000000000000000F1 /* Debug-Seoul.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-Seoul.xcconfig"; sourceTree = "<group>"; };
+		120000000000000000000001 /* ServerSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSelection.swift; sourceTree = "<group>"; };
+		120000000000000000000002 /* AppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRuntime.swift; sourceTree = "<group>"; };
+		120000000000000000000003 /* ServerNetworkProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerNetworkProbe.swift; sourceTree = "<group>"; };
+		120000000000000000000004 /* ServerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsView.swift; sourceTree = "<group>"; };
+		120000000000000000000005 /* ServerSwitchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSwitchingTests.swift; sourceTree = "<group>"; };
+		7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTAccountViews.swift; sourceTree = "<group>"; };
+		33600721399D7B8EDD04A732 /* USDTComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTComponents.swift; sourceTree = "<group>"; };
+		BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTLegalView.swift; sourceTree = "<group>"; };
+		7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTRecordsViews.swift; sourceTree = "<group>"; };
+		E63133A17E8871350B079F81 /* USDTResearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTResearchViews.swift; sourceTree = "<group>"; };
+		DD7B56A4F1642013DF78DC36 /* USDTSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTSession.swift; sourceTree = "<group>"; };
+		18C443B8F02115C83974CD29 /* USDTStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStore.swift; sourceTree = "<group>"; };
+		9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStrategyViews.swift; sourceTree = "<group>"; };
+		F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTTradingViews.swift; sourceTree = "<group>"; };
+		72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTWatchViews.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		030000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0B0000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		040000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				040000000000000000000002 /* TradeTool */,
+				0B0000000000000000000006 /* TradeToolTests */,
+				0D0000000000000000000006 /* TradeToolChartCalibrationUITests */,
+				040000000000000000000011 /* Config */,
+				04000000000000000000000A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		040000000000000000000002 /* TradeTool */ = {
+			isa = PBXGroup;
+			children = (
+				040000000000000000000003 /* App */,
+				040000000000000000000004 /* Core */,
+				040000000000000000000007 /* Features */,
+				04000000000000000000000B /* Resources */,
+			);
+			path = TradeTool;
+			sourceTree = "<group>";
+		};
+		040000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000001 /* TradeToolApp.swift */,
+				020000000000000000000002 /* RootView.swift */,
+				02000000000000000000000C /* BottomNavigationBar.swift */,
+				020000000000000000000012 /* AppContainer.swift */,
+				120000000000000000000002 /* AppRuntime.swift */,
+				120000000000000000000001 /* ServerSelection.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		040000000000000000000004 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				040000000000000000000005 /* Models */,
+				040000000000000000000006 /* Networking */,
+				04000000000000000000000D /* Presentation */,
+				04000000000000000000000E /* Auth */,
+				04000000000000000000000F /* Design */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		040000000000000000000005 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000003 /* MarketSnapshot.swift */,
+				020000000000000000000023 /* MarketKline.swift */,
+				020000000000000000000004 /* StrategySignal.swift */,
+				02000000000000000000005C /* ReferenceTradeNotification.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		040000000000000000000006 /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000005 /* APIClient.swift */,
+				120000000000000000000003 /* ServerNetworkProbe.swift */,
+				02000000000000000000000D /* APIError.swift */,
+				02000000000000000000000E /* APIRequest.swift */,
+				02000000000000000000000F /* APIEnvelope.swift */,
+				020000000000000000000010 /* APIInterceptor.swift */,
+				020000000000000000000020 /* RealtimeClient.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		040000000000000000000007 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				9D1ABE0927700A869C9AE6E1 /* USDT */,
+				040000000000000000000008 /* Dashboard */,
+				040000000000000000000012 /* Chart */,
+				04000000000000000000001D /* Positions */,
+				040000000000000000000009 /* Signals */,
+				04000000000000000000001E /* Reference */,
+				04000000000000000000000C /* Settings */,
+				040000000000000000000010 /* Auth */,
+				040000000000000000000013 /* ChartEngine */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		040000000000000000000008 /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000006 /* DashboardView.swift */,
+				02000000000000000000001F /* MarketListSettingsView.swift */,
+				020000000000000000000022 /* MarketSearchView.swift */,
+				020000000000000000000021 /* MarketWatchlistStore.swift */,
+				020000000000000000000007 /* DashboardViewModel.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		040000000000000000000009 /* Signals */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000008 /* SignalsView.swift */,
+			);
+			path = Signals;
+			sourceTree = "<group>";
+		};
+		04000000000000000000000A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000000B /* TradeTool.app */,
+				0B0000000000000000000004 /* TradeToolTests.xctest */,
+				0D0000000000000000000004 /* TradeToolChartCalibrationUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		04000000000000000000000B /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000000A /* Assets.xcassets */,
+				020000000000000000000019 /* Localizable.strings */,
+				02000000000000000000001E /* Info.plist */,
+				020000000000000000000055 /* TradeTool.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		04000000000000000000000C /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000009 /* SettingsView.swift */,
+				120000000000000000000004 /* ServerSettingsView.swift */,
+				02000000000000000000004E /* TradingSettingsModels.swift */,
+				02000000000000000000004F /* ExitStrategyManagementView.swift */,
+				020000000000000000000050 /* OrderSettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		04000000000000000000000D /* Presentation */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000011 /* AppToastCenter.swift */,
+			);
+			path = Presentation;
+			sourceTree = "<group>";
+		};
+		04000000000000000000000E /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000013 /* AuthModels.swift */,
+				020000000000000000000014 /* KeychainAuthSessionStore.swift */,
+				020000000000000000000015 /* AuthenticationService.swift */,
+				020000000000000000000016 /* AuthStore.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		04000000000000000000000F /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000017 /* BinanceTheme.swift */,
+				0F0000000000000000000002 /* AppAppearance.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		040000000000000000000010 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000018 /* LoginView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		040000000000000000000011 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000001B /* Debug-Dev-A.xcconfig */,
+				02000000000000000000001C /* Debug-Dev-B.xcconfig */,
+				0200000000000000000000F1 /* Debug-Seoul.xcconfig */,
+				02000000000000000000001D /* Release.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		040000000000000000000012 /* Chart */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000048 /* ChartIndicatorSettingsView.swift */,
+				020000000000000000000054 /* ChartLeverageSettingsView.swift */,
+				020000000000000000000051 /* ChartOrderDrawingView.swift */,
+				020000000000000000000026 /* MarketChartView.swift */,
+				020000000000000000000024 /* MarketChartViewModel.swift */,
+			);
+			path = Chart;
+			sourceTree = "<group>";
+		};
+		040000000000000000000013 /* ChartEngine */ = {
+			isa = PBXGroup;
+			children = (
+				040000000000000000000014 /* Domain */,
+				040000000000000000000015 /* Data */,
+				04000000000000000000001C /* Indicators */,
+				040000000000000000000016 /* Scene */,
+				040000000000000000000017 /* Viewport */,
+				040000000000000000000018 /* Rendering */,
+				04000000000000000000001A /* Host */,
+				04000000000000000000001B /* Diagnostics */,
+			);
+			path = ChartEngine;
+			sourceTree = "<group>";
+		};
+		040000000000000000000014 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000027 /* ChartCandle.swift */,
+				020000000000000000000037 /* ChartFigure.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		040000000000000000000015 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000002A /* CandleStore.swift */,
+				02000000000000000000003F /* ChartDataPipeline.swift */,
+				020000000000000000000028 /* KlineIngressState.swift */,
+				020000000000000000000029 /* RealtimeKlineIngress.swift */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		040000000000000000000016 /* Scene */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000004B /* ChartCrosshair.swift */,
+				02000000000000000000004D /* ChartDrawingTools.swift */,
+				02000000000000000000002B /* ChartInvalidation.swift */,
+				02000000000000000000002C /* ChartRenderBatch.swift */,
+				020000000000000000000040 /* ChartSceneBuilder.swift */,
+				020000000000000000000038 /* ChartText.swift */,
+				020000000000000000000046 /* PanelLayout.swift */,
+				02000000000000000000002D /* RenderState.swift */,
+			);
+			path = Scene;
+			sourceTree = "<group>";
+		};
+		040000000000000000000017 /* Viewport */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000004A /* ChartTimelineViewport.swift */,
+				02000000000000000000002E /* RelativeChartCoordinateSpace.swift */,
+			);
+			path = Viewport;
+			sourceTree = "<group>";
+		};
+		040000000000000000000018 /* Rendering */ = {
+			isa = PBXGroup;
+			children = (
+				040000000000000000000019 /* Metal */,
+			);
+			path = Rendering;
+			sourceTree = "<group>";
+		};
+		040000000000000000000019 /* Metal */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000032 /* ChartShaders.metal */,
+				020000000000000000000033 /* MetalFrameCoordinator.swift */,
+				020000000000000000000039 /* MetalGlyphAtlas.swift */,
+				02000000000000000000003A /* MetalGlyphTextureCache.swift */,
+				02000000000000000000002F /* MetalResourceRing.swift */,
+				020000000000000000000031 /* MetalRenderer.swift */,
+				02000000000000000000003C /* MetalRendererFailurePolicy.swift */,
+				020000000000000000000030 /* MetalRendererHealth.swift */,
+			);
+			path = Metal;
+			sourceTree = "<group>";
+		};
+		04000000000000000000001A /* Host */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000034 /* KlineChartHostView.swift */,
+				020000000000000000000035 /* KlineChartRepresentable.swift */,
+				020000000000000000000041 /* KlineChartSceneView.swift */,
+			);
+			path = Host;
+			sourceTree = "<group>";
+		};
+		04000000000000000000001B /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000003D /* ChartMetricKitSubscriber.swift */,
+				020000000000000000000036 /* ChartSignposts.swift */,
+				02000000000000000000003E /* ChartStressHarnessView.swift */,
+			);
+			path = Diagnostics;
+			sourceTree = "<group>";
+		};
+		04000000000000000000001C /* Indicators */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000059 /* AveragePriceIndicator.swift */,
+				020000000000000000000057 /* BollingerBandsIndicator.swift */,
+				020000000000000000000049 /* ChartIndicatorParameters.swift */,
+				020000000000000000000042 /* ChartIndicatorPlugin.swift */,
+				020000000000000000000047 /* ChartIndicatorSelection.swift */,
+				02000000000000000000003B /* EMAIndicator.swift */,
+				020000000000000000000045 /* MACDIndicator.swift */,
+				020000000000000000000058 /* ParabolicSARIndicator.swift */,
+				02000000000000000000004C /* RSIIndicator.swift */,
+				020000000000000000000056 /* SimpleMovingAverageIndicator.swift */,
+				02000000000000000000005A /* TechnicalPanelIndicators.swift */,
+				02000000000000000000005B /* TradingDataPanelIndicators.swift */,
+				020000000000000000000043 /* SuperTrendIndicator.swift */,
+				020000000000000000000044 /* VolumeIndicator.swift */,
+			);
+			path = Indicators;
+			sourceTree = "<group>";
+		};
+		04000000000000000000001D /* Positions */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000052 /* PositionCenterModels.swift */,
+				020000000000000000000053 /* PositionCenterView.swift */,
+			);
+			path = Positions;
+			sourceTree = "<group>";
+		};
+		04000000000000000000001E /* Reference */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000005D /* ReferenceNotificationsViewModel.swift */,
+				02000000000000000000005E /* ReferenceNotificationsView.swift */,
+			);
+			path = Reference;
+			sourceTree = "<group>";
+		};
+		0B0000000000000000000006 /* TradeToolTests */ = {
+			isa = PBXGroup;
+			children = (
+				120000000000000000000005 /* ServerSwitchingTests.swift */,
+				0B0000000000000000000002 /* ChartEngineCoreTests.swift */,
+				0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */,
+				0F0000000000000000000004 /* AppearanceTests.swift */,
+				0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */,
+			);
+			path = TradeToolTests;
+			sourceTree = "<group>";
+		};
+		0D0000000000000000000006 /* TradeToolChartCalibrationUITests */ = {
+			isa = PBXGroup;
+			children = (
+				0D0000000000000000000002 /* ChartCalibrationUITests.swift */,
+			);
+			path = TradeToolChartCalibrationUITests;
+			sourceTree = "<group>";
+		};
+		9D1ABE0927700A869C9AE6E1 /* USDT */ = {
+			isa = PBXGroup;
+			children = (
+				7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */,
+				33600721399D7B8EDD04A732 /* USDTComponents.swift */,
+				BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */,
+				7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */,
+				E63133A17E8871350B079F81 /* USDTResearchViews.swift */,
+				DD7B56A4F1642013DF78DC36 /* USDTSession.swift */,
+				18C443B8F02115C83974CD29 /* USDTStore.swift */,
+				9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */,
+				F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */,
+				72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */,
+			);
+			path = USDT;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		050000000000000000000001 /* TradeTool */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A0000000000000000000002 /* Build configuration list for PBXNativeTarget "TradeTool" */;
+			buildPhases = (
+				080000000000000000000001 /* Sources */,
+				030000000000000000000001 /* Frameworks */,
+				070000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TradeTool;
+			packageProductDependencies = (
+			);
+			productName = TradeTool;
+			productReference = 02000000000000000000000B /* TradeTool.app */;
+			productType = "com.apple.product-type.application";
+		};
+		0B0000000000000000000007 /* TradeToolTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B000000000000000000000D /* Build configuration list for PBXNativeTarget "TradeToolTests" */;
+			buildPhases = (
+				0B000000000000000000000A /* Sources */,
+				0B0000000000000000000005 /* Frameworks */,
+				0B000000000000000000000B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0B0000000000000000000009 /* PBXTargetDependency */,
+			);
+			name = TradeToolTests;
+			productName = TradeToolTests;
+			productReference = 0B0000000000000000000004 /* TradeToolTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		0D0000000000000000000007 /* TradeToolChartCalibrationUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0D000000000000000000000D /* Build configuration list for PBXNativeTarget "TradeToolChartCalibrationUITests" */;
+			buildPhases = (
+				0D000000000000000000000A /* Sources */,
+				0D0000000000000000000005 /* Frameworks */,
+				0D000000000000000000000B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0D0000000000000000000009 /* PBXTargetDependency */,
+			);
+			name = TradeToolChartCalibrationUITests;
+			productName = TradeToolChartCalibrationUITests;
+			productReference = 0D0000000000000000000004 /* TradeToolChartCalibrationUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		060000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					050000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					0B0000000000000000000007 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 050000000000000000000001;
+					};
+					0D0000000000000000000007 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 050000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = 0A0000000000000000000001 /* Build configuration list for PBXProject "TradeTool" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				Base,
+			);
+			mainGroup = 040000000000000000000001;
+			packageReferences = (
+			);
+			productRefGroup = 04000000000000000000000A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				050000000000000000000001 /* TradeTool */,
+				0B0000000000000000000007 /* TradeToolTests */,
+				0D0000000000000000000007 /* TradeToolChartCalibrationUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		070000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				01000000000000000000000A /* Assets.xcassets in Resources */,
+				010000000000000000000018 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0B000000000000000000000B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D000000000000000000000B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		080000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4ADC1ECF7B1D2C2AF8904860 /* USDTAccountViews.swift in Sources */,
+				9CD0D87DCEBB99A36EE4B57C /* USDTComponents.swift in Sources */,
+				2F352AA3E4A8195216FCFEA7 /* USDTLegalView.swift in Sources */,
+				20EBABF2268F5C781A0B85C5 /* USDTRecordsViews.swift in Sources */,
+				CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */,
+				4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */,
+				059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */,
+				F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */,
+				3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */,
+				51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */,
+				130000000000000000000004 /* ServerSettingsView.swift in Sources */,
+				130000000000000000000003 /* ServerNetworkProbe.swift in Sources */,
+				130000000000000000000002 /* AppRuntime.swift in Sources */,
+				130000000000000000000001 /* ServerSelection.swift in Sources */,
+				010000000000000000000001 /* TradeToolApp.swift in Sources */,
+				010000000000000000000002 /* RootView.swift in Sources */,
+				010000000000000000000003 /* MarketSnapshot.swift in Sources */,
+				01000000000000000000001D /* MarketKline.swift in Sources */,
+				010000000000000000000004 /* StrategySignal.swift in Sources */,
+				010000000000000000000055 /* ReferenceTradeNotification.swift in Sources */,
+				010000000000000000000005 /* APIClient.swift in Sources */,
+				010000000000000000000006 /* DashboardView.swift in Sources */,
+				010000000000000000000019 /* MarketListSettingsView.swift in Sources */,
+				01000000000000000000001C /* MarketSearchView.swift in Sources */,
+				010000000000000000000020 /* MarketChartView.swift in Sources */,
+				01000000000000000000001E /* MarketChartViewModel.swift in Sources */,
+				01000000000000000000001B /* MarketWatchlistStore.swift in Sources */,
+				010000000000000000000007 /* DashboardViewModel.swift in Sources */,
+				010000000000000000000008 /* SignalsView.swift in Sources */,
+				010000000000000000000056 /* ReferenceNotificationsViewModel.swift in Sources */,
+				010000000000000000000057 /* ReferenceNotificationsView.swift in Sources */,
+				010000000000000000000009 /* SettingsView.swift in Sources */,
+				010000000000000000000048 /* TradingSettingsModels.swift in Sources */,
+				010000000000000000000049 /* ExitStrategyManagementView.swift in Sources */,
+				01000000000000000000004A /* OrderSettingsView.swift in Sources */,
+				01000000000000000000004B /* ChartOrderDrawingView.swift in Sources */,
+				01000000000000000000004C /* PositionCenterModels.swift in Sources */,
+				01000000000000000000004D /* PositionCenterView.swift in Sources */,
+				01000000000000000000004E /* ChartLeverageSettingsView.swift in Sources */,
+				01000000000000000000000B /* BottomNavigationBar.swift in Sources */,
+				01000000000000000000000C /* APIError.swift in Sources */,
+				01000000000000000000000D /* APIRequest.swift in Sources */,
+				01000000000000000000000E /* APIEnvelope.swift in Sources */,
+				01000000000000000000000F /* APIInterceptor.swift in Sources */,
+				01000000000000000000001A /* RealtimeClient.swift in Sources */,
+				010000000000000000000010 /* AppToastCenter.swift in Sources */,
+				010000000000000000000011 /* AppContainer.swift in Sources */,
+				010000000000000000000012 /* AuthModels.swift in Sources */,
+				010000000000000000000013 /* KeychainAuthSessionStore.swift in Sources */,
+				010000000000000000000014 /* AuthenticationService.swift in Sources */,
+				010000000000000000000015 /* AuthStore.swift in Sources */,
+				010000000000000000000016 /* BinanceTheme.swift in Sources */,
+				0F0000000000000000000001 /* AppAppearance.swift in Sources */,
+				010000000000000000000017 /* LoginView.swift in Sources */,
+				010000000000000000000021 /* ChartCandle.swift in Sources */,
+				010000000000000000000022 /* KlineIngressState.swift in Sources */,
+				010000000000000000000023 /* RealtimeKlineIngress.swift in Sources */,
+				010000000000000000000024 /* CandleStore.swift in Sources */,
+				010000000000000000000039 /* ChartDataPipeline.swift in Sources */,
+				01000000000000000000003C /* ChartIndicatorPlugin.swift in Sources */,
+				010000000000000000000025 /* ChartInvalidation.swift in Sources */,
+				010000000000000000000026 /* ChartRenderBatch.swift in Sources */,
+				01000000000000000000003A /* ChartSceneBuilder.swift in Sources */,
+				010000000000000000000027 /* RenderState.swift in Sources */,
+				010000000000000000000028 /* RelativeChartCoordinateSpace.swift in Sources */,
+				010000000000000000000044 /* ChartTimelineViewport.swift in Sources */,
+				010000000000000000000045 /* ChartCrosshair.swift in Sources */,
+				010000000000000000000029 /* MetalResourceRing.swift in Sources */,
+				01000000000000000000002A /* MetalRendererHealth.swift in Sources */,
+				01000000000000000000002B /* MetalRenderer.swift in Sources */,
+				01000000000000000000002C /* ChartShaders.metal in Sources */,
+				01000000000000000000002D /* MetalFrameCoordinator.swift in Sources */,
+				01000000000000000000002E /* KlineChartHostView.swift in Sources */,
+				01000000000000000000002F /* KlineChartRepresentable.swift in Sources */,
+				01000000000000000000003B /* KlineChartSceneView.swift in Sources */,
+				010000000000000000000030 /* ChartSignposts.swift in Sources */,
+				010000000000000000000031 /* ChartFigure.swift in Sources */,
+				010000000000000000000032 /* ChartText.swift in Sources */,
+				010000000000000000000033 /* MetalGlyphAtlas.swift in Sources */,
+				010000000000000000000034 /* MetalGlyphTextureCache.swift in Sources */,
+				010000000000000000000035 /* EMAIndicator.swift in Sources */,
+				01000000000000000000004F /* SimpleMovingAverageIndicator.swift in Sources */,
+				010000000000000000000050 /* BollingerBandsIndicator.swift in Sources */,
+				010000000000000000000051 /* ParabolicSARIndicator.swift in Sources */,
+				010000000000000000000052 /* AveragePriceIndicator.swift in Sources */,
+				010000000000000000000053 /* TechnicalPanelIndicators.swift in Sources */,
+				010000000000000000000054 /* TradingDataPanelIndicators.swift in Sources */,
+				01000000000000000000003D /* SuperTrendIndicator.swift in Sources */,
+				01000000000000000000003E /* VolumeIndicator.swift in Sources */,
+				01000000000000000000003F /* MACDIndicator.swift in Sources */,
+				010000000000000000000046 /* RSIIndicator.swift in Sources */,
+				010000000000000000000047 /* ChartDrawingTools.swift in Sources */,
+				010000000000000000000040 /* PanelLayout.swift in Sources */,
+				010000000000000000000041 /* ChartIndicatorSelection.swift in Sources */,
+				010000000000000000000042 /* ChartIndicatorSettingsView.swift in Sources */,
+				010000000000000000000043 /* ChartIndicatorParameters.swift in Sources */,
+				010000000000000000000036 /* MetalRendererFailurePolicy.swift in Sources */,
+				010000000000000000000037 /* ChartMetricKitSubscriber.swift in Sources */,
+				010000000000000000000038 /* ChartStressHarnessView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0B000000000000000000000A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				130000000000000000000005 /* ServerSwitchingTests.swift in Sources */,
+				0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */,
+				0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */,
+				0F0000000000000000000003 /* AppearanceTests.swift in Sources */,
+				0C0000000000000000000001 /* ChartEngineOnscreenStressTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D000000000000000000000A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0D0000000000000000000001 /* ChartCalibrationUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0B0000000000000000000009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 050000000000000000000001 /* TradeTool */;
+			targetProxy = 0B0000000000000000000003 /* PBXContainerItemProxy */;
+		};
+		0D0000000000000000000009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 050000000000000000000001 /* TradeTool */;
+			targetProxy = 0D0000000000000000000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		020000000000000000000019 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				02000000000000000000001A /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		090000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		090000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		090000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 02000000000000000000001B /* Debug-Dev-A.xcconfig */;
+			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TradeTool/Resources/TradeTool.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
+				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
+				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.trade.integrated;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		090000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 02000000000000000000001D /* Release.xcconfig */;
+			buildSettings = {
+				APS_ENVIRONMENT = production;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TradeTool/Resources/TradeTool.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
+				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
+				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.trade.integrated;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		090000000000000000000005 /* Debug-Dev-B */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = "Debug-Dev-B";
+		};
+		090000000000000000000006 /* Debug-Dev-B */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 02000000000000000000001C /* Debug-Dev-B.xcconfig */;
+			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TradeTool/Resources/TradeTool.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
+				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
+				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.trade.integrated;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-Dev-B";
+		};
+		0B000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
+			};
+			name = Debug;
+		};
+		0B000000000000000000000F /* Debug-Dev-B */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
+			};
+			name = "Debug-Dev-B";
+		};
+		0B0000000000000000000010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
+			};
+			name = Release;
+		};
+		0D000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.chartcalibrationuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = TradeTool;
+			};
+			name = Debug;
+		};
+		0D000000000000000000000F /* Debug-Dev-B */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.chartcalibrationuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = TradeTool;
+			};
+			name = "Debug-Dev-B";
+		};
+		0D0000000000000000000010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.chartcalibrationuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = TradeTool;
+			};
+			name = Release;
+		};
+		090000000000000000000007 /* Debug-Seoul */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = "Debug-Seoul";
+		};
+		090000000000000000000008 /* Debug-Seoul */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 0200000000000000000000F1 /* Debug-Seoul.xcconfig */;
+			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TradeTool/Resources/TradeTool.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
+				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
+				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.trade.integrated;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-Seoul";
+		};
+		0B0000000000000000000011 /* Debug-Seoul */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
+			};
+			name = "Debug-Seoul";
+		};
+		0D0000000000000000000011 /* Debug-Seoul */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.chartcalibrationuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = TradeTool;
+			};
+			name = "Debug-Seoul";
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0A0000000000000000000001 /* Build configuration list for PBXProject "TradeTool" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				090000000000000000000001 /* Debug */,
+				090000000000000000000005 /* Debug-Dev-B */,
+				090000000000000000000007 /* Debug-Seoul */,
+				090000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0A0000000000000000000002 /* Build configuration list for PBXNativeTarget "TradeTool" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				090000000000000000000003 /* Debug */,
+				090000000000000000000006 /* Debug-Dev-B */,
+				090000000000000000000008 /* Debug-Seoul */,
+				090000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0B000000000000000000000D /* Build configuration list for PBXNativeTarget "TradeToolTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0B000000000000000000000E /* Debug */,
+				0B000000000000000000000F /* Debug-Dev-B */,
+				0B0000000000000000000011 /* Debug-Seoul */,
+				0B0000000000000000000010 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0D000000000000000000000D /* Build configuration list for PBXNativeTarget "TradeToolChartCalibrationUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D000000000000000000000E /* Debug */,
+				0D000000000000000000000F /* Debug-Dev-B */,
+				0D0000000000000000000011 /* Debug-Seoul */,
+				0D0000000000000000000010 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = "Debug-Dev-B";
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 060000000000000000000001 /* Project object */;
+}

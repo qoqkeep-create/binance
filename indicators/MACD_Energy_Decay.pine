@@ -1,0 +1,165 @@
+//@version=5
+indicator("MACD 量能衰减信号", overlay=true, max_labels_count=500)
+
+// ==================== 输入参数 ====================
+fastLength = input.int(12, "快线周期", minval=1)
+slowLength = input.int(26, "慢线周期", minval=1)
+signalLength = input.int(9, "信号线周期", minval=1)
+src = input.source(close, "数据源")
+
+// ==================== 0轴距离过滤 ====================
+useZeroFilter = input.bool(true, "启用0轴距离过滤")
+zeroDistanceMode = input.string("百分比", "距离计算方式", options=["百分比", "绝对值"])
+zeroDistancePercent = input.float(30.0, "距离0轴百分比阈值(%)", minval=1, maxval=100, step=5, tooltip="相对于近期MACD最大值的百分比")
+zeroDistanceAbs = input.float(0.001, "距离0轴绝对值阈值", minval=0, step=0.0001, tooltip="MACD快线与0轴的绝对距离")
+lookbackPeriod = input.int(100, "回溯周期(用于百分比计算)", minval=20, maxval=500)
+
+// ==================== 周期过滤 ====================
+// 只在指定周期显示信号
+show1H = input.bool(true, "显示1小时信号")
+show4H = input.bool(true, "显示4小时信号")
+show1D = input.bool(true, "显示1天信号")
+
+// 检测当前图表周期
+is1H = timeframe.period == "60"
+is4H = timeframe.period == "240"
+is1D = timeframe.period == "D" or timeframe.period == "1D"
+
+// 判断当前周期是否应该显示信号
+showSignal = (is1H and show1H) or (is4H and show4H) or (is1D and show1D)
+
+// ==================== MACD 计算 ====================
+[macdLine, signalLine, histLine] = ta.macd(src, fastLength, slowLength, signalLength)
+
+// ==================== 0轴距离判断 ====================
+// 计算近期MACD最大绝对值（用于百分比模式）
+macdAbsMax = ta.highest(math.abs(macdLine), lookbackPeriod)
+
+// 计算当前MACD快线与0轴的距离
+currentDistance = math.abs(macdLine)
+
+// 判断是否距离0轴较近
+nearZero = if useZeroFilter
+    if zeroDistanceMode == "百分比"
+        // 百分比模式：当前距离小于最大值的指定百分比
+        currentDistance < macdAbsMax * (zeroDistancePercent / 100)
+    else
+        // 绝对值模式：当前距离小于指定绝对值
+        currentDistance < zeroDistanceAbs
+else
+    true  // 未启用过滤时，始终为true
+
+// ==================== 信号检测逻辑 ====================
+
+// 死叉检测：快线下穿信号线
+deathCross = ta.crossunder(macdLine, signalLine)
+
+// 金叉检测：快线上穿信号线
+goldenCross = ta.crossover(macdLine, signalLine)
+
+// 追踪死叉后的状态（0轴上方）
+var bool inDeathCrossAboveZero = false
+var bool deathCrossDecayTriggered = false
+var float prevHistAfterDeathCross = na
+
+// 追踪金叉后的状态（0轴下方）
+var bool inGoldenCrossBelowZero = false
+var bool goldenCrossDecayTriggered = false
+var float prevHistAfterGoldenCross = na
+
+// ===== 0轴上方死叉后首次量能衰减 =====
+// 死叉发生在0轴上方
+if deathCross and macdLine > 0 and signalLine > 0
+    inDeathCrossAboveZero := true
+    deathCrossDecayTriggered := false
+    prevHistAfterDeathCross := histLine
+
+// 重置：如果出现金叉或MACD线回到0轴下方
+if inDeathCrossAboveZero and (goldenCross or macdLine < 0)
+    inDeathCrossAboveZero := false
+    deathCrossDecayTriggered := false
+    prevHistAfterDeathCross := na
+
+// 检测做多信号（0轴上方死叉后）
+deathCrossDecaySignal = false
+if inDeathCrossAboveZero and not deathCrossDecayTriggered and not na(prevHistAfterDeathCross) and nearZero
+    // 死叉后柱状图为负
+    if histLine < 0 and prevHistAfterDeathCross < 0
+        // 情况1：量能增加但K线收盘价上涨 → 直接提示
+        if math.abs(histLine) > math.abs(prevHistAfterDeathCross) and close > close[1]
+            deathCrossDecaySignal := true
+            deathCrossDecayTriggered := true
+        // 情况2：量能衰减（绝对值减小）→ 提示
+        else if math.abs(histLine) < math.abs(prevHistAfterDeathCross)
+            deathCrossDecaySignal := true
+            deathCrossDecayTriggered := true
+    prevHistAfterDeathCross := histLine
+
+// ===== 0轴下方金叉后首次量能衰减 =====
+// 金叉发生在0轴下方
+if goldenCross and macdLine < 0 and signalLine < 0
+    inGoldenCrossBelowZero := true
+    goldenCrossDecayTriggered := false
+    prevHistAfterGoldenCross := histLine
+
+// 重置：如果出现死叉或MACD线回到0轴上方
+if inGoldenCrossBelowZero and (deathCross or macdLine > 0)
+    inGoldenCrossBelowZero := false
+    goldenCrossDecayTriggered := false
+    prevHistAfterGoldenCross := na
+
+// 检测做空信号（0轴下方金叉后）
+goldenCrossDecaySignal = false
+if inGoldenCrossBelowZero and not goldenCrossDecayTriggered and not na(prevHistAfterGoldenCross) and nearZero
+    // 金叉后柱状图为正
+    if histLine > 0 and prevHistAfterGoldenCross > 0
+        // 情况1：量能增加但K线收盘价下跌 → 直接提示
+        if histLine > prevHistAfterGoldenCross and close < close[1]
+            goldenCrossDecaySignal := true
+            goldenCrossDecayTriggered := true
+        // 情况2：量能衰减（数值减小）→ 提示
+        else if histLine < prevHistAfterGoldenCross
+            goldenCrossDecaySignal := true
+            goldenCrossDecayTriggered := true
+    prevHistAfterGoldenCross := histLine
+
+// ==================== 绘制信号（仅在匹配周期显示）====================
+
+// 绿色箭头标记 - 0轴上方死叉后首次量能衰减（做多信号）
+plotshape(deathCrossDecaySignal and showSignal, title="死叉量能衰减-做多", location=location.belowbar,
+     style=shape.triangleup, size=size.small, color=color.green,
+     text="多", textcolor=color.green)
+
+// 红色箭头标记 - 0轴下方金叉后首次量能衰减（做空信号）
+plotshape(goldenCrossDecaySignal and showSignal, title="金叉量能衰减-做空", location=location.abovebar,
+     style=shape.triangledown, size=size.small, color=color.red,
+     text="空", textcolor=color.red)
+
+// ==================== 报警 ====================
+alertcondition(deathCrossDecaySignal and showSignal, title="做多信号", message="MACD 0轴上方死叉后首次量能衰减 - 做多信号")
+alertcondition(goldenCrossDecaySignal and showSignal, title="做空信号", message="MACD 0轴下方金叉后首次量能衰减 - 做空信号")
+
+// ==================== 信息面板 ====================
+var table infoTable = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80))
+
+if barstate.islast
+    // 显示当前周期
+    tfText = is1H ? "1小时" : is4H ? "4小时" : is1D ? "1天" : timeframe.period
+    table.cell(infoTable, 0, 0, "周期", text_color=color.white)
+    table.cell(infoTable, 1, 0, tfText, text_color=showSignal ? color.green : color.gray)
+    table.cell(infoTable, 0, 1, "MACD", text_color=color.white)
+    table.cell(infoTable, 1, 1, str.tostring(macdLine, "#.####"), text_color=macdLine > 0 ? color.green : color.red)
+    table.cell(infoTable, 0, 2, "Signal", text_color=color.white)
+    table.cell(infoTable, 1, 2, str.tostring(signalLine, "#.####"), text_color=signalLine > 0 ? color.green : color.red)
+    table.cell(infoTable, 0, 3, "Hist", text_color=color.white)
+    table.cell(infoTable, 1, 3, str.tostring(histLine, "#.####"), text_color=histLine > 0 ? color.green : color.red)
+    // 显示0轴距离
+    table.cell(infoTable, 0, 4, "0轴距离", text_color=color.white)
+    distPercent = macdAbsMax > 0 ? (currentDistance / macdAbsMax * 100) : 0
+    distText = str.tostring(distPercent, "#.#") + "%"
+    table.cell(infoTable, 1, 4, distText, text_color=nearZero ? color.green : color.orange)
+    // 显示状态
+    table.cell(infoTable, 0, 5, "状态", text_color=color.white)
+    stateText = not showSignal ? "非监控周期" : inDeathCrossAboveZero ? "死叉监控中" : inGoldenCrossBelowZero ? "金叉监控中" : "等待信号"
+    stateColor = not showSignal ? color.gray : inDeathCrossAboveZero ? color.green : inGoldenCrossBelowZero ? color.red : color.white
+    table.cell(infoTable, 1, 5, stateText, text_color=stateColor)

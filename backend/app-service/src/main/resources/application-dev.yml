@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/trade-tool?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    password: ${MYSQL_PASSWORD:}
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+
+# Dev 只连接 Binance USD-M Futures Testnet。行情、账户监听、REST 对账、
+# 普通订单和 Algo 条件单共用同一测试网，禁止混入主网端点。
+binance:
+  usdm:
+    continuous-kline:
+      rest-base-url: https://testnet.binancefuture.com
+      stream-base-url: wss://fstream.binancefuture.com/market/stream
+
+trading:
+  credential-master-key: ${TRADING_CREDENTIAL_MASTER_KEY:}
+  binance:
+    rest-base-url: https://testnet.binancefuture.com
+    diagnostic-rest-logging-enabled: true
+  sync:
+    user-stream-base-url: wss://fstream.binancefuture.com/private

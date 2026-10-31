@@ -1,0 +1,7 @@
+[Unit]
+Description=TradeTools weekly docker prune and disk watermark check
+
+[Service]
+Type=oneshot
+ExecStart=/opt/riskon/tradetools/deploy/prune.sh
+TimeoutStartSec=600

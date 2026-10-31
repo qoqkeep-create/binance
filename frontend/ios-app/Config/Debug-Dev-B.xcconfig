@@ -1,0 +1,3 @@
+// Dev B: second development network.
+// Replace this with the backend LAN address used at your other location.
+API_BASE_URL = http:/$()/192.168.31.98:8686
