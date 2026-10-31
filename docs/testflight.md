@@ -99,7 +99,9 @@ open frontend/ios-app/TradeTool.xcodeproj
 1. 完成前述付费团队、独立 App ID 和 App Store Connect App 记录核对；团队应有 Xcode Cloud 使用权限和可用额度。确认 `756Y5JKBUD` 是该 App 所属团队，Push Notifications capability 与自动签名匹配。
 2. 授权 Xcode Cloud 访问 `qoqkeep-create/binance` GitHub 仓库。本机 GitHub Deploy key 不等于 Apple 服务已获授权；云端只能构建已经推送的提交。
 3. 在 TestFlight 建立内部测试组并加入测试账号，例如 `本人真机测试`，再配置工作流中的分发 post-action。
-4. 核对 App 的现有 TestFlight 构建号，按下节设置 Next Build Number；本轮没有读取 Apple 后台，不能假定最大号就是源码中的 `3`。
+4. 本轮已核对新 App 的 TestFlight 页面：暂无构建版本，已建立 `内部测试` 群组并加入当前 Apple 账号。Cloud 起始号计划设为 `4`，须在完成仓库授权及新工作流创建后实际保存；目前尚未设置。
+
+当前接入阻塞：Chrome 原登录的 `td0328` 已有个人 Xcode Cloud 安装，但目标仓库属于 `qoqkeep-create`，需要仓库所有者完成安装 / 授权。只为 `qoqkeep-create/binance` 授权，不扩大或修改 `td0328` 原有安装范围。新的 Cloud 分支触发、测试 / 归档、自动分发仍未保存，不能把下表建议视为已完成配置。
 
 ### 建议工作流
 

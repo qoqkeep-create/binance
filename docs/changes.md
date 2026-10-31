@@ -2,6 +2,14 @@
 
 此处保留值得长期维护的里程碑，不替代 Git 日志或全量聊天历史。每条说明来源和范围；历史通过不代表本轮重新测试。
 
+## 2026-10-31：独立 App 身份与签名接入
+
+- 按用户指定，将主 App 的三个配置统一为 `com.waibao2025.trade.integrated`，测试目标使用同前缀的独立标识；同步当前原生 UI 启动入口和运行时 Bundle ID 回退。保留工程既有排序改动，未将其混入本次配置提交。
+- 核实 Apple 团队 GUANGDONG ZHANG / `756Y5JKBUD`，新 App ID 已注册且 Push Notifications 已开启。用户明确要求本轮只预留 Push capability，暂不开发 Python APNs 投递功能。App Store Connect 已创建用户确认的 `TradeTools USDT`，App ID 为 `6829222305`，SKU 为 `waibao2025-trade-integrated-ios`；内部测试组已创建并加入当前 Apple 账号。
+- 新身份的本地 Release Archive 成功，使用该 App ID 的 Xcode 自动管理开发描述文件；`codesign --verify --deep --strict` 通过，签名中的 application identifier 为 `756Y5JKBUD.com.waibao2025.trade.integrated`。这是本地开发签名归档，APNs entitlement 为 development，不代表已完成 TestFlight 分发签名或生产推送验收。
+- 同身份在 Xcode 27.1 / iOS 27.0 的 iPhone 18 Pro 模拟器执行 `TradeTool` 单测，162 项全部通过，0 失败、0 跳过；结果位于本机 `/tmp/binance-cloud-setup/IdentityTests.xcresult`。本轮没有操作真实交易账户或开发 APNs 服务端投递。
+- 提交 `bd2ea0d` 已推送到指定 GitHub 的 `codex/integrated-ios` 分支。本地旧 Cloud manifest 指向旧 `td0328/trade-tool` 产品，已移除本地关联以便为新应用设置工作流；旧产品、工作流和构建记录未改动。Cloud 源码授权仍需仓库所有者 `qoqkeep-create` 完成，当前 `td0328` 的个人安装不能覆盖该仓库。
+
 ## 2026-10-31：Xcode Cloud / TestFlight 源码准备
 
 - 核对已有共享 Scheme、Cloud 关联 manifest 和工程旁可执行的 Metal 准备脚本；补充主 App `PrivacyInfo.xcprivacy` 与资源引用，声明 UserDefaults `CA92.1` 和图表 systemUptime `35F9.1`，不据此宣称 App 不收集数据。保留工程文件原有改动。
