@@ -60,4 +60,4 @@ API 健康检查数据库、迁移和 scheduler heartbeat；market 健康同时�
 
 后续维护该独立记录时，在本目录使用 `git --git-dir=.integration-runtime/github-publish.git --work-tree=.`。提交前检查文件范围；忽略的环境文件、凭证、构建和运行目录不得加入。GitHub 认证使用有仓库写权限的 SSH 密钥或 HTTPS 凭证，服务器登录密钥不代表已有 GitHub 权限。推送源码与服务器部署、TestFlight 上传分别执行，实际完成状态以对应交付记录为准。
 
-2026-10-31 已准备本地独立提交，首次推送待认证：HTTPS 未找到本机已保存的凭证，既有默认 SSH 身份未通过 GitHub 认证。已生成仅供该仓库使用的本机密钥，公钥位于忽略目录 `.integration-runtime/github-binance-ed25519.pub`；由仓库管理员在 Settings → Deploy keys 中添加公钥并开启 Allow write access 后继续推送。私钥不上传、不加入追踪。本机网络使用已有代理，独立 Git 配置使用 SSH 443；这些本机元数据不会包含在交付代码中。其他机器首次取代码时正常 clone GitHub 仓库即可，无需沿用本机独立元数据路径。
+2026-10-31 仓库管理员添加专用 Deploy key 后，写入权限检查通过，首次提交 `1118eaa` 已推送到 `codex/integrated-ios`，并通过远程分支 SHA 核对。共 974 个文件放在仓库根目录，详细范围见 [变更](changes.md)。公钥位于忽略目录 `.integration-runtime/github-binance-ed25519.pub`，私钥不上传、不加入追踪。本机网络使用已有代理，独立 Git 配置使用 SSH 443；这些本机元数据不会包含在交付代码中。其他机器首次取代码时正常 clone GitHub 仓库即可，无需沿用本机独立元数据路径。

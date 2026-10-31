@@ -2,6 +2,12 @@
 
 此处保留值得长期维护的里程碑，不替代 Git 日志或全量聊天历史。每条说明来源和范围；历史通过不代表本轮重新测试。
 
+## 2026-10-31：整合版推送至独立 GitHub 仓库
+
+- 用户指定 `https://github.com/qoqkeep-create/binance.git`，并为本机专用 Deploy key 开通写入权限。首次提交 `1118eaa` 已推送至 `codex/integrated-ios`，远程分支 SHA 与本地提交一致；独立 Git 记录的维护方式见 [运维](operations.md#github-源码交付)。
+- 974 个文件以本整合目录为仓库根目录，包含 Python 后端、原生 iOS、保留的参考代码、测试与文档。生产环境文件、私钥和运行目录未纳入提交；原 USDT / USDC 来源文件、父 Gitee 仓库历史和其他未提交改动未混入，也未修改父仓库远程配置。
+- 本轮仅交付源码和同步推送记录，执行 Git 差异、文件范围及远程 SHA 检查，没有重新部署服务器、上传 TestFlight 或重跑应用测试。既有运行验证和待办仍以对应日期的记录及 [TestFlight 指南](testflight.md) 为准。
+
 ## 2026-10-31：Python + 原生 iOS 整合版独立部署及验收
 
 - 当前目录整合原 USDT Python / Django 交易后端与原 USDC SwiftUI / Metal 行情。新增独立行情 Socket 采集、收线 / 缺口修复、多周期与历史分页、鉴权 WSS、账户事件 Inbox / Outbox、持久化命令及账户 lease / fence。原交易精度、模式身份、绑定代际、保护与结算规则继续由 USDT 服务负责。原生导航为行情、持仓、开仓、信号、我的；其他业务页面映射见 [整合说明](INTEGRATION.md)。
