@@ -2,6 +2,14 @@
 
 此处保留值得长期维护的里程碑，不替代 Git 日志或全量聊天历史。每条说明来源和范围；历史通过不代表本轮重新测试。
 
+## 2026-11-01：按补充要求接入跨 App 持仓画中画
+
+- 用户明确浮窗需在其他 App 上方显示。新增公开 AVKit / AVSampleBufferDisplayLayer 画中画适配器，接入“我的”开关及卡片上的重开按钮，保留 App 内浮窗；外部窗口采用 640 × 320 的简略深色视频帧，包含币种、方向、市价、浮盈和更新时间，多仓每 5 秒轮播。iOS 控制实际窗口大小和系统按钮，不能把 App 内的 184 × 82 pt 直接当作外部窗口尺寸。配置及使用见 [持仓浮窗](ios-floating-positions.md)。
+- 原有查询和身份隔离继续复用，只有前台或用户启动且有效播放的画中画继续查询；快照超过 12 秒或系统暂停时隐藏旧金额，关闭 / 登出 / 换身份时清空并停止。播放状态的同步查询使用锁，异步 UI 回调回到 MainActor；关闭重开时重新连接当前源图层，离开主界面解除回调引用。只新增 PiP 需要的背景配置与音频会话，不播放静音音轨，不申请麦克风 / 摄像头，不修改 Python 交易或资金规则。
+- 本地 `TradeTool` 全量 175 项单测通过（`.integration-runtime/FloatingPiPUnit.xcresult`），包含新增轮播、暂停 / 过期隐藏和 IOSurface 视频帧生成；随后导出并实际打开帧渲染附件（`.integration-runtime/FloatingPiPFrame.xcresult`），币种、市价、盈亏及时间显示完整。
+- 本机 iPhone 18 Pro / iOS 27.2 模拟器的 `AVPictureInPictureController.isPictureInPictureSupported()` 明确返回 false。最初跨 App UI 流程因此失败，检查测试录屏后确认是能力提示，未绕过能力检查；最终测试只在这一明确条件下跳过。提示关闭改为延后更新状态，修复 SwiftUI 视图更新期间发布状态的警告；最终 `.integration-runtime/FloatingPiPCheckedUI.xcresult` 为 App 内两项通过、跨 App 一项跳过、0 失败，77.1 秒，日志未再出现该状态警告，已实际打开浅色 / 深色及能力提示截图。不能将该跳过写为外部窗口或后台更新通过；物理 iPhone 的系统按钮、跨 App、后台长稳与本次 TestFlight 构建仍待验收。
+- 最后源码的 generic iOS Release 未签名构建通过（`.integration-runtime/floating-pip-final-release.log`）；包内确认画中画文案、背景配置、Metal 库、隐私清单及 Lucide 许可存在，DEBUG 浮窗入口、视觉测试账号和偏好 suite 不存在。工程 / plist、56 个本地文档链接及差异检查通过。本轮交付新增 1 个 PiP 源码文件，其他均修改现有文件，使用独立 Git 元数据提交到 `codex/integrated-ios`；推送后的 Xcode Cloud / TestFlight 处理与手机安装结果需另行核对。
+
 ## 2026-11-01：同步最新配置与新增持仓浮窗
 
 - 从指定 GitHub 的 `codex/integrated-ios` 拉取至 `8afaa9b`，保留 Cloud / TestFlight 配置、工程排序和云端压力测试规则；本地 Web 复刻先提交为 `fb2e14f`，再合并为 `409e059`。合并前后 13 个业务 / 认证 / 导航源码的 SHA-256 一致；文档冲突保留双方记录，工程同时保留图标许可资源。只使用整合目录的独立 Git 元数据，来源项目与父仓库保持原状。

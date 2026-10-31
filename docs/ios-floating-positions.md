@@ -2,20 +2,27 @@
 
 ## 使用与范围
 
-在“我的 → 持仓浮窗”点击开启，再次点击或使用浮窗右上角关闭按钮即可关闭。浮窗为 App 内原生 SwiftUI 组件，跨底部页面和导航详情显示；系统弹窗、sheet 和全屏呈现在其上方。当前没有跨 App、画中画或后台展示能力。
+在“我的 → 持仓浮窗”点击开启：App 内出现小卡片，同时在支持的设备上请求系统画中画。画中画启动后可切到其他 App 查看；系统负责拖动、缩放、播放 / 暂停、关闭和返回 App。返回 App 时保留 App 内浮窗，点击卡片上的画中画图标可再次开启；保存的开关在下次启动时只恢复 App 内显示，避免自动抢占外部窗口。再次点击菜单或关闭浮窗即可停用。
 
-卡片大小为 184 × 82 pt，单次显示交易对、方向、市价和浮盈；多笔持仓点击顶部切换，右侧显示序号。拖动可调整位置，边界保留 12 pt、底部预留 76 pt，避免覆盖底部导航。沿用现有浅色、深色主题和盈亏颜色，不提供交易操作。实现位于 `frontend/ios-app/TradeTool/Features/USDT/FloatingPositionsView.swift`，由 `MainAppView` 的 NavigationStack 外层挂载。
+App 内卡片为 184 × 82 pt，显示交易对、方向、市价和浮盈；多笔持仓点击顶部切换，右侧显示序号。拖动边界保留 12 pt、底部预留 76 pt，避免覆盖导航，沿用浅色 / 深色主题。系统画中画使用 640 × 320 视频帧，采用固定深色以提高可读性，额外显示更新时间；多仓每 5 秒自动轮播。画中画的实际最小尺寸、位置与控制按钮由 iOS 决定，不能按 App 内尺寸强制设置，也不能在视频卡片内放置普通交互按钮。两种浮窗均不提供交易操作。
+
+设备明确不支持、音频会话不可用或启动超时会提示原因，并保留 App 内浮窗；不会把 App 内显示冒充跨 App 成功。App 内系统弹窗、sheet 和全屏呈现在普通浮窗上方。
+
+入口与 App 内卡片位于 `FloatingPositionsView.swift`，由 `MainAppView` 的 NavigationStack 外层挂载；`FloatingPositionsPiP.swift` 独立负责 AVKit 控制器、线程安全的播放状态、像素缓冲渲染和系统回调。使用公开的 [sample-buffer PiP 接口](https://developer.apple.com/documentation/avkit/avpictureinpicturecontroller/contentsource-swift.class/init%28samplebufferdisplaylayer%3Aplaybackdelegate%3A%29)及 [PiP 所需背景配置](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback)，`Info.plist` 新增 `UIBackgroundModes = [audio]`；音频会话只在用户请求画中画时激活，与其他音频混音，停止时释放，不播放静音音轨，不申请麦克风、摄像头或通话权限。
 
 ## 数据和生命周期
 
-- 已绑定 API 且 App 在前台开启浮窗时，读取当前账户模式的 `GET /v1/position/list`，完成一次请求后等待 3 秒再刷新；账户事件经 `USDTStore.liveRevision` 触发提前刷新，同一时刻最多一个请求在途。
+- 已绑定 API，且 App 在前台开启浮窗，或用户请求的画中画正在启动 / 有效播放时，读取当前模式的 `GET /v1/position/list`，完成一次后等待 3 秒再刷新；账户事件经 `USDTStore.liveRevision` 触发提前刷新，同一时刻最多一个请求在途。视频帧以 1 Hz 更新，独立于网络请求频率。
 - 币种、方向、市价和浮盈分别来自 `symbol`、`side`、`current_price`、`pnl`，与持仓页使用相同接口。市价与浮盈取同一次服务端响应，不用独立 ticker 重新计算盈亏。金额采用 Decimal；浮盈显示两位和 `U`，小币价保留有效小数；缺失值显示 `--`。
 - 未绑定、无持仓、首次同步和更新失败分别显示状态。失败清空旧快照，避免把旧价格显示为当前价格；下一轮重试。
-- 关闭、退后台或离开已登录主界面时停止轮询并废弃旧请求。账户、模式或绑定代际变化清空快照；响应还必须匹配请求 ID 与当前 `USDTStore.scope`，旧身份响应不能覆盖新账户。
+- 画中画显示更新时间；快照超过 12 秒未更新或已暂停时，隐藏价格和浮盈，以 `--` 和“更新延迟” / “已暂停”呈现。系统挂起进程时，渲染与网络都可能暂停，不能承诺秒级更新；更新时间用于判断卡片是否新鲜，不能仅据“窗口还在”认定实时数据正常。
+- 退后台仅在画中画有效播放期间继续刷新；画中画被关闭 / 暂停，或离开已登录主界面时停止后台轮询。关闭、账户 / 模式 / 绑定代际变化时清空快照并废弃旧请求，同时停止画中画。响应必须匹配请求 ID 与当前 `USDTStore.scope`，旧身份响应不能覆盖新账户。返回 App 后恢复前台刷新。
 - UserDefaults 只保存开关与归一化拖动位置，不保存持仓、价格、盈亏或凭证。菜单和 overlay 共享同一 UserDefaults 实例；DEBUG 视觉测试使用独立 suite，不改用户实际偏好。
 
 ## 验证方式
 
-`FloatingPositionsTests` 使用无网络 API 替身，覆盖 Decimal / 小币价、缺失值与负零、平仓后空列表、失败清理、旧账户响应、关闭后在途响应、并发请求去重和拖动边界。
+`FloatingPositionsTests` 使用无网络 API 替身，覆盖 Decimal / 小币价、缺失值与负零、平仓后空列表、失败清理、旧账户响应、关闭后在途响应、并发请求去重和拖动边界；新增多仓轮播、暂停 / 过期不显示旧金额及真实 IOSurface 视频帧生成测试。
 
-`WebParityUITests` 的 `testFloatingPositionsAcrossPagesAndDragging` 与 `testFloatingPositionsEmptyUnboundAndDarkStates` 使用 [Web 原生复刻](ios-web-parity.md#本地校对) 的 DEBUG 隔离数据，验证开启、多个持仓切换、跨 Tab / 详情页、拖动、关闭、空仓、未绑定和深色带单状态，并导出截图实际检查。fixture 不连接真实交易，Release 不包含该入口；真实有仓账户、iPhone 和本次 TestFlight 构建仍需分别验收。实际日期与结果见 [变更记录](changes.md)。
+`WebParityUITests` 的两项 App 内浮窗流程使用 [Web 原生复刻](ios-web-parity.md#本地校对) 的 DEBUG 隔离数据和 `--fixture-inline-floating`，验证多仓、跨页、拖动、关闭、空仓、未绑定和深色。`testFloatingPositionsPictureInPictureAcrossApps` 不加此参数，会实际请求 PiP，切到主屏和系统设置，等待后台刷新并返回关闭 / 重新开启。仅在设备明确报告不支持时跳过；一般启动失败仍是失败。`--fixture-live-floating` 让隔离快照中的测试价格随请求变化，用于判断是否在刷新，Release 不包含这些入口。
+
+2026-11-01，本机 iPhone 18 Pro / iOS 27.2 模拟器返回画中画不受支持，不能在该环境证明跨 App 运行；本机没有可用于此验收的物理 iPhone。当前实现已经接入，真机跨 App、暂停 / 系统关闭 / 返回、重开、切换账户、长时间后台刷新与本次 TestFlight 构建仍待验收。手机安装新构建后，从“我的”开启，切到其他 App 检查币种、盈亏和更新时间至少持续 1–5 分钟，再关闭并返回确认开关；不要通过真实开平仓来测试。实际构建与测试结果见 [变更记录](changes.md)。

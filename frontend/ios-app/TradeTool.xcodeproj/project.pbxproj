@@ -109,6 +109,7 @@
 		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
 		010000000000000000000057 /* Lucide-ISC.txt in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* Lucide-ISC.txt */; };
 		A17000000000000000000001 /* FloatingPositionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000002 /* FloatingPositionsView.swift */; };
+		A17000000000000000000005 /* FloatingPositionsPiP.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000006 /* FloatingPositionsPiP.swift */; };
 		A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000004 /* FloatingPositionsTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -239,6 +240,7 @@
 		F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTTradingViews.swift; sourceTree = "<group>"; };
 		02000000000000000000005E /* Lucide-ISC.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "Lucide-ISC.txt"; path = "../../docs/licenses/Lucide-ISC.txt"; sourceTree = SOURCE_ROOT; };
 		A17000000000000000000002 /* FloatingPositionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsView.swift; sourceTree = "<group>"; };
+		A17000000000000000000006 /* FloatingPositionsPiP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsPiP.swift; sourceTree = "<group>"; };
 		A17000000000000000000004 /* FloatingPositionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -608,6 +610,7 @@
 				DD7B56A4F1642013DF78DC36 /* USDTSession.swift */,
 				18C443B8F02115C83974CD29 /* USDTStore.swift */,
 				A17000000000000000000002 /* FloatingPositionsView.swift */,
+				A17000000000000000000006 /* FloatingPositionsPiP.swift */,
 				9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */,
 				F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */,
 				72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */,
@@ -760,6 +763,7 @@
 				4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */,
 				059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */,
 				A17000000000000000000001 /* FloatingPositionsView.swift in Sources */,
+				A17000000000000000000005 /* FloatingPositionsPiP.swift in Sources */,
 				F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */,
 				3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */,
 				51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */,

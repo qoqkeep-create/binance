@@ -284,6 +284,16 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         second["side"] = .number(1)
         value = .array([first, .object(second)])
       }
+      if request.path == "/v1/position/list",
+        ProcessInfo.processInfo.arguments.contains("--fixture-live-floating") {
+        value = .array(value.rows.map { row in
+          var fields = row.fields
+          if row.value("symbol") == "BTCUSDT" {
+            fields["current_price"] = .string(String(68000 + Int(Date().timeIntervalSince1970) % 100))
+          }
+          return .object(fields)
+        })
+      }
       if request.path == "/v1/trade/capital/precheck",
         ProcessInfo.processInfo.arguments.contains("--fixture-capital-refill")
       {

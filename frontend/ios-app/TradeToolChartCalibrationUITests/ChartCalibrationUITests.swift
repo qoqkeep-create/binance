@@ -2834,7 +2834,7 @@ final class WebParityUITests: XCTestCase {
     add(image)
   }
   func testFloatingPositionsAcrossPagesAndDragging() {
-    launch("profile", ["--fixture-multiple"])
+    launch("profile", ["--fixture-multiple", "--fixture-inline-floating"])
     let toggle = app.buttons["profile.floatingPositions"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     if !toggle.isHittable { app.swipeUp() }
@@ -2873,13 +2873,64 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(toggle.value as? String, "未开启")
   }
 
+  func testFloatingPositionsPictureInPictureAcrossApps() throws {
+    launch("profile", ["--fixture-multiple", "--fixture-live-floating"])
+    let toggle = app.buttons["profile.floatingPositions"]
+    XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+    if !toggle.isHittable { app.swipeUp() }
+    toggle.tap()
+    let unavailable = app.alerts.staticTexts["此设备暂不支持画中画，仍可使用 App 内浮窗。"]
+    if unavailable.waitForExistence(timeout: 2) {
+      capture("floating-pip-device-unsupported")
+      app.alerts.buttons["知道了"].tap()
+      throw XCTSkip("当前设备的 AVKit 明确返回画中画不受支持；跨 App 验收需支持该能力的 iPhone。")
+    }
+    let status = app.otherElements["floating.positions.pipStatus"]
+    XCTAssertTrue(status.waitForExistence(timeout: 10))
+    let active = NSPredicate(format: "value == %@", "画中画已开启")
+    expectation(for: active, evaluatedWith: status)
+    waitForExpectations(timeout: 12)
+    capture("floating-pip-started")
+    XCUIDevice.shared.press(.home)
+    let home = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    home.name = "floating-pip-home"
+    home.lifetime = .keepAlways
+    add(home)
+    let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+    settings.launch()
+    XCTAssertTrue(settings.wait(for: .runningForeground, timeout: 10))
+    let other = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    other.name = "floating-pip-other-app"
+    other.lifetime = .keepAlways
+    add(other)
+    // Allow two complete carousel cycles while a different app owns the foreground.
+    let refresh = expectation(description: "PiP foreground-independent refresh window")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 12) { refresh.fulfill() }
+    wait(for: [refresh], timeout: 14)
+    let updated = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    updated.name = "floating-pip-background-refreshed"
+    updated.lifetime = .keepAlways
+    add(updated)
+    app.activate()
+    XCTAssertEqual(status.value as? String, "画中画已开启")
+    if !toggle.isHittable { app.swipeUp() }
+    toggle.tap()
+    XCTAssertFalse(app.otherElements["floating.positions.pipStatus"].exists)
+    XCTAssertEqual(toggle.value as? String, "未开启")
+    toggle.tap()
+    expectation(for: active, evaluatedWith: status)
+    waitForExpectations(timeout: 12)
+    toggle.tap()
+    XCTAssertEqual(toggle.value as? String, "未开启")
+  }
+
   func testFloatingPositionsEmptyUnboundAndDarkStates() {
     for (options, expected, name) in [
       (["--fixture-empty"], "暂无持仓", "floating-empty"),
       (["--fixture-unbound"], "请先绑定 API", "floating-unbound"),
       (["--fixture-dark", "--fixture-lead"], "+25.00 U", "floating-lead-dark"),
     ] {
-      launch("profile", options)
+      launch("profile", options + ["--fixture-inline-floating"])
       let toggle = app.buttons["profile.floatingPositions"]
       XCTAssertTrue(toggle.waitForExistence(timeout: 10))
       if !toggle.isHittable { app.swipeUp() }

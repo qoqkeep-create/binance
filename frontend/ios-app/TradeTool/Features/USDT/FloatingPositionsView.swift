@@ -62,6 +62,7 @@ final class FloatingPositionsModel: ObservableObject {
   @Published private(set) var scope = ""
   @Published private(set) var hasLoaded = false
   @Published private(set) var failed = false
+  @Published private(set) var updatedAt: Date?
   private var requestID: UUID?
 
   func reset(scope: String) {
@@ -70,6 +71,7 @@ final class FloatingPositionsModel: ObservableObject {
     positions = []
     hasLoaded = false
     failed = false
+    updatedAt = nil
   }
 
   func refresh(_ store: USDTStore) async {
@@ -87,6 +89,7 @@ final class FloatingPositionsModel: ObservableObject {
       positions = response.rows.compactMap(FloatingPosition.init)
       hasLoaded = true
       failed = false
+      updatedAt = Date()
     } catch {
       guard !Task.isCancelled, self.scope == scope, store.scope == scope, requestID == id else {
         return
@@ -95,6 +98,7 @@ final class FloatingPositionsModel: ObservableObject {
       positions = []
       hasLoaded = true
       failed = true
+      updatedAt = nil
     }
   }
 }
@@ -133,14 +137,20 @@ private struct FloatingPositionsOverlay: ViewModifier {
   @AppStorage("integrated.floatingPositions.y", store: FloatingPositionsPreferences.defaults)
   private var y = 0.22
   @StateObject private var model = FloatingPositionsModel()
+  @StateObject private var pip = FloatingPositionsPiP()
   @State private var selectedID: String?
   @GestureState private var translation = CGSize.zero
 
   private var active: Bool { enabled && scenePhase == .active }
-  private var context: String { "\(store.scope):\(active):\(store.isBound)" }
-  private var positions: [FloatingPosition] { model.scope == store.scope ? model.positions : [] }
+  private var refreshing: Bool { enabled && store.isBound && (scenePhase == .active || pip.keepsUpdating) }
+  private var context: String { refreshing ? store.scope : "" }
+  private var positions: [FloatingPosition] { store.isBound && model.scope == store.scope ? model.positions : [] }
   private var index: Int { positions.firstIndex { $0.id == selectedID } ?? 0 }
   private var selected: FloatingPosition? { positions.isEmpty ? nil : positions[index] }
+  private var snapshot: FloatingPiPSnapshot {
+    FloatingPiPSnapshot(positions: positions, selectedIndex: index,
+      updatedAt: model.scope == store.scope ? model.updatedAt : nil, status: status)
+  }
   private var status: String {
     if !store.isBound { return "请先绑定 API" }
     if model.scope != store.scope || !model.hasLoaded { return "正在同步…" }
@@ -150,8 +160,13 @@ private struct FloatingPositionsOverlay: ViewModifier {
   func body(content: Content) -> some View {
     content.overlay {
       GeometryReader { geometry in
-        if active {
-          panel
+        if enabled {
+          ZStack {
+            FloatingPiPSource(controller: pip)
+            if !pip.isActive { panel }
+          }
+            .frame(width: FloatingPanelPlacement.size.width, height: FloatingPanelPlacement.size.height)
+            .allowsHitTesting(active && !pip.isActive)
             .position(FloatingPanelPlacement.center(
               in: geometry.size, fraction: CGPoint(x: x, y: y), translation: translation))
             .gesture(DragGesture(minimumDistance: 6)
@@ -167,18 +182,35 @@ private struct FloatingPositionsOverlay: ViewModifier {
       }
     }
     .task(id: context) {
-      model.reset(scope: active && store.isBound ? store.scope : "")
-      guard active, store.isBound else { return }
+      model.reset(scope: context)
+      guard refreshing else { return }
       while !Task.isCancelled {
         await model.refresh(store)
         do { try await Task.sleep(for: .seconds(3)) } catch { return }
       }
     }
     .onChange(of: store.liveRevision) { _, _ in
-      guard active, store.isBound else { return }
+      guard refreshing else { return }
       Task { await model.refresh(store) }
     }
-    .onDisappear { model.reset(scope: "") }
+    .onChange(of: snapshot) { _, value in pip.update(value) }
+    .onChange(of: enabled) { _, value in
+      if value {
+        #if DEBUG
+          if ProcessInfo.processInfo.arguments.contains("--fixture-inline-floating") { return }
+        #endif
+        pip.start()
+      } else { pip.stop() }
+    }
+    .onChange(of: store.scope) { _, _ in pip.stop() }
+    .onChange(of: store.isBound) { _, bound in if !bound { pip.stop() } }
+    .onAppear { pip.onSystemClose = { enabled = false }; pip.update(snapshot) }
+    .onDisappear { pip.onSystemClose = nil; model.reset(scope: ""); pip.stop() }
+    .alert("跨 App 浮窗", isPresented: Binding(get: { pip.notice != nil }, set: { showing in
+      if !showing { Task { @MainActor in pip.notice = nil } }
+    })) {
+      Button("知道了", role: .cancel) {}
+    } message: { Text(pip.notice ?? "") }
   }
 
   private var panel: some View {
@@ -204,6 +236,10 @@ private struct FloatingPositionsOverlay: ViewModifier {
         }.buttonStyle(.plain).accessibilityLabel("切换浮窗持仓")
           .accessibilityValue("\(selected?.symbol ?? "") \(index + 1)/\(max(1, positions.count))")
           .accessibilityIdentifier("floating.positions.next")
+        Button { pip.start() } label: {
+          Image(systemName: "pip.enter").font(.system(size: 12)).frame(width: 22, height: 24)
+        }.buttonStyle(.plain).accessibilityLabel("切换到其他 App 显示")
+          .accessibilityIdentifier("floating.positions.pip")
         Button { enabled = false } label: {
           WebIcon("x", size: 12).frame(width: 24, height: 24).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("关闭持仓浮窗")

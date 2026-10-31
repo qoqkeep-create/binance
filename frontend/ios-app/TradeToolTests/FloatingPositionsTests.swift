@@ -1,7 +1,56 @@
 import XCTest
+import AVFoundation
+import CoreImage
+import UIKit
 @testable import TradeTool
 
 final class FloatingPositionsTests: XCTestCase {
+  func testPictureInPictureRotatesAcrossPositionsWithoutLosingSnapshotTime() throws {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let positions = [try XCTUnwrap(FloatingPosition(row())),
+      try XCTUnwrap(FloatingPosition(row(symbol: "ETHUSDT", profit: "-3.50", side: 1)))]
+    let snapshot = FloatingPiPSnapshot(positions: positions, updatedAt: now)
+    XCTAssertEqual(snapshot.presentation(at: now, cyclingSince: now, paused: false).title, "BTCUSDT")
+    let second = snapshot.presentation(at: now.addingTimeInterval(5), cyclingSince: now, paused: false)
+    XCTAssertEqual(second.title, "ETHUSDT")
+    XCTAssertEqual(second.page, "2/2")
+    XCTAssertEqual(second.profit, "-3.50 U")
+    XCTAssertTrue(second.loss)
+    XCTAssertEqual(snapshot.presentation(at: now.addingTimeInterval(10), cyclingSince: now, paused: false).title, "BTCUSDT")
+  }
+
+  func testPictureInPictureNeverPresentsPausedOrExpiredPriceAsCurrent() throws {
+    let now = Date(timeIntervalSince1970: 1_000)
+    var snapshot = FloatingPiPSnapshot(positions: [try XCTUnwrap(FloatingPosition(row()))], updatedAt: now)
+    let stale = snapshot.presentation(at: now.addingTimeInterval(13), cyclingSince: nil, paused: false)
+    XCTAssertEqual(stale.price, "--")
+    XCTAssertEqual(stale.profit, "--")
+    XCTAssertTrue(stale.footer.hasPrefix("更新延迟"))
+    let paused = snapshot.presentation(at: now, cyclingSince: nil, paused: true)
+    XCTAssertEqual(paused.price, "--")
+    XCTAssertTrue(paused.footer.hasPrefix("已暂停"))
+    snapshot.updatedAt = nil
+    XCTAssertEqual(snapshot.presentation(at: now, cyclingSince: nil, paused: false).profit, "--")
+  }
+
+  @MainActor
+  func testPictureInPictureProducesReadyVideoFrameFromSnapshot() throws {
+    let snapshot = FloatingPiPSnapshot(positions: [try XCTUnwrap(FloatingPosition(row()))], updatedAt: Date())
+    let sample = try XCTUnwrap(FloatingPiPFrameRenderer.sample(snapshot.presentation(at: Date(), cyclingSince: nil, paused: false)))
+    XCTAssertTrue(CMSampleBufferDataIsReady(sample))
+    let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
+    XCTAssertEqual(CVPixelBufferGetWidth(image), 640)
+    XCTAssertEqual(CVPixelBufferGetHeight(image), 320)
+    XCTAssertNotNil(CVPixelBufferGetIOSurface(image))
+    let bitmap = CIImage(cvPixelBuffer: image)
+    let context = CIContext(options: [.useSoftwareRenderer: true])
+    let cgImage = try XCTUnwrap(context.createCGImage(bitmap, from: bitmap.extent))
+    let attachment = XCTAttachment(image: UIImage(cgImage: cgImage))
+    attachment.name = "floating-pip-rendered-card"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+
   func testDecimalSnapshotPreservesSmallPriceAndSignedProfit() throws {
     let position = try XCTUnwrap(FloatingPosition(row(price: "0.000000001234", profit: "25.005")))
     XCTAssertEqual(position.priceText, "0.000000001234")
@@ -31,6 +80,7 @@ final class FloatingPositionsTests: XCTestCase {
     await model.refresh(store)
     XCTAssertEqual(model.positions.first?.symbol, "BTCUSDT")
     XCTAssertEqual(model.positions.first?.profitText, "+25.00 U")
+    XCTAssertNotNil(model.updatedAt)
     await model.refresh(store)
     XCTAssertTrue(model.positions.isEmpty)
     XCTAssertTrue(model.hasLoaded)
@@ -47,6 +97,7 @@ final class FloatingPositionsTests: XCTestCase {
     await model.refresh(store)
     XCTAssertTrue(model.positions.isEmpty)
     XCTAssertTrue(model.failed)
+    XCTAssertNil(model.updatedAt)
   }
 
   @MainActor
