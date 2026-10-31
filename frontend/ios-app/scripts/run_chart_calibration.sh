@@ -12,7 +12,7 @@ Usage:
 
 The default test is testCaptureBinancePreparedChartState. Result bundles and
 exported attachments are written below /tmp unless CALIBRATION_OUTPUT_ROOT is
-set. Trade Tool builds use Debug-Dev-B by default and reuse Xcode's per-project
+set. Trade Tool builds use Debug-Seoul by default and reuse Xcode's per-project
 DerivedData cache instead of creating a new cache for every test run.
 EOF
 }
@@ -86,7 +86,7 @@ result_bundle_path="${output_root}.xcresult"
 attachments_path="${output_root}-attachments"
 lock_state_path="${output_root}-lock-state.json"
 developer_dir="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-configuration="${CALIBRATION_CONFIGURATION:-Debug-Dev-B}"
+configuration="${CALIBRATION_CONFIGURATION:-Debug-Seoul}"
 
 case "$output_root" in
     /tmp/*|/private/tmp/*|/private/var/folders/*) ;;

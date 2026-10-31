@@ -1,5 +1,7 @@
 # 信号与通知
 
+> 本文维护整合版沿用的业务规则；当前运行与验证边界见 [整合说明](INTEGRATION.md)。来源项目历史资料从 [来源索引](sources.md) 查询。
+
 本主题维护数据流、模块隔离和消息口径；请求字段和响应协议以两份独立 [接入](api/external-signals.md) / [推送](api/trade-notifications.md) 文档为准。
 
 投递语义核对日期：2026-09-10。
@@ -16,7 +18,7 @@
 
 ## 外部信号翻译
 
-解析集中于 `docker/tradingview/app.py`（来源路径，未随本整合交付），持久化入口见 [trading/views.py](../server/trading/views.py)。接收非空 JSON 对象，大小最多 64KB；文本必须包装在 `message` 等字段中，不接受裸文本或顶层数组。
+来源解析器位于 USDT 原目录的 `docker/tradingview/app.py`（见 [来源索引](sources.md)，当前项目不包含该独立服务），持久化入口见 [trading/views.py](../server/trading/views.py)。接收非空 JSON 对象，大小最多 64KB；文本必须包装在 `message` 等字段中，不接受裸文本或顶层数组。
 
 合作方不必改成固定内部字段。当前实现是有界的嵌套字段 / 别名识别与文本推断，不是调用 AI、也不是对任意语义保证准确。保留原始 JSON，输出统一格式和 `mapped` / `partial` / `unmapped` 状态；无法识别仍接收，拿真实脱敏样例再扩展独立映射。
 
@@ -26,7 +28,7 @@
 
 ## 内部信号和保留期
 
-[trend.py](../server/market_analysis/trend.py) 每 60 秒扫描已收盘 K 线，周期为 15m / 1h / 4h / 1d，按交易对、周期、收盘时间避免重复信号。SuperTrend 方向翻转只静默建立对应方向的等待状态，不入库、不推送；后续已收盘 K 线满足原有 EMA 过滤、K 线方向及 EMA55 / EMA144 触碰条件时才提醒。EMA55 与 EMA144 仍分别消耗等待状态；同一根 K 线同时触发时合并为一条提醒。Web [signals 页面](../tools/src/pages/signals/index.tsx) 外部 / 内部分页签，约 30 秒刷新一次。
+[trend.py](../server/market_analysis/trend.py) 每 60 秒扫描已收盘 K 线，周期为 15m / 1h / 4h / 1d，按交易对、周期、收盘时间避免重复信号。SuperTrend 方向翻转只静默建立对应方向的等待状态，不入库、不推送；后续已收盘 K 线满足原有 EMA 过滤、K 线方向及 EMA55 / EMA144 触碰条件时才提醒。EMA55 与 EMA144 仍分别消耗等待状态；同一根 K 线同时触发时合并为一条提醒。原生 [信号页面](../frontend/ios-app/TradeTool/Features/USDT/USDTTradingViews.swift) 展示原业务信号，普通模式提供入口。
 
 `TradingViewMessage` 为历史模型名，实际有 external / internal / tradingview 来源；旧 tradingview 数据不能自动归成 external。统一消息按 3 天保留、每 10 分钟清理，不是长期信号档案。清理后仅依赖该表的去重记录也不再永久存在，合作方应避免任意重放历史。
 

@@ -1,5 +1,7 @@
 # 资金与转账历史
 
+> 本文维护整合版沿用的业务规则；当前运行与验证边界见 [整合说明](INTEGRATION.md)。来源项目历史资料从 [来源索引](sources.md) 查询。
+
 资金动作与历史查询是两条不同链路，不能为了加快页面加载而触发资金动作。主要入口：[balance_cap.py](../server/trading/balance_cap.py)、[transfer_history.py](../server/accounts/transfer_history.py)、[账户视图](../server/accounts/views.py)。
 
 规则核对日期：2026-10-01。充值及 Pay 站内转账已随 `605b8f2` 在线上运行，指定主账户 600 USDT 收款已同步并通过只读历史及重复刷新验收；其他账户 / 渠道的真实完整性不能由此推断，范围见 [变更记录](changes.md)。
@@ -127,7 +129,7 @@ Pay 补齐只将来源版本从 1 提升到 2，无新增迁移。查询每页�
 
 这不是断言 Binance 账户永远无法绑定，而是当前链路没有已验证、可跨 Key 稳定使用的账户身份契约。将来要按账户归档，先确认可用身份来源、账户类型、权限、冲突迁移与隔离测试，不能用昵称、邮箱或前端 token 猜测合并。
 
-前端缓存见 [data.ts](../tools/src/pages/transfer-history/data.ts)，按用户 ID 或邮箱隔离，不按短期 access token；只保留内存快照，不把财务记录放 localStorage。异步代际保护防止旧账号请求覆盖新账号页面，退出 / 绑定切换流程需要验证失效。
+原生页面通过 [USDTStore](../frontend/ios-app/TradeTool/Features/USDT/USDTStore.swift) 按用户、模式和会话代际隔离请求；退出或切换身份后的旧响应不能覆盖当前记录，资金资料不写入偏好存储。
 
 ## 排障与验收
 
@@ -143,7 +145,7 @@ Pay 补齐只将来源版本从 1 提升到 2，无新增迁移。查询每页�
 
 2026-09-12 只读排障确认一笔历史主账户归集：交易所提现历史已返回 `status=6`、`transferType=1`、手续费为零，按原 `withdrawOrderId`、币种、金额、冻结地址 / 网络及现有匹配函数可以确认完成，但本地仍为 `spot_pending`。这证明该笔没有收敛，不能据此推断资金仍在现货，或再次发送旧金额。
 
-随后修复手动入口及 [归集跟进逻辑](../tools/src/pages/profile/useCapitalNormalization.ts)，统一顶层 / 嵌套 `collection_pending`。使用旧笔已完成 589.96 U、当前合约 1405.280079 U、止损额 200 U 的模拟场景，已验证旧笔按原编号收敛后展示 `合约 -> 现货 405.28 U`、`现货 -> 主账户 405.28 U`，不会再次转出旧金额。最新实际金额仍以用户打开面板时查询为准。
+随后修复手动入口及 [原生归集跟进逻辑](../frontend/ios-app/TradeTool/Features/USDT/USDTAccountViews.swift)，统一顶层 / 嵌套 `collection_pending`。使用旧笔已完成 589.96 U、当前合约 1405.280079 U、止损额 200 U 的模拟场景，已验证旧笔按原编号收敛后展示 `合约 -> 现货 405.28 U`、`现货 -> 主账户 405.28 U`，不会再次转出旧金额。最新实际金额仍以用户打开面板时查询为准。
 
 发布不会批量改写历史流水；旧笔由用户打开面板时按回执收敛。真实资金动作仍由用户确认触发。本轮测试和上线状态见 [变更记录](changes.md)；用户真实账户的后续验收见 [CAP-01](known-issues.md#cap-01旧归集待确认遮盖新计划)。
 

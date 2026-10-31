@@ -1,1 +1,0 @@
-export { HoldingsPage } from './index'

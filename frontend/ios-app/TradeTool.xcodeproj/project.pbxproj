@@ -16,8 +16,6 @@
 		010000000000000000000005 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000005 /* APIClient.swift */; };
 		010000000000000000000006 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000006 /* DashboardView.swift */; };
 		010000000000000000000007 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000007 /* DashboardViewModel.swift */; };
-		010000000000000000000008 /* SignalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000008 /* SignalsView.swift */; };
-		010000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000009 /* SettingsView.swift */; };
 		01000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000A /* Assets.xcassets */; };
 		01000000000000000000000B /* BottomNavigationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000C /* BottomNavigationBar.swift */; };
 		01000000000000000000000C /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000D /* APIError.swift */; };
@@ -80,11 +78,7 @@
 		010000000000000000000046 /* RSIIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004C /* RSIIndicator.swift */; };
 		010000000000000000000047 /* ChartDrawingTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004D /* ChartDrawingTools.swift */; };
 		010000000000000000000048 /* TradingSettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004E /* TradingSettingsModels.swift */; };
-		010000000000000000000049 /* ExitStrategyManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004F /* ExitStrategyManagementView.swift */; };
-		01000000000000000000004A /* OrderSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000050 /* OrderSettingsView.swift */; };
 		01000000000000000000004B /* ChartOrderDrawingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000051 /* ChartOrderDrawingView.swift */; };
-		01000000000000000000004C /* PositionCenterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000052 /* PositionCenterModels.swift */; };
-		01000000000000000000004D /* PositionCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000053 /* PositionCenterView.swift */; };
 		01000000000000000000004E /* ChartLeverageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000054 /* ChartLeverageSettingsView.swift */; };
 		01000000000000000000004F /* SimpleMovingAverageIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000056 /* SimpleMovingAverageIndicator.swift */; };
 		010000000000000000000050 /* BollingerBandsIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000057 /* BollingerBandsIndicator.swift */; };
@@ -93,8 +87,6 @@
 		010000000000000000000053 /* TechnicalPanelIndicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005A /* TechnicalPanelIndicators.swift */; };
 		010000000000000000000054 /* TradingDataPanelIndicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005B /* TradingDataPanelIndicators.swift */; };
 		010000000000000000000055 /* ReferenceTradeNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005C /* ReferenceTradeNotification.swift */; };
-		010000000000000000000056 /* ReferenceNotificationsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005D /* ReferenceNotificationsViewModel.swift */; };
-		010000000000000000000057 /* ReferenceNotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* ReferenceNotificationsView.swift */; };
 		0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0000000000000000000002 /* ChartEngineCoreTests.swift */; };
 		0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */; };
 		0C0000000000000000000001 /* ChartEngineOnscreenStressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */; };
@@ -143,8 +135,6 @@
 		020000000000000000000005 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		020000000000000000000006 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		020000000000000000000007 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
-		020000000000000000000008 /* SignalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalsView.swift; sourceTree = "<group>"; };
-		020000000000000000000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		02000000000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		02000000000000000000000B /* TradeTool.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TradeTool.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		02000000000000000000000C /* BottomNavigationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavigationBar.swift; sourceTree = "<group>"; };
@@ -161,8 +151,6 @@
 		020000000000000000000017 /* BinanceTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceTheme.swift; sourceTree = "<group>"; };
 		020000000000000000000018 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		02000000000000000000001A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
-		02000000000000000000001B /* Debug-Dev-A.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-Dev-A.xcconfig"; sourceTree = "<group>"; };
-		02000000000000000000001C /* Debug-Dev-B.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-Dev-B.xcconfig"; sourceTree = "<group>"; };
 		02000000000000000000001D /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		02000000000000000000001E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		02000000000000000000001F /* MarketListSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketListSettingsView.swift; sourceTree = "<group>"; };
@@ -212,11 +200,7 @@
 		02000000000000000000004C /* RSIIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSIIndicator.swift; sourceTree = "<group>"; };
 		02000000000000000000004D /* ChartDrawingTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDrawingTools.swift; sourceTree = "<group>"; };
 		02000000000000000000004E /* TradingSettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingSettingsModels.swift; sourceTree = "<group>"; };
-		02000000000000000000004F /* ExitStrategyManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExitStrategyManagementView.swift; sourceTree = "<group>"; };
-		020000000000000000000050 /* OrderSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderSettingsView.swift; sourceTree = "<group>"; };
 		020000000000000000000051 /* ChartOrderDrawingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartOrderDrawingView.swift; sourceTree = "<group>"; };
-		020000000000000000000052 /* PositionCenterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionCenterModels.swift; sourceTree = "<group>"; };
-		020000000000000000000053 /* PositionCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionCenterView.swift; sourceTree = "<group>"; };
 		020000000000000000000054 /* ChartLeverageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLeverageSettingsView.swift; sourceTree = "<group>"; };
 		020000000000000000000055 /* TradeTool.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TradeTool.entitlements; sourceTree = "<group>"; };
 		020000000000000000000056 /* SimpleMovingAverageIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMovingAverageIndicator.swift; sourceTree = "<group>"; };
@@ -226,8 +210,6 @@
 		02000000000000000000005A /* TechnicalPanelIndicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TechnicalPanelIndicators.swift; sourceTree = "<group>"; };
 		02000000000000000000005B /* TradingDataPanelIndicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingDataPanelIndicators.swift; sourceTree = "<group>"; };
 		02000000000000000000005C /* ReferenceTradeNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceTradeNotification.swift; sourceTree = "<group>"; };
-		02000000000000000000005D /* ReferenceNotificationsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceNotificationsViewModel.swift; sourceTree = "<group>"; };
-		02000000000000000000005E /* ReferenceNotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceNotificationsView.swift; sourceTree = "<group>"; };
 		0B0000000000000000000002 /* ChartEngineCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartEngineCoreTests.swift; sourceTree = "<group>"; };
 		0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSignalPreferencesTests.swift; sourceTree = "<group>"; };
 		0B0000000000000000000004 /* TradeToolTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TradeToolTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -355,9 +337,6 @@
 				9D1ABE0927700A869C9AE6E1 /* USDT */,
 				040000000000000000000008 /* Dashboard */,
 				040000000000000000000012 /* Chart */,
-				04000000000000000000001D /* Positions */,
-				040000000000000000000009 /* Signals */,
-				04000000000000000000001E /* Reference */,
 				04000000000000000000000C /* Settings */,
 				040000000000000000000010 /* Auth */,
 				040000000000000000000013 /* ChartEngine */,
@@ -375,14 +354,6 @@
 				020000000000000000000007 /* DashboardViewModel.swift */,
 			);
 			path = Dashboard;
-			sourceTree = "<group>";
-		};
-		040000000000000000000009 /* Signals */ = {
-			isa = PBXGroup;
-			children = (
-				020000000000000000000008 /* SignalsView.swift */,
-			);
-			path = Signals;
 			sourceTree = "<group>";
 		};
 		04000000000000000000000A /* Products */ = {
@@ -409,11 +380,8 @@
 		04000000000000000000000C /* Settings */ = {
 			isa = PBXGroup;
 			children = (
-				020000000000000000000009 /* SettingsView.swift */,
 				120000000000000000000004 /* ServerSettingsView.swift */,
 				02000000000000000000004E /* TradingSettingsModels.swift */,
-				02000000000000000000004F /* ExitStrategyManagementView.swift */,
-				020000000000000000000050 /* OrderSettingsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -457,8 +425,6 @@
 		040000000000000000000011 /* Config */ = {
 			isa = PBXGroup;
 			children = (
-				02000000000000000000001B /* Debug-Dev-A.xcconfig */,
-				02000000000000000000001C /* Debug-Dev-B.xcconfig */,
 				0200000000000000000000F1 /* Debug-Seoul.xcconfig */,
 				02000000000000000000001D /* Release.xcconfig */,
 			);
@@ -598,24 +564,6 @@
 				020000000000000000000044 /* VolumeIndicator.swift */,
 			);
 			path = Indicators;
-			sourceTree = "<group>";
-		};
-		04000000000000000000001D /* Positions */ = {
-			isa = PBXGroup;
-			children = (
-				020000000000000000000052 /* PositionCenterModels.swift */,
-				020000000000000000000053 /* PositionCenterView.swift */,
-			);
-			path = Positions;
-			sourceTree = "<group>";
-		};
-		04000000000000000000001E /* Reference */ = {
-			isa = PBXGroup;
-			children = (
-				02000000000000000000005D /* ReferenceNotificationsViewModel.swift */,
-				02000000000000000000005E /* ReferenceNotificationsView.swift */,
-			);
-			path = Reference;
 			sourceTree = "<group>";
 		};
 		0B0000000000000000000006 /* TradeToolTests */ = {
@@ -818,16 +766,8 @@
 				01000000000000000000001E /* MarketChartViewModel.swift in Sources */,
 				01000000000000000000001B /* MarketWatchlistStore.swift in Sources */,
 				010000000000000000000007 /* DashboardViewModel.swift in Sources */,
-				010000000000000000000008 /* SignalsView.swift in Sources */,
-				010000000000000000000056 /* ReferenceNotificationsViewModel.swift in Sources */,
-				010000000000000000000057 /* ReferenceNotificationsView.swift in Sources */,
-				010000000000000000000009 /* SettingsView.swift in Sources */,
 				010000000000000000000048 /* TradingSettingsModels.swift in Sources */,
-				010000000000000000000049 /* ExitStrategyManagementView.swift in Sources */,
-				01000000000000000000004A /* OrderSettingsView.swift in Sources */,
 				01000000000000000000004B /* ChartOrderDrawingView.swift in Sources */,
-				01000000000000000000004C /* PositionCenterModels.swift in Sources */,
-				01000000000000000000004D /* PositionCenterView.swift in Sources */,
 				01000000000000000000004E /* ChartLeverageSettingsView.swift in Sources */,
 				01000000000000000000000B /* BottomNavigationBar.swift in Sources */,
 				01000000000000000000000C /* APIError.swift in Sources */,
@@ -1049,7 +989,7 @@
 		};
 		090000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 02000000000000000000001B /* Debug-Dev-A.xcconfig */;
+			baseConfigurationReference = 0200000000000000000000F1 /* Debug-Seoul.xcconfig */;
 			buildSettings = {
 				APS_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -1127,103 +1067,6 @@
 			};
 			name = Release;
 		};
-		090000000000000000000005 /* Debug-Dev-B */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
-				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-			};
-			name = "Debug-Dev-B";
-		};
-		090000000000000000000006 /* Debug-Dev-B */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 02000000000000000000001C /* Debug-Dev-B.xcconfig */;
-			buildSettings = {
-				APS_ENVIRONMENT = development;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = TradeTool/Resources/TradeTool.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
-				DEVELOPMENT_TEAM = 756Y5JKBUD;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = TradeTool/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleAllowMixedLocalizations = YES;
-				INFOPLIST_KEY_CFBundleDevelopmentRegion = "zh-Hans";
-				INFOPLIST_KEY_CFBundleDisplayName = "Trade Tool";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用于连接局域网内的 Trade Tool 开发服务器";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.trade.integrated;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = "Debug-Dev-B";
-		};
 		0B000000000000000000000E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1246,29 +1089,6 @@
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
 			};
 			name = Debug;
-		};
-		0B000000000000000000000F /* Debug-Dev-B */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 756Y5JKBUD;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TradeTool.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TradeTool";
-			};
-			name = "Debug-Dev-B";
 		};
 		0B0000000000000000000010 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1314,28 +1134,6 @@
 				TEST_TARGET_NAME = TradeTool;
 			};
 			name = Debug;
-		};
-		0D000000000000000000000F /* Debug-Dev-B */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 756Y5JKBUD;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.oovso.tradetool.chartcalibrationuitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_TARGET_NAME = TradeTool;
-			};
-			name = "Debug-Dev-B";
 		};
 		0D0000000000000000000010 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1508,7 +1306,6 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				090000000000000000000001 /* Debug */,
-				090000000000000000000005 /* Debug-Dev-B */,
 				090000000000000000000007 /* Debug-Seoul */,
 				090000000000000000000002 /* Release */,
 			);
@@ -1519,7 +1316,6 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				090000000000000000000003 /* Debug */,
-				090000000000000000000006 /* Debug-Dev-B */,
 				090000000000000000000008 /* Debug-Seoul */,
 				090000000000000000000004 /* Release */,
 			);
@@ -1530,7 +1326,6 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0B000000000000000000000E /* Debug */,
-				0B000000000000000000000F /* Debug-Dev-B */,
 				0B0000000000000000000011 /* Debug-Seoul */,
 				0B0000000000000000000010 /* Release */,
 			);
@@ -1541,12 +1336,11 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0D000000000000000000000E /* Debug */,
-				0D000000000000000000000F /* Debug-Dev-B */,
 				0D0000000000000000000011 /* Debug-Seoul */,
 				0D0000000000000000000010 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = "Debug-Dev-B";
+			defaultConfigurationName = "Debug-Seoul";
 		};
 /* End XCConfigurationList section */
 	};

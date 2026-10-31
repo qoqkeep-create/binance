@@ -1,1 +1,0 @@
-export { PreflightModal } from './index'

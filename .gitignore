@@ -1,62 +1,32 @@
-# macOS
+# Local state and runtime
 .DS_Store
-
-# IntelliJ IDEA
 .idea/
 *.iml
-
-# Maven
-target/
-**/target/
-
-# Logs and runtime output
 *.log
 logs/
-
-# Local temporary files
 *.tmp
 *.swp
+*.local.md
+.integration-runtime/
 
-# Local deployment secrets
+# Secrets and local environments
 .env
 .env.*
 !.env.example
-/deploy/server.env
-/deploy/env.production
-/deploy/trade-tool-known-hosts
-/deploy/app-ssh-credential.json
-/deploy/AuthKey_*.p8
-/deploy/nginx/server-dgx.env
-/deploy/nginx/ssl/*
-!/deploy/nginx/ssl/.gitignore
-/ops/server-access.env
-/ops/router-access.env
+server.env
+*.p8
+*.p12
+*.mobileprovision
 
-# Integrated Python / Web workspace
-.DS_Store
-.write_test
-tools/.deploy-test
-对话指令原文.md
-*.local.md
-
-# Python backend
-server/.venv/
+# Python
+.venv/
 __pycache__/
 *.py[cod]
 server/db.sqlite3
-server/.env
-.env.docker
 
-server/db.sqlite3
-server/.venv/
-ops/*.env
-ops/.env*
-!/ops/router-access.example.env
-!/ops/server-access.example.env
+# Xcode
+DerivedData/
+build/
 *.xcresult/
-.integration-runtime/
-
-# Integrated Web build outputs
-tools/node_modules/
-tools/dist/
-!.env.docker.example
+xcuserdata/
+*.xcuserstate

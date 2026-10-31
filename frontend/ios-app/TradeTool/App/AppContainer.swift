@@ -63,7 +63,6 @@ final class AppContainer: ObservableObject {
     let authStore: AuthStore
     let realtimeClient: RealtimeClient
     let dashboardViewModel: DashboardViewModel
-    let referenceNotificationsViewModel: ReferenceNotificationsViewModel
     let strategySignalNotifications: StrategySignalNotificationManager
 
     init(
@@ -120,9 +119,6 @@ final class AppContainer: ObservableObject {
         }
         realtimeClient.refreshAccessToken = { try await refresher.refresh() }
         self.realtimeClient = realtimeClient
-        referenceNotificationsViewModel = ReferenceNotificationsViewModel(
-            apiClient: apiClient
-        )
         let strategySignalNotifications = StrategySignalNotificationManager(
             apiClient: apiClient
         )
@@ -146,7 +142,6 @@ final class AppContainer: ObservableObject {
 
     func prepareForServerChange() {
         dashboardViewModel.stopRealtime()
-        referenceNotificationsViewModel.endSession()
         realtimeClient.disconnect()
         strategySignalNotifications.deactivateSession()
         networkSession.invalidateAndCancel()

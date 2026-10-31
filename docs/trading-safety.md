@@ -1,5 +1,7 @@
 # 交易安全边界
 
+> 本文维护整合版沿用的业务规则；当前运行与验证边界见 [整合说明](INTEGRATION.md)。来源项目历史资料从 [来源索引](sources.md) 查询。
+
 本文定义维护时必须保留的行为，依据 [交易服务](../server/trading/services.py)、[执行适配](../server/trading/execution.py)、[仓位生命周期](../server/positions/lifecycle.py) 和相关测试。未落地的额外加固另列 [已知事项](known-issues.md)，不能当作已有防线。
 
 规则核对日期：2026-09-30；本轮审阅修复的发布状态见 [已知事项](known-issues.md#2026-09-30-全仓代码审阅修复)。
@@ -42,7 +44,7 @@
 
 ## 外部手动仓位强制保护
 
-2026-09-30 已随 `85d47b0` 发布，普通 / 带单扫描任务已启用。上线验收时数据库暂无外部仓记录，未通过真实造仓验证收紧、恢复或超额退出；带单鉴权配置阻塞见 [已知事项](known-issues.md)，实际线上检查范围见 [变更记录](changes.md)。入口为 [external_positions.py](../server/trading/external_positions.py)，设计背景见 [实施规划](plans/2026-09-30-external-position-protection.md)。
+整合版保留 [external_positions.py](../server/trading/external_positions.py) 的扫描与保护规则，当前未通过真实造仓验证收紧、恢复或超额退出。当前部署范围见 [变更记录](changes.md)，原实施背景从 [来源索引](sources.md) 查询。
 
 - 普通、带单各自每 10 秒扫描有效 API 绑定，即使没有本地订单也扫描。使用新鲜仓位数据，按用户、模式、Key 指纹、绑定代际、币种及方向隔离；账户锁内复核身份。只支持 USDT 永续，账户其他合约不会阻塞该范围的扫描。
 - 尚未成交的手动委托不创建仓位记录。已有 Web `Order`、待成交 `LimitOrder` 或未完成 `TradeOpenRequest` 优先由原流程管理；Web 同向外部加仓不虚构成另一笔手动仓。

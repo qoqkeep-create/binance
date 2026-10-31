@@ -1,1 +1,0 @@
-export { TransferHistoryPage } from './index'

@@ -1,18 +1,17 @@
 # 整合项目协作规则
 
-先读 `docs/README.md` 与 `docs/plans/2026-10-31-python-ios-integration.md`；交易、资金和身份规则见 `docs/trading-safety.md`、`docs/capital-and-transfers.md` 和 `docs/lead-trading.md`。
+先读 [文档目录](docs/README.md)，按任务查阅主题主文档。架构以 [整合说明](docs/INTEGRATION.md) 为准，开发和验证见 [开发文档](docs/development.md)。
 
-## 当前架构与写入范围
+## 代码与来源
 
-- 主后端为 `server/` 中的 Python / Django，原生客户端为 `frontend/ios-app/`。`backend/app-service/` 保留 Java 参考实现。
-- 原 `/Users/apple/work/TradeTools-Binance`（本子目录以外）与 `/Users/apple/work/tradetools-usdc` 为只读来源；所有交付修改留在本目录，保留已有改动。
-- 行情采用原生 1m、多周期聚合、ticker 快照与 WSS；iOS 行情和 Metal 图表沿用 USDC 布局，其他业务原生复刻 USDT。
-- Python 数据结构使用 Django 版本化 migration；Java 参考模块仍使用 Flyway。金额保持 Decimal，模式、绑定代际与幂等遵守原业务规则。
+- 当前交付仅包含 `server/` Python / Django 后端、`frontend/ios-app/` SwiftUI / Metal 客户端和 `deploy/integrated/` 部署配置。
+- 原 USDT、USDC 目录只读；查历史代码使用 [来源索引](docs/sources.md)，所有修改留在本目录，保留用户已有改动。
+- 行情为原生 1m、多周期聚合、ticker 与鉴权 WSS；资金使用 Decimal，账户模式、绑定代际、幂等和保护遵守 [交易安全](docs/trading-safety.md)、[资金](docs/capital-and-transfers.md) 与 [带单模式](docs/lead-trading.md)。
+- 数据变更使用 Django 版本化 migration。通知使用事件和独立投递记录，交易成功路径不直接依赖外部发送结果。
 
-## 部署与验证
+## 发布与验证
 
-- 用户已批准部署至 `47.80.22.243`；使用独立目录、数据库和入口，保留旧环境。原 USDT 生产地址不是本任务发布目标。
-- 优先使用 SSH 密钥；密码、Token、私钥和环境文件只放忽略且权限受限的位置，日志脱敏。
-- 后端测试使用独立测试数据；前端执行 Xcode 构建与本地运行。验证不得真实开平仓、划转或撤保护单。
-- 更新对应主题文档、目录和验收日期，区分本地、服务器与待验证范围。
-- 结束检查 `git diff --check` 与 `git ls-files --others --exclude-standard`，安全的新交付文件加入追踪；仅暂存本目录相关改动。
+- 整合环境目标为 `47.80.22.243`，独立目录、数据库和入口见 [运维](docs/operations.md)。使用已有 SSH 认证，真实凭证仅放忽略且受限的文件。
+- 普通测试使用隔离数据库和交易所替身，不真实开平仓、划转或撤保护单。区分本地构建、服务器验收、TestFlight 上传和实机结果。
+- 本目录位于来源 Gitee 仓库内；整合版 GitHub 的独立 Git 元数据与命令见运维文档，保留父仓库配置和其他改动。
+- 完成后更新对应主题文档与验证范围，执行 `git diff --check` 和未追踪文件检查。安全的新交付文件加入追踪；凭证、构建和 IDE 用户状态保持忽略。

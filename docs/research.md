@@ -1,10 +1,12 @@
 # 信号研究与观察计划
 
+> 本文维护整合版沿用的业务规则；当前运行与验证边界见 [整合说明](INTEGRATION.md)。来源项目历史资料从 [来源索引](sources.md) 查询。
+
 本模块与实盘交易隔离。AI 生成、回测或趋势信号不构成自动下单指令，不能把研究按钮接到交易执行而不进行独立设计。
 
 ## 当前入口
 
-- Web `/signal-research`：[研究页面](../tools/src/pages/signal-research/index.tsx)。
+- 原生“我的 → 信号研究”：[研究页面](../frontend/ios-app/TradeTool/Features/USDT/USDTResearchViews.swift)。
 - API `/v1/signal-research/`：[urls.py](../server/signal_research/urls.py)，提供样本、规则、策略、预览 / 生成 / 发布、模型列表 / 激活、回测及图表。
 - 数据和服务：[models.py](../server/signal_research/models.py)、[services.py](../server/signal_research/services.py)、[ai.py](../server/signal_research/ai.py)。
 - 观察计划独立位于 [watch_plans](../server/watch_plans/models.py)，包含计划、复盘、评分等用户资料，不归并为交易订单。

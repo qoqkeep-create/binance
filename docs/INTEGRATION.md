@@ -66,7 +66,7 @@ Bundle ID 使用 `com.oovso.trade.integrated`，与旧客户端隔离。iOS / Re
 
 部署配置模板是 [`deploy/integrated/server.env.example`](../deploy/integrated/server.env.example)，实际凭证位于服务器受限文件。`MARKET_WS_URL` 默认 `wss://fstream.binance.com/market`，`ACCOUNT_WS_URL` 默认 `wss://fstream.binance.com/private`；旧无路由前缀入口会出现握手后无数据。`MARKET_WS_PROXY` 仅供本机开发显式配置代理，生产直接连接。HTTPS 证书校验始终开启。
 
-当前未配置整合环境 SMTP、AI 私密模型及外部通知目标；相关页面保留原业务能力，实际可用性取决于配置。Java APNs / 策略提醒代码为参考，尚未接入新 Python 通知链路。带单新增风险由 `LEAD_TRADING_ENABLED=false` 保持关闭，已有模式边界照旧。
+当前未配置整合环境 SMTP、AI 私密模型及外部通知目标；相关页面保留原业务能力，实际可用性取决于配置。APNs 尚未接入新 Python 通知链路；原 Java 实现从 [来源索引](sources.md) 指定的本地目录查询。带单新增风险由 `LEAD_TRADING_ENABLED=false` 保持关闭，已有模式边界照旧。
 
 已完成代码映射不代表每个资金 / 交易分支均实盘验收。没有绑定真实账户，也没有进行真实开平仓、划转、撤保护单或更改旧订单策略。验证记录见 [变更](changes.md)，运维见 [部署](operations.md)。
 
