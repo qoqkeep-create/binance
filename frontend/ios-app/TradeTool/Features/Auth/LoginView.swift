@@ -186,17 +186,8 @@ private struct AuthForm: View {
     .background(BinanceTheme.background.ignoresSafeArea())
     .tint(BinanceTheme.accentText)
     .webModalDismissDisabled(isSubmitting)
-    .webSheet(item: $legal) { document in
-      NavigationStack {
-        USDTLegalView(document: document.title)
-          .overlay(alignment: .topTrailing) {
-            Button("完成") { legal = nil }
-              .font(.subheadline.weight(.semibold))
-              .foregroundStyle(BinanceTheme.accentText)
-              .frame(minWidth: 44, minHeight: 60).padding(.horizontal, 16)
-              .accessibilityIdentifier("auth.legal.close")
-          }
-      }
+    .sheet(item: $legal) { document in
+      USDTLegalView(document: document.title)
     }
     .task {
       email = initialEmail

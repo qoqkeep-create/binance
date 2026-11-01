@@ -118,13 +118,15 @@ final class USDTStore: ObservableObject {
         do {
             let latestBinding = try await get("/v1/api/info")
             guard requestScope == scope else { return }
-            binding = latestBinding
+            if binding != latestBinding { binding = latestBinding }
             async let info = get("/v1/account/info")
             async let user = get("/v1/account/profile")
             async let plans = get("/v1/strategy/list")
             let values = try await (info, user, plans)
             guard requestScope == scope else { return }
-            account = values.0; profile = values.1; strategies = values.2.rows
+            if account != values.0 { account = values.0 }
+            if profile != values.1 { profile = values.1 }
+            if strategies != values.2.rows { strategies = values.2.rows }
         } catch is CancellationError { }
         catch { if requestScope == scope { notice = error.localizedDescription } }
     }
@@ -152,33 +154,66 @@ final class USDTPageModel: ObservableObject {
     @Published var value: JSONValue = .null
     @Published var error = ""
     @Published var loading = false
+    @Published var refreshing = false
     @Published var page = 1
     @Published var hasNext = false
     private var loadingScope = ""
     private var loadID = UUID()
-    func load(_ store: USDTStore, path: String, query: [URLQueryItem] = [], append: Bool = false) async {
+    private var requestInFlight = false
+
+    func reset() {
+        loadID = UUID()
+        loadingScope = ""
+        requestInFlight = false
+        value = .null
+        error = ""
+        loading = false
+        refreshing = false
+        page = 1
+        hasNext = false
+    }
+
+    func load(_ store: USDTStore, path: String, query: [URLQueryItem] = [], append: Bool = false,
+              snapshotFirst: Bool = false) async {
         let scope = store.scope
         let context = scope + path + query.filter { !["page", "cursor"].contains($0.name) }.description
-        guard !loading || loadingScope != context else { return }
+        guard !requestInFlight || loadingScope != context else { return }
         if loadingScope != context { value = .null; error = ""; hasNext = false }
         loadingScope = context
         let requestID = UUID()
         loadID = requestID
+        requestInFlight = true
         loading = true
-        defer { if loadID == requestID { loading = false } }
+        refreshing = false
+        defer {
+            if loadID == requestID { loading = false; refreshing = false; requestInFlight = false }
+        }
+        let previousItems = items
         do {
+            if snapshotFirst {
+                let snapshot = try await store.get(path, query: query + [.init(name: "snapshot", value: "local")])
+                guard scope == store.scope, loadID == requestID, !Task.isCancelled else { return }
+                apply(snapshot, previousItems: append ? previousItems : nil)
+                loading = false
+                guard snapshot["exchange_refresh_required"]?.flag == true else { return }
+                refreshing = true
+            }
             let next = try await store.get(path, query: query)
-            guard scope == store.scope, loadID == requestID else { return }
-            if append {
-                var object = next.fields
-                let key = object["items"] != nil ? "items" : "records"
-                object[key] = .array((value[key]?.rows ?? []) + (next[key]?.rows ?? []))
-                value = .object(object)
-            } else { value = next }
-            error = ""
-            hasNext = next["pagination"]?["has_next"]?.flag ?? false
+            guard scope == store.scope, loadID == requestID, !Task.isCancelled else { return }
+            apply(next, previousItems: append ? previousItems : nil)
         } catch is CancellationError { }
-        catch { if scope == store.scope, loadID == requestID { self.error = error.localizedDescription } }
+        catch { if scope == store.scope, loadID == requestID, !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+
+    private func apply(_ next: JSONValue, previousItems: [JSONValue]?) {
+        if let previousItems {
+            var object = next.fields
+            let key = object["items"] != nil ? "items" : "records"
+            object[key] = .array(previousItems + (next[key]?.rows ?? []))
+            value = .object(object)
+        } else { value = next }
+        error = ""
+        hasNext = next["pagination"]?["has_next"]?.flag ?? false
     }
     var items: [JSONValue] { value.rows.isEmpty ? (value["items"]?.rows ?? value["records"]?.rows ?? value["logs"]?.rows ?? []) : value.rows }
 }

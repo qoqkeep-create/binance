@@ -31,6 +31,7 @@ struct MarketChartView: View {
     private let apiClient: any APIClient
     private let realtimeClient: RealtimeClient
     private let onClose: (() -> Void)?
+    private let onStop: (() -> Void)?
 
     init(
         market: MarketSnapshot,
@@ -38,7 +39,8 @@ struct MarketChartView: View {
         apiClient: any APIClient,
         realtimeClient: RealtimeClient,
         initialInterval: MarketKlineInterval = .oneHour,
-        onClose: (() -> Void)? = nil
+        onClose: (() -> Void)? = nil,
+        onStop: (() -> Void)? = nil
     ) {
         _selectedMarket = State(initialValue: market)
         _selectedInterval = State(initialValue: initialInterval)
@@ -46,6 +48,7 @@ struct MarketChartView: View {
         self.apiClient = apiClient
         self.realtimeClient = realtimeClient
         self.onClose = onClose
+        self.onStop = onStop
     }
 
     var body: some View {
@@ -57,7 +60,8 @@ struct MarketChartView: View {
             initialInterval: selectedInterval,
             onSelectMarket: selectMarket,
             onIntervalChange: { selectedInterval = $0 },
-            onClose: onClose
+            onClose: onClose,
+            onStop: onStop
         )
         .id(selectedMarket.symbol)
     }
@@ -101,6 +105,7 @@ private struct MarketChartDetailView: View {
     let onSelectMarket: (MarketSnapshot, MarketKlineInterval) -> Void
     let onIntervalChange: (MarketKlineInterval) -> Void
     let onClose: (() -> Void)?
+    let onStop: (() -> Void)?
     @State private var isFavorite = true
     @State private var isIndicatorSettingsPresented = false
     @State private var isOrderSettingsPresented = false
@@ -120,12 +125,14 @@ private struct MarketChartDetailView: View {
             MarketKlineInterval
         ) -> Void,
         onIntervalChange: @escaping (MarketKlineInterval) -> Void,
-        onClose: (() -> Void)?
+        onClose: (() -> Void)?,
+        onStop: (() -> Void)?
     ) {
         self.availableMarkets = availableMarkets
         self.onSelectMarket = onSelectMarket
         self.onIntervalChange = onIntervalChange
         self.onClose = onClose
+        self.onStop = onStop
         _viewModel = StateObject(wrappedValue: MarketChartViewModel(
             market: market,
             apiClient: apiClient,
@@ -179,6 +186,7 @@ private struct MarketChartDetailView: View {
         }
         .onDisappear {
             viewModel.stop()
+            onStop?()
         }
         .onChange(of: viewModel.interval) { _, interval in
             onIntervalChange(interval)

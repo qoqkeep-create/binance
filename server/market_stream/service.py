@@ -10,7 +10,7 @@ from django.db import close_old_connections, connection, transaction
 from common.binance import BinanceCredentials, BinanceFuturesClient
 from market_stream import bus, history_cache
 from market_stream.core import INTERVAL_MS, PRICE_FIELDS, aggregate_complete, rest_candle, wire_candle
-from market_stream.models import MarketCandle
+from market_stream.models import MarketCandle, MarketSymbol
 
 log = logging.getLogger(__name__)
 FIELD_MAP = dict(zip(PRICE_FIELDS, ("open_price", "high_price", "low_price", "close_price", "volume", "quote_volume")))
@@ -33,11 +33,28 @@ def symbols(refresh=False, *, cached_only=False):
     key = "market:universe"
     result = cache.get(key)
     if result is None and cached_only:
-        return cache.get("market:universe:last", [])
+        previous = cache.get("market:universe:last")
+        if previous is not None:
+            return previous
+        return list(MarketSymbol.objects.filter(active=True, quote_asset=settings.MARKET_QUOTE_ASSET)
+                    .order_by("symbol").values_list("symbol", flat=True))
     if result is None or refresh:
         info = public_request("/fapi/v1/exchangeInfo")
         result = sorted(row["symbol"] for row in info["symbols"] if row.get("status") == "TRADING"
                         and row.get("contractType") == "PERPETUAL" and row.get("quoteAsset") == settings.MARKET_QUOTE_ASSET)
+        # Publish only complete, nonempty snapshots. Failed upstream reads keep
+        # both the previous database directory and cache available to clients.
+        if not result:
+            raise ValueError("Empty market directory")
+        if refresh:
+            with transaction.atomic():
+                MarketSymbol.objects.filter(quote_asset=settings.MARKET_QUOTE_ASSET).exclude(symbol__in=result).update(active=False)
+                onboard = {row["symbol"]: int(row.get("onboardDate", 0)) for row in info["symbols"] if row["symbol"] in result}
+                objects = [MarketSymbol(symbol=symbol, quote_asset=settings.MARKET_QUOTE_ASSET,
+                                        onboard_date=onboard[symbol]) for symbol in result]
+                MarketSymbol.objects.bulk_create(objects, update_conflicts=True,
+                    update_fields=["quote_asset", "onboard_date", "active", "updated_at"],
+                    unique_fields=["symbol"] if connection.vendor != "mysql" else None)
         cache.set(key, result, 300)
         cache.set("market:universe:last", result, 86400)
         cache.set("market:onboard", {row["symbol"]: int(row.get("onboardDate", 0))

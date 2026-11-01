@@ -2,6 +2,16 @@
 
 整合环境使用 Python 采集和推送，SwiftUI / Metal 显示。接口和当前性能样本见 [整合说明](INTEGRATION.md)。
 
+## 交易对目录与开仓报价（2026-11-01）
+
+`market_stream.0004_marketsymbol` 仅新增公共交易对目录表。现有采集器每 300 秒读取一次 Binance `exchangeInfo` 时，将当前报价资产、`TRADING`、`PERPETUAL` 的完整非空集合写入 `MarketSymbol`，标记下架项并同步 Redis；失败或空响应保留旧目录。migration 不访问交易所、不修改账户、交易或保护单；代码回滚可保留新增表。
+
+鉴权 `GET /api/market/symbols` 返回 `{quoteAsset, symbols}`。HTTP 仅读服务器缓存，丢失缓存时回落数据库，空目录立即返回 503；默认自选目录同样不触发外部请求。`/api/market/tickers/popular` 与 `/search` 补齐 `query/page/size/totalElements/totalPages`，修复旧客户端因缺字段解码失败的问题，保留原 `items/tickers/hasNext` 兼容。
+
+iOS 三个入口共用本地筛选与五分钟目录缓存。开仓报价使用常驻 `DashboardViewModel` 的 ticker 缓存；所选币种优先于搜索与自选加入最多 200 个符号的现有 `/ws/v1` 订阅，在所有标签间保持。订阅变更在每条连接上串行发送，防止快速退订、恢复及切币种的旧消息覆盖新订阅。退出图表返回行情或开仓时恢复订阅，避免图表的退订留下无报价状态。客户端不再按三秒轮询币安价格代理接口；现有服务端公共 ticker 流向客户端转发，不为每个用户新增 Binance REST 请求。WSS 仍受已有建连／消息预算和重连机制管理，不能把流式行情理解为没有任何限制。
+
+当前模拟器和隔离后端结果见 [开发回归](development.md#自选与共用交易对回归2026-11-01)；生产目录迁移及只读验收另写入 [运维](operations.md) 和 [变更](changes.md)，手机安装新版后再验收真实网络及后台恢复。
+
 ## 服务端数据
 
 `market_stream` 发现当前报价资产全部正在交易的永续合约，默认 USDT。连续 1m K 线按组直接订阅 Binance 公共 WebSocket，ticker 独立订阅。收盘线持久化到 MySQL，热数据和事件进入 Redis；完整分钟桶聚合为 5m / 15m / 1h / 4h / 1d，缺分钟时不伪造完整桶。

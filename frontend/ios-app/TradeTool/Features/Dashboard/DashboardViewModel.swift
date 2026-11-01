@@ -10,6 +10,12 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var lastUpdated: Date
     @Published private(set) var isRefreshing = false
     @Published private(set) var realtimeTickerRevision = 0
+    @Published private(set) var catalogSymbols: [String] = []
+    @Published private(set) var isLoadingCatalog = false
+    @Published private(set) var catalogLoadFailed = false
+    private var catalogLoadedAt: Date?
+    private var catalogRevision = 0
+    private var tradeTickerSymbol: String?
     @Published private(set) var isLoadingSignals = false
     @Published private(set) var isLoadingMoreSignals = false
     @Published private(set) var hasMoreSignals = false
@@ -43,7 +49,7 @@ final class DashboardViewModel: ObservableObject {
         realtimeClient: RealtimeClient? = nil,
         watchlistStore: (any MarketWatchlistStoring)? = nil
     ) {
-        self.markets = Self.pinnedFirst(markets)
+        self.markets = markets.map { var market = $0; market.isPinned = false; return market }
         self.signals = signals
         self.apiClient = apiClient
         self.realtimeClient = realtimeClient
@@ -94,6 +100,12 @@ final class DashboardViewModel: ObservableObject {
         pendingTickerUpdates.removeAll()
         latestTickerBySymbol.removeAll()
         searchTickerSymbols.removeAll()
+        tradeTickerSymbol = nil
+        catalogRevision += 1
+        catalogSymbols = []
+        catalogLoadedAt = nil
+        isLoadingCatalog = false
+        catalogLoadFailed = false
         realtimeTickerRevision &+= 1
         activeUserID = nil
         activeQuoteAsset = nil
@@ -193,14 +205,76 @@ final class DashboardViewModel: ObservableObject {
         return updated
     }
 
-    func togglePinned(_ symbol: String) {
-        guard let index = markets.firstIndex(where: { $0.symbol == symbol }) else {
-            return
-        }
+    func containsInWatchlist(_ symbol: String) -> Bool {
+        markets.contains { $0.symbol == symbol && $0.isVisible }
+    }
 
-        markets[index].isPinned.toggle()
-        markets = Self.pinnedFirst(markets)
+    func addToWatchlist(_ symbol: String) {
+        guard let index = markets.firstIndex(where: { $0.symbol == symbol }),
+              !markets[index].isVisible else { return }
+        markets[index].isVisible = true
         persistPreferences(customized: true)
+        updateRealtimeSubscriptions()
+    }
+
+    func moveVisibleMarkets(from source: IndexSet, to destination: Int) {
+        let visible = markets.filter(\.isVisible)
+        guard source.allSatisfy(visible.indices.contains), destination <= visible.count else { return }
+        let moved = source.sorted().map { visible[$0] }
+        var reordered = visible.enumerated().filter { !source.contains($0.offset) }.map(\.element)
+        let insertion = max(0, destination - source.filter { $0 < destination }.count)
+        reordered.insert(contentsOf: moved, at: insertion)
+        markets = reordered + markets.filter { !$0.isVisible }
+        persistPreferences(customized: true)
+    }
+
+    func trackTradeTickerSymbol(_ symbol: String) {
+        let normalized = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard tradeTickerSymbol != normalized else { return }
+        tradeTickerSymbol = normalized.isEmpty ? nil : normalized
+        updateRealtimeSubscriptions()
+    }
+
+    func tradeQuote(for symbol: String) -> String {
+        _ = realtimeTickerRevision
+        let price = latestTickerBySymbol[symbol]?.lastPrice
+            ?? markets.first(where: { $0.symbol == symbol })?.price ?? 0
+        return price > 0 ? NSDecimalNumber(value: price).stringValue : ""
+    }
+
+    func loadSymbolCatalog(force: Bool = false) async {
+        guard !isLoadingCatalog, let apiClient else { return }
+        if !force, let loaded = catalogLoadedAt, Date().timeIntervalSince(loaded) < 300 { return }
+        let revision = catalogRevision
+        isLoadingCatalog = true
+        defer { if revision == catalogRevision { isLoadingCatalog = false } }
+        do {
+            let response = try await apiClient.send(APIRequest<MarketSymbolCatalogResponse>(
+                path: "/api/market/symbols", showsErrorToast: false))
+            guard revision == catalogRevision, !Task.isCancelled else { return }
+            let quote = Self.normalizedQuoteAsset(response.quoteAsset)
+            guard !quote.isEmpty, activeQuoteAsset == nil || activeQuoteAsset == quote else {
+                catalogLoadFailed = true; return
+            }
+            activeQuoteAsset = quote
+            let symbols = Self.normalizedSymbols(response.symbols, quoteAsset: quote).sorted()
+            guard !symbols.isEmpty else { catalogLoadFailed = true; return }
+            catalogSymbols = symbols
+            catalogLoadedAt = .now
+            catalogLoadFailed = false
+            let available = Set(symbols)
+            markets.removeAll { !available.contains($0.symbol) }
+            let existing = Set(markets.map(\.symbol))
+            markets.append(contentsOf: symbols.filter { !existing.contains($0) }.map {
+                var market = Self.placeholderMarket(symbol: $0, quoteAsset: quote)
+                market.isVisible = false
+                return market
+            })
+            persistPreferences()
+            updateRealtimeSubscriptions()
+        } catch {
+            if revision == catalogRevision, !Task.isCancelled { catalogLoadFailed = true }
+        }
     }
 
     func moveMarketToTop(_ symbol: String) {
@@ -532,6 +606,9 @@ final class DashboardViewModel: ObservableObject {
             response.availableSymbols,
             quoteAsset: quoteAsset
         )
+        catalogSymbols = availableSymbols.sorted()
+        catalogLoadedAt = .now
+        catalogLoadFailed = false
         let defaults = Self.normalizedSymbols(
             response.symbols,
             quoteAsset: quoteAsset
@@ -578,10 +655,6 @@ final class DashboardViewModel: ObservableObject {
             Array(preferences.visibleSymbols),
             quoteAsset: quoteAsset
         ))
-        let pinnedSymbols = Set(Self.normalizedSymbols(
-            Array(preferences.pinnedSymbols),
-            quoteAsset: quoteAsset
-        ))
         let existingBySymbol = Dictionary(
             uniqueKeysWithValues: markets.map { ($0.symbol, $0) }
         )
@@ -595,7 +668,7 @@ final class DashboardViewModel: ObservableObject {
                     quoteAsset: quoteAsset
                 )
             market.isVisible = visibleSymbols.contains(symbol)
-            market.isPinned = pinnedSymbols.contains(symbol)
+            market.isPinned = false
             restoredMarkets.append(market)
             restoredSymbols.insert(symbol)
         }
@@ -677,9 +750,7 @@ final class DashboardViewModel: ObservableObject {
                 visibleSymbols: Set(
                     markets.filter(\.isVisible).map(\.symbol)
                 ),
-                pinnedSymbols: Set(
-                    markets.filter(\.isPinned).map(\.symbol)
-                ),
+                pinnedSymbols: [],
                 isCustomized: watchlistIsCustomized
             ),
             for: activeUserID
@@ -699,16 +770,11 @@ final class DashboardViewModel: ObservableObject {
             .filter(\.isVisible)
             .map(\.symbol)
             .sorted()
-        let prioritizedSearchSymbols = searchTickerSymbols.sorted()
-        let searchSymbolSet = Set(prioritizedSearchSymbols)
-        let subscribedSymbols = Array(
-            (
-                prioritizedSearchSymbols
-                + visibleSymbols.filter {
-                    !searchSymbolSet.contains($0)
-                }
-            ).prefix(Self.maxRealtimeTickerSymbols)
-        )
+        let candidates = [tradeTickerSymbol].compactMap { $0 }
+            + searchTickerSymbols.sorted() + visibleSymbols
+        var seen = Set<String>()
+        let subscribedSymbols = Array(candidates.filter { seen.insert($0).inserted }
+            .prefix(Self.maxRealtimeTickerSymbols))
 
         if subscribedSymbols.isEmpty {
             realtimeClient.unsubscribe(
@@ -1004,20 +1070,6 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    private static func pinnedFirst(
-        _ markets: [MarketSnapshot]
-    ) -> [MarketSnapshot] {
-        markets.enumerated()
-            .sorted { left, right in
-                if left.element.isPinned != right.element.isPinned {
-                    return left.element.isPinned
-                }
-
-                return left.offset < right.offset
-            }
-            .map(\.element)
-    }
-
     private static func normalizedSymbols(
         _ symbols: [String],
         quoteAsset: String
@@ -1098,4 +1150,9 @@ private struct StrategySignalPageResponse: Decodable {
 
 private struct ReversalAlertMutationResponse: Decodable {
     let state: String
+}
+
+struct MarketSymbolCatalogResponse: Decodable {
+    let quoteAsset: String
+    let symbols: [String]
 }

@@ -5,7 +5,7 @@ struct USDTTradeView: View {
   @State private var orderType = "market"
   @State private var stop = ""
   @State private var limit = ""
-  @State private var risk = ""
+  private var risk: String { store.riskAmount }
   @State private var includeFee = false
   @State private var strategyID = ""
   @State private var ema: JSONValue = .null
@@ -18,9 +18,8 @@ struct USDTTradeView: View {
   var initialLimit: String = ""
 
   @EnvironmentObject private var container: AppContainer
-  @State private var currentQuote = ""
-  @State private var symbols: [String] = []
-  @State private var symbolSearch = ""
+  @EnvironmentObject private var dashboard: DashboardViewModel
+  private var currentQuote: String { dashboard.tradeQuote(for: store.selectedSymbol) }
   @State private var showSymbols = false
   @State private var showStopLoss = false
   @State private var showChart = false
@@ -30,25 +29,25 @@ struct USDTTradeView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Button {
-        showSymbols = true
-      } label: {
-        HStack(spacing: 4) {
-          Text(store.selectedSymbol)
-          WebIcon("chevron.down", size: 14).foregroundStyle(WebTheme.muted)
-        }
-        .font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity).frame(height: 48)
-      }.buttonStyle(.plain).background(WebTheme.surface.ignoresSafeArea(edges: .top))
+      Text("开仓").font(.system(size: 18, weight: .semibold))
+        .frame(maxWidth: .infinity).frame(height: 48)
+        .background(WebTheme.surface.ignoresSafeArea(edges: .top))
       ScrollView {
         VStack(spacing: 16) {
           USDTCard {
             HStack {
-              Text("币价").font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-              Spacer()
+              Button { showSymbols = true } label: {
+                HStack(spacing: 4) {
+                  Text(store.selectedSymbol).font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                  WebIcon("chevron.down", size: 12).foregroundStyle(WebTheme.muted)
+                }.frame(minHeight: 44).contentShape(Rectangle())
+              }.buttonStyle(.plain).accessibilityIdentifier("trade.symbol")
+              Spacer(minLength: 4)
               ForEach([("market", "市价开仓"), ("limit", "限价委托")], id: \.0) { key, title in
                 Button(title) { orderType = key }.font(.system(size: 14))
                   .foregroundStyle(orderType == key ? Color.black : WebTheme.secondary)
-                  .padding(.horizontal, 12).frame(height: 28)
+                  .padding(.horizontal, 8).frame(height: 28)
                   .background(
                     orderType == key ? WebTheme.brand : WebTheme.secondaryButton,
                     in: RoundedRectangle(cornerRadius: 4))
@@ -152,21 +151,10 @@ struct USDTTradeView: View {
     }.usdtPage("开仓")
       .task(id: store.scope) {
         await store.refresh()
-        risk = store.riskAmount
         if strategyID.isEmpty { strategyID = store.activeStrategy?.value("id") ?? "" }
-        symbols = (try? await store.get("/v1/trade/symbols").rows.map(\.text)) ?? []
-      }
-      .task(id: "\(store.scope):\(store.selectedSymbol)") {
-        while !Task.isCancelled {
-          if let quote = try? await store.get(
-            "/v1/trade/symbol/info", query: [.init(name: "symbol", value: store.selectedSymbol)])
-          {
-            currentQuote = quote.value("current_price", fallback: "")
-          }
-          do { try await Task.sleep(for: .seconds(3)) } catch { break }
-        }
       }
       .onAppear {
+        dashboard.restoreRealtimeSubscriptions()
         if !initialStop.isEmpty { stop = initialStop }
         if !initialLimit.isEmpty {
           limit = initialLimit
@@ -174,7 +162,6 @@ struct USDTTradeView: View {
         }
       }
       .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
-      .onChange(of: store.riskAmount) { _, value in risk = value }
       .onChange(of: store.selectedSymbol) { _, _ in resetDraft() }
       .onChange(of: stop) { _, _ in resetDraft() }
       .onChange(of: limit) { _, _ in resetDraft() }
@@ -192,38 +179,17 @@ struct USDTTradeView: View {
                 updatedAt: .now),
             availableMarkets: container.dashboardViewModel.markets(onlyVisible: false),
             apiClient: container.apiClient, realtimeClient: container.realtimeClient,
-            initialInterval: .oneHour, onClose: { showChart = false })
+            initialInterval: .oneHour, onClose: { showChart = false },
+            onStop: { dashboard.restoreRealtimeSubscriptions() })
         }
       }
-      .webModal(isPresented: $showSymbols) {
-        WebModal(title: "选择交易对") {
-          USDTField(title: "", text: $symbolSearch, placeholder: "搜索交易对")
-          ScrollView {
-            VStack(spacing: 0) {
-              ForEach(
-                symbols.filter {
-                  symbolSearch.isEmpty || $0.localizedCaseInsensitiveContains(symbolSearch)
-                }, id: \.self
-              ) { symbol in
-                Button {
-                  store.selectedSymbol = symbol
-                  showSymbols = false
-                } label: {
-                  HStack {
-                    Text(symbol)
-                    Spacer()
-                    if symbol == store.selectedSymbol {
-                      Image(systemName: "checkmark").foregroundStyle(WebTheme.brand)
-                    }
-                  }.padding(.vertical, 12)
-                }.buttonStyle(.plain)
-              }
-            }
-          }.frame(maxHeight: 400)
+      .sheet(isPresented: $showSymbols) {
+        MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: store.selectedSymbol) { symbol in
+          store.selectedSymbol = symbol
         }
       }
-      .webModal(isPresented: $showStopLoss) {
-        USDTStopLossView().onDisappear { risk = store.riskAmount }
+      .sheet(isPresented: $showStopLoss) {
+        USDTStopLossView()
       }
       .webModal(isPresented: $confirm) {
         WebModal(title: orderType == "limit" ? "委托确认" : "开仓确认") {
@@ -479,7 +445,7 @@ struct USDTPositionsView: View {
       GeometryReader { geometry in
       ScrollView {
         VStack(spacing: 10) {
-          if segment == "history" {
+          if segment == "history" && store.isBound {
             HStack(spacing: 8) {
               ForEach(
                 [("all", "全部"), ("day", "一天内"), ("three-days", "三天"), ("week", "一周")], id: \.0
@@ -495,7 +461,7 @@ struct USDTPositionsView: View {
               Spacer()
             }
           }
-          if segment != "history" && !store.isBound {
+          if !store.isBound {
             Button { binding = true } label: {
               HStack(spacing: 6) {
                 Text("请先绑定 Binance API").underline()
@@ -505,12 +471,16 @@ struct USDTPositionsView: View {
             }.buttonStyle(.plain).accessibilityIdentifier("positions.bind")
           } else {
             USDTNotice(text: notice)
+            if model.refreshing {
+              Text("正在更新历史记录…").font(.system(size: 13)).foregroundStyle(WebTheme.muted)
+            }
+            if !model.items.isEmpty { USDTNotice(text: model.error) }
             if model.loading && model.items.isEmpty {
               Text("加载中...").font(.system(size: 16)).foregroundStyle(WebTheme.muted).frame(
                 maxWidth: .infinity
               ).padding(.vertical, 48)
             }
-            if !model.loading && model.items.isEmpty {
+            if !model.loading && !model.refreshing && model.items.isEmpty {
               USDTEmptyState(
                 title: segment == "positions" ? "暂无持仓" : segment == "limits" ? "暂无限价委托" : "暂无历史仓位记录",
                 error: model.error
@@ -531,18 +501,25 @@ struct USDTPositionsView: View {
                 model.page += 1
                 Task { await reload(append: true) }
               }.buttonStyle(WebButtonStyle(kind: .secondary, fontSize: 14))
+                .disabled(model.loading || model.refreshing)
             }
           }
-        }.frame(minHeight: segment != "history" && !store.isBound ? max(0, geometry.size.height - 32) : nil)
+        }.frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
           .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
         .accessibilityIdentifier("positions.list")
         .refreshable {
           let scope = store.scope
-          await store.refresh()
-          guard scope == store.scope else { return }
-          model.page = 1
-          await reload()
+          let refreshSegment = segment
+          let refreshFilter = filter
+          // Account publication can cancel SwiftUI's refresh action. Keep this
+          // read independent, then recheck the selected account and page.
+          await Task { @MainActor in
+            await store.refresh()
+            guard scope == store.scope, refreshSegment == segment, refreshFilter == filter else { return }
+            model.page = 1
+            await reload()
+          }.value
         }
       }
     }.usdtPage("持仓")
@@ -680,10 +657,8 @@ struct USDTPositionsView: View {
     }
   }
   private func reload(append: Bool = false) async {
-    guard segment == "history" || store.isBound else {
-      model.value = .null
-      model.error = ""
-      model.hasNext = false
+    guard store.isBound else {
+      model.reset()
       return
     }
     let path =
@@ -695,7 +670,7 @@ struct USDTPositionsView: View {
       query: [
         .init(name: "filter", value: filter), .init(name: "page", value: String(model.page)),
         .init(name: "page_size", value: "20"),
-      ], append: append)
+      ], append: append, snapshotFirst: segment == "history" && !append)
   }
   private func positionCard(_ row: JSONValue) -> some View {
     USDTCard(radius: 14, padding: 14, spacing: 14) {
@@ -816,6 +791,8 @@ struct USDTPositionsView: View {
         Text(row.value("symbol")).font(.system(size: 16, weight: .medium))
         WebBadge(text: "止损" + row.value("stop_loss_amount") + "U")
         if row.value("settlement_status") == "estimated" { WebBadge(text: "估算") }
+        if row.value("settlement_status") == "pending" { WebBadge(text: "待结算") }
+        if row.value("settlement_status") == "failed" { WebBadge(text: "结算待重试") }
         Spacer()
       }
       LazyVGrid(

@@ -252,6 +252,21 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         all[
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if request.path == "/v1/position/history",
+        ProcessInfo.processInfo.arguments.contains("--fixture-history-supplement-slow") {
+        if request.queryItems.contains(where: { $0.name == "snapshot" && $0.value == "local" }) {
+          var fields = value.fields
+          fields["exchange_refresh_required"] = .bool(true)
+          fields["items"] = .array((fields["items"]?.rows ?? []).map {
+            var row = $0.fields
+            row["settlement_status"] = .string("pending")
+            return .object(row)
+          })
+          value = .object(fields)
+        } else {
+          try await Task.sleep(for: .seconds(6))
+        }
+      }
       if ProcessInfo.processInfo.arguments.contains("--fixture-refresh-lists"),
         ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list"].contains(request.path),
         await requests.next(request.path) == 1 {
@@ -377,6 +392,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
             ]
           }
         ],
+        "/api/market/symbols": {
+          "quoteAsset": "USDT", "symbols": ["ADAUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT"]
+        },
         "/v1/trade/symbol/info": {
           "symbol": "BTCUSDT",
           "current_price": "68000"
@@ -633,6 +651,12 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     @StateObject private var container = AppContainer(
       baseURL: URL(string: "http://127.0.0.1:1/")!, bundleIdentifier: "com.riskon.visual-fixture")
     @StateObject private var store = USDTStore(api: WebParityFixtureAPI())
+    @StateObject private var dashboard = DashboardViewModel(markets: [
+      MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 68000, changePercent24h: 1, updatedAt: .now),
+      MarketSnapshot(symbol: "ETHUSDT", quoteAsset: "USDT", price: 2600, changePercent24h: 2, updatedAt: .now),
+      MarketSnapshot(symbol: "SOLUSDT", quoteAsset: "USDT", price: 150, changePercent24h: 3, updatedAt: .now),
+      MarketSnapshot(symbol: "ADAUSDT", quoteAsset: "USDT", price: 0.4, changePercent24h: 0, updatedAt: .now, isVisible: false)
+    ], apiClient: WebParityFixtureAPI())
     @State private var tab: AppTab = .trade
     @State private var fixtureMarketSearch = false
     @State private var fixtureMarketSettings = false
@@ -649,7 +673,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       NavigationStack {
         VStack(spacing: 0) {
           content.frame(maxWidth: .infinity, maxHeight: .infinity)
-          if ["trade", "positions", "signals", "profile"].contains(page) {
+          if ["market", "trade", "positions", "signals", "profile"].contains(page) {
             BottomNavigationBar(
               selection: $tab,
               tabs: [.markets, .positions, .trade] + (store.mode == "lead" ? [] : [.signals]) + [
@@ -662,7 +686,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       .globalAPIToasts(using: container.toastCenter)
       .environmentObject(container).environmentObject(container.authStore).environmentObject(
         container.toastCenter
-      ).environmentObject(store)
+      ).environmentObject(store).environmentObject(dashboard)
       .preferredColorScheme(dark ? .dark : .light)
       .task {
         FloatingPositionsPreferences.defaults.set(false, forKey: FloatingPositionsPreferences.enabledKey)
@@ -678,17 +702,13 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           store.switchMode("ordinary")
         }
         tab =
-          page == "positions"
+          page == "market" ? .markets : page == "positions"
           ? .positions : page == "signals" ? .signals : page == "profile" ? .settings : .trade
       }
     }
     @ViewBuilder private var content: some View {
       switch page {
       case "launch": AppLaunchView()
-      case "market":
-        DashboardView(viewModel: DashboardViewModel(), apiClient: WebParityFixtureAPI(),
-          realtimeClient: container.realtimeClient, isShowingMarketSearch: $fixtureMarketSearch,
-          isShowingMarketSettings: $fixtureMarketSettings, selectedMarket: $fixtureSelectedMarket)
       case "login": LoginView()
       case "strategies": USDTStrategiesView()
       case "strategy-editor": USDTStrategyEditor(strategy: nil)
@@ -704,6 +724,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       case "reminder": USDTCapitalReminderView()
       default:
         switch tab {
+        case .markets:
+          DashboardView(viewModel: dashboard, apiClient: WebParityFixtureAPI(),
+            realtimeClient: container.realtimeClient, isShowingMarketSearch: $fixtureMarketSearch,
+            isShowingMarketSettings: $fixtureMarketSettings, selectedMarket: $fixtureSelectedMarket)
         case .positions: USDTPositionsView()
         case .signals: USDTSignalsView(openChart: { _, _ in })
         case .settings: USDTProfileView()

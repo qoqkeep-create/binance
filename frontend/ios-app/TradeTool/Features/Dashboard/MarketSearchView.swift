@@ -1,528 +1,130 @@
-import Combine
 import SwiftUI
 
+/// Shared by market search, watchlist editing and trade symbol selection.
 struct MarketSearchView: View {
-    @ObservedObject private var dashboardViewModel: DashboardViewModel
-    @StateObject private var viewModel: MarketSearchViewModel
+    @ObservedObject var dashboardViewModel: DashboardViewModel
+    var selectedSymbol: String? = nil
+    var onSelect: ((String) -> Void)? = nil
+    @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @FocusState private var isSearchFocused: Bool
+    @State private var pendingDeletion: String?
 
-    init(
-        apiClient: any APIClient,
-        dashboardViewModel: DashboardViewModel
-    ) {
-        self.dashboardViewModel = dashboardViewModel
-        _viewModel = StateObject(
-            wrappedValue: MarketSearchViewModel(
-                service: APIMarketTickerSearchService(
-                    apiClient: apiClient
-                )
-            )
-        )
+    private var symbols: [String] {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "").uppercased()
+        return dashboardViewModel.catalogSymbols.filter {
+            normalized.isEmpty || $0.contains(normalized)
+        }
     }
 
     var body: some View {
-        ZStack {
-            BinanceTheme.background
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                searchHeader
-                    .padding(
-                        .horizontal,
-                        BinanceTheme.Layout.pageHorizontalPadding
-                    )
-                    .padding(.top, 3)
-                    .padding(.bottom, 12)
-
-                resultsContent
-            }
-        }
-        .toolbar(.hidden, for: .navigationBar)
-        .interactivePopGestureEnabled()
-        .task {
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-            isSearchFocused = true
-        }
-        .task(id: query) {
-            let requestedQuery = query
-            if !normalizedQuery(requestedQuery).isEmpty {
-                try? await Task.sleep(for: .milliseconds(280))
-            }
-            guard !Task.isCancelled else { return }
-            await viewModel.loadFirstPage(query: requestedQuery)
-        }
-        .onChange(
-            of: viewModel.items.map(\.symbol),
-            initial: true
-        ) { _, symbols in
-            dashboardViewModel.trackSearchTickerSymbols(symbols)
-        }
-        .onDisappear {
-            dashboardViewModel.stopTrackingSearchTickers()
-        }
-    }
-
-    private var searchHeader: some View {
-        HStack(spacing: 4) {
-            BinanceBackButton()
-
+        VStack(spacing: 0) {
+            HStack {
+                Text("交易对").font(.system(size: 20, weight: .bold))
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 18, weight: .medium))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("关闭")
+                    .accessibilityIdentifier("pairs.close")
+            }.padding(.horizontal, 20).padding(.top, 12)
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(BinanceTheme.Typography.text(.footnote, weight: .medium))
-                    .foregroundStyle(BinanceTheme.secondaryText)
-
-                TextField(
-                    "",
-                    text: $query,
-                    prompt: Text("搜索币种/币对/合约")
-                        .foregroundStyle(BinanceTheme.secondaryText)
-                )
-                .font(BinanceTheme.Typography.text(.footnote))
-                .foregroundStyle(BinanceTheme.primaryText)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .keyboardType(.asciiCapable)
-                .submitLabel(.search)
-                .focused($isSearchFocused)
-
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(BinanceTheme.Typography.text(.footnote, weight: .medium))
-                            .foregroundStyle(BinanceTheme.secondaryText)
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("清空搜索")
+                Image(systemName: "magnifyingglass").foregroundStyle(BinanceTheme.secondaryText)
+                TextField("搜索交易对", text: $query)
+                    .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                    .keyboardType(.asciiCapable).accessibilityIdentifier("pairs.search")
+            }.padding(12).background(BinanceTheme.elevated, in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 20).padding(.bottom, 12)
+            if dashboardViewModel.catalogSymbols.isEmpty {
+                Spacer()
+                if dashboardViewModel.isLoadingCatalog {
+                    ProgressView().tint(BinanceTheme.accent)
+                } else {
+                    Text("交易对加载失败").foregroundStyle(BinanceTheme.secondaryText)
+                    Button("重新加载") {
+                        Task { await dashboardViewModel.loadSymbolCatalog(force: true) }
+                    }.padding(.top, 12)
                 }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: BinanceTheme.Layout.compactSearchFieldHeight)
-            .background(
-                BinanceTheme.elevated,
-                in: RoundedRectangle(
-                    cornerRadius:
-                        BinanceTheme.Layout.compactSearchCornerRadius,
-                    style: .continuous
-                )
-            )
-        }
-        .frame(height: BinanceTheme.Layout.compactSearchTapHeight)
-    }
-
-    @ViewBuilder
-    private var resultsContent: some View {
-        if viewModel.isLoadingInitial, viewModel.items.isEmpty {
-            Spacer()
-            ProgressView()
-                .tint(BinanceTheme.accent)
-            Spacer()
-        } else if viewModel.loadFailed, viewModel.items.isEmpty {
-            retryState
-        } else if !isPopularMode, viewModel.items.isEmpty {
-            emptySearchState
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if isPopularMode {
-                        popularResults
-                    } else {
-                        searchResults
+                Spacer()
+            } else {
+                List {
+                    ForEach(symbols, id: \.self) { symbol in
+                        pairRow(symbol)
+                            .listRowBackground(BinanceTheme.background)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 16))
                     }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 28)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        }
-    }
-
-    private var popularResults: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("热门交易")
-                .font(
-                    BinanceTheme.Typography.text(
-                        .headline,
-                        weight: .semibold
-                    )
-                )
-                .foregroundStyle(BinanceTheme.primaryText)
-                .padding(.bottom, 10)
-
-            ForEach(Array(viewModel.items.enumerated()), id: \.element.id) {
-                offset,
-                market in
-                MarketSearchTickerRow(
-                    market: liveMarket(market),
-                    rank: offset + 1
-                )
-            }
-
-            if viewModel.hasNext {
-                Button {
-                    Task {
-                        await viewModel.loadNextPage(query: "")
-                    }
-                } label: {
-                    Group {
-                        if viewModel.isLoadingMore {
-                            ProgressView()
-                                .tint(BinanceTheme.accent)
-                        } else {
-                            Text("查看更多")
+                }.listStyle(.plain).scrollContentBackground(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
+                    .overlay {
+                        if symbols.isEmpty {
+                            Text("未找到相关交易对").foregroundStyle(BinanceTheme.secondaryText)
                         }
                     }
-                    .font(
-                        BinanceTheme.Typography.text(
-                            .caption,
-                            weight: .semibold
-                        )
-                    )
-                    .foregroundStyle(BinanceTheme.accentText)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+            }
+        }.foregroundStyle(BinanceTheme.primaryText)
+            .background(BinanceTheme.background)
+            .largeTradingSheet()
+            .task { await dashboardViewModel.loadSymbolCatalog() }
+            .alert("删除自选", isPresented: Binding(
+                get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
+            ), presenting: pendingDeletion) { symbol in
+                Button("删除自选", role: .destructive) {
+                    dashboardViewModel.hideMarkets([symbol])
+                    pendingDeletion = nil
                 }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isLoadingMore)
+                Button("取消", role: .cancel) { pendingDeletion = nil }
+            } message: { symbol in
+                Text("确定从自选中删除 \(symbol)？")
             }
-        }
     }
 
-    private var searchResults: some View {
-        ForEach(viewModel.items) { market in
-            MarketSearchTickerRow(
-                market: liveMarket(market),
-                rank: nil
-            )
-            .onAppear {
-                guard market.id == viewModel.items.last?.id,
-                      viewModel.hasNext else {
-                    return
+    private func pairRow(_ symbol: String) -> some View {
+        let isFavorite = dashboardViewModel.containsInWatchlist(symbol)
+        return HStack(spacing: 12) {
+            Button {
+                if let onSelect {
+                    onSelect(symbol)
+                    dismiss()
+                } else {
+                    toggleFavorite(symbol)
                 }
-                Task {
-                    await viewModel.loadNextPage(query: query)
-                }
-            }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(symbol).font(.system(size: 16, weight: isFavorite ? .bold : .regular))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text("永续").font(.system(size: 11)).foregroundStyle(BinanceTheme.secondaryText)
+                    if symbol == selectedSymbol {
+                        Image(systemName: "checkmark").foregroundStyle(BinanceTheme.accentText)
+                    }
+                    Spacer(minLength: 0)
+                }.frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("pairs.select.\(symbol)")
+            Button { toggleFavorite(symbol) } label: {
+                Image(systemName: isFavorite ? "trash" : "plus")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(isFavorite ? BinanceTheme.secondaryText : BinanceTheme.accentText)
+                    .frame(width: 44, height: 48).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel(isFavorite ? "删除自选 \(symbol)" : "添加自选 \(symbol)")
+                .accessibilityIdentifier("pairs.favorite.\(symbol)")
+                .accessibilityValue(isFavorite ? "已自选" : "未自选")
         }
     }
 
-    private var emptySearchState: some View {
-        VStack(spacing: 12) {
-            Spacer()
-
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(BinanceTheme.secondaryText)
-
-            Text("未找到相关合约")
-                .font(
-                    BinanceTheme.Typography.text(
-                        .headline,
-                        weight: .semibold
-                    )
-                )
-                .foregroundStyle(BinanceTheme.primaryText)
-
-            Text("请尝试输入其他币种或交易对")
-                .font(BinanceTheme.Typography.text(.subheadline))
-                .foregroundStyle(BinanceTheme.secondaryText)
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var retryState: some View {
-        VStack(spacing: 14) {
-            Spacer()
-
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(BinanceTheme.secondaryText)
-
-            Text("行情加载失败")
-                .font(
-                    BinanceTheme.Typography.text(
-                        .headline,
-                        weight: .semibold
-                    )
-                )
-                .foregroundStyle(BinanceTheme.primaryText)
-
-            Button("重新加载") {
-                Task {
-                    await viewModel.loadFirstPage(query: query)
-                }
-            }
-            .font(
-                BinanceTheme.Typography.text(
-                    .subheadline,
-                    weight: .semibold
-                )
-            )
-            .foregroundStyle(BinanceTheme.accentText)
-            .buttonStyle(.plain)
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var isPopularMode: Bool {
-        normalizedQuery(query).isEmpty
-    }
-
-    private func normalizedQuery(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func liveMarket(
-        _ market: MarketSnapshot
-    ) -> MarketSnapshot {
-        _ = dashboardViewModel.realtimeTickerRevision
-        return dashboardViewModel.realtimeSnapshot(for: market)
-    }
-}
-
-private struct MarketSearchTickerRow: View {
-    let market: MarketSnapshot
-    let rank: Int?
-
-    var body: some View {
-        HStack(spacing: 12) {
-            if let rank {
-                Text(String(rank))
-                    .font(
-                        BinanceTheme.Typography.number(
-                            .footnote,
-                            weight: .semibold
-                        )
-                    )
-                    .foregroundStyle(
-                        rank <= 3
-                            ? BinanceTheme.accent
-                            : BinanceTheme.secondaryText
-                    )
-                    .frame(width: 24, alignment: .leading)
-            }
-
-            symbolText
-
-            Spacer(minLength: 10)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(market.formattedPrice)
-                    .font(BinanceTheme.Typography.marketPrice)
-                    .foregroundStyle(BinanceTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-
-                Text(market.formattedChange)
-                    .font(BinanceTheme.Typography.marketSearchChange)
-                    .foregroundStyle(
-                        market.isPositive
-                            ? BinanceTheme.positive
-                            : BinanceTheme.negative
-                    )
-            }
-            .frame(width: 112, alignment: .trailing)
-        }
-        .frame(minHeight: BinanceTheme.Layout.marketSearchRowHeight)
-        .contentShape(Rectangle())
-    }
-
-    private var symbolText: some View {
-        Text(market.symbol)
-            .font(BinanceTheme.Typography.marketSymbol)
-            .foregroundStyle(BinanceTheme.primaryText)
-            .lineLimit(1)
-            .minimumScaleFactor(0.78)
-    }
-}
-
-@MainActor
-private final class MarketSearchViewModel: ObservableObject {
-    @Published private(set) var items: [MarketSnapshot] = []
-    @Published private(set) var isLoadingInitial = false
-    @Published private(set) var isLoadingMore = false
-    @Published private(set) var hasNext = false
-    @Published private(set) var loadFailed = false
-
-    private let service: any MarketTickerSearching
-    private var activeQuery = ""
-    private var nextPage = 0
-    private var requestRevision = 0
-
-    init(service: any MarketTickerSearching) {
-        self.service = service
-    }
-
-    func loadFirstPage(query: String) async {
-        requestRevision += 1
-        let revision = requestRevision
-        let normalized = query.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-
-        activeQuery = normalized
-        nextPage = 0
-        items = []
-        hasNext = false
-        loadFailed = false
-        isLoadingInitial = true
-        isLoadingMore = false
-        defer {
-            if requestRevision == revision {
-                isLoadingInitial = false
-            }
-        }
-
-        do {
-            let response = try await service.loadPage(
-                query: normalized,
-                page: 0,
-                size: normalized.isEmpty ? 10 : 20
-            )
-            guard requestRevision == revision,
-                  !Task.isCancelled else {
-                return
-            }
-            apply(response, appending: false)
-        } catch {
-            guard requestRevision == revision,
-                  !Task.isCancelled else {
-                return
-            }
-            loadFailed = true
-        }
-    }
-
-    func loadNextPage(query: String) async {
-        let normalized = query.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-        guard normalized == activeQuery,
-              hasNext,
-              !isLoadingInitial,
-              !isLoadingMore else {
-            return
-        }
-
-        let revision = requestRevision
-        let requestedPage = nextPage
-        isLoadingMore = true
-        defer {
-            if requestRevision == revision {
-                isLoadingMore = false
-            }
-        }
-
-        do {
-            let response = try await service.loadPage(
-                query: normalized,
-                page: requestedPage,
-                size: normalized.isEmpty ? 10 : 20
-            )
-            guard requestRevision == revision,
-                  normalized == activeQuery,
-                  !Task.isCancelled else {
-                return
-            }
-            apply(response, appending: true)
-        } catch {
-            guard requestRevision == revision,
-                  !Task.isCancelled else {
-                return
-            }
-            loadFailed = true
-        }
-    }
-
-    private func apply(
-        _ response: MarketTickerPageResponse,
-        appending: Bool
-    ) {
-        let mapped = response.items.map {
-            MarketSnapshot(
-                symbol: $0.symbol,
-                quoteAsset: response.quoteAsset,
-                price: $0.lastPrice,
-                quoteVolume24h: $0.quoteVolume24h,
-                changePercent24h: $0.priceChangePercent24h,
-                updatedAt: Date(
-                    timeIntervalSince1970:
-                        Double($0.eventTime) / 1_000
-                )
-            )
-        }
-
-        if appending {
-            let existingSymbols = Set(items.map(\.symbol))
-            items.append(
-                contentsOf: mapped.filter {
-                    !existingSymbols.contains($0.symbol)
-                }
-            )
+    private func toggleFavorite(_ symbol: String) {
+        if dashboardViewModel.containsInWatchlist(symbol) {
+            pendingDeletion = symbol
         } else {
-            items = mapped
+            dashboardViewModel.addToWatchlist(symbol)
         }
-
-        nextPage = response.page + 1
-        hasNext = response.hasNext
-        loadFailed = false
     }
 }
 
-private protocol MarketTickerSearching {
-    func loadPage(
-        query: String,
-        page: Int,
-        size: Int
-    ) async throws -> MarketTickerPageResponse
-}
-
-private struct APIMarketTickerSearchService: MarketTickerSearching {
-    let apiClient: any APIClient
-
-    func loadPage(
-        query: String,
-        page: Int,
-        size: Int
-    ) async throws -> MarketTickerPageResponse {
-        let isPopular = query.isEmpty
-        var queryItems = [
-            URLQueryItem(name: "page", value: String(page)),
-            URLQueryItem(name: "size", value: String(size)),
-        ]
-        if !isPopular {
-            queryItems.insert(
-                URLQueryItem(name: "query", value: query),
-                at: 0
-            )
-        }
-
-        return try await apiClient.send(
-            APIRequest<MarketTickerPageResponse>(
-                path: isPopular
-                    ? "/api/market/tickers/popular"
-                    : "/api/market/tickers/search",
-                queryItems: queryItems
-            )
-        )
+/// A system sheet, shared with the legal documents for the same presentation height.
+extension View {
+    func largeTradingSheet() -> some View {
+        presentationDetents([.fraction(0.85)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
+            .presentationBackground(BinanceTheme.background)
     }
-}
-
-private struct MarketTickerPageResponse: Decodable {
-    let quoteAsset: String
-    let query: String
-    let page: Int
-    let size: Int
-    let totalElements: Int
-    let totalPages: Int
-    let hasNext: Bool
-    let items: [MarketTickerPayload]
 }

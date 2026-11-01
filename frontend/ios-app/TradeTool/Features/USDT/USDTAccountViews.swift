@@ -20,64 +20,48 @@ struct USDTProfileView: View {
     ScrollView {
       VStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 0) {
-          if !store.isBound {
-            Button {
-              binding = true
-            } label: {
-              WebLabel("请先绑定 API", "link")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(WebTheme.danger)
-                .frame(maxWidth: .infinity, minHeight: 46)
-                .background(WebTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                .contentShape(RoundedRectangle(cornerRadius: 10))
-            }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
-              .padding(.bottom, 20)
-          }
-          if store.isBound || lead || version["lead_trading_enabled"]?.flag == true
-            || version["lead_trading_bound"]?.flag == true {
-          HStack(alignment: .top, spacing: 12) {
-            if store.isBound {
-              AsyncImage(url: URL(string: store.profile.value("avatar_url", fallback: ""))) {
-                phase in
-                if let image = phase.image {
-                  image.resizable().scaledToFill()
-                } else {
-                  RoundedRectangle(cornerRadius: 14).fill(WebTheme.gradient).overlay {
-                    Text("B").font(.system(size: 20, weight: .bold)).foregroundStyle(.black)
-                  }
+          HStack(alignment: .center, spacing: 12) {
+            AsyncImage(url: store.isBound ? URL(string: store.profile.value("avatar_url", fallback: "")) : nil) { phase in
+              if let image = phase.image {
+                image.resizable().scaledToFill()
+              } else {
+                RoundedRectangle(cornerRadius: 14).fill(WebTheme.gradient).overlay {
+                  Text("B").font(.system(size: 20, weight: .bold)).foregroundStyle(.black)
                 }
-              }.frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 14))
+              }
+            }.frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 14))
+              .accessibilityLabel("头像").accessibilityIdentifier("profile.avatar")
+            if store.isBound {
               VStack(alignment: .leading, spacing: 0) {
                 Text(store.binding.value("alias", fallback: store.profile.value("display_name")))
-                  .font(.system(size: 16, weight: .bold)).lineLimit(1).frame(height: 24).padding(
-                    .bottom, 4)
-                Text(
-                  collectAccount.value("account_type") == "master"
-                    ? "主账户" : collectAccount.value("account_type") == "sub" ? "子账户" : "账户类型同步中"
-                ).font(.system(size: 12, weight: .semibold)).foregroundStyle(WebTheme.brand)
-                  .padding(.horizontal, 6).frame(height: 18).background(
-                    WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8)
-                  ).overlay {
-                    RoundedRectangle(cornerRadius: 8).stroke(
-                      WebTheme.brand.opacity(0.25), lineWidth: 1)
-                  }
+                  .font(.system(size: 16, weight: .bold)).lineLimit(1).frame(height: 24).padding(.bottom, 4)
+                Text(collectAccount.value("account_type") == "master" ? "主账户"
+                  : collectAccount.value("account_type") == "sub" ? "子账户" : "账户类型同步中")
+                  .font(.system(size: 12, weight: .semibold)).foregroundStyle(WebTheme.brand)
+                  .padding(.horizontal, 6).frame(height: 18)
+                  .background(WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 Button("解除 API 绑定") { binding = true }.font(.system(size: 12)).underline()
                   .foregroundStyle(WebTheme.danger).frame(height: 32)
               }
             }
             Spacer(minLength: 0)
-            if lead || version["lead_trading_enabled"]?.flag == true
-              || version["lead_trading_bound"]?.flag == true
-            {
-              Button(lead ? "切换合约模式" : "切换带单模式") { modeConfirm = true }.font(
-                .system(size: 12, weight: .medium)
-              ).padding(.horizontal, 10).padding(.vertical, 10).background(
-                WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10)
-              ).overlay {
-                RoundedRectangle(cornerRadius: 10).stroke(WebTheme.brand.opacity(0.3), lineWidth: 1)
-              }
+            if !store.isBound {
+              Button { binding = true } label: {
+                WebLabel("请先绑定 API", "link")
+                  .font(.system(size: 12, weight: .semibold)).foregroundStyle(WebTheme.danger)
+                  .padding(.horizontal, 12).frame(height: 34)
+                  .background(WebTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                  .contentShape(RoundedRectangle(cornerRadius: 8))
+              }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
             }
           }.padding(.bottom, 20)
+          if lead || version["lead_trading_enabled"]?.flag == true || version["lead_trading_bound"]?.flag == true {
+            HStack {
+              Spacer()
+              Button(lead ? "切换合约模式" : "切换带单模式") { modeConfirm = true }
+                .font(.system(size: 12, weight: .medium)).padding(10)
+                .background(WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+            }.padding(.bottom, 16)
           }
           Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 16)
           HStack(spacing: 8) {

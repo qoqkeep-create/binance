@@ -325,6 +325,7 @@ final class RealtimeClient: ObservableObject {
 
     private var socketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
+    private var subscriptionSendTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var subscriptions: [String: RealtimeSubscription] = [:]
@@ -495,12 +496,7 @@ final class RealtimeClient: ObservableObject {
         guard state == .connected, !changed.isEmpty else {
             return
         }
-        Task { [weak self] in
-            await self?.sendSubscriptionChange(
-                type: "subscribe",
-                subscriptions: changed
-            )
-        }
+        enqueueSubscriptionChange(type: "subscribe", subscriptions: changed)
     }
 
     func unsubscribe(channels: [String]) {
@@ -511,12 +507,7 @@ final class RealtimeClient: ObservableObject {
         guard state == .connected, !removed.isEmpty else {
             return
         }
-        Task { [weak self] in
-            await self?.sendSubscriptionChange(
-                type: "unsubscribe",
-                subscriptions: removed
-            )
-        }
+        enqueueSubscriptionChange(type: "unsubscribe", subscriptions: removed)
     }
 
     private func openConnectionIfNeeded() {
@@ -631,10 +622,9 @@ final class RealtimeClient: ObservableObject {
             resetLatency()
             updateHeartbeatConfiguration(from: serverMessage)
             startHeartbeat()
-            await sendSubscriptionChange(
-                type: "subscribe",
-                subscriptions: Array(subscriptions.values)
-            )
+            let initialSubscriptions = enqueueSubscriptionChange(
+                type: "subscribe", subscriptions: Array(subscriptions.values))
+            await initialSubscriptions?.value
             publish(serverMessage)
 
         case "pong":
@@ -741,6 +731,23 @@ final class RealtimeClient: ObservableObject {
         }
     }
 
+    @discardableResult
+    private func enqueueSubscriptionChange(
+        type: String, subscriptions: [RealtimeSubscription]
+    ) -> Task<Void, Never>? {
+        guard let socket = socketTask else { return nil }
+        let previous = subscriptionSendTask
+        // Preserve wire order across rapid chart teardown, restoration and symbol
+        // changes. Independent send tasks can leave the server on an older set.
+        let next = Task { [weak self] in
+            await previous?.value
+            guard !Task.isCancelled, let self, self.socketTask === socket else { return }
+            await self.sendSubscriptionChange(type: type, subscriptions: subscriptions)
+        }
+        subscriptionSendTask = next
+        return next
+    }
+
     private func sendSubscriptionChange(
         type: String,
         subscriptions: [RealtimeSubscription]
@@ -789,6 +796,8 @@ final class RealtimeClient: ObservableObject {
             with: .goingAway,
             reason: "Transport ended".data(using: .utf8)
         )
+        subscriptionSendTask?.cancel()
+        subscriptionSendTask = nil
         receiveTask?.cancel()
         socketTask = nil
         receiveTask = nil
@@ -841,6 +850,8 @@ final class RealtimeClient: ObservableObject {
         code: URLSessionWebSocketTask.CloseCode,
         reason: String
     ) {
+        subscriptionSendTask?.cancel()
+        subscriptionSendTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         heartbeatTask?.cancel()

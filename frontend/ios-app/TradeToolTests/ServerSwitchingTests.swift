@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import XCTest
 @testable import TradeTool
@@ -254,6 +255,146 @@ final class NativeIntegrationTests: XCTestCase {
     private func message(channel: String) -> RealtimeServerMessage {
         RealtimeServerMessage(version: 1, type: "event", requestId: nil, channel: channel,
             event: nil, key: nil, sequence: nil, timestamp: 0, data: nil, error: nil)
+    }
+}
+
+@MainActor
+final class PositionHistoryLoadingTests: XCTestCase {
+    func testLocalHistoryIsVisibleBeforeSlowExchangeReadFinishes() async {
+        let started = expectation(description: "Exchange read started")
+        let api = HistorySnapshotFixtureAPI(onFullRead: { started.fulfill() })
+        let store = USDTStore(api: api)
+        let page = USDTPageModel()
+        let task = Task { await page.load(store, path: "/v1/position/history", snapshotFirst: true) }
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertEqual(page.items.first?.value("symbol"), "LOCALUSDT")
+        XCTAssertFalse(page.loading)
+        XCTAssertTrue(page.refreshing)
+        XCTAssertTrue(page.hasNext)
+        await api.finish()
+        await task.value
+        XCTAssertEqual(page.items.first?.value("symbol"), "VERIFIEDUSDT")
+        XCTAssertFalse(page.loading)
+        XCTAssertFalse(page.refreshing)
+    }
+
+    func testCompleteSnapshotAndOlderServersNeedOnlyOneRead() async {
+        for refreshRequired in [JSONValue.bool(false), .null] {
+            let api = HistorySnapshotFixtureAPI(refreshRequired: refreshRequired, gated: false)
+            let page = USDTPageModel()
+            await page.load(USDTStore(api: api), path: "/v1/position/history", snapshotFirst: true)
+            let reads = await api.reads
+            XCTAssertEqual(reads, ["/v1/position/history:snapshot"])
+            XCTAssertEqual(page.items.first?.value("symbol"), "LOCALUSDT")
+            XCTAssertFalse(page.loading)
+            XCTAssertFalse(page.refreshing)
+        }
+    }
+
+    func testResetForUnboundAccountRejectsLateHistoryResponse() async {
+        let started = expectation(description: "Exchange read started")
+        let api = HistorySnapshotFixtureAPI(onFullRead: { started.fulfill() })
+        let page = USDTPageModel()
+        let store = USDTStore(api: api)
+        let task = Task { await page.load(store, path: "/v1/position/history", snapshotFirst: true) }
+        await fulfillment(of: [started], timeout: 2)
+        page.reset()
+        XCTAssertTrue(page.items.isEmpty)
+        XCTAssertFalse(page.loading)
+        XCTAssertFalse(page.refreshing)
+        XCTAssertFalse(page.hasNext)
+        await api.finish()
+        await task.value
+        XCTAssertTrue(page.items.isEmpty)
+    }
+
+    func testTabSwitchWinsOverLateExchangeResponse() async {
+        let started = expectation(description: "Exchange read started")
+        let api = HistorySnapshotFixtureAPI(onFullRead: { started.fulfill() })
+        let page = USDTPageModel()
+        let store = USDTStore(api: api)
+        let task = Task { await page.load(store, path: "/v1/position/history", snapshotFirst: true) }
+        await fulfillment(of: [started], timeout: 2)
+        await page.load(store, path: "/v1/position/list")
+        await api.finish()
+        await task.value
+        XCTAssertEqual(page.items.first?.value("symbol"), "CURRENTUSDT")
+        XCTAssertFalse(page.loading)
+        XCTAssertFalse(page.refreshing)
+    }
+
+    func testFailedExchangeReadKeepsSnapshotAndEndsProgress() async {
+        let started = expectation(description: "Exchange read started")
+        let api = HistorySnapshotFixtureAPI(onFullRead: { started.fulfill() })
+        let page = USDTPageModel()
+        let task = Task { await page.load(USDTStore(api: api), path: "/v1/position/history", snapshotFirst: true) }
+        await fulfillment(of: [started], timeout: 2)
+        await api.finish(error: .business(code: "TEST", message: "历史更新超时"))
+        await task.value
+        XCTAssertEqual(page.items.first?.value("symbol"), "LOCALUSDT")
+        XCTAssertFalse(page.loading)
+        XCTAssertFalse(page.refreshing)
+        XCTAssertTrue(page.error.contains("历史更新超时"))
+    }
+
+    func testCancelledExchangeReadCannotReplaceSnapshot() async {
+        let started = expectation(description: "Exchange read started")
+        let api = HistorySnapshotFixtureAPI(onFullRead: { started.fulfill() })
+        let page = USDTPageModel()
+        let task = Task { await page.load(USDTStore(api: api), path: "/v1/position/history", snapshotFirst: true) }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        await api.finish()
+        await task.value
+        XCTAssertEqual(page.items.first?.value("symbol"), "LOCALUSDT")
+        XCTAssertFalse(page.loading)
+        XCTAssertFalse(page.refreshing)
+        XCTAssertTrue(page.error.isEmpty)
+    }
+}
+
+private actor HistorySnapshotFixtureAPI: APIClient {
+    let refreshRequired: JSONValue
+    let gated: Bool
+    let onFullRead: @Sendable () -> Void
+    private(set) var reads: [String] = []
+    private var continuation: CheckedContinuation<JSONValue, Error>?
+
+    init(refreshRequired: JSONValue = .bool(true), gated: Bool = true,
+         onFullRead: @escaping @Sendable () -> Void = {}) {
+        self.refreshRequired = refreshRequired
+        self.gated = gated
+        self.onFullRead = onFullRead
+    }
+
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        let snapshot = request.queryItems.contains { $0.name == "snapshot" && $0.value == "local" }
+        reads.append(request.path + (snapshot ? ":snapshot" : ""))
+        let value: JSONValue
+        if snapshot {
+            value = .object([
+                "items": .array([.object(["symbol": .string("LOCALUSDT")])]),
+                "exchange_refresh_required": refreshRequired,
+                "pagination": .object(["has_next": .bool(true)]),
+            ])
+        } else if request.path == "/v1/position/history" && gated {
+            value = try await withCheckedThrowingContinuation {
+                continuation = $0
+                onFullRead()
+            }
+        } else {
+            value = .array([.object(["symbol": .string("CURRENTUSDT")])])
+        }
+        return value as! Response
+    }
+
+    func finish(error: APIError? = nil) {
+        if let error { continuation?.resume(throwing: error) }
+        else { continuation?.resume(returning: .object([
+            "items": .array([.object(["symbol": .string("VERIFIEDUSDT")])]),
+            "pagination": .object(["has_next": .bool(false)]),
+        ])) }
+        continuation = nil
     }
 }
 
@@ -936,4 +1077,132 @@ private final class ChartDiagnosticURLProtocol: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+}
+
+@MainActor
+final class WatchlistInteractionTests: XCTestCase {
+    func testFavoriteMembershipReorderAndLegacyPinsPersistAcrossRelaunch() async throws {
+        let suite = "WatchlistInteractionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = UserDefaultsMarketWatchlistStore(service: "test", defaults: defaults)
+        preferences.save(.init(quoteAsset: "USDT", orderedSymbols: ["BTCUSDT", "ADAUSDT", "ETHUSDT", "SOLUSDT"],
+            visibleSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"], pinnedSymbols: ["BTCUSDT"], isCustomized: true), for: "user")
+        let client = WatchlistFixtureAPI()
+        let realtime = RealtimeClient(baseURL: URL(string: "https://example.invalid")!, tokenProvider: { nil })
+        let model = DashboardViewModel(apiClient: client, realtimeClient: realtime, watchlistStore: preferences)
+        model.startRealtime(userID: "user")
+        defer { model.stopRealtime() }
+        await model.loadSymbolCatalog()
+        XCTAssertFalse(model.markets.contains(where: \.isPinned))
+        model.moveVisibleMarkets(from: IndexSet(integer: 0), to: 3)
+        XCTAssertEqual(model.markets(onlyVisible: true).map(\.symbol), ["ETHUSDT", "SOLUSDT", "BTCUSDT"])
+        XCTAssertFalse(model.containsInWatchlist("ADAUSDT"))
+        model.addToWatchlist("ADAUSDT")
+        XCTAssertTrue(model.containsInWatchlist("ADAUSDT"))
+        model.hideMarkets(["ETHUSDT"])
+        model.moveMarketToTop("ADAUSDT")
+        let saved = try XCTUnwrap(preferences.load(for: "user"))
+        XCTAssertEqual(saved.visibleSymbols, ["SOLUSDT", "BTCUSDT", "ADAUSDT"])
+        XCTAssertTrue(saved.pinnedSymbols.isEmpty)
+        let restored = DashboardViewModel(realtimeClient: realtime, watchlistStore: preferences)
+        restored.startRealtime(userID: "user")
+        defer { restored.stopRealtime() }
+        XCTAssertEqual(restored.markets(onlyVisible: true).map(\.symbol), ["ADAUSDT", "SOLUSDT", "BTCUSDT"])
+    }
+
+    func testCatalogIsSharedCachedAndDoesNotResetFavoritesOnRefreshFailure() async {
+        let client = WatchlistFixtureAPI()
+        let model = DashboardViewModel(markets: [MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 68000,
+            changePercent24h: 0, updatedAt: .now)], apiClient: client)
+        await model.loadSymbolCatalog()
+        XCTAssertEqual(model.catalogSymbols, ["ADAUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT"])
+        XCTAssertFalse(model.containsInWatchlist("ADAUSDT"))
+        model.addToWatchlist("ADAUSDT")
+        await model.loadSymbolCatalog()
+        let calls = await client.catalogCalls
+        XCTAssertEqual(calls, 1, "Opening another entry point should reuse the directory")
+        await client.failCatalog()
+        await model.loadSymbolCatalog(force: true)
+        XCTAssertTrue(model.catalogLoadFailed)
+        XCTAssertEqual(model.catalogSymbols.count, 4)
+        XCTAssertTrue(model.containsInWatchlist("ADAUSDT"))
+        XCTAssertEqual(model.tradeQuote(for: "BTCUSDT"), "68000")
+    }
+}
+
+private actor WatchlistFixtureAPI: APIClient {
+    private(set) var catalogCalls = 0
+    private var fail = false
+    func failCatalog() { fail = true }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        let value: JSONValue
+        switch request.path {
+        case "/api/market/symbols":
+            catalogCalls += 1
+            if fail { throw URLError(.notConnectedToInternet) }
+            value = .object(["quoteAsset": .string("USDT"), "symbols": .array(
+                ["ADAUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT"].map(JSONValue.string))])
+        case "/api/market/watchlist/defaults":
+            value = .object(["quoteAsset": .string("USDT"), "symbols": .array([.string("BTCUSDT")]),
+                "availableSymbols": .array(["ADAUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT"].map(JSONValue.string))])
+        case "/api/market/tickers":
+            value = .object(["quoteAsset": .string("USDT"), "tickers": .array([])])
+        default: throw URLError(.unsupportedURL)
+        }
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}
+
+@MainActor
+final class RetainedTradeRiskTests: XCTestCase {
+    func testCheckingAccountKeepsCachedRiskAndOnlyPublishesChanges() async {
+        let api = RetainedRiskFixtureAPI()
+        let store = USDTStore(api: api)
+        await store.begin(userID: "retained-risk")
+        XCTAssertEqual(store.riskAmount, "10")
+        var amounts: [String] = []
+        let observation = store.$account.dropFirst().sink { amounts.append($0.value("stop_loss_amount")) }
+        defer { observation.cancel() }
+        await store.refresh()
+        XCTAssertTrue(amounts.isEmpty)
+        await api.changeRisk("20")
+        let refresh = Task { await store.refresh() }
+        await api.waitForRead()
+        XCTAssertEqual(store.riskAmount, "10", "Account checks must keep the previous amount visible")
+        await api.completeRead()
+        await refresh.value
+        XCTAssertEqual(store.riskAmount, "20")
+        XCTAssertEqual(amounts, ["20"])
+    }
+}
+
+private actor RetainedRiskFixtureAPI: APIClient {
+    private var risk = "10"
+    private var gate = false
+    private var read: CheckedContinuation<Void, Never>?
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var entered = false
+    func changeRisk(_ value: String) { risk = value; gate = true }
+    func waitForRead() async {
+        if entered { return }
+        await withCheckedContinuation { waiting = $0 }
+    }
+    func completeRead() { read?.resume(); read = nil }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        let value: JSONValue
+        switch request.path {
+        case "/v1/api/info": value = .object(["id": .number(1)])
+        case "/v1/account/info":
+            if gate {
+                entered = true
+                waiting?.resume(); waiting = nil
+                await withCheckedContinuation { read = $0 }
+            }
+            value = .object(["stop_loss_amount": .string(risk)])
+        case "/v1/strategy/list": value = .array([])
+        default: value = .object([:])
+        }
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
 }

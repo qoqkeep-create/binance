@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 class TickersView(APIView):
     def get(self, request, kind="all"):
         rows = service.tickers()
-        query = request.query_params.get("query", "").upper()
+        query = request.query_params.get("query", "").strip().upper()
         if query:
             rows = [row for row in rows if query in row["symbol"]]
         if kind != "all":
@@ -28,13 +28,26 @@ class TickersView(APIView):
             selected = rows[page*size:(page+1)*size]
         else:
             selected = rows
+            page, size = 0, len(rows)
         return ok({"quoteAsset": settings.MARKET_QUOTE_ASSET, "tickers": selected,
-                   "items": selected, "hasNext": kind != "all" and (page+1)*size < len(rows)})
+                   "items": selected, "query": query, "page": page, "size": size,
+                   "totalElements": len(rows), "totalPages": (len(rows) + size - 1) // size if size else 0,
+                   "hasNext": kind != "all" and (page+1)*size < len(rows)})
+
+
+class SymbolsView(APIView):
+    def get(self, request):
+        available = service.symbols(cached_only=True)
+        if not available:
+            return fail("交易对目录正在准备，请稍后重试", code=503, status=503)
+        return ok({"quoteAsset": settings.MARKET_QUOTE_ASSET, "symbols": available})
 
 
 class WatchlistView(APIView):
     def get(self, request):
-        available = service.symbols()
+        available = service.symbols(cached_only=True)
+        if not available:
+            return fail("交易对目录正在准备，请稍后重试", code=503, status=503)
         preferred = [f"{base}{settings.MARKET_QUOTE_ASSET}" for base in ("BTC", "ETH", "SOL", "BNB", "XRP", "DOGE")]
         return ok({"quoteAsset": settings.MARKET_QUOTE_ASSET,
                    "symbols": [symbol for symbol in preferred if symbol in available], "availableSymbols": available})

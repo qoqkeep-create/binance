@@ -492,6 +492,16 @@ def _needs_legacy_settlement_refresh(order: Order) -> bool:
     return False
 
 
+def _history_order_needs_exchange_refresh(order: Order) -> bool:
+    if order.position_origin == Order.ORIGIN_EXTERNAL:
+        return False
+    if order.status == 0 or _needs_legacy_settlement_refresh(order):
+        return True
+    if order.settlement_status in {Order.SETTLEMENT_STATUS_SETTLED, Order.SETTLEMENT_STATUS_ESTIMATED}:
+        return False
+    return not order.settlement_next_retry_at or order.settlement_next_retry_at <= timezone.now()
+
+
 def _load_history_exchange_rows(user, orders: list[Order], *, trading_mode=TradingMode.ORDINARY) -> dict[str, Any]:
     orders = [order for order in orders if order.position_origin != Order.ORIGIN_EXTERNAL]
     if not orders:
@@ -533,17 +543,7 @@ def _load_history_exchange_rows(user, orders: list[Order], *, trading_mode=Tradi
             continue
 
         refresh_settled_legacy = _needs_legacy_settlement_refresh(order)
-        if (
-            order.settlement_status
-            in {Order.SETTLEMENT_STATUS_SETTLED, Order.SETTLEMENT_STATUS_ESTIMATED}
-            and not refresh_settled_legacy
-        ):
-            continue
-        if (
-            not refresh_settled_legacy
-            and order.settlement_next_retry_at
-            and order.settlement_next_retry_at > timezone.now()
-        ):
+        if not _history_order_needs_exchange_refresh(order):
             continue
         if closed_reconciliations >= HISTORY_CLOSED_RECONCILIATION_BUDGET:
             continue
@@ -3039,6 +3039,7 @@ class PositionHistoryView(APIView):
 
     def get(self, request):
         total_started = time.perf_counter()
+        local_snapshot = request.query_params.get("snapshot") == "local"
         page = _parse_positive_int(
             request.query_params.get("page"),
             1,
@@ -3067,9 +3068,10 @@ class PositionHistoryView(APIView):
         db_ms = _perf_ms(db_started)
 
         assemble_started = time.perf_counter()
+        exchange_started = time.perf_counter()
         position_rows = _load_history_position_rows(
             request.user, [first_open_order], trading_mode=request_trading_mode(request),
-        ) if first_open_order else {}
+        ) if first_open_order and not local_snapshot else {}
         # Persisted reductions remain discoverable even if the current exchange
         # position is absent. Legacy rows without evidence are probed only for
         # directions that are actually active, rather than all stale local rows.
@@ -3086,10 +3088,11 @@ class PositionHistoryView(APIView):
             has_reduction=Exists(TradeNotificationEvent.objects.filter(
                 order_id=OuterRef("id"), event_type=TradeNotificationEvent.TYPE_REDUCTION,
             )),
-        ).filter(reduction_evidence).order_by("-created_at", "-id")) if first_open_order else []
+        ).filter(reduction_evidence).order_by("-created_at", "-id")) if first_open_order and not local_snapshot else []
         active_exchange_rows = _load_history_exchange_rows(
             request.user, active_candidates, trading_mode=request_trading_mode(request),
         ) if active_candidates else {}
+        exchange_ms = _perf_ms(exchange_started)
         active_history = []
         for order in active_candidates:
             if not _has_partial_close_rows(order, active_exchange_rows):
@@ -3118,10 +3121,12 @@ class PositionHistoryView(APIView):
         visible_orders = [order for _, order in history_window[
             offset - window_start:offset - window_start + page_size
         ]]
+        exchange_started = time.perf_counter()
         closed_exchange_rows = _load_history_exchange_rows(
             request.user, [order for order in visible_orders if order.status == 1],
             trading_mode=request_trading_mode(request),
-        ) if any(order.status == 1 for order in visible_orders) else {}
+        ) if not local_snapshot and any(order.status == 1 for order in visible_orders) else {}
+        exchange_ms += _perf_ms(exchange_started)
         exchange_rows = {
             "rows_by_order_id": {
                 **active_exchange_rows.get("rows_by_order_id", {}),
@@ -3141,9 +3146,10 @@ class PositionHistoryView(APIView):
         total_count = closed_count + len(active_history)
 
         logger.info(
-            "perf position_history user=%s total_ms=%s exchange_ms=0 ctval_ms=0 db_ms=%s assemble_ms=%s rows=%s total=%s page=%s page_size=%s filter=%s start=%s end=%s exchange_available=%s",
+            "perf position_history user=%s total_ms=%s exchange_ms=%s ctval_ms=0 db_ms=%s assemble_ms=%s rows=%s total=%s page=%s page_size=%s filter=%s start=%s end=%s exchange_available=%s local_snapshot=%s",
             getattr(request.user, "id", None),
             _perf_ms(total_started),
+            exchange_ms,
             db_ms,
             _perf_ms(assemble_started),
             len(visible_result),
@@ -3154,11 +3160,18 @@ class PositionHistoryView(APIView):
             start_time.isoformat() if start_time else "",
             end_time.isoformat() if end_time else "",
             int(bool(exchange_rows.get("exchange_available"))),
+            int(local_snapshot),
         )
 
         return ok(
             data={
                 "items": visible_result,
+                # A local first read never contacts Binance or changes settlement.
+                # The normal read still discovers partial closes and reconciles fees.
+                "exchange_refresh_required": local_snapshot and (
+                    first_open_order is not None
+                    or any(_history_order_needs_exchange_refresh(order) for order in visible_orders)
+                ),
                 "pagination": {
                     "page": page,
                     "page_size": page_size,

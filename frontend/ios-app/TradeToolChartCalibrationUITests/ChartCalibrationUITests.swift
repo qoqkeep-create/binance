@@ -2917,24 +2917,110 @@ final class WebParityUITests: XCTestCase {
     image.lifetime = .keepAlways
     add(image)
   }
-  func testUnboundPositionsAndLimitsOnlyShowBindingPrompt() {
+  func testSharedTradingPairSheetMembershipAndTradeSelection() {
+    launch("market")
+    app.buttons["搜索币种、币对或合约"].tap()
+    let ada = app.buttons["pairs.favorite.ADAUSDT"]
+    XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertEqual(ada.value as? String, "未自选")
+    XCTAssertEqual(app.buttons["pairs.favorite.BTCUSDT"].value as? String, "已自选")
+    ada.tap()
+    XCTAssertEqual(ada.value as? String, "已自选")
+    capture("shared-pair-sheet-market")
+    app.buttons["pairs.close"].tap()
+    app.buttons["编辑行情列表"].tap()
+    XCTAssertTrue(app.buttons["watchlist.delete.ADAUSDT"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["全选"].exists)
+    XCTAssertFalse(app.buttons["添加到群组"].exists)
+    app.buttons["watchlist.delete.ADAUSDT"].tap()
+    XCTAssertTrue(app.buttons["删除自选"].waitForExistence(timeout: 3))
+    app.buttons["取消"].tap()
+    XCTAssertTrue(app.buttons["watchlist.delete.ADAUSDT"].exists)
+    app.buttons["watchlist.delete.ADAUSDT"].tap()
+    app.buttons["删除自选"].tap()
+    XCTAssertFalse(app.buttons["watchlist.delete.ADAUSDT"].exists)
+    app.buttons["watchlist.add"].tap()
+    XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertEqual(ada.value as? String, "未自选")
+    let search = app.textFields["pairs.search"]
+    search.tap(); search.typeText("ADA")
+    XCTAssertTrue(app.buttons["pairs.select.ADAUSDT"].exists)
+    XCTAssertFalse(app.buttons["pairs.select.BTCUSDT"].exists)
+    app.buttons["pairs.close"].tap()
+
+    launch("trade")
+    app.buttons["trade.symbol"].tap()
+    XCTAssertTrue(app.buttons["pairs.select.ETHUSDT"].waitForExistence(timeout: 5))
+    capture("shared-pair-sheet-trade")
+    app.buttons["pairs.select.ETHUSDT"].tap()
+    XCTAssertTrue(app.buttons["trade.symbol"].label.contains("ETHUSDT"))
+    XCTAssertTrue(app.buttons["2600"].waitForExistence(timeout: 3))
+    app.buttons["我的"].firstMatch.tap()
+    app.buttons["开仓"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["trade.symbol"].label.contains("ETHUSDT"))
+    XCTAssertTrue(app.buttons["2600"].exists)
+  }
+
+  func testNativeWatchlistDragAndMoveToTop() {
+    launch("market")
+    app.buttons["编辑行情列表"].tap()
+    let btc = app.buttons["watchlist.top.BTCUSDT"]
+    let eth = app.buttons["watchlist.top.ETHUSDT"]
+    let sol = app.buttons["watchlist.top.SOLUSDT"]
+    XCTAssertTrue(btc.waitForExistence(timeout: 5))
+    let start = app.coordinate(withNormalizedOffset: .zero).withOffset(
+      CGVector(dx: app.frame.maxX - 24, dy: btc.frame.midY))
+    let end = app.coordinate(withNormalizedOffset: .zero).withOffset(
+      CGVector(dx: app.frame.maxX - 24, dy: sol.frame.maxY + 10))
+    start.press(forDuration: 0.7, thenDragTo: end)
+    XCTAssertGreaterThan(btc.frame.midY, sol.frame.midY)
+    XCTAssertLessThan(eth.frame.midY, sol.frame.midY)
+    capture("watchlist-native-reordered")
+    btc.tap()
+    XCTAssertLessThan(btc.frame.midY, eth.frame.midY)
+    capture("watchlist-moved-to-top")
+  }
+
+  func testTradeUsesProfileRiskSheetAndCompactUnboundAvatarHeader() {
+    launch("trade", ["--fixture-unbound"])
+    app.buttons["调整止损金额"].tap()
+    XCTAssertTrue(app.sliders["stop-loss.percentage"].waitForExistence(timeout: 5))
+    let tradeFooter = app.buttons["stop-loss.submit"].frame
+    capture("trade-shared-stop-loss")
+    app.buttons["关闭"].firstMatch.tap()
+    app.buttons["我的"].firstMatch.tap()
+    let bind = app.buttons["profile.bind"]
+    let avatar = app.descendants(matching: .any)["profile.avatar"].firstMatch
+    XCTAssertTrue(bind.waitForExistence(timeout: 5))
+    XCTAssertTrue(avatar.exists)
+    XCTAssertLessThan(avatar.frame.maxX, bind.frame.minX)
+    XCTAssertLessThan(bind.frame.height, 40)
+    XCTAssertLessThan(bind.frame.width, 150)
+    capture("profile-compact-bind-with-avatar")
+    app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止损额设置")).firstMatch.tap()
+    XCTAssertTrue(app.sliders["stop-loss.percentage"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["stop-loss.submit"].frame.height, tradeFooter.height, accuracy: 1)
+    XCTAssertEqual(app.buttons["stop-loss.submit"].frame.maxY, tradeFooter.maxY, accuracy: 1)
+  }
+
+  func testAllUnboundPositionTabsOnlyShowBindingPrompt() {
     launch("positions", ["--fixture-unbound"])
-    for tab in ["持仓", "限价委托"] {
-      if tab == "限价委托" { app.buttons[tab].tap() }
+    for tab in ["持仓", "限价委托", "历史仓位"] {
+      if tab != "持仓" { app.buttons[tab].tap() }
       let bind = app.buttons["positions.bind"]
       XCTAssertTrue(bind.waitForExistence(timeout: 5))
       XCTAssertEqual(bind.frame.midY, app.scrollViews["positions.list"].frame.midY, accuracy: 2)
       XCTAssertFalse(app.buttons["重新加载"].exists)
       XCTAssertFalse(app.staticTexts["开仓额度："].exists)
       XCTAssertFalse(app.buttons["追单"].exists)
-      capture(tab == "持仓" ? "positions-unbound-compact" : "limits-unbound-compact")
+      XCTAssertFalse(app.staticTexts["加载中..."].exists)
+      XCTAssertFalse(app.staticTexts["平仓盈亏"].exists)
+      XCTAssertFalse(app.buttons["一天内"].exists)
+      capture("unbound-" + tab)
       bind.tap()
       XCTAssertTrue(app.buttons["确认绑定"].waitForExistence(timeout: 5))
       app.buttons["关闭"].firstMatch.tap()
     }
-    app.buttons["历史仓位"].tap()
-    XCTAssertTrue(app.staticTexts["平仓盈亏"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.staticTexts["请先绑定 Binance API"].exists)
   }
 
   func testMarketLatencySignalAndInternalOnlyHeader() {
@@ -3045,6 +3131,20 @@ final class WebParityUITests: XCTestCase {
         .waitForExistence(timeout: 10), tab)
       capture("refreshed-" + tab)
     }
+  }
+
+  func testBoundHistoryShowsRecordsWhileExchangeSupplementIsSlow() {
+    launch("positions", ["--fixture-history-supplement-slow"])
+    XCTAssertTrue(app.buttons["自动止盈中"].waitForExistence(timeout: 5))
+    app.buttons["历史仓位"].tap()
+    XCTAssertTrue(app.staticTexts["平仓盈亏"].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.staticTexts["待结算"].exists)
+    XCTAssertTrue(app.staticTexts["正在更新历史记录…"].exists)
+    XCTAssertFalse(app.staticTexts["加载中..."].exists)
+    capture("history-records-before-supplement")
+    XCTAssertTrue(app.staticTexts["正在更新历史记录…"].waitForNonExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["待结算"].exists)
+    XCTAssertTrue(app.staticTexts["平仓盈亏"].exists)
   }
 
   func testProfileLogoutButtonAndRemovedResearchEntry() {
@@ -3462,6 +3562,7 @@ final class WebParityUITests: XCTestCase {
       .allElementsBoundByIndex.first(where: { $0.isHittable }))
     terms.tap()
     XCTAssertTrue(app.staticTexts["欢迎使用Binance Tools"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["完成"].exists)
     capture("binance-tools-terms-sheet")
     app.buttons["auth.legal.close"].tap()
     XCTAssertTrue(app.secureTextFields["register.confirmPassword"].waitForExistence(timeout: 5))
@@ -3469,6 +3570,7 @@ final class WebParityUITests: XCTestCase {
       .allElementsBoundByIndex.first(where: { $0.isHittable }))
     privacy.tap()
     XCTAssertTrue(app.staticTexts["Binance Tools隐私政策"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["完成"].exists)
     capture("binance-tools-privacy-sheet")
     app.buttons["auth.legal.close"].tap()
     XCTAssertTrue(app.buttons["auth.sheet.close"].isHittable)

@@ -70,9 +70,11 @@ private struct MainAppView: View {
                 MarketChartView(market: market,
                     availableMarkets: container.dashboardViewModel.markets(onlyVisible: true),
                     apiClient: container.apiClient, realtimeClient: container.realtimeClient,
-                    initialInterval: selectedInterval)
+                    initialInterval: selectedInterval,
+                    onStop: { container.dashboardViewModel.restoreRealtimeSubscriptions() })
             }
         }
+        .environmentObject(container.dashboardViewModel)
         .background(BinanceTheme.navigationBackground)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .floatingPositionsOverlay()
@@ -83,6 +85,9 @@ private struct MainAppView: View {
             container.realtimeClient.subscribe([.tradingAccount, .tradingPosition, .tradingOrder, .tradingFill])
             container.realtimeClient.connect()
             await store.refresh()
+        }
+        .onChange(of: store.selectedSymbol, initial: true) { _, symbol in
+            container.dashboardViewModel.trackTradeTickerSymbol(symbol)
         }
         .onChange(of: store.mode) { _, _ in
             if selectedTab == .signals { selectedTab = .markets }

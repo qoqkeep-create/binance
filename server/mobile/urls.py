@@ -1,5 +1,5 @@
 from django.urls import path
-from market_stream.views import KlinesView, TickersView, WatchlistView
+from market_stream.views import KlinesView, SymbolsView, TickersView, WatchlistView
 from market_stream.diagnostics import ChartLoadReportsView
 from mobile.auth import MobileLoginView, MobileLogoutView, MobileMeView, MobileRefreshView, MobileRegisterView
 from mobile.views import CommandsView, CommandDetailView
@@ -15,6 +15,7 @@ urlpatterns = [
     path("market/klines", KlinesView.as_view()),
     path("market/chart-load-reports", ChartLoadReportsView.as_view()),
     path("market/tickers", TickersView.as_view()),
+    path("market/symbols", SymbolsView.as_view()),
     path("market/tickers/popular", TickersView.as_view(), {"kind": "popular"}),
     path("market/tickers/search", TickersView.as_view(), {"kind": "search"}),
     path("market/watchlist/defaults", WatchlistView.as_view()),

@@ -126,6 +126,7 @@ struct DashboardView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             isVisible = true
+            viewModel.restoreRealtimeSubscriptions()
             realtimeClient.setLatencyMonitoring(scenePhase == .active)
         }
         .onDisappear {
@@ -135,9 +136,8 @@ struct DashboardView: View {
         .onChange(of: scenePhase) { _, phase in
             realtimeClient.setLatencyMonitoring(isVisible && phase == .active)
         }
-        .navigationDestination(isPresented: $isShowingMarketSearch) {
+        .sheet(isPresented: $isShowingMarketSearch) {
             MarketSearchView(
-                apiClient: apiClient,
                 dashboardViewModel: viewModel
             )
         }

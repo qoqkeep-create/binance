@@ -2,9 +2,19 @@ import SwiftUI
 
 struct USDTLegalView: View {
   var document: String = "用户协议"
+  @Environment(\.dismiss) private var dismiss
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24) {
+        HStack {
+          Text(document).font(.system(size: 20, weight: .bold)).foregroundStyle(WebTheme.text)
+          Spacer()
+          Button { dismiss() } label: {
+            Image(systemName: "xmark").font(.system(size: 18, weight: .medium))
+              .foregroundStyle(WebTheme.muted).frame(width: 44, height: 44).contentShape(Rectangle())
+          }.buttonStyle(.plain).accessibilityLabel("关闭")
+            .accessibilityIdentifier("auth.legal.close")
+        }
         ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
           VStack(alignment: .leading, spacing: index == 0 ? 12 : 8) {
             Text(section.0).font(.system(size: index == 0 ? 18 : 16, weight: .bold))
@@ -21,7 +31,8 @@ struct USDTLegalView: View {
       }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(
         WebTheme.surface, in: RoundedRectangle(cornerRadius: 14)
       ).padding(16).padding(.bottom, 16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-    }.scrollIndicators(.hidden).usdtPage(document)
+    }.scrollIndicators(.hidden).background(BinanceTheme.background)
+      .toolbar(.hidden, for: .navigationBar).largeTradingSheet()
   }
   private var sections: [(String, [String])] { document == "隐私政策" ? Self.privacy : Self.agreement }
   private static let agreement: [(String, [String])] = [

@@ -2,6 +2,15 @@ from django.conf import settings
 from django.db import models
 
 
+class MarketSymbol(models.Model):
+    """Durable public contract directory, refreshed by the market collector."""
+    symbol = models.CharField(max_length=32, primary_key=True)
+    quote_asset = models.CharField(max_length=16)
+    onboard_date = models.BigIntegerField(default=0)
+    active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class MarketCandle(models.Model):
     symbol = models.CharField(max_length=32)
     interval = models.CharField(max_length=4)

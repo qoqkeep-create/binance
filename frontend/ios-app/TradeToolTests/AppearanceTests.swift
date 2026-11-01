@@ -8,6 +8,48 @@ import XCTest
 
 final class AppearanceTests: XCTestCase {
     @MainActor
+    func testSelectedTradeTickerKeepsReceivingWhenFavoritesAndSearchSubscriptionsChange() async throws {
+        let ready = expectation(description: "Loopback ready")
+        let peer = try LatencySocketPeer(ready: ready, pings: [])
+        peer.start()
+        defer { peer.stop() }
+        await fulfillment(of: [ready], timeout: 3)
+        let port = try XCTUnwrap(peer.port)
+        let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(port)")!, tokenProvider: { "isolated-test" })
+        let markets = (0..<210).map {
+            MarketSnapshot(symbol: "TEST\($0)USDT", quoteAsset: "USDT", price: 1,
+                changePercent24h: 0, updatedAt: .distantPast)
+        }
+        let model = DashboardViewModel(markets: markets, realtimeClient: client)
+        model.startRealtime(userID: "test")
+        defer { model.stopRealtime(); client.disconnect() }
+        model.trackTradeTickerSymbol("SELECTEDUSDT")
+        let received = expectation(description: "Selected quote over real WSS")
+        let observation = model.$realtimeTickerRevision.dropFirst().filter { _ in
+            model.tradeQuote(for: "SELECTEDUSDT") == "123.45"
+        }.prefix(1).sink { _ in received.fulfill() }
+        defer { observation.cancel() }
+        client.connect()
+        await fulfillment(of: [received], timeout: 5)
+        XCTAssertEqual(peer.tickerSymbols.count, 200)
+        XCTAssertEqual(peer.tickerSymbols.first, "SELECTEDUSDT")
+        model.trackSearchTickerSymbols((0..<210).map { "SEARCH\($0)USDT" })
+        model.stopTrackingSearchTickers()
+        model.hideMarkets(Set(markets.map(\.symbol)))
+        client.unsubscribe(channels: ["market.ticker"])
+        model.restoreRealtimeSubscriptions()
+        XCTAssertEqual(model.tradeQuote(for: "SELECTEDUSDT"), "123.45")
+        let next = expectation(description: "New selected quote")
+        let nextObservation = model.$realtimeTickerRevision.dropFirst().filter { _ in
+            model.tradeQuote(for: "NEXTUSDT") == "234.56"
+        }.prefix(1).sink { _ in next.fulfill() }
+        defer { nextObservation.cancel() }
+        model.trackTradeTickerSymbol("NEXTUSDT")
+        await fulfillment(of: [next], timeout: 5)
+        XCTAssertEqual(peer.tickerSymbols, ["NEXTUSDT"])
+    }
+
+    @MainActor
     func testAppearanceDefaultsToLightAndRestoresSavedSelection() throws {
         let suite = "AppearanceTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -309,6 +351,8 @@ private final class LatencySocketPeer: @unchecked Sendable {
   private let queue = DispatchQueue(label: "test.latency-socket")
   private var connections: [NWConnection] = []
   private var pings: [XCTestExpectation]
+  private var lastTickerSymbols: [String] = []
+  var tickerSymbols: [String] { queue.sync { lastTickerSymbols } }
   var port: UInt16? { listener.port?.rawValue }
 
   init(ready: XCTestExpectation, pings: [XCTestExpectation]) throws {
@@ -351,6 +395,19 @@ private final class LatencySocketPeer: @unchecked Sendable {
         if !self.pings.isEmpty { self.pings.removeFirst().fulfill() }
         self.queue.asyncAfter(deadline: .now() + .milliseconds(120)) {
           self.send(["version": 1, "type": "pong", "timestamp": 0, "requestId": id], to: connection)
+        }
+      }
+      if let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         message["type"] as? String == "subscribe",
+         let subscriptions = message["subscriptions"] as? [[String: Any]] {
+        for subscription in subscriptions where subscription["channel"] as? String == "market.ticker" {
+          let filters = subscription["filters"] as? [String: Any]
+          self.lastTickerSymbols = filters?["symbols"] as? [String] ?? []
+          for symbol in self.lastTickerSymbols where symbol == "SELECTEDUSDT" || symbol == "NEXTUSDT" {
+            self.send(["version": 1, "type": "event", "channel": "market.ticker", "event": "updated",
+              "timestamp": 0, "data": ["symbol": symbol, "lastPrice": symbol == "SELECTEDUSDT" ? 123.45 : 234.56,
+                "quoteVolume24h": 1, "priceChangePercent24h": 1, "eventTime": 2_000_000_000_000]], to: connection)
+          }
         }
       }
       self.receive(from: connection)

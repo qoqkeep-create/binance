@@ -41,6 +41,88 @@ class PositionReviewRegressionTests(APITestCase):
         values.update(overrides)
         return Order.objects.create(**values)
 
+    def test_history_snapshot_returns_local_page_without_waiting_for_exchange(self):
+        self.order.status = 1
+        self.order.closed_at = timezone.now()
+        self.order.save(update_fields=["status", "closed_at"])
+        self.make_order(binance_order_id="still-open")
+        with patch.object(views, "_load_history_position_rows", return_value={}) as positions, \
+                patch.object(views, "_load_history_exchange_rows", return_value={}) as financials:
+            response = self.client.get("/v1/position/history", {"snapshot": "local"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["id"] for row in response.data["data"]["items"]], [self.order.id])
+        positions.assert_not_called()
+        financials.assert_not_called()
+        self.assertTrue(response.data["data"]["exchange_refresh_required"])
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.settlement_status, Order.SETTLEMENT_STATUS_PENDING)
+
+    def test_complete_history_snapshot_does_not_require_another_request(self):
+        self.order.status = 1
+        self.order.closed_at = timezone.now()
+        self.order.settlement_status = Order.SETTLEMENT_STATUS_SETTLED
+        self.order.realized_pnl = Decimal("0")
+        self.order.realized_fee = Decimal("0")
+        self.order.realized_funding_fee = Decimal("0")
+        self.order.save()
+        with patch.object(views, "_load_history_exchange_rows", return_value={}) as financials:
+            response = self.client.get("/v1/position/history", {"snapshot": "local"})
+        self.assertEqual(response.status_code, 200)
+        financials.assert_not_called()
+        self.assertFalse(response.data["data"]["exchange_refresh_required"])
+
+    def test_history_snapshot_preserves_settlement_backoff(self):
+        self.order.status = 1
+        self.order.closed_at = timezone.now()
+        self.order.settlement_status = Order.SETTLEMENT_STATUS_FAILED
+        self.order.settlement_next_retry_at = timezone.now() + timedelta(minutes=10)
+        self.order.save()
+        with patch.object(views, "_load_history_exchange_rows", return_value={}) as financials:
+            response = self.client.get("/v1/position/history", {"snapshot": "local"})
+        financials.assert_not_called()
+        self.assertFalse(response.data["data"]["exchange_refresh_required"])
+        self.assertEqual(response.data["data"]["items"][0]["settlement_status"], "failed")
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.settlement_retry_count, 0)
+
+    def test_history_snapshot_keeps_filters_pagination_and_account_scope(self):
+        now = timezone.now()
+        self.order.status = 1
+        self.order.closed_at = now - timedelta(days=2)
+        self.order.save()
+        recent = self.make_order(binance_order_id="recent", status=1, closed_at=now)
+        older = self.make_order(binance_order_id="older", status=1, closed_at=now - timedelta(hours=1))
+        self.make_order(binance_order_id="previous-key", status=1, closed_at=now,
+                        api_key_fingerprint="previous-key")
+        self.make_order(binance_order_id="lead-mode", status=1, closed_at=now, trading_mode="lead")
+        other_user = User.objects.create_user(email="history-other@example.invalid", password="test")
+        self.make_order(user=other_user, binance_order_id="other-user", status=1, closed_at=now)
+        with patch.object(views, "BinanceFuturesClient") as exchange:
+            first = self.client.get("/v1/position/history", {
+                "snapshot": "local", "filter": "day", "page_size": "1",
+            }).data["data"]
+            second = self.client.get("/v1/position/history", {
+                "snapshot": "local", "filter": "day", "page_size": "1", "page": "2",
+            }).data["data"]
+        exchange.assert_not_called()
+        self.assertEqual([row["id"] for row in first["items"]], [recent.id])
+        self.assertEqual([row["id"] for row in second["items"]], [older.id])
+        self.assertEqual(first["pagination"]["total"], 2)
+        self.assertTrue(first["pagination"]["has_next"])
+        self.assertFalse(second["pagination"]["has_next"])
+
+    def test_external_history_snapshot_keeps_estimate_and_never_probes_exchange(self):
+        self.order.status = 1
+        self.order.position_origin = Order.ORIGIN_EXTERNAL
+        self.order.closed_at = timezone.now()
+        self.order.save()
+        with patch.object(views, "BinanceFuturesClient") as exchange:
+            response = self.client.get("/v1/position/history", {"snapshot": "local"})
+        exchange.assert_not_called()
+        data = response.data["data"]
+        self.assertFalse(data["exchange_refresh_required"])
+        self.assertEqual(data["items"][0]["settlement_status"], "estimated")
+
     def strategy_snapshot(self, order=None):
         order = order or self.order
         snapshot = OrderStrategySnapshot.objects.create(
