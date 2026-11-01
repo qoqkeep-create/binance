@@ -8,6 +8,8 @@
 
 随后按首屏交接计划补验：`market_stream.tests market_stream.test_fast_path` 41 项全部通过（2.469 秒），本轮显式提供专用 Redis 二进制，三项真实回环 Redis 测试没有跳过；`MarketFastPathTests` 18 项加 `ChartEngineCoreTests` 127 项全部通过（52.965 秒，`.integration-runtime/KlineFirstFrame/CorrectnessFinal.xcresult`）。新增分页重连／恢复顺序测试均先失败后修复，包含真实 15 秒校对、真实结构 ack、下载失败及不响应取消的旧请求。上述为本地隔离测试，未执行交易操作。
 
+2026-11-01 本轮全部源码发布前，针对当前改动补跑 `market_stream.tests market_stream.test_fast_path common.test_retired_modules users.tests` 共 69 项，8.748 秒通过，显式使用专用临时 Redis；鸿蒙核心 40 项及工程检查通过。iOS 复用上方同内容 145 项与移除探针后的 Release 构建证据，本轮没有重跑手机性能或上传 TestFlight。发布后公网冒烟与源码版本关联见 [运维](operations.md#最新发布与核验2026-11-01)，代码评估与未实施项见 [行情](market-data.md#性能与可替换性评估2026-11-01)。
+
 ## Python
 
 使用 Python 3.11，按锁定依赖创建本地环境：

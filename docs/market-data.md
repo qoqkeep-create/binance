@@ -102,7 +102,7 @@ Java 的 `loadChartTradingData` 将所选统计并发请求后 `allOf(...).join(
 逐段核对 `CandleStore`、`ChartDataPipeline`、`KlineIngressState`、指标引擎、`KlineChartSceneController`、`ChartSceneBuilder`、`MetalRenderer`、资源 ring 与 shader：
 
 - 历史是不可变快照，live tail 单独替换；收盘才提交指标历史，盘中通过 provisional 计算，不逐 tick 重算全部历史。迟到收线触发恢复而非静默篡改指标。
-- 初次快照安装才做整段指标预热；之后按收线增量更新。Python 适配保留“晚 HTTP 不覆盖较新 Socket 尾线／收盘线”的合并增强，新增工作量是内存合并，没有网络等待。
+- 每次完整快照安装都会做整段指标预热；普通实时收线按增量更新，盘中只计算 provisional 值。Python 适配保留“晚 HTTP 不覆盖较新 Socket 尾线／收盘线”的合并增强，新增工作量是内存合并，没有网络等待。
 - 场景构建复用历史对象身份、viewport、面板与价格域形成的静态缓存；价格／live 变化走动态批次。字形 atlas 和格式器复用，横拖保留可见内容位置。
 - 场景请求覆盖旧的 pending request；渲染 mailbox 容量为 1，有代次的 GPU 槽位防止重用仍在飞行的资源，后台／恢复只保留最新状态。
 - 当前与来源的场景构建、指标、Metal 主体相同；差异包括账户／接口适配、保留更新数据、返回手势预留、未引用实现删除及日志 bundle 标识。没有证据表明总代码行数造成十多秒首屏。
@@ -185,3 +185,70 @@ Debug 模拟器的临时分段记录：图表启动至首个 GPU 命令完成约
 分别记录历史接口耗时、首条有效 Socket 数据、渲染耗时、连接恢复及分页一致性。HTTP 的 `Server-Timing` 不含网络传输或客户端呈现时间；Debug 的 `MarketChart` 日志分别记录 `history_http` 和 `chart_snapshot_ready`（快照准备完成，不能当作 GPU 已呈现）。HTTP101 只证明握手，不证明有行情；K 线事件延迟不等于订单执行延迟。
 
 网络切换、后台恢复、token 刷新、切币种 / 周期及历史分页均需覆盖。当前短样本存在本机链路延迟离群点，尚未完成真机长期稳定性验收；实际结果与边界见 [变更](changes.md) 和 [已知事项](known-issues.md)。
+
+## 性能与可替换性评估（2026-11-01）
+
+审阅基线为源码 `9091179`，沿 HTTP／WSS → 入口状态 → CandleStore → 指标 → 场景 → 宿主 → Metal 检查，另读原 USDC Controller／采集实现。当前结论：渲染层具备明确的性能设计，数据正确性与恢复措施较完整；编排层仍偏重，不能据此宣称最简实现、最高性能或大规模生产可靠性。此次是评估，以下改进项尚未实施。
+
+### 数据与绘制已经分层
+
+```mermaid
+flowchart LR
+    H[HTTP 历史与分页] --> I[归一化与恢复编排]
+    W[鉴权 WSS 增量] --> I
+    I --> P[ChartDataPipeline actor]
+    P --> C[闭合历史与 live tail]
+    C --> D[指标与 ChartDataFrame]
+    D --> S[场景构建与可见区域缓存]
+    S --> M[容量 1 mailbox 与 Metal]
+    I -. 可新增数据适配器 .-> T[TradingView Datafeed]
+```
+
+`ChartDataFrame` 已为数据／绘制之间的不可变输入；网络请求没有放入 Metal draw 回调，图表也不等待账户资料才能显示。可继续将 `MarketChartViewModel` 中的 HTTP、分页、订阅、恢复策略抽成独立行情会话，让 Metal 与其他 renderer 使用同一份规范化行情。TradingView 有自己的缓存与指标引擎，接入时应明确谁拥有这两类状态，避免双份重算、重复网络订阅或逐 tick 通过 bridge 重传整段历史。下单仍调用现有原生业务表单和 Python 接口。
+
+### 前端质量与具体余量
+
+| 代码事实 | 价值或限制 |
+| --- | --- |
+| `ChartDataPipeline`／`CandleStore` actor、不可变闭合历史与独立 live tail | 有清楚的数据所有权，盘中更新不复制整段历史；epoch／sequence／可信收线屏障处理重复、乱序、缺口及缓冲丢弃 |
+| committed／provisional 指标、可见区域加缓冲区场景、静态／动态批次和字形缓存 | 普通 tick 主要计算尾部，拖动／十字光标有独立呈现路径；不是逐根 SwiftUI View 绘制 |
+| latest 场景请求、容量 1 mailbox、3 槽 GPU ring 和租约代次 | 不积压已过期的展示帧，不覆盖仍在 GPU 使用的资源；失败隔离、暂停／恢复和内存告警有路径 |
+| ViewModel 约 1100 行，同时管理历史、实时、分页、统计、恢复及参数 | 实现能力较多，但状态组合与维护成本高；应统一快照读取协调器，而不是继续添加并列布尔标记 |
+| 15 秒校对及 ack 后补读会再次 `installSnapshot` | 当前每次都新建 CandleStore 历史对象、递增 revision 并重建指标；场景缓存依赖历史对象身份，因此同样的收线也会使静态缓存失效。不是只有首次进入预热 |
+| `CandleStore.installSnapshot(preservingNewerData: true)` 只保留比传入末根更新的闭合线 | 已分页得到的更老历史不在这一保留范围；最新窗口刷新会重新裁掉它们。该行为由代码可确定，用户拖动时的跳动／重复分页影响尚未做本轮 UI 复现；应明确增量校对与整段重置的合并契约 |
+| `intervalTask` 与 `chartRecoveryTask` 分别发起历史读取 | 普通通知已合并，但恢复请求不共享同一读取槽；丢包、重连、周期切换叠加时仍需测重复请求和晚响应安装顺序。actor 内跨 `await store...` 的 epoch 重入也应加入门控回归，不能只靠外层结果过滤认定内部状态安全 |
+
+已有模拟器测量：HTTP 接收中位约 300 ms、解码 5.76 ms、响应到 frame 71.23 ms、场景 4.29 ms、宿主 4.41 ms、GPU completion 6.49 ms；20 次热进入 P50／P95 为 468／756 ms。各阶段中位数不能相加冒充分位数，GPU completion 也不等于实际屏幕呈现。证据支持先优化网络和数据编排，没有证明替换 Metal 可大幅缩短首屏。缺少物理 iPhone 的 60／120Hz 掉帧、内存峰值、耗电和长稳报告，尚不能认证其为最优实现。
+
+### 当前数据推送与故障恢复
+
+| 方面 | 已实现 | 仍需改进或验证 |
+| --- | --- | --- |
+| 首屏 | HTTP 只读本地历史／live，gzip；缺历史与统计返回 pending 并交给后台 | 64 个热窗口不覆盖全部市场；同一窗口冷 miss 缺少请求合并锁，多用户同时进入可能重复读库／压缩；ticker／watchlist 缓存缺失仍有同步外部请求路径 |
+| 实时分发 | 原生 1m、事件唤醒、live／收线／ticker 分开；Redis 按主题筛选，Lua 原子 sequence＋publish | Python 多进程序列化与 Redis hop 有成本；当前单 collector 与单 API worker 的峰值容量尚未压测 |
+| 数据完整性 | 收线唯一键 upsert、完整分钟聚合、不伪造缺口；后台任务去重、租约、预算、优先级与指数退避 | 收线暂存最多 10000，失败或溢出依赖巡检恢复；这是最终补齐机制，不是每个展示事件都有持久确认 |
+| 重连与补读 | iOS 心跳、1～30 秒指数退避加 jitter、鉴权续期、新 epoch；缺序列／丢缓冲后重取快照；订阅 ack 后补读、通知合并及 15 秒兜底 | Redis PubSub 无游标重放；恢复为快照重建，不是断点续传。上游 collector 与图表历史恢复的退避尚无 jitter，重试策略可统一 |
+| 慢客户端 | WSS outgoing 有界 128、发送超时 5 秒；图表事件缓冲 64，丢弃触发恢复 | WSS 顶层广泛捕获后静默关闭，未区分队列满、Redis／解析故障及传输失败原因；需结构化原因码、计数与告警，避免无日志重连循环 |
+| 运维 | 健康／任务重试状态与部分 `Server-Timing` 已有，缓存只淘汰自身 namespace | 缺统一跨层 request／trace identity、首屏 P95、缺序列、补线时延、缓存命中、队列积压及慢连接关闭指标；六容器 healthy 不能替代这些业务指标 |
+
+上述设计适合展示行情采用“快速增量＋快照校正”的模式。行情 PubSub 的最终恢复语义不能作为下单／资金事件可靠性的证明；交易命令、Inbox／Outbox 与 REST 对账有独立规则，见 [交易安全](trading-safety.md)。
+
+### TradingView 接入取舍
+
+| 选择 | 与当前后端的接法 | 预计收益与成本 |
+| --- | --- | --- |
+| 保留 SwiftUI／Metal | 使用现有 ChartDataFrame／场景 | 原生交互和性能可控，现有功能不需重做；需自己维护指标、手势与 GPU 实现 |
+| Lightweight Charts | 历史使用 `setData`，实时使用 `update`，补线／重连由自有 feed 处理；Swift wrapper 实际为 WebView | 可能减少绘制维护及便于跨平台复用；完整分析工具仍需自行补充，增加 WebView 初始化、JS bridge、序列化和双侧状态成本 |
+| Advanced Charts | 适配 `getBars`／`subscribeBars`／unsubscribe，按 `countBack` 与时间范围供数；历史修订按库规则 reset | 提供更完整指标与绘图工具；iOS 需 WebView 与自建 bridge，许可与产品接入条件需先满足，不等于直接替换一个原生 View |
+| 托管 Widget | 使用 TradingView 托管的数据与界面 | 与“继续使用自有行情数据处理”的要求不同；不作为该方案的替代接口 |
+
+官方资料核对于 2026-11-01：[Lightweight Charts iOS wrapper](https://tradingview.github.io/lightweight-charts/docs/ios) 明确内部 WebView；[实时更新](https://tradingview.github.io/lightweight-charts/docs) 建议用 `update` 更新尾根，反复 `setData` 会影响性能；[Advanced Charts 移动接入](https://www.tradingview.com/charting-library-docs/latest/mobile_specifics/) 不提供原生 iOS wrapper；[Datafeed 必需方法](https://www.tradingview.com/charting-library-docs/latest/connecting_data/datafeed-api/required-methods/) 规定时间顺序、历史缓存与旧历史修订方式；[产品与许可说明](https://www.tradingview.com/free-charting-libraries/) 区分库／Widget，Lightweight 为 Apache 2.0 并需遵守署名要求，Advanced Charts 免费使用有申请、公开环境和品牌展示条件，不能假定个人私用或当前登录产品自动满足。
+
+TradingView 只能替换显示／分析工具，不能消除当前 HTTP 耗时、数据缺口、上游故障或恢复竞态。它的潜在优势主要是开发和维护效率，运行速度能否提高必须用同一物理手机、同后端、1500 根和等价指标对照；测 App 冷启动／预热首帧 P50／P95、拖动掉帧、CPU／内存、耗电、重连及历史修订，不拿空白图或少指标场景比较。
+
+### 建议顺序（尚未实施）
+
+1. 优先统一首屏、校对和恢复的读取协调器，给已加载分页与快照合并建立明确规则，并补 actor 重入、取消后晚响应的回归。保留先显示首个有效快照的行为。
+2. 按收线／统计 revision 判断是否需要重建：相同历史复用对象、指标与静态场景；正常 live 更新继续只改尾部。服务端冷读按窗口合并请求，测不同币种／周期的命中与冷读 P95。
+3. 增加结构化关闭原因、端到端计时与重连／缺口／补线指标，再在隔离环境注入丢包、Redis 短断、慢客户端和进程重启；对 collector 崩溃／长稳、重连次数和恢复时限验收。
+4. 若主要诉求是丰富绘图工具和减少自维护，另做可切换 TradingView 小样对照；若主要诉求是半秒首帧，先以上述实测路径优化，不因插件品牌直接重写客户端或交易后端。
