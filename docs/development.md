@@ -28,7 +28,7 @@
 
 连续纵轴适配已在本地接入：横拖／捏合／惯性按显示帧合并，单个交互场景在途，新场景保持手指基准和惯性时钟；主图／MACD 复用同一场景映射。`ChartEngineCoreTests` 新增 5 项真实 UIKit 宿主回归，包含回到起始比例时覆盖中间请求；模拟器使用 `ChartCalibrationUITests.testContinuousScalePinchPanAndCrosshairFixture` 和 `--chart-calibration-fixture`，无需账号或真实交易。离线优化基准保留 20 次预热、500 次采样及源码哈希，范围和结果见 [行情主文档](market-data.md#连续纵轴适配2026-11-01本地实现)。完整核心、UI 与 Release 的实际结果见 [变更](changes.md)；Mac／模拟器不能代替 iPhone 60／120 Hz、功耗及实时行情并发 A/B。
 
-## 历史仓位加载回归（2026-11-01，仅本地）
+## 历史仓位加载回归（2026-11-01，隔离验证）
 
 `positions.test_review_fixes` 的快照回归覆盖不访问交易所、不写结算、无需补查的已结算页、重试退避、外部手动仓估算，以及日期／分页／用户／模式／Key 隔离。先运行新增两项检查复现失败，再修复；原 `positions.tests` 保留部分平仓、真实零费用、结算修复和每次最多两笔的回归。
 
@@ -39,7 +39,7 @@ PYTHON_DOTENV_DISABLED=1 DB_ENGINE=sqlite USE_REDIS_CACHE=False RUN_SCHEDULER_IN
 
 最终组合 **106 项通过（45.430 秒）**，包含五项新增快照边界检查。SQLite／LocMem 和全部交易所替身仅用于隔离验证。
 
-客户端定向入口为 `TradeToolTests/PositionHistoryLoadingTests` 和 `NativeIntegrationTests`：10 项通过（1.832 秒），覆盖本地先显示、旧服务端兼容、解绑清空、切页、取消和补查失败保留记录。UI 使用 `WebParityUITests/testAllUnboundPositionTabsOnlyShowBindingPrompt`、`testBoundHistoryShowsRecordsWhileExchangeSupplementIsSlow`、`testAllPositionTabsRefreshFromEmptyLists`，最终三项通过（62.433 秒），已检查截图；generic iOS Release 未签名编译通过。证据保存在忽略目录 `.integration-runtime/PositionHistory/`；手机实际绑定账户、真实网络耗时与发布仍待验，初轮失败及修复见 [变更记录](changes.md)。
+客户端定向入口为 `TradeToolTests/PositionHistoryLoadingTests` 和 `NativeIntegrationTests`：10 项通过（1.832 秒），覆盖本地先显示、旧服务端兼容、解绑清空、切页、取消和补查失败保留记录。UI 使用 `WebParityUITests/testAllUnboundPositionTabsOnlyShowBindingPrompt`、`testBoundHistoryShowsRecordsWhileExchangeSupplementIsSlow`、`testAllPositionTabsRefreshFromEmptyLists`，最终三项通过（62.433 秒），已检查截图；generic iOS Release 未签名编译通过。证据保存在忽略目录 `.integration-runtime/PositionHistory/`；后端已配套部署，手机新版安装、实际绑定账户与真实网络耗时仍待验，初轮失败及修复见 [变更记录](changes.md)。
 
 ## 自选与共用交易对回归（2026-11-01）
 
@@ -47,7 +47,7 @@ PYTHON_DOTENV_DISABLED=1 DB_ENGINE=sqlite USE_REDIS_CACHE=False RUN_SCHEDULER_IN
 
 `WatchlistInteractionTests` 覆盖自选增删、隐藏项不参与排序、旧固顶偏好兼容、用户持久化、共享目录缓存和刷新失败保留；与历史／原生接口检查 12 项通过（1.893 秒）。追加 `RetainedTradeRiskTests` 与真实 loopback WSS 检查两项通过（0.528 秒），验证账户核对不清空旧值、相同风险额不发布，选中币种在超过 200 个候选、自选删除／搜索退订及切币种时持续收到所需报价。
 
-UI 用 DEBUG 无网络业务替身：原生排序手柄实际长按拖动并核对顺序、移到顶部；三个交易对入口、自选添加／取消删除／确认删除、过滤和开仓选币；开仓／我的共用止损滑杆与固定按钮、默认头像和紧凑绑定按钮；协议／隐私 X 关闭返回注册表单。首轮纠正搜索可访问名称与父容器覆盖关闭标识，系统删除确认改为显式“取消／删除”警告框。图表退订／恢复的补查复现了并发发送订阅乱序，已按连接串行发送；扩展 `AppearanceTests`／`MarketFastPathTests`／自选与风险回归共 31 项通过（19.332 秒），覆盖旧连接失效及真实 loopback 的最终订阅。最终四个 UI 流程分别通过；共享流程 30.172 秒，原生拖动最终 12.013 秒，其余见 `.integration-runtime/PairPicker/` 的结果包。已查看截图。generic iOS Release 构建、迁移漂移与发布检查结果在 [变更](changes.md) 更新；本地结果不表示 TestFlight／手机完成。
+UI 用 DEBUG 无网络业务替身：原生排序手柄实际长按拖动并核对顺序、移到顶部；三个交易对入口、自选添加／取消删除／确认删除、过滤和开仓选币；开仓／我的共用止损滑杆与固定按钮、默认头像和紧凑绑定按钮；协议／隐私 X 关闭返回注册表单。首轮纠正搜索可访问名称与父容器覆盖关闭标识，系统删除确认改为显式“取消／删除”警告框。图表退订／恢复的补查复现了并发发送订阅乱序，已按连接串行发送；扩展 `AppearanceTests`／`MarketFastPathTests`／自选与风险回归共 31 项通过（19.332 秒），覆盖旧连接失效及真实 loopback 的最终订阅。最终四个 UI 流程分别通过；共享流程 30.172 秒，原生拖动最终 12.013 秒，其余见 `.integration-runtime/PairPicker/` 的结果包。已查看截图。generic iOS Release 未签名构建最终通过，迁移漂移检查通过；生产目录及只读 HTTP／WSS 验收见 [变更](changes.md)；本地结果不表示 TestFlight／手机完成。
 
 ## Python
 
