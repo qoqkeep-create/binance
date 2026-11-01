@@ -9,7 +9,7 @@
 - 用户明确授权本次需要手机测试时完成后直接推送；一般任务仍等用户批准。实现提交 **`7daa36228c9ff48637439da9d8e3cb5d229fdc4d`**，目标 `qoqkeep-create/binance`／`codex/integrated-ios`，复用用户说明的 Jenkins 调用 Apple 打包流程，本轮不修改工作流。
 - 16:42～16:44（北京时间）已部署到 **47.80.22.243（首尔服务器）**，当前 **`integrated-20261101-git-7daa36228c9f`**。包含此前 `915aee0` 行情协调／公共出口保护及本轮冷读减量／诊断 API。仅新增诊断表 migration，发布前备份，旧版／镜像保留；不改交易规则、账号密码或已有订单。发布前只读核对绑定、活动仓位、待成交委托、未决命令均为 0。
 - 六容器 healthy、HTTPS 健康 200；BTC1h／1500 根 gzip 单次 709.45 ms（history 277.84 ms），无 stale／pending，追踪及服务端时间头正确。鉴权 WSS ready、订阅 ack、BTC ticker／1m K 线与应用 ping-pong 通过。该样本不代表手机首帧或延迟分位数。
-- 无绑定 QA 固定诊断样本（build 0／cancelled）两次提交 200、同 trace 数据库仅一条、匿名 401，注册仍开启。未做真实交易；GitHub 已接收至 `7628111` 时观察到 Apple 端 Test 和 Archive 均 in_progress；TestFlight 分发、安装与手机上报仍待核实。既有本地 67 项后端、161 项 iOS、最终定向 9／5 项及隔离三次加载落库／Release 证据沿用下节，本轮没有无意义重复测试。
+- 无绑定 QA 固定诊断样本（build 0／cancelled）两次提交 200、同 trace 数据库仅一条、匿名 401，注册仍开启。未做真实交易；GitHub 已接收 `7628111`，Apple 端 Test 和 Archive 初次为 in_progress，后续均 completed／success；后续资源／文档提交不改 iOS 源码。TestFlight 新构建号、分发、安装与手机上报仍待核实。既有本地 67 项后端、161 项 iOS、最终定向 9／5 项及隔离三次加载落库／Release 证据沿用下节，本轮没有无意义重复测试。
 - 更新部署、行情、配置、已知事项、TestFlight 和本记录，说明本次单次授权与构建／实机边界。下节“仅本地”保留上次完成时的状态；以本节及 [最新运维](operations.md#最新发布与核验2026-11-01) 为当前发布状态。
 
 ## 2026-11-01：TestFlight 13／14 速度排查与冷读减量（仅本地）
