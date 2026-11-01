@@ -17,15 +17,15 @@ import UIKit
           blue: CGFloat(hex & 255) / 255, alpha: 1)
       })
   }
-  static var page: Color { color(0xF5F5F5, 0x0B0E11, leadLight: 0xF0F6FB, leadDark: 0x0B1520) }
-  static var surface: Color { color(0xFFFFFF, 0x1A1D23, leadDark: 0x112131) }
-  static var input: Color { color(0xF3F4F6, 0x0B0E11, leadDark: 0x182B3D) }
-  static var secondaryButton: Color { color(0xF3F4F6, 0x2B2F36) }
-  static var border: Color { color(0xE5E7EB, 0x2B2F36, leadDark: 0x284159) }
-  static var text: Color { color(0x111827, 0xFFFFFF) }
-  static var secondary: Color { color(0x4B5563, 0x9CA3AF) }
-  static var muted: Color { color(0x6B7280, 0x6B7280) }
-  static var placeholder: Color { color(0x9CA3AF, 0x4B5563) }
+  static var page: Color { color(0xF5F5F5, 0x212731, leadLight: 0xF0F6FB) }
+  static var surface: Color { color(0xFFFFFF, 0x272F3A) }
+  static var input: Color { color(0xF3F4F6, 0x212731) }
+  static var secondaryButton: Color { color(0xF3F4F6, 0x2B3441) }
+  static var border: Color { color(0xE5E7EB, 0x333B47) }
+  static var text: Color { color(0x111827, 0xEAECEF) }
+  static var secondary: Color { color(0x4B5563, 0x848E9C) }
+  static var muted: Color { color(0x6B7280, 0x848E9C) }
+  static var placeholder: Color { color(0x9CA3AF, 0x848E9C) }
   static var brand: Color { color(0xF0B90B, 0xF0B90B, leadLight: 0x58B9EF, leadDark: 0x58B9EF) }
   static var brandEnd: Color { color(0xD9A70A, 0xD9A70A, leadLight: 0x38A5E5, leadDark: 0x38A5E5) }
   static let success = Color(red: 14 / 255, green: 203 / 255, blue: 129 / 255)
@@ -262,16 +262,19 @@ struct WebPageHeader<Trailing: View>: View {
   var back = true
   var centered = true
   var height: CGFloat = 60
+  var backAction: (() -> Void)?
   @ViewBuilder var trailing: Trailing
   @Environment(\.dismiss) private var dismiss
   init(
     _ title: String, back: Bool = true, centered: Bool = true, height: CGFloat = 60,
+    backAction: (() -> Void)? = nil,
     @ViewBuilder trailing: () -> Trailing = { EmptyView() }
   ) {
     self.title = title
     self.back = back
     self.centered = centered
     self.height = height
+    self.backAction = backAction
     self.trailing = trailing()
   }
   var body: some View {
@@ -282,7 +285,7 @@ struct WebPageHeader<Trailing: View>: View {
       HStack(spacing: 8) {
         if back {
           Button {
-            dismiss()
+            if let backAction { backAction() } else { dismiss() }
           } label: {
             WebIcon("arrow.left", size: 20).frame(width: 36, height: 36)
           }.buttonStyle(.plain).accessibilityLabel("返回")
@@ -308,11 +311,11 @@ struct WebModal<Content: View>: View {
   var contentSpacing: CGFloat = 20
   var closeIconSize: CGFloat = 16
   var closeButtonSize: CGFloat = 24
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @ViewBuilder var content: Content
   var body: some View {
     ZStack(alignment: alignment) {
-      Color.black.opacity(overlayOpacity).ignoresSafeArea().onTapGesture { dismiss() }
+      WebModalBackdrop(opacity: overlayOpacity)
       VStack(alignment: .leading, spacing: contentSpacing) {
         if !title.isEmpty {
           HStack {
@@ -331,7 +334,7 @@ struct WebModal<Content: View>: View {
       }.font(.system(size: 14)).foregroundStyle(WebTheme.text).padding(24)
         .frame(maxWidth: maximumWidth).background(
           WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)
-        ).padding(.horizontal, 16).padding(.top, 16).padding(.bottom, alignment == .bottom ? 8 : 16)
+        ).padding(.horizontal, 16).padding(.top, 16).padding(.bottom, alignment == .bottom ? 8 : 16).webModalCard()
     }.presentationBackground(.clear)
   }
 }
@@ -365,16 +368,18 @@ struct USDTNotice: View {
 private struct WebPageModifier: ViewModifier {
   let title: String
   var refresh: (() -> Void)? = nil
+  var backAction: (() -> Void)? = nil
   var root: Bool { ["开仓", "持仓", "信号", "我的"].contains(title) }
   func body(content: Content) -> some View {
     content.background(WebTheme.page.ignoresSafeArea()).foregroundStyle(WebTheme.text)
       .font(.system(size: 16)).tint(WebTheme.brand).buttonStyle(.plain)
+      .interactivePopGestureEnabled()
       .toolbar(.hidden, for: .navigationBar)
       .safeAreaInset(edge: .top, spacing: 0) {
         if !root {
           WebPageHeader(
             title, centered: !["用户协议", "隐私政策", "看盘计划"].contains(title),
-            height: title == "日志" ? 56 : 60
+            height: title == "日志" ? 56 : 60, backAction: backAction
           ) {
             if let refresh {
               Button(action: refresh) {
@@ -389,15 +394,16 @@ private struct WebPageModifier: ViewModifier {
 }
 
 extension View {
-  func usdtPage(_ title: String, refresh: (() -> Void)? = nil) -> some View {
-    modifier(WebPageModifier(title: title, refresh: refresh))
+  func usdtPage(_ title: String, refresh: (() -> Void)? = nil, backAction: (() -> Void)? = nil) -> some View {
+    modifier(WebPageModifier(title: title, refresh: refresh, backAction: backAction))
   }
   func webModal<Content: View>(
-    isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content
+    isPresented: Binding<Bool>, motion: WebModalMotion? = nil,
+    @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     // Observe selected values in the presenting body before the first presentation.
     let modal = content()
-    return fullScreenCover(isPresented: isPresented) { modal.presentationBackground(.clear) }
+    return modifier(WebModalPresenter(isPresented: isPresented, preferredMotion: motion, modal: modal))
   }
 }
 
@@ -732,11 +738,11 @@ struct WebFinanceModal<Content: View>: View {
   let title: String
   var icon = "wallet-cards"
   @ViewBuilder var content: Content
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   var body: some View {
     GeometryReader { geometry in
       ZStack {
-        Color.black.opacity(0.6).ignoresSafeArea().onTapGesture { dismiss() }
+        WebModalBackdrop()
         VStack(spacing: 0) {
           HStack(spacing: 12) {
             WebIcon(icon, size: 22).foregroundStyle(WebTheme.brand)
@@ -753,9 +759,9 @@ struct WebFinanceModal<Content: View>: View {
             .scrollIndicators(.hidden).fixedSize(horizontal: false, vertical: true)
         }.foregroundStyle(.white).frame(maxWidth: 384).frame(maxHeight: geometry.size.height * 0.85)
           .background(
-            Color(red: 26 / 255, green: 29 / 255, blue: 35 / 255),
+            BinanceTheme.surface,
             in: RoundedRectangle(cornerRadius: 10)
-          ).padding(16).frame(maxWidth: .infinity, maxHeight: .infinity)
+          ).padding(16).webModalCard().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }.presentationBackground(.clear).preferredColorScheme(.dark)
   }
@@ -772,6 +778,239 @@ struct WebFinanceRow: View {
       Text(value).fontWeight(.medium).foregroundStyle(color).multilineTextAlignment(.trailing)
     }.font(.system(size: 14)).padding(.vertical, 12).overlay(alignment: .bottom) {
       Rectangle().fill(.white.opacity(0.1)).frame(height: 1)
+    }
+  }
+}
+
+private struct WebModalCloseKey: EnvironmentKey { static let defaultValue: (() -> Void)? = nil }
+private struct WebModalPhaseKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
+private struct WebModalOffsetKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+private struct WebModalUnderlyingKey: EnvironmentKey { static let defaultValue: Double = 0 }
+private struct WebModalBaseKey: EnvironmentKey { static let defaultValue: Double = 0 }
+private struct WebModalDimmingPreferenceKey: PreferenceKey {
+  static var defaultValue = 0.6
+  static func reduce(value: inout Double, nextValue: () -> Double) { value = nextValue() }
+}
+private struct WebModalOpacityKey: EnvironmentKey { static let defaultValue: Double = 1 }
+private struct WebModalDragKey: EnvironmentKey { static let defaultValue: ((CGFloat, Bool) -> Void)? = nil }
+private struct WebModalBlockedKey: PreferenceKey {
+  static var defaultValue = false
+  static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+struct WebDismissAction {
+  let close: (() -> Void)?
+  let fallback: DismissAction
+  func callAsFunction() { if let close { close() } else { fallback() } }
+}
+extension EnvironmentValues {
+  fileprivate var webModalCloseAction: (() -> Void)? {
+    get { self[WebModalCloseKey.self] } set { self[WebModalCloseKey.self] = newValue }
+  }
+  fileprivate var webModalPhase: CGFloat {
+    get { self[WebModalPhaseKey.self] } set { self[WebModalPhaseKey.self] = newValue }
+  }
+  fileprivate var webModalOffset: CGFloat {
+    get { self[WebModalOffsetKey.self] } set { self[WebModalOffsetKey.self] = newValue }
+  }
+  fileprivate var webModalOpacity: Double {
+    get { self[WebModalOpacityKey.self] } set { self[WebModalOpacityKey.self] = newValue }
+  }
+  fileprivate var webModalDrag: ((CGFloat, Bool) -> Void)? {
+    get { self[WebModalDragKey.self] } set { self[WebModalDragKey.self] = newValue }
+  }
+  fileprivate var webModalUnderlying: Double {
+    get { self[WebModalUnderlyingKey.self] } set { self[WebModalUnderlyingKey.self] = newValue }
+  }
+  fileprivate var webModalBase: Double {
+    get { self[WebModalBaseKey.self] } set { self[WebModalBaseKey.self] = newValue }
+  }
+  var webDismiss: WebDismissAction { WebDismissAction(close: self[WebModalCloseKey.self], fallback: dismiss) }
+}
+
+struct WebModalBackdrop: View {
+  var opacity: Double = 0.6
+  var dismissible = true
+  @Environment(\.webDismiss) private var dismiss
+  @Environment(\.self) private var environment
+  var body: some View {
+    let base = environment[WebModalBaseKey.self]
+    let desired = opacity * Double(environment[WebModalPhaseKey.self])
+    // Nested confirmation layers reach the requested total dimming, rather
+    // than multiplying two black overlays into an unexpectedly dark screen.
+    let alpha = max(0, min(1, (desired - base) / max(0.001, 1 - base)))
+    Color.black.opacity(alpha)
+      .preference(key: WebModalDimmingPreferenceKey.self, value: opacity)
+      .ignoresSafeArea().contentShape(Rectangle()).onTapGesture { if dismissible { dismiss() } }
+      .accessibilityIdentifier("modal.backdrop")
+  }
+}
+enum WebModalMotion: Equatable {
+  case fade, slide
+  static func resolve(cardHeight: CGFloat, containerHeight: CGFloat, reduceMotion: Bool,
+    preferred: Self? = nil) -> Self {
+    if reduceMotion { return .fade }
+    return preferred ?? (cardHeight >= containerHeight * 0.5 ? .slide : .fade)
+  }
+  var openingDuration: Double { self == .slide ? 0.18 : 0.16 }
+}
+private struct WebModalCardFrameKey: PreferenceKey {
+  static var defaultValue: CGRect = .zero
+  static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+    let next = nextValue()
+    if next.height > value.height { value = next }
+  }
+}
+private struct WebModalCard: ViewModifier {
+  @Environment(\.self) private var environment
+  @State private var top: CGFloat = 0
+  @State private var dragging = false
+  func body(content: Content) -> some View {
+    content.contentShape(Rectangle()).opacity(environment[WebModalOpacityKey.self])
+      .offset(y: environment[WebModalOffsetKey.self])
+      .background(GeometryReader { geometry in
+        Color.clear.preference(key: WebModalCardFrameKey.self, value: geometry.frame(in: .global))
+      })
+      .onPreferenceChange(WebModalCardFrameKey.self) { top = $0.minY }
+      .simultaneousGesture(DragGesture(minimumDistance: 12, coordinateSpace: .global).onChanged { value in
+        if !dragging {
+          guard environment[WebModalDragKey.self] != nil,
+                value.startLocation.y >= top, value.startLocation.y < top + 80,
+                value.translation.height > abs(value.translation.width) else { return }
+          dragging = true
+        }
+        environment[WebModalDragKey.self]?(max(0, value.translation.height), false)
+      }.onEnded { value in
+        guard dragging else { return }
+        dragging = false
+        environment[WebModalDragKey.self]?(max(0, value.predictedEndTranslation.height), true)
+      })
+  }
+}
+
+extension View {
+  func webModalCard() -> some View { modifier(WebModalCard()) }
+  func webModalDismissDisabled(_ disabled: Bool) -> some View {
+    preference(key: WebModalBlockedKey.self, value: disabled)
+  }
+  func webModal<Item: Identifiable, Content: View>(item: Binding<Item?>,
+      @ViewBuilder content: @escaping (Item) -> Content) -> some View {
+    modifier(WebItemModalPresenter(item: item, builder: content))
+  }
+}
+private struct WebModalPresenter<Modal: View>: ViewModifier {
+  @Binding var isPresented: Bool
+  let preferredMotion: WebModalMotion?
+  let modal: Modal
+  @State private var cover = false
+  func body(content: Content) -> some View {
+    content.fullScreenCover(isPresented: $cover) {
+      WebModalStage(isPresented: $isPresented, preferredMotion: preferredMotion, modal: modal) {
+        var transaction = Transaction(); transaction.disablesAnimations = true
+        withTransaction(transaction) { cover = false }
+      }.presentationBackground(.clear)
+    }.onChange(of: isPresented, initial: true) { _, shown in
+      if shown {
+        var transaction = Transaction(); transaction.disablesAnimations = true
+        withTransaction(transaction) { cover = true }
+      }
+    }.onChange(of: cover) { _, shown in
+      if !shown { isPresented = false }
+    }
+  }
+}
+private struct WebModalStage<Modal: View>: View {
+  @Binding var isPresented: Bool
+  let preferredMotion: WebModalMotion?
+  let modal: Modal
+  let finished: () -> Void
+  @State private var progress: CGFloat = 0
+  @State private var drag: CGFloat = 0
+  @State private var blocked = false
+  @State private var closing = false
+  @State private var overlayOpacity = 0.6
+  @Environment(\.webModalUnderlying) private var underlying
+  @State private var motion: WebModalMotion?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  var body: some View {
+    GeometryReader { geometry in
+      modal
+        .environment(\.webModalBase, underlying)
+        .environment(\.webModalUnderlying, max(underlying, overlayOpacity * Double(progress * max(0, 1 - drag / geometry.size.height))))
+        .environment(\.webModalCloseAction, { if !blocked { isPresented = false } })
+        .environment(\.webModalPhase, progress * max(0, 1 - drag / geometry.size.height))
+        .environment(\.webModalOffset, motion == .slide ? (1 - progress) * geometry.size.height + drag : 0)
+        .environment(\.webModalOpacity, motion == .slide ? 1 : Double(progress * max(0, 1 - drag / geometry.size.height)))
+        .environment(\.webModalDrag, { amount, ended in
+          guard !blocked, !closing else { return }
+          if ended {
+            if amount > 130 { isPresented = false }
+            else { withAnimation(.easeOut(duration: 0.2)) { drag = 0 } }
+          } else { drag = amount }
+        })
+        .onPreferenceChange(WebModalBlockedKey.self) { blocked = $0 }
+        .onPreferenceChange(WebModalDimmingPreferenceKey.self) { overlayOpacity = $0 }
+        .onPreferenceChange(WebModalCardFrameKey.self) { frame in
+          guard motion == nil, frame.height > 0 else { return }
+          let selected = WebModalMotion.resolve(cardHeight: frame.height,
+            containerHeight: geometry.size.height, reduceMotion: reduceMotion, preferred: preferredMotion)
+          motion = selected
+          Task { @MainActor in
+            await Task.yield()
+            guard isPresented, !closing else { return }
+            var transaction = Transaction(animation: .easeOut(duration: selected.openingDuration))
+            transaction.disablesAnimations = false
+            withTransaction(transaction) { progress = 1 }
+          }
+        }
+        .onChange(of: isPresented) { _, shown in
+          guard !shown, !closing else { return }
+          closing = true
+          withAnimation(.easeOut(duration: 0.14), completionCriteria: .logicallyComplete) {
+            progress = 0; drag = 0
+          } completion: { finished() }
+        }
+    }
+  }
+}
+
+/// Large navigation/form panels use the shared fast presentation and header drag dismissal.
+struct WebSheet<Content: View>: View {
+  @ViewBuilder var content: Content
+  var body: some View {
+    GeometryReader { geometry in
+      ZStack(alignment: .bottom) {
+        WebModalBackdrop(opacity: 0.45)
+        VStack(spacing: 0) {
+          Capsule().fill(WebTheme.muted.opacity(0.5)).frame(width: 36, height: 5)
+            .padding(.vertical, 10).accessibilityHidden(true)
+          content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }.frame(maxWidth: 720).frame(height: geometry.size.height * 0.96)
+          .background(BinanceTheme.background)
+          .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24))
+          .webModalCard()
+      }
+    }.ignoresSafeArea(.container, edges: .bottom)
+  }
+}
+
+extension View {
+  func webSheet<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+    webModal(isPresented: isPresented) { WebSheet(content: content) }
+  }
+  func webSheet<Item: Identifiable, Content: View>(item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
+    webModal(item: item) { selected in WebSheet { content(selected) } }
+  }
+}
+
+private struct WebItemModalPresenter<Item: Identifiable, Modal: View>: ViewModifier {
+  @Binding var item: Item?
+  let builder: (Item) -> Modal
+  @State private var previous: Item?
+  func body(content: Content) -> some View {
+    content.webModal(isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } })) {
+      if let selected = item ?? previous { builder(selected) }
+    }.onChange(of: item?.id, initial: true) { _, _ in
+      if let item { previous = item }
     }
   }
 }

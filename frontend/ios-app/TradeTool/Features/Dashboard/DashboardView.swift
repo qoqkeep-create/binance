@@ -41,7 +41,9 @@ private struct MarketSortSelection: Equatable {
 struct DashboardView: View {
     @ObservedObject var viewModel: DashboardViewModel
     let apiClient: any APIClient
-    let realtimeClient: RealtimeClient
+    @ObservedObject var realtimeClient: RealtimeClient
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isVisible = false
     @Binding var isShowingMarketSearch: Bool
     @Binding var isShowingMarketSettings: Bool
     @Binding var selectedMarket: MarketSnapshot?
@@ -121,6 +123,17 @@ struct DashboardView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            isVisible = true
+            realtimeClient.setLatencyMonitoring(scenePhase == .active)
+        }
+        .onDisappear {
+            isVisible = false
+            realtimeClient.setLatencyMonitoring(false)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            realtimeClient.setLatencyMonitoring(isVisible && phase == .active)
+        }
         .navigationDestination(isPresented: $isShowingMarketSearch) {
             MarketSearchView(
                 apiClient: apiClient,
@@ -177,6 +190,8 @@ struct DashboardView: View {
 
             Spacer()
 
+            MarketLatencyBadge(latency: realtimeClient.latency)
+                .padding(.trailing, 6)
             Button {
                 isShowingMarketSettings = true
             } label: {
@@ -321,6 +336,36 @@ struct DashboardView: View {
                 .foregroundStyle(BinanceTheme.secondaryText)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+private struct MarketLatencyBadge: View {
+    let latency: RealtimeLatency
+    private var color: Color {
+        switch latency.quality {
+        case .good: BinanceTheme.positive
+        case .fair: BinanceTheme.accentText
+        case .poor: BinanceTheme.negative
+        }
+    }
+    private var bars: Int {
+        switch latency.quality { case .good: 4; case .fair: 3; case .poor: 1 }
+    }
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(latency.text).font(.system(size: 11, weight: .medium)).monospacedDigit()
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<4) { index in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(index < bars ? color : BinanceTheme.secondaryText.opacity(0.2))
+                        .frame(width: 3, height: CGFloat(4 + index * 3))
+                }
+            }.accessibilityHidden(true)
+        }.foregroundStyle(color).frame(minHeight: 30)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("网络延迟")
+            .accessibilityValue(latency.text + ", " + latency.quality.rawValue)
+            .accessibilityIdentifier("market.latency")
     }
 }
 

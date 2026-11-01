@@ -181,7 +181,7 @@ struct USDTTradeView: View {
       .onChange(of: orderType) { _, _ in resetDraft() }
       .onChange(of: strategyID) { _, _ in requestIdentity = UUID().uuidString }
       .onChange(of: store.activeStrategy?.value("id")) { _, id in strategyID = id ?? "" }
-      .sheet(isPresented: $showChart) {
+      .webSheet(isPresented: $showChart) {
         NavigationStack {
           MarketChartView(
             market: container.dashboardViewModel.markets(onlyVisible: false).first {
@@ -192,7 +192,7 @@ struct USDTTradeView: View {
                 updatedAt: .now),
             availableMarkets: container.dashboardViewModel.markets(onlyVisible: false),
             apiClient: container.apiClient, realtimeClient: container.realtimeClient,
-            initialInterval: .oneHour)
+            initialInterval: .oneHour, onClose: { showChart = false })
         }
       }
       .webModal(isPresented: $showSymbols) {
@@ -493,36 +493,49 @@ struct USDTPositionsView: View {
               Spacer()
             }
           }
-          USDTNotice(text: notice)
-          if model.loading && model.items.isEmpty {
-            Text("加载中...").font(.system(size: 16)).foregroundStyle(WebTheme.muted).frame(
-              maxWidth: .infinity
-            ).padding(.vertical, 48)
-          }
-          if !model.loading && model.items.isEmpty {
-            USDTEmptyState(
-              title: segment == "positions" ? "暂无持仓" : segment == "limits" ? "暂无限价委托" : "暂无历史仓位记录",
-              error: model.error
-            ) { Task { await reload() } }
-          }
-          ForEach(Array(model.items.enumerated()), id: \.offset) { _, row in
-            if segment == "positions" {
-              positionCard(row)
-            } else if segment == "limits" {
-              limitCard(row)
-            } else {
-              historyCard(row)
+          if segment != "history" && !store.isBound {
+            Text("请先绑定 Binance Api").font(.system(size: 16))
+              .foregroundStyle(WebTheme.muted).frame(maxWidth: .infinity).padding(.vertical, 48)
+          } else {
+            USDTNotice(text: notice)
+            if model.loading && model.items.isEmpty {
+              Text("加载中...").font(.system(size: 16)).foregroundStyle(WebTheme.muted).frame(
+                maxWidth: .infinity
+              ).padding(.vertical, 48)
+            }
+            if !model.loading && model.items.isEmpty {
+              USDTEmptyState(
+                title: segment == "positions" ? "暂无持仓" : segment == "limits" ? "暂无限价委托" : "暂无历史仓位记录",
+                error: model.error
+              ) { Task { await reload() } }
+            }
+            ForEach(Array(model.items.enumerated()), id: \.offset) { _, row in
+              if segment == "positions" {
+                positionCard(row)
+              } else if segment == "limits" {
+                limitCard(row)
+              } else {
+                historyCard(row)
+              }
+            }
+            if segment == "positions", model.items.count > 1 || !closeQueue.isEmpty { closeAllBar }
+            if model.hasNext {
+              Button("加载更多") {
+                model.page += 1
+                Task { await reload(append: true) }
+              }.buttonStyle(WebButtonStyle(kind: .secondary, fontSize: 14))
             }
           }
-          if segment == "positions", model.items.count > 1 || !closeQueue.isEmpty { closeAllBar }
-          if model.hasNext {
-            Button("加载更多") {
-              model.page += 1
-              Task { await reload(append: true) }
-            }.buttonStyle(WebButtonStyle(kind: .secondary, fontSize: 14))
-          }
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-      }.scrollIndicators(.hidden)
+      }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
+        .accessibilityIdentifier("positions.list")
+        .refreshable {
+          let scope = store.scope
+          await store.refresh()
+          guard scope == store.scope else { return }
+          model.page = 1
+          await reload()
+        }
     }.usdtPage("持仓")
       .task(id: store.scope) {
         if let data = UserDefaults.standard.data(forKey: closeQueueKey),
@@ -533,11 +546,7 @@ struct USDTPositionsView: View {
           closeQueue = []
         }
       }
-      .task(id: "\(store.scope):\(segment):\(filter)") {
-        model.page = 1
-        await reload()
-      }
-      .refreshable {
+      .task(id: "\(store.scope):\(segment):\(filter):\(store.isBound)") {
         model.page = 1
         await reload()
       }
@@ -563,20 +572,20 @@ struct USDTPositionsView: View {
           }
         }
       }
-      .fullScreenCover(item: $operation) { operation in
+      .webModal(item: $operation) { operation in
         USDTPositionControls(position: operation.position, action: operation.action) {
           notice = $0
           Task { await reload() }
         }.presentationBackground(.clear)
       }
-      .sheet(isPresented: $chart) {
+      .webSheet(isPresented: $chart) {
         NavigationStack {
           MarketChartView(
             market: MarketSnapshot(
               symbol: selected.value("symbol"), quoteAsset: "USDT",
               price: Double(selected.value("current_price")) ?? 0, changePercent24h: 0,
               updatedAt: .now), apiClient: container.apiClient,
-            realtimeClient: container.realtimeClient)
+            realtimeClient: container.realtimeClient, onClose: { chart = false })
         }
       }
   }
@@ -661,6 +670,12 @@ struct USDTPositionsView: View {
     }
   }
   private func reload(append: Bool = false) async {
+    guard segment == "history" || store.isBound else {
+      model.value = .null
+      model.error = ""
+      model.hasNext = false
+      return
+    }
     let path =
       segment == "positions"
       ? "/v1/position/list"
@@ -978,7 +993,7 @@ struct USDTCommandsView: View {
 
 private struct USDTPositionControls: View {
   @EnvironmentObject private var store: USDTStore
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   let position: JSONValue
   let action: String
   let completed: (String) -> Void

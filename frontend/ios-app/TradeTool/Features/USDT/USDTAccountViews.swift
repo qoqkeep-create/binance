@@ -11,7 +11,6 @@ struct USDTProfileView: View {
   @State private var stopLoss = false
   @State private var collect = false
   @State private var normalize = false
-  @State private var reminder = false
   @State private var modeConfirm = false
   @State private var version: JSONValue = .null
   @State private var collectAccount: JSONValue = .null
@@ -100,25 +99,15 @@ struct USDTProfileView: View {
             }
             Spacer(minLength: 0)
             if !lead {
-              VStack(spacing: 8) {
+              VStack {
+                Spacer(minLength: 0)
                 Button {
                   normalize = true
                 } label: {
                   WebLabel("归集余额", "wallet.bifold")
                 }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12, fullWidth: false)).disabled(
                   !canCollect)
-                Button {
-                  reminder = true
-                } label: {
-                  HStack(spacing: 6) {
-                    WebIcon("bell", size: 14)
-                    Text("补资提醒")
-                  }
-                }.buttonStyle(
-                  WebButtonStyle(
-                    kind: .charcoal, height: 36, fontSize: 12, fullWidth: false, weight: .semibold)
-                ).disabled(!canRemind)
-              }
+              }.frame(height: 80)
             }
           }
           if lead {
@@ -182,11 +171,6 @@ struct USDTProfileView: View {
               } label: {
                 menuRow("看盘计划", "doc.text", small: true)
               }
-              NavigationLink {
-                USDTResearchView()
-              } label: {
-                menuRow("信号研究", "chart.bar.xaxis", small: true)
-              }
             }
             NavigationLink {
               USDTIndicatorsView()
@@ -222,10 +206,12 @@ struct USDTProfileView: View {
         Button {
           logout = true
         } label: {
-          WebLabel("退出登录", "rectangle.portrait.and.arrow.right").font(
-            .system(size: 16, weight: .medium)
-          ).underline().foregroundStyle(WebTheme.danger).padding(.vertical, 16)
-        }.frame(minHeight: 80)
+          Text("退出登录").font(.system(size: 16, weight: .medium))
+            .foregroundStyle(WebTheme.danger)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(WebTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }.buttonStyle(.plain).accessibilityIdentifier("profile.logout")
       }.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 32).frame(maxWidth: 448).frame(
         maxWidth: .infinity)
     }.scrollIndicators(.hidden).usdtPage("我的")
@@ -234,7 +220,7 @@ struct USDTProfileView: View {
         version = (try? await store.get("/v1/account/version")) ?? .null
         collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
       }.refreshable { await store.refresh() }
-      .webModal(isPresented: $binding) { USDTBindingView() }
+      .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
       .webModal(isPresented: $stopLoss) { USDTStopLossView() }
       .webModal(isPresented: $collect) {
         USDTCollectAccountView().onDisappear {
@@ -244,7 +230,6 @@ struct USDTProfileView: View {
         }
       }
       .webModal(isPresented: $normalize) { USDTCapitalView() }
-      .webModal(isPresented: $reminder) { USDTCapitalReminderView() }
       .webModal(isPresented: $logout) {
         WebModal(title: "确认退出登录") {
           Text("确认要退出登录吗？").foregroundStyle(WebTheme.secondary)
@@ -278,7 +263,7 @@ struct USDTProfileView: View {
   private var accountBackground: LinearGradient {
     LinearGradient(
       colors: scheme == .dark
-        ? [WebTheme.brand.opacity(0.05), WebTheme.brand.opacity(0.1)]
+        ? [BinanceTheme.surface, BinanceTheme.elevated]
         : lead
           ? [
             Color(red: 240 / 255, green: 249 / 255, blue: 255 / 255),
@@ -320,10 +305,6 @@ struct USDTProfileView: View {
   private var canCollect: Bool {
     balancesKnown
       && usableTotal - (Decimal(string: store.riskAmount) ?? 0) * 5 >= Decimal(string: "0.01")!
-  }
-  private var canRemind: Bool {
-    balancesKnown
-      && usableTotal < (Decimal(string: store.riskAmount) ?? 0) * Decimal(string: "1.5")!
   }
   private func menuRow(
     _ title: String, _ icon: String, value: String = "", amount: Bool = false, small: Bool = false,
@@ -582,7 +563,7 @@ struct USDTStopLossView: View {
 }
 
 struct USDTCapitalView: View {
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @EnvironmentObject private var store: USDTStore
   @State private var notice = ""
   @State private var preview: JSONValue = .null
@@ -857,7 +838,7 @@ struct USDTSettingsView: View {
 
 struct USDTCollectAccountView: View {
   @EnvironmentObject private var store: USDTStore
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @State private var address = ""
   @State private var network = ""
   @State private var accountType = ""
@@ -936,7 +917,7 @@ struct USDTCollectAccountView: View {
 
 struct USDTCapitalReminderView: View {
   @EnvironmentObject private var store: USDTStore
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @State private var preview: JSONValue = .null
   @State private var busy = false
   @State private var notice = ""

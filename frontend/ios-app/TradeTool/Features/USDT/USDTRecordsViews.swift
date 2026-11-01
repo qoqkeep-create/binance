@@ -3,23 +3,19 @@ import SwiftUI
 struct USDTSignalsView: View {
   @EnvironmentObject private var store: USDTStore
   @StateObject private var model = USDTPageModel()
-  @State private var source = "external"
   @State private var rules = false
   let openChart: (String, String) -> Void
   var body: some View {
     VStack(spacing: 0) {
-      WebTabs(tabs: [("external", "外部"), ("internal", "内部")], selection: $source)
-        .overlay(alignment: .trailing) {
-          if source == "internal" {
-            Button {
-              rules = true
-            } label: {
-              Color.clear.frame(width: 32, height: 32).overlay {
-                WebIcon("info.circle", size: 18).foregroundStyle(WebTheme.muted)
-              }.contentShape(Rectangle())
-            }.buttonStyle(.plain).padding(.trailing, 8).zIndex(1).accessibilityLabel("内部信号规则")
-          }
-        }
+      WebPageHeader("信号", back: false, centered: true, height: 60, trailing: {
+        Button {
+          rules = true
+        } label: {
+          Color.clear.frame(width: 32, height: 32).overlay {
+            WebIcon("info.circle", size: 18).foregroundStyle(WebTheme.muted)
+          }.contentShape(Rectangle())
+        }.buttonStyle(.plain).padding(.trailing, 8).zIndex(1).accessibilityLabel("内部信号规则")
+      })
       ScrollView {
         VStack(spacing: 10) {
           ForEach(Array(model.items.enumerated()), id: \.offset) { _, row in
@@ -33,13 +29,13 @@ struct USDTSignalsView: View {
             Text(
               model.loading
                 ? "加载中..."
-                : model.error.isEmpty ? (source == "external" ? "暂无外部信号" : "暂无内部信号") : model.error
+                : model.error.isEmpty ? "暂无内部信号" : model.error
             ).font(.system(size: 14)).foregroundStyle(WebTheme.muted).frame(maxWidth: .infinity)
               .padding(.top, 64)
           }
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).refreshable { await load() }
-    }.usdtPage("信号").task(id: "\(store.scope):\(source)") { await load() }
+    }.usdtPage("信号").task(id: store.scope) { await load() }
       .webModal(isPresented: $rules) {
         WebModal(title: "信号规则") {
           ScrollView {
@@ -69,8 +65,8 @@ struct USDTSignalsView: View {
         WebDirection(long: ["LONG", "long", "0"].contains(row.value("direction")))
         Text(row.value("symbol").replacingOccurrences(of: "USDT", with: "")).font(
           .system(size: 16, weight: .semibold))
-        WebBadge(text: source == "internal" ? "自有" : "外部", color: WebTheme.muted)
-        if source == "internal", row["score"] != nil {
+        WebBadge(text: "自有", color: WebTheme.muted)
+        if row["score"] != nil {
           Text("\(row.value("score"))分").font(.system(size: 12, weight: .medium)).foregroundStyle(
             WebTheme.brand)
         }
@@ -91,9 +87,6 @@ struct USDTSignalsView: View {
           WebBadge(text: row.value("final_action"))
         }
         Spacer(minLength: 0)
-        if source == "external" {
-          Text(row.value("price_display", fallback: "")).font(.system(size: 14, weight: .medium))
-        }
       }
       if !row.value("comment", fallback: "").isEmpty {
         Text(row.value("comment")).font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
@@ -112,7 +105,7 @@ struct USDTSignalsView: View {
   }
   private func load() async {
     await model.load(
-      store, path: "/v1/trade/tradingview/signals", query: [.init(name: "source", value: source)])
+      store, path: "/v1/trade/tradingview/signals", query: [.init(name: "source", value: "internal")])
   }
 }
 

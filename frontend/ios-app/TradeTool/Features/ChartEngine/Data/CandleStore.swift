@@ -59,15 +59,29 @@ actor CandleStore {
 
     func installSnapshot(
         closedCandles: [ChartCandle],
-        liveCandle: ChartCandle? = nil
+        liveCandle: ChartCandle? = nil,
+        preservingNewerData: Bool = false
     ) -> ChartCandleSnapshot {
+        let previousLive = liveTail
+        let latestIncomingClosed = closedCandles.map(\.openTime).max() ?? Int64.min
+        let newerClosed = preservingNewerData
+            ? history.candles.filter { $0.openTime > latestIncomingClosed } : []
         history = ChartCandleHistory(
             candles: Self.normalizedClosed(
-                closedCandles,
+                closedCandles + newerClosed,
                 limit: historyLimit
             )
         )
         liveTail = liveCandle.map(preservingTradingData(in:))
+        if preservingNewerData, let previousLive,
+           previousLive.openTime >= (liveCandle?.openTime ?? Int64.min),
+           previousLive.openTime > (history.candles.last?.openTime ?? Int64.min) {
+            liveTail = previousLive.withTradingData(
+                liveCandle?.openTime == previousLive.openTime
+                    ? liveCandle?.tradingData ?? previousLive.tradingData : previousLive.tradingData)
+        }
+        if preservingNewerData, let tail = liveTail,
+           tail.openTime <= (history.candles.last?.openTime ?? Int64.min) { liveTail = nil }
         revision &+= 1
         return snapshot()
     }

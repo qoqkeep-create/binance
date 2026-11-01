@@ -49,6 +49,9 @@ struct MarketKlineHistoryResponse: Decodable, Sendable {
     let symbol: String
     let interval: String
     let items: [MarketCandle]
+    var historyPending: Bool? = nil
+    var statisticsPending: Bool? = nil
+    var hasMoreHistory: Bool? = nil
 }
 
 struct MarketChartTradingData: Decodable, Equatable, Hashable, Sendable {

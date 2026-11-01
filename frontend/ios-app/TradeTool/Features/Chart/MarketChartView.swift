@@ -30,19 +30,22 @@ struct MarketChartView: View {
     private let availableMarkets: [MarketSnapshot]
     private let apiClient: any APIClient
     private let realtimeClient: RealtimeClient
+    private let onClose: (() -> Void)?
 
     init(
         market: MarketSnapshot,
         availableMarkets: [MarketSnapshot] = [],
         apiClient: any APIClient,
         realtimeClient: RealtimeClient,
-        initialInterval: MarketKlineInterval = .oneHour
+        initialInterval: MarketKlineInterval = .oneHour,
+        onClose: (() -> Void)? = nil
     ) {
         _selectedMarket = State(initialValue: market)
         _selectedInterval = State(initialValue: initialInterval)
         self.availableMarkets = availableMarkets
         self.apiClient = apiClient
         self.realtimeClient = realtimeClient
+        self.onClose = onClose
     }
 
     var body: some View {
@@ -53,7 +56,8 @@ struct MarketChartView: View {
             realtimeClient: realtimeClient,
             initialInterval: selectedInterval,
             onSelectMarket: selectMarket,
-            onIntervalChange: { selectedInterval = $0 }
+            onIntervalChange: { selectedInterval = $0 },
+            onClose: onClose
         )
         .id(selectedMarket.symbol)
     }
@@ -93,10 +97,10 @@ private struct MarketChartDetailView: View {
     @AppStorage("integrated.chart.orderType") private var nativeOrderType = "limit"
     @State private var showsNativeTicket = false
     @StateObject private var viewModel: MarketChartViewModel
-    @StateObject private var orderSettingsViewModel: SettingsAccountViewModel
     let availableMarkets: [MarketSnapshot]
     let onSelectMarket: (MarketSnapshot, MarketKlineInterval) -> Void
     let onIntervalChange: (MarketKlineInterval) -> Void
+    let onClose: (() -> Void)?
     @State private var isFavorite = true
     @State private var isIndicatorSettingsPresented = false
     @State private var isOrderSettingsPresented = false
@@ -120,20 +124,19 @@ private struct MarketChartDetailView: View {
             MarketSnapshot,
             MarketKlineInterval
         ) -> Void,
-        onIntervalChange: @escaping (MarketKlineInterval) -> Void
+        onIntervalChange: @escaping (MarketKlineInterval) -> Void,
+        onClose: (() -> Void)?
     ) {
         self.availableMarkets = availableMarkets
         self.onSelectMarket = onSelectMarket
         self.onIntervalChange = onIntervalChange
+        self.onClose = onClose
         _viewModel = StateObject(wrappedValue: MarketChartViewModel(
             market: market,
             apiClient: apiClient,
             realtimeClient: realtimeClient,
             initialInterval: initialInterval
         ))
-        _orderSettingsViewModel = StateObject(
-            wrappedValue: SettingsAccountViewModel(apiClient: apiClient)
-        )
     }
 
     var body: some View {
@@ -175,7 +178,6 @@ private struct MarketChartDetailView: View {
         .interactivePopGestureEnabled()
         .task {
             viewModel.start()
-            await loadOrderSettingsIfNeeded()
         }
         .onDisappear {
             viewModel.stop()
@@ -193,7 +195,7 @@ private struct MarketChartDetailView: View {
         .navigationDestination(isPresented: $isOrderSettingsPresented) {
             USDTChartOrderSettingsView()
         }
-        .sheet(isPresented: $showsNativeTicket) {
+        .webSheet(isPresented: $showsNativeTicket) {
             NavigationStack {
                 USDTTradeView(initialStop: orderDrawing.map { String(format: "%.12g", $0.stopLossPrice) } ?? "",
                               initialLimit: orderDrawing?.entryPrice.map { String(format: "%.12g", $0) } ?? "")
@@ -205,7 +207,7 @@ private struct MarketChartDetailView: View {
     private var fixedHeader: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                BinanceBackButton()
+                BinanceBackButton(action: onClose)
 
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
@@ -546,9 +548,6 @@ private struct MarketChartDetailView: View {
         usdt.selectedSymbol = viewModel.market.symbol
         showsNativeTicket = true
     }
-
-    @MainActor
-    private func loadOrderSettingsIfNeeded() async { }
 
     private var leverageToolTitle: String { "自动杠杆" }
 

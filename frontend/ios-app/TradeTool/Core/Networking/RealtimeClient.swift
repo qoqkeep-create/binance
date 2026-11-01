@@ -1,5 +1,59 @@
 import Combine
 import Foundation
+import Network
+
+enum RealtimeLatency: Equatable {
+    case measuring, unavailable
+    case measured(Double)
+
+    enum Quality: String { case good, fair, poor }
+    var quality: Quality {
+        switch self {
+        case .measuring: .fair
+        case .unavailable: .poor
+        case .measured(let milliseconds): milliseconds < 200 ? .good : milliseconds < 500 ? .fair : .poor
+        }
+    }
+    var text: String {
+        switch self {
+        case .measuring, .unavailable: "999 ms"
+        case .measured(let milliseconds):
+            milliseconds.isFinite ? "\(Int(min(999, max(0, milliseconds.rounded())))) ms" : "999 ms"
+        }
+    }
+}
+
+/// Matches application ping/pong by identity and measures only with a monotonic clock.
+struct RealtimeLatencyTracker {
+    static let sampleInterval: Duration = .seconds(5)
+    static let timeout: Duration = .seconds(3)
+    private var pending: (id: String, sentAt: ContinuousClock.Instant)?
+    private var samples: [Double] = []
+    private(set) var reading: RealtimeLatency = .measuring
+
+    mutating func begin(id: String, at now: ContinuousClock.Instant) {
+        pending = (id, now)
+    }
+    mutating func receive(id: String?, at now: ContinuousClock.Instant) {
+        guard let pending, pending.id == id else { return }
+        let elapsed = pending.sentAt.duration(to: now)
+        guard elapsed >= .zero, elapsed < Self.timeout else { expire(at: now); return }
+        self.pending = nil
+        samples.append(Double(elapsed.components.seconds) * 1_000
+            + Double(elapsed.components.attoseconds) / 1e15)
+        samples = Array(samples.suffix(3))
+        reading = .measured(ServerNetworkResult(samplesMilliseconds: samples).medianMilliseconds)
+    }
+    mutating func expire(at now: ContinuousClock.Instant) {
+        guard let pending, pending.sentAt.duration(to: now) >= Self.timeout else { return }
+        reset(to: .unavailable)
+    }
+    mutating func reset(to reading: RealtimeLatency = .measuring) {
+        pending = nil
+        samples.removeAll()
+        self.reading = reading
+    }
+}
 
 enum RealtimeConnectionState: Equatable {
     case disconnected
@@ -7,9 +61,13 @@ enum RealtimeConnectionState: Equatable {
     case connected
 }
 
-struct RealtimeSubscription: Encodable, Equatable {
+struct RealtimeSubscription: Codable, Equatable, Sendable {
     let channel: String
     let filters: [String: [String]]
+
+    static func compatible(_ subscriptions: [RealtimeSubscription], capabilities: Set<String>) -> [RealtimeSubscription] {
+        subscriptions.filter { $0.channel != "market.history" || capabilities.contains("market.history") }
+    }
 
     static func marketKline(
         symbols: [String],
@@ -33,6 +91,10 @@ struct RealtimeSubscription: Encodable, Equatable {
                 "symbols": symbols,
             ]
         )
+    }
+
+    static func marketHistory(symbols: [String], intervals: [String]) -> RealtimeSubscription {
+        RealtimeSubscription(channel: "market.history", filters: ["symbols": symbols, "intervals": intervals])
     }
 
     static func strategySignal(
@@ -97,6 +159,17 @@ struct RealtimeServerMessage: Decodable, Sendable {
 struct RealtimeServerError: Decodable, Sendable {
     let code: String
     let message: String
+}
+
+struct RealtimeSubscriptionAcknowledgement: Decodable {
+    let subscriptions: [RealtimeSubscription]
+}
+
+struct MarketHistoryReadyPayload: Decodable {
+    let symbol: String
+    let interval: String
+    let kind: String
+    let beforeOpenTime: Int64?
 }
 
 struct RealtimeKlineEventPayload: Decodable, Sendable {
@@ -226,6 +299,14 @@ enum JSONValue: Codable, Sendable, Equatable {
 @MainActor
 final class RealtimeClient: ObservableObject {
     @Published private(set) var state: RealtimeConnectionState = .disconnected
+    @Published private(set) var latency: RealtimeLatency = .unavailable
+    private var latencyTracker = RealtimeLatencyTracker()
+    private var monitorsLatency = false
+    private var pathMonitor: NWPathMonitor?
+    private var pathGeneration = UUID()
+    private var pathSignature = ""
+    private var networkAvailable = true
+    private var serverCapabilities: Set<String> = []
 
     private let baseURL: URL
     private let session: URLSession
@@ -290,6 +371,7 @@ final class RealtimeClient: ObservableObject {
     }
 
     func disconnect() {
+        setLatencyMonitoring(false)
         shouldStayConnected = false
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -309,6 +391,52 @@ final class RealtimeClient: ObservableObject {
             reason: "Client reconnecting"
         )
         openConnectionIfNeeded()
+    }
+
+    func setLatencyMonitoring(_ enabled: Bool) {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--web-parity-fixture") {
+            let args = ProcessInfo.processInfo.arguments
+            latency = args.contains("--fixture-latency-unavailable") ? .unavailable
+                : args.contains("--fixture-latency-overflow") ? .measured(1_520)
+                : args.contains("--fixture-latency-measuring") ? .measuring
+                : args.contains("--fixture-latency-slow") ? .measured(780)
+                : args.contains("--fixture-latency-fair") ? .measured(280) : .measured(86)
+            return
+        }
+        #endif
+        guard monitorsLatency != enabled else { return }
+        monitorsLatency = enabled
+        resetLatency()
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        pathGeneration = UUID()
+        pathSignature = ""
+        networkAvailable = true
+        if enabled {
+            let generation = pathGeneration
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { [weak self] path in
+                let available = path.status == .satisfied
+                let signature = "\(path.status):\(path.availableInterfaces.filter { path.usesInterfaceType($0.type) }.map(\.name).sorted())"
+                Task { @MainActor [weak self] in
+                    guard let self, self.pathGeneration == generation, self.monitorsLatency,
+                          self.pathSignature != signature else { return }
+                    self.pathSignature = signature
+                    self.networkAvailable = available
+                    self.resetLatency()
+                    if self.state == .connected { self.startHeartbeat() }
+                }
+            }
+            pathMonitor = monitor
+            monitor.start(queue: DispatchQueue(label: "tradetool.latency-path"))
+        }
+        if state == .connected { startHeartbeat() }
+    }
+
+    private func resetLatency() {
+        latencyTracker.reset(to: state == .connected && networkAvailable ? .measuring : .unavailable)
+        latency = latencyTracker.reading
     }
 
     func subscribe(_ desiredSubscriptions: [RealtimeSubscription]) {
@@ -349,8 +477,9 @@ final class RealtimeClient: ObservableObject {
     }
 
     private func openConnectionIfNeeded() {
+        // Re-entering the screen must preserve an existing connection and its heartbeat.
+        guard socketTask == nil else { return }
         guard shouldStayConnected,
-              socketTask == nil,
               let token = tokenProvider(),
               !token.isEmpty,
               let websocketURL = websocketURL else {
@@ -448,6 +577,15 @@ final class RealtimeClient: ObservableObject {
         switch serverMessage.type {
         case "ready":
             state = .connected
+            if case let .array(values) = serverMessage.data?["capabilities"] {
+                serverCapabilities = Set(values.compactMap { value in
+                    if case let .string(text) = value { return text }
+                    return nil
+                })
+            } else {
+                serverCapabilities = []
+            }
+            resetLatency()
             updateHeartbeatConfiguration(from: serverMessage)
             startHeartbeat()
             await sendSubscriptionChange(
@@ -456,8 +594,16 @@ final class RealtimeClient: ObservableObject {
             )
             publish(serverMessage)
 
-        case "ack", "pong":
+        case "pong":
+            if monitorsLatency {
+                latencyTracker.receive(id: serverMessage.requestId, at: .now)
+                latency = latencyTracker.reading
+            }
             reconnectAttempt = 0
+
+        case "ack":
+            reconnectAttempt = 0
+            publish(serverMessage)
 
         case "event":
             reconnectAttempt = 0
@@ -514,10 +660,12 @@ final class RealtimeClient: ObservableObject {
         heartbeatTask = Task { [weak self] in
             guard let self else { return }
 
-            while !Task.isCancelled {
-                try? await Task.sleep(for: heartbeatInterval)
-                guard !Task.isCancelled, state == .connected else {
-                    return
+            var nextPing = ContinuousClock.now
+            while !Task.isCancelled, state == .connected {
+                let now = ContinuousClock.now
+                if monitorsLatency {
+                    latencyTracker.expire(at: now)
+                    latency = latencyTracker.reading
                 }
 
                 if ContinuousClock.now - lastServerMessageAt > serverTimeout {
@@ -525,16 +673,23 @@ final class RealtimeClient: ObservableObject {
                     return
                 }
 
-                await send(
+                if now >= nextPing, !monitorsLatency || networkAvailable {
+                  let requestID = UUID().uuidString
+                  if monitorsLatency { latencyTracker.begin(id: requestID, at: now) }
+                  await send(
                     ClientMessage(
                         type: "ping",
-                        requestId: UUID().uuidString,
+                        requestId: requestID,
                         subscriptions: nil,
                         timestamp: Int64(
                             Date().timeIntervalSince1970 * 1_000
                         )
                     )
-                )
+                  )
+                  nextPing = now.advanced(by: monitorsLatency ? RealtimeLatencyTracker.sampleInterval : heartbeatInterval)
+                }
+                do { try await Task.sleep(for: monitorsLatency ? .seconds(1) : heartbeatInterval) }
+                catch { return }
             }
         }
     }
@@ -543,6 +698,7 @@ final class RealtimeClient: ObservableObject {
         type: String,
         subscriptions: [RealtimeSubscription]
     ) async {
+        let subscriptions = RealtimeSubscription.compatible(subscriptions, capabilities: serverCapabilities)
         guard !subscriptions.isEmpty else {
             return
         }
@@ -592,6 +748,7 @@ final class RealtimeClient: ObservableObject {
         heartbeatTask?.cancel()
         heartbeatTask = nil
         state = .disconnected
+        resetLatency()
 
         if closeCode.rawValue == 4_401 {
             Task { [weak self] in
@@ -647,6 +804,7 @@ final class RealtimeClient: ObservableObject {
         )
         socketTask = nil
         state = .disconnected
+        resetLatency()
     }
 
     private func expireSession() {

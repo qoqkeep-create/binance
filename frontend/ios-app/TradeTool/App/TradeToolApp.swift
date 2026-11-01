@@ -228,8 +228,17 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
 #endif
 
 #if DEBUG
+  private actor WebParityFixtureRequests {
+    private var counts: [String: Int] = [:]
+    func next(_ path: String) -> Int {
+      counts[path, default: 0] += 1
+      return counts[path, default: 0]
+    }
+  }
+
   /// Isolated visual states. This API has no network transport; only local precheck / EMA previews allow POST.
   private struct WebParityFixtureAPI: APIClient {
+    private let requests = WebParityFixtureRequests()
     static var empty: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-empty") }
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
       if request.path == "/v1/auth/admin-settings",
@@ -247,6 +256,11 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         all[
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if ProcessInfo.processInfo.arguments.contains("--fixture-refresh-lists"),
+        ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list"].contains(request.path),
+        await requests.next(request.path) == 1 {
+        value = .array([])
+      }
       if request.path == "/v1/auth/admin-settings",
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-open") {
         value = .object(["open_registration": .bool(true)])
@@ -254,7 +268,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       if Self.empty
         && [
           "/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list",
-          "/v1/trade/tradingview/signals", "/v1/watch-plan/list", "/v1/signal-research/samples",
+          "/v1/trade/tradingview/signals", "/v1/watch-plan/list",
           "/v1/strategy/list",
         ].contains(request.path)
       {
@@ -312,21 +326,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         plan["futures_balance"] = .string("10")
         plan["collection_total"] = .string("0")
         value = .object(plan)
-      }
-      if request.path == "/v1/signal-research/chart" {
-        let candles: [JSONValue] = (0..<50).map { i in
-          let center = Double(67000 + i * 12)
-          return .object([
-            "time": .number(Double(1_793_200_000 + i * 3600)),
-            "close_time": .number(Double(1_793_200_000 + (i + 1) * 3600) * 1000),
-            "open": .number(center),
-            "high": .number(center + 200), "low": .number(center - 200),
-            "close": .number(center + 100), "ema21": .number(center),
-            "ema55": .number(center - 200), "ema144": .number(center - 400),
-            "supertrend": .number(center - 600),
-          ])
-        }
-        value = .object(["candles": .array(candles), "signal_time": .number(1_793_415_600_000)])
       }
       return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
     }
@@ -502,7 +501,8 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         "/v1/trade/tradingview/signals": [
           {
             "id": 1,
-            "source": "external",
+            "source": "internal",
+            "score": 85,
             "symbol": "BTCUSDT",
             "direction": "LONG",
             "interval": "1h",
@@ -569,48 +569,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
               "vetoes": []
             },
             "created_at": "2026-10-31T02:00:00Z"
-          }
-        ],
-        "/v1/signal-research/samples": [
-          {
-            "id": 1,
-            "symbol": "BTCUSDT",
-            "timeframe": "1h",
-            "signal_time": "2026-10-31T03:00:00Z",
-            "expected_direction": "long",
-            "note": "趋势回踩 EMA144 后收回关键位置",
-            "trusted": true,
-            "fetched_at": "2026-10-31T03:01:00Z",
-            "features": {
-              "trend": "long",
-              "supertrend_flip": false,
-              "ema_alignment": "bullish",
-              "close_to_ema21_atr": "0.32",
-              "close_to_ema55_atr": "0.48",
-              "close_to_ema144_atr": "0.05",
-              "atr_percent": "1.25",
-              "volume_ratio_20": "1.42",
-              "return_20_pct": "2.1",
-              "supertrend_age_bars": 8
-            }
-          }
-        ],
-        "/v1/signal-research/strategies": [
-          {
-            "id": 1,
-            "name": "趋势回踩研究",
-            "version": 1,
-            "status": "published",
-            "natural_rules": [
-              "SuperTrend 多头趋势下等待回踩 EMA144",
-              "收盘价回到关键均线之上且成交量放大"
-            ],
-            "rationale": "只使用已收盘的数据，避免未来信息。",
-            "code": "def signal(features):\n    return features[\"trend\"] == \"long\"",
-            "research_packet": {
-              "trusted_count": 1
-            },
-            "definition": {}
           }
         ],
         "/v1/auth/admin-settings": {
@@ -695,69 +653,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
               "error": ""
             }
           ]
-        },
-        "/v1/signal-research/samples/1": {
-          "id": 1,
-          "symbol": "BTCUSDT",
-          "timeframe": "1h",
-          "signal_time": "2026-10-31T03:00:00Z",
-          "expected_direction": "long",
-          "note": "趋势回踩 EMA144 后收回关键位置",
-          "trusted": true,
-          "fetched_at": "2026-10-31T03:01:00Z",
-          "features": {
-            "trend": "long",
-            "supertrend_flip": false,
-            "ema_alignment": "bullish",
-            "close_to_ema21_atr": "0.32",
-            "close_to_ema55_atr": "0.48",
-            "close_to_ema144_atr": "0.05",
-            "atr_percent": "1.25",
-            "volume_ratio_20": "1.42",
-            "return_20_pct": "2.1",
-            "supertrend_age_bars": 8
-          }
-        },
-        "/v1/signal-research/ai-models": [
-          {
-            "id": 1,
-            "name": "研究模型",
-            "provider": "fixture",
-            "model": "visual-only",
-            "is_active": true
-          }
-        ],
-        "/v1/signal-research/strategies/preview": {
-          "trusted_count": 1,
-          "untrusted_count": 0,
-          "samples": [
-            {
-              "id": 1,
-              "symbol": "BTCUSDT",
-              "timeframe": "1h",
-              "signal_time": "2026-10-31T03:00:00Z",
-              "expected_direction": "long",
-              "note": "趋势回踩 EMA144 后收回关键位置",
-              "trusted": true,
-              "fetched_at": "2026-10-31T03:01:00Z",
-              "features": {
-                "trend": "long",
-                "supertrend_flip": false,
-                "ema_alignment": "bullish",
-                "close_to_ema21_atr": "0.32",
-                "close_to_ema55_atr": "0.48",
-                "close_to_ema144_atr": "0.05",
-                "atr_percent": "1.25",
-                "volume_ratio_20": "1.42",
-                "return_20_pct": "2.1",
-                "supertrend_age_bars": 8
-              }
-            }
-          ]
-        },
-        "/v1/signal-research/chart": {
-          "signal_time": 1793415600000,
-          "candles": []
         }
       }
       """#
@@ -768,6 +663,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       baseURL: URL(string: "http://127.0.0.1:1/")!, bundleIdentifier: "com.riskon.visual-fixture")
     @StateObject private var store = USDTStore(api: WebParityFixtureAPI())
     @State private var tab: AppTab = .trade
+    @State private var fixtureMarketSearch = false
+    @State private var fixtureMarketSettings = false
+    @State private var fixtureSelectedMarket: MarketSnapshot?
     private var page: String {
       let args = ProcessInfo.processInfo.arguments
       guard let index = args.firstIndex(of: "--web-parity-fixture"),
@@ -795,6 +693,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         }
       }
       .floatingPositionsOverlay()
+      .globalAPIToasts(using: container.toastCenter)
       .environmentObject(container).environmentObject(container.authStore).environmentObject(
         container.toastCenter
       ).environmentObject(store)
@@ -804,6 +703,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         FloatingPositionsPreferences.defaults.set(1.0, forKey: "integrated.floatingPositions.x")
         FloatingPositionsPreferences.defaults.set(0.22, forKey: "integrated.floatingPositions.y")
         await store.begin(userID: "_web_visual_fixture")
+        if ProcessInfo.processInfo.arguments.contains("--fixture-toast") {
+          container.toastCenter.present("网络请求超时，请稍后重试", duration: 30)
+        }
         if ProcessInfo.processInfo.arguments.contains("--fixture-lead") {
           store.switchMode("lead")
         } else if store.mode != "ordinary" {
@@ -816,6 +718,11 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     }
     @ViewBuilder private var content: some View {
       switch page {
+      case "launch": AppLaunchView()
+      case "market":
+        DashboardView(viewModel: DashboardViewModel(), apiClient: WebParityFixtureAPI(),
+          realtimeClient: container.realtimeClient, isShowingMarketSearch: $fixtureMarketSearch,
+          isShowingMarketSettings: $fixtureMarketSettings, selectedMarket: $fixtureSelectedMarket)
       case "login": LoginView()
       case "strategies": USDTStrategiesView()
       case "strategy-editor": USDTStrategyEditor(strategy: nil)
@@ -828,10 +735,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       case "watch-result": USDTWatchEditor(plan: watchPlan, pane: "result")
       case "indicators": USDTIndicatorsView()
       case "preflight": USDTPreflightView(completed: {})
-      case "research": USDTResearchView()
-      case "research-analysis": USDTResearchView(initialPage: "analysis")
-      case "research-rules": USDTResearchView(initialPage: "rules")
-      case "research-backtest": USDTResearchView(initialPage: "backtest")
       case "settings": USDTSettingsView()
       case "legal": USDTLegalView()
       case "privacy": USDTLegalView(document: "隐私政策")

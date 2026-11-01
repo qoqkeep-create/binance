@@ -1,15 +1,11 @@
 """Public derivatives panels use the Java client's field and time-bucket contract."""
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-import logging
 import math
 
 from django.core.cache import cache
 from market_stream.core import INTERVAL_MS
 from market_stream.service import public_request
 
-log = logging.getLogger(__name__)
-POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="market-statistics")
 SERIES = {
     "openInterest": ("openInterestHist", {"sumOpenInterest": "openInterest", "sumOpenInterestValue": "openInterestNotional"}),
     "topAccountRatio": ("topLongShortAccountRatio", {"longAccount": "topLongAccount", "shortAccount": "topShortAccount", "longShortRatio": "topLongShortAccountRatio"}),
@@ -20,33 +16,40 @@ SERIES = {
 }
 
 
+def series_key(result, name):
+    # Aligned to the selected candle, rather than the volatile live close time.
+    end = result["items"][-1]["openTime"]
+    return f"market:stats:v2:{result['symbol']}:{result['interval']}:{name}:{end}"
+
+
+def load_series(result, name):
+    """Collector-only public REST request; never called in an HTTP read."""
+    if not result["items"] or result["interval"] == "1m":
+        return
+    endpoint, _ = SERIES[name]
+    params = {"period": result["interval"], "limit": 500,
+              "endTime": result["items"][-1]["closeTime"]}
+    params.update({"pair": result["symbol"], "contractType": "PERPETUAL"} if name == "basis" else {"symbol": result["symbol"]})
+    rows = public_request(f"/futures/data/{endpoint}", params)
+    if not isinstance(rows, list):
+        raise ValueError("Invalid market statistics response")
+    cache.set(series_key(result, name), rows, 30)
+
+
 def attach(result, requested):
+    from market_stream import repair
     if not requested or result["interval"] == "1m" or not result["items"]:
         return result
-    symbol, interval = result["symbol"], result["interval"]
-    end = result["items"][-1]["closeTime"]
-    start = result["items"][0]["openTime"]
-    def load(name):
-        endpoint, fields = SERIES[name]
-        key = f"market:stats:{symbol}:{interval}:{name}:{start}:{end // 60000}"
-        rows = cache.get(key)
-        if rows is None:
-            params = {"period": interval, "limit": 500, "startTime": start, "endTime": end}
-            params.update({"pair": symbol, "contractType": "PERPETUAL"} if name == "basis" else {"symbol": symbol})
-            try:
-                rows = public_request(f"/futures/data/{endpoint}", params)
-                if not isinstance(rows, list):
-                    rows = []
-                cache.set(key, rows, 30)
-            except Exception as exc:
-                log.warning("Market statistics unavailable symbol=%s series=%s (%s)", symbol, name, type(exc).__name__)
-                rows = []
-        return rows, fields
-    futures = [POOL.submit(load, name) for name in sorted(requested)]
     by_time = {}
-    width = INTERVAL_MS[interval]
-    for future in futures:
-        rows, fields = future.result()
+    pending = False
+    width = INTERVAL_MS[result["interval"]]
+    for name in sorted(requested):
+        rows = cache.get(series_key(result, name))
+        if rows is None:
+            repair.schedule(result["symbol"], result["interval"], kind=f"stats:{name}")
+            pending = True
+            continue
+        _, fields = SERIES[name]
         for row in rows:
             timestamp = int(row.get("timestamp", 0)) // width * width
             values = by_time.setdefault(timestamp, {})
@@ -58,6 +61,7 @@ def attach(result, requested):
                 except (ValueError, TypeError, KeyError):
                     pass
     result = deepcopy(result)
+    result["statisticsPending"] = pending
     for candle in result["items"]:
         if candle["openTime"] in by_time:
             candle["tradingData"] = by_time[candle["openTime"]]

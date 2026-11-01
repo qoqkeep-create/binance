@@ -105,7 +105,6 @@
 		4ADC1ECF7B1D2C2AF8904860 /* USDTAccountViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */; };
 		51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */; };
 		9CD0D87DCEBB99A36EE4B57C /* USDTComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33600721399D7B8EDD04A732 /* USDTComponents.swift */; };
-		CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63133A17E8871350B079F81 /* USDTResearchViews.swift */; };
 		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
 		010000000000000000000057 /* Lucide-ISC.txt in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* Lucide-ISC.txt */; };
 		010000000000000000000059 /* BrandLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000060 /* BrandLaunchScreen.storyboard */; };
@@ -238,7 +237,6 @@
 		9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStrategyViews.swift; sourceTree = "<group>"; };
 		BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTLegalView.swift; sourceTree = "<group>"; };
 		DD7B56A4F1642013DF78DC36 /* USDTSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTSession.swift; sourceTree = "<group>"; };
-		E63133A17E8871350B079F81 /* USDTResearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTResearchViews.swift; sourceTree = "<group>"; };
 		F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTTradingViews.swift; sourceTree = "<group>"; };
 		02000000000000000000005E /* Lucide-ISC.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "Lucide-ISC.txt"; path = "../../docs/licenses/Lucide-ISC.txt"; sourceTree = SOURCE_ROOT; };
 		A17000000000000000000002 /* FloatingPositionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsView.swift; sourceTree = "<group>"; };
@@ -609,7 +607,6 @@
 				33600721399D7B8EDD04A732 /* USDTComponents.swift */,
 				BAED4B4EDE41319E903282E0 /* USDTLegalView.swift */,
 				7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */,
-				E63133A17E8871350B079F81 /* USDTResearchViews.swift */,
 				DD7B56A4F1642013DF78DC36 /* USDTSession.swift */,
 				18C443B8F02115C83974CD29 /* USDTStore.swift */,
 				A17000000000000000000002 /* FloatingPositionsView.swift */,
@@ -763,7 +760,6 @@
 				9CD0D87DCEBB99A36EE4B57C /* USDTComponents.swift in Sources */,
 				2F352AA3E4A8195216FCFEA7 /* USDTLegalView.swift in Sources */,
 				20EBABF2268F5C781A0B85C5 /* USDTRecordsViews.swift in Sources */,
-				CC22C0B0ECCBA2CB2551D431 /* USDTResearchViews.swift in Sources */,
 				4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */,
 				059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */,
 				A17000000000000000000001 /* FloatingPositionsView.swift in Sources */,

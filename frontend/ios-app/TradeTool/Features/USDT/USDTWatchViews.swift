@@ -246,7 +246,7 @@ private let watchTimeframes = [("15m", "15分钟"), ("1h", "1小时"), ("4h", "4
 
 struct USDTWatchEditor: View {
   @EnvironmentObject private var store: USDTStore
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   let plan: JSONValue?
   var pane = "plan"
   @State private var symbol = ""
@@ -629,7 +629,7 @@ struct USDTPreflightView: View {
   var body: some View {
     GeometryReader { geometry in
       ZStack {
-        Color.black.opacity(0.65).ignoresSafeArea()
+        WebModalBackdrop(opacity: 0.65, dismissible: false)
         VStack(spacing: 0) {
           HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
@@ -693,9 +693,9 @@ struct USDTPreflightView: View {
         }.foregroundStyle(WebTheme.text).frame(maxWidth: 768).background(
           WebTheme.surface, in: RoundedRectangle(cornerRadius: 24)
         ).overlay { RoundedRectangle(cornerRadius: 24).stroke(WebTheme.border, lineWidth: 1) }
-          .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity)
+          .padding(16).webModalCard().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-    }.presentationBackground(.clear)
+    }.presentationBackground(.clear).webModalDismissDisabled(true)
   }
   private func next() {
     guard answer == current.correct else { return }
@@ -830,11 +830,11 @@ private struct WatchPanelModal<Content: View>: View {
   var pinnedHeader: AnyView? = nil
   var pinnedFooter: AnyView? = nil
   @ViewBuilder var content: Content
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   var body: some View {
     GeometryReader { geometry in
       ZStack {
-        Color.black.opacity(0.6).ignoresSafeArea().onTapGesture { dismiss() }
+        WebModalBackdrop()
         ViewThatFits(in: .vertical) {
           if pinnedHeader == nil && pinnedFooter == nil {
             panel(scrollable: false).fixedSize(horizontal: false, vertical: true)
@@ -844,7 +844,7 @@ private struct WatchPanelModal<Content: View>: View {
           WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)
         ).clipShape(RoundedRectangle(cornerRadius: 16)).overlay {
           RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1)
-        }.frame(maxHeight: geometry.size.height * 0.85).padding(16)
+        }.frame(maxHeight: geometry.size.height * 0.85).padding(16).webModalCard()
       }
     }.font(.system(size: 16)).foregroundStyle(WebTheme.text).buttonStyle(.plain)
       .presentationBackground(.clear)

@@ -1,43 +1,25 @@
-# 信号研究与观察计划
+# 观察计划与信号研究退役
 
-> 本文维护整合版沿用的业务规则；当前运行与验证边界见 [整合说明](INTEGRATION.md)。来源项目历史资料从 [来源索引](sources.md) 查询。
+核对日期：2026-11-01；以下为当前本地源码状态，发布和验证范围见 [变更与验收](changes.md)。
 
-本模块与实盘交易隔离。AI 生成、回测或趋势信号不构成自动下单指令，不能把研究按钮接到交易执行而不进行独立设计。
+## 当前保留的能力
 
-## 当前入口
+观察计划由独立的 [watch_plans](../server/watch_plans/models.py) 模块维护，原生入口为“我的 → 更多功能 → 看盘计划”。[API](../server/watch_plans/urls.py) 仍为 `/v1/watch-plan/list/create/update/delete`，按当前用户读写计划、复盘、结果金额、0–100 分和评分明细。金额使用 Decimal；观察记录不作为自动下单指令。
 
-- 原生“我的 → 信号研究”：[研究页面](../frontend/ios-app/TradeTool/Features/USDT/USDTResearchViews.swift)。
-- API `/v1/signal-research/`：[urls.py](../server/signal_research/urls.py)，提供样本、规则、策略、预览 / 生成 / 发布、模型列表 / 激活、回测及图表。
-- 数据和服务：[models.py](../server/signal_research/models.py)、[services.py](../server/signal_research/services.py)、[ai.py](../server/signal_research/ai.py)。
-- 观察计划独立位于 [watch_plans](../server/watch_plans/models.py)，包含计划、复盘、评分等用户资料，不归并为交易订单。
+[market_analysis](../server/market_analysis/trend.py) 继续承担闭合 K 线的内部趋势扫描，输出供信号页使用。其行情扫描与交易信号链路独立于已移除的研究功能。
 
-## 工作流
+## 信号研究已从运行代码移除
 
-```text
-用户样本 / 规则 --> 拉取历史与构建研究数据包 --> 预览或显式 AI 生成
-                --> 策略草稿 --> 发布不可变版本 --> 回测与图表复核
-```
+按用户要求，iOS 已删除“信号研究”菜单、页面、Swift Charts 研究图表、DEBUG 数据及专属 UI 场景。后端已移除研究应用注册、`/v1/signal-research/` 路由、模型、管理后台、AI 请求、采集、规则、草稿、发布、回测与专属测试。旧接口不再解析，返回 404；`AI_*` 配置已停止读取。
 
-样本和策略按用户归属限制读写。已发布策略保持不可变，回测使用已发布版本；不能编辑旧发布记录使同一个版本号对应不同规则。
+凭证轮换命令只处理当前 API 绑定的 `api_key`、`secret_key`、`passphrase`，不再导入或查询研究模型。旧研究模型密文不在该命令的验证范围内；保留旧库备份时仍须保护对应的历史解密密钥。
 
-编辑和发布均以 `status=draft` 为 SQL 更新条件。发布已先完成时，并发编辑返回不可编辑，不能用旧对象整行保存覆盖发布时间或发布内容；不另设一套发布锁或版本状态机。
+## 迁移与历史资料
 
-研究数据限定于当时已知的闭合 K 线，避免引入未来数据。AI 输出被解析为有限的 JSON 策略定义，不执行任意生成代码。修改研究数据包、回测信号对齐、费用或撮合规则时更新测试和可复现样例，禁止仅凭收益曲线证明正确。
+`server/signal_research/` 仅保留空包和历史 `migrations/`，不在 `INSTALLED_APPS` 中，也不提供运行模型或服务。本次不执行删表、删资料或删除 `django_migrations` 记录；已有数据库的研究表保留，新库不再创建研究表，因此无需新增数据库 migration。
 
-创建与采集拒绝未来样本时间；采集只保留收盘时间不晚于样本时间和本次请求开始时间的 K 线。没有闭合候选时明确失败，不回退到最后一根未闭合 K 线。规则证据、预览和 AI 生成仅使用 ready、样本时间已到且 `fetched_at >= signal_time` 的记录；旧记录缺少采集时间或提前抓取过，须重新采集后才能进入研究数据包，不删除原始样本。
+退役前的源码与原规则可从整合版 Git 基线 `46fd475f1f143a74710b6a2191c0ccbb18478f0d` 的 `docs/research.md`、`server/signal_research/` 与 `frontend/ios-app/TradeTool/Features/USDT/USDTResearchViews.swift` 查询。本机删除前还在忽略目录 `.integration-runtime/removed-research-20261101.tar.gz` 保存了当前研究源码，包括原有未提交改动；该副本不随版本发布。
 
-## AI 模型归属
+新库若回滚到退役前代码，必须使用该版本执行 migrate 补建研究表；旧库回滚仍需核对迁移记录和历史密钥。代码回滚不会恢复已主动删除的数据库资料。本次没有清理历史数据，也没有修改实盘持仓、保护或交易策略。
 
-`ResearchAiModel` 是全局模型目录，没有用户外键，API Key 加密保存；`ResearchAiModelSelection` 保存每用户的选择。模型列表提供脱敏信息，激活影响当前用户选择。
-
-当前路由没有用户自行创建私人模型的接口，不能按旧“每人私有模型库”方案编写使用说明。环境 `AI_*` 仍提供默认模型配置，但不意味着所有凭证仅存环境中。配置生效规则见 [配置字典](configuration.md)。
-
-AI 调用由用户显式触发，可能耗时并消耗服务额度；预览数据包与实际调用需分开。失败应反馈研究状态，不影响实盘保护、资金操作或其他用户策略。
-
-## 与内部趋势扫描的区别
-
-`market_analysis` 当前承担 [trend.py](../server/market_analysis/trend.py) 的自有趋势扫描；旧设计里的 HTTP 市场分析服务 / 页面没有对应当前路由，不应恢复过期路径作为兼容层。
-
-扫描只看闭合 K 线并按周期去重，输出显示于信号内部页签。研究样本、趋势状态与统一消息的保留期 / 用户归属不同，不能因模型历史命名相近而合并数据表。
-
-验证以 [signal_research/tests.py](../server/signal_research/tests.py)、[market_analysis/tests.py](../server/market_analysis/tests.py)、[watch_plans/tests.py](../server/watch_plans/tests.py) 为入口，覆盖跨用户权限、时间边界、版本不可变、模型脱敏和生成失败。
+验证入口为 [退役回归](../server/common/test_retired_modules.py)、[凭证轮换](../server/common/test_key_rotation.py)、[观察计划](../server/watch_plans/tests.py) 与 [内部扫描](../server/market_analysis/tests.py)。

@@ -54,7 +54,6 @@ INSTALLED_APPS = [
     "trading",
     "positions",
     "watch_plans",
-    "signal_research",
     "market_analysis",
     "common",
     "market_stream",
@@ -281,14 +280,6 @@ BINANCE_ORDER_LIMIT_RATIO = float(os.getenv("BINANCE_ORDER_LIMIT_RATIO", "0.95")
 BINANCE_AUTH_FAILURE_THRESHOLD = int(os.getenv("BINANCE_AUTH_FAILURE_THRESHOLD", "3"))
 BINANCE_AUTH_FAILURE_WINDOW_SECONDS = int(os.getenv("BINANCE_AUTH_FAILURE_WINDOW_SECONDS", "21600"))
 SERVER_PUBLIC_IP = os.getenv("SERVER_PUBLIC_IP", "").strip()
-
-# AI strategy research uses an OpenAI-compatible endpoint. The deployment
-# environment provides the default; shared model credentials are encrypted in DB.
-AI_PROVIDER = os.getenv("AI_PROVIDER", "").strip()
-AI_BASE_URL = os.getenv("AI_BASE_URL", "").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
-AI_MODEL = os.getenv("AI_MODEL", "").strip()
-AI_TIMEOUT_SECONDS = float(os.getenv("AI_TIMEOUT_SECONDS", "90"))
 
 MARKET_ANALYSIS_ALERT_URL = os.getenv("MARKET_ANALYSIS_ALERT_URL", "http://tradingview-webhook:3000/internal/market-scan").strip()
 MARKET_ANALYSIS_ALERT_TOKEN = os.getenv("MARKET_ANALYSIS_ALERT_TOKEN", "").strip()

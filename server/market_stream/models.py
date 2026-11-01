@@ -16,3 +16,22 @@ class MarketCandle(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["symbol", "interval", "open_time"], name="market_candle_identity")]
         indexes = [models.Index(fields=["symbol", "interval", "-open_time"], name="market_candle_recent")]
+
+
+class MarketHistoryTask(models.Model):
+    """Public market reads only; a lease survives collector restarts."""
+    key = models.CharField(max_length=64, unique=True)
+    symbol = models.CharField(max_length=32)
+    interval = models.CharField(max_length=4)
+    kind = models.CharField(max_length=32, default="history")
+    before = models.BigIntegerField(default=0)
+    limit = models.PositiveSmallIntegerField(default=1500)
+    priority = models.PositiveSmallIntegerField(default=10)
+    due_at = models.FloatField(default=0)
+    lease_until = models.FloatField(default=0)
+    completed_at = models.FloatField(default=0)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    exhausted = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [models.Index(fields=["due_at", "lease_until"], name="market_repair_due")]

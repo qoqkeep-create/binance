@@ -151,7 +151,8 @@ actor ChartDataPipeline {
     func installSnapshot(
         _ marketCandles: [MarketCandle],
         fetchedAtMilliseconds: Int64,
-        epoch snapshotEpoch: KlineStreamEpoch
+        epoch snapshotEpoch: KlineStreamEpoch,
+        preservingNewerData: Bool = false
     ) async -> ChartDataPipelineDrainResult {
         guard snapshotEpoch == epoch else {
             return ChartDataPipelineDrainResult(
@@ -187,7 +188,8 @@ actor ChartDataPipeline {
 
         let installed = await store.installSnapshot(
             closedCandles: closed,
-            liveCandle: live
+            liveCandle: live,
+            preservingNewerData: preservingNewerData
         )
         rebuildIndicators(
             from: installed.history.candles

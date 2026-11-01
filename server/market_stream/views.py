@@ -1,3 +1,5 @@
+import time
+
 from django.conf import settings
 from rest_framework.views import APIView
 from common.response import fail, ok
@@ -45,8 +47,17 @@ class KlinesView(APIView):
             before = int(before) if before is not None else None
             if interval not in INTERVAL_MS or not 1 <= limit <= 1500 or (before is not None and before <= 0):
                 raise ValueError("K线参数不正确")
-            if symbol not in service.symbols():
+            available = service.symbols(cached_only=True)
+            if not available:
+                return fail("行情目录正在准备，请稍后重试", code=503, status=503)
+            if symbol not in available:
                 raise ValueError("交易对不存在或已下架")
         except (ValueError, TypeError) as exc:
             return fail(str(exc))
-        return ok(trading_data.attach(service.load_history(symbol, interval, limit, before), requested))
+        started = time.perf_counter()
+        snapshot = service.load_history(symbol, interval, limit, before)
+        loaded = time.perf_counter()
+        response = ok(trading_data.attach(snapshot, requested))
+        response["Server-Timing"] = (f"history;dur={(loaded-started)*1000:.2f}, "
+                                     f"statistics_cache;dur={(time.perf_counter()-loaded)*1000:.2f}")
+        return response

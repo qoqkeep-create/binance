@@ -1,4 +1,6 @@
+import Combine
 import Metal
+import Network
 import SwiftUI
 import UIKit
 import XCTest
@@ -152,6 +154,193 @@ final class AppearanceTests: XCTestCase {
     }
 }
 
+@MainActor
+final class NetworkLatencyAndModalTests: XCTestCase {
+  func testLatencyAlwaysDisplaysANumberCappedAt999() {
+    XCTAssertEqual(RealtimeLatency.unavailable.text, "999 ms")
+    XCTAssertEqual(RealtimeLatency.measuring.text, "999 ms")
+    XCTAssertEqual(RealtimeLatency.measured(86.4).text, "86 ms")
+    XCTAssertEqual(RealtimeLatency.measured(998.8).text, "999 ms")
+    XCTAssertEqual(RealtimeLatency.measured(2_500).text, "999 ms")
+    XCTAssertEqual(RealtimeLatency.measured(-1).text, "0 ms")
+    XCTAssertEqual(RealtimeLatency.measured(.infinity).text, "999 ms")
+  }
+
+  func testRealSocketMeasuresPongAndRepeatedConnectKeepsSampling() async throws {
+    let ready = expectation(description: "Loopback WebSocket listening")
+    let ping = expectation(description: "Application ping received")
+    let measured = expectation(description: "Real socket RTT measured")
+    let nextPing = expectation(description: "Monitoring survives repeated connect")
+    let peer = try LatencySocketPeer(ready: ready, pings: [ping])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [ready], timeout: 3)
+    let port = try XCTUnwrap(peer.port)
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(port)/integrated")!,
+      session: session, tokenProvider: { "isolated-test-token" })
+    let observation = client.$latency.filter { value in
+      if case .measured = value { return true }; return false
+    }.prefix(1).sink { _ in measured.fulfill() }
+    defer { observation.cancel(); client.disconnect() }
+    client.setLatencyMonitoring(true)
+    client.connect()
+    await fulfillment(of: [ping, measured], timeout: 5)
+    guard case let .measured(milliseconds) = client.latency else {
+      return XCTFail("A real matching pong must replace the unavailable value")
+    }
+    // The peer delays its pong by 120 ms; this must be measured, not a fixture constant.
+    XCTAssertGreaterThanOrEqual(milliseconds, 100)
+    XCTAssertLessThan(milliseconds, 3_000)
+    XCTAssertEqual(client.state, .connected)
+    peer.expectNextPing(nextPing)
+    client.connect()
+    XCTAssertEqual(client.state, .connected)
+    await fulfillment(of: [nextPing], timeout: 7)
+  }
+
+  func testOnlyMatchingPongCompletesTheCurrentMonotonicSample() {
+    let start = ContinuousClock.now
+    var tracker = RealtimeLatencyTracker()
+    tracker.begin(id: "current", at: start)
+    tracker.receive(id: "previous", at: start.advanced(by: .milliseconds(20)))
+    XCTAssertEqual(tracker.reading, .measuring)
+    tracker.receive(id: "current", at: start.advanced(by: .milliseconds(86)))
+    XCTAssertEqual(tracker.reading, .measured(86))
+    tracker.receive(id: "current", at: start.advanced(by: .seconds(1)))
+    XCTAssertEqual(tracker.reading, .measured(86))
+  }
+
+  func testRollingMedianLimitsSingleSpikeWithoutHidingPersistentLatency() {
+    var tracker = RealtimeLatencyTracker()
+    let start = ContinuousClock.now
+    for (index, sample) in [100, 200, 900, 400, 800].enumerated() {
+      let sent = start.advanced(by: .seconds(index * 5))
+      tracker.begin(id: String(index), at: sent)
+      tracker.receive(id: String(index), at: sent.advanced(by: .milliseconds(sample)))
+      XCTAssertEqual(tracker.reading, .measured([100, 150, 200, 400, 800][index]))
+    }
+  }
+
+  func testTimeoutAndConnectionResetDiscardOldGreenSamplesAndLatePongs() {
+    var tracker = RealtimeLatencyTracker()
+    let start = ContinuousClock.now
+    tracker.begin(id: "fast", at: start)
+    tracker.receive(id: "fast", at: start.advanced(by: .milliseconds(10)))
+    tracker.begin(id: "lost", at: start.advanced(by: .seconds(5)))
+    tracker.expire(at: start.advanced(by: .seconds(8)))
+    XCTAssertEqual(tracker.reading, .unavailable)
+    tracker.receive(id: "lost", at: start.advanced(by: .seconds(9)))
+    XCTAssertEqual(tracker.reading, .unavailable)
+    tracker.begin(id: "old-connection", at: start.advanced(by: .seconds(10)))
+    tracker.reset()
+    tracker.receive(id: "old-connection", at: start.advanced(by: .milliseconds(10_100)))
+    XCTAssertEqual(tracker.reading, .measuring)
+  }
+
+  func testLatencyColorBoundariesAndUnavailableState() {
+    XCTAssertEqual(RealtimeLatency.measured(199).quality, .good)
+    XCTAssertEqual(RealtimeLatency.measured(200).quality, .fair)
+    XCTAssertEqual(RealtimeLatency.measured(499).quality, .fair)
+    XCTAssertEqual(RealtimeLatency.measured(500).quality, .poor)
+    XCTAssertEqual(RealtimeLatency.unavailable.quality, .poor)
+    XCTAssertEqual(RealtimeLatencyTracker.sampleInterval, .seconds(5))
+  }
+
+  func testSmallDialogsFadeAndLargePanelsSlideUnlessReducedMotionIsEnabled() {
+    XCTAssertEqual(WebModalMotion.resolve(cardHeight: 240, containerHeight: 800, reduceMotion: false), .fade)
+    XCTAssertEqual(WebModalMotion.resolve(cardHeight: 600, containerHeight: 800, reduceMotion: false), .slide)
+    XCTAssertEqual(WebModalMotion.resolve(cardHeight: 600, containerHeight: 800, reduceMotion: true), .fade)
+    XCTAssertEqual(WebModalMotion.resolve(cardHeight: 600, containerHeight: 800, reduceMotion: false,
+      preferred: .fade), .fade)
+    XCTAssertLessThan(WebModalMotion.slide.openingDuration, 0.28)
+  }
+
+  func testLaunchStoryboardUses96PointContinuousRoundedIcon() throws {
+    let controller = try XCTUnwrap(UIStoryboard(name: "BrandLaunchScreen", bundle: Bundle(for: AuthStore.self))
+      .instantiateInitialViewController())
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+    controller.view.layoutIfNeeded()
+    let image = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? UIImageView }.first)
+    XCTAssertEqual(image.frame.size, CGSize(width: 96, height: 96))
+    XCTAssertTrue(image.clipsToBounds)
+    let source = try XCTUnwrap(image.image?.cgImage)
+    var pixels = [UInt8](repeating: 0, count: 96 * 96 * 4)
+    try pixels.withUnsafeMutableBytes { bytes in
+      let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 96, height: 96,
+        bitsPerComponent: 8, bytesPerRow: 96 * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+      context.draw(source, in: CGRect(x: 0, y: 0, width: 96, height: 96))
+    }
+    XCTAssertEqual(pixels[3], 0, "System launch screens need the rounded mask in the asset itself")
+    XCTAssertEqual(pixels[(48 * 96 + 48) * 4 + 3], 255)
+  }
+}
+
+/// A real loopback WebSocket peer; no production account, HTTP stub or fixture RTT is used.
+private final class LatencySocketPeer: @unchecked Sendable {
+  private let listener: NWListener
+  private let queue = DispatchQueue(label: "test.latency-socket")
+  private var connections: [NWConnection] = []
+  private var pings: [XCTestExpectation]
+  var port: UInt16? { listener.port?.rawValue }
+
+  init(ready: XCTestExpectation, pings: [XCTestExpectation]) throws {
+    self.pings = pings
+    let parameters = NWParameters.tcp
+    let websocket = NWProtocolWebSocket.Options()
+    websocket.autoReplyPing = true
+    parameters.defaultProtocolStack.applicationProtocols.insert(websocket, at: 0)
+    parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+    listener = try NWListener(using: parameters)
+    listener.stateUpdateHandler = { state in
+      if case .ready = state { ready.fulfill() }
+    }
+    listener.newConnectionHandler = { [weak self] connection in
+      guard let self else { return }
+      self.connections.append(connection)
+      connection.stateUpdateHandler = { [weak self] state in
+        guard case .ready = state else { return }
+        self?.send(["version": 1, "type": "ready", "timestamp": 0], to: connection)
+        self?.receive(from: connection)
+      }
+      connection.start(queue: self.queue)
+    }
+  }
+
+  func start() { listener.start(queue: queue) }
+  func expectNextPing(_ expectation: XCTestExpectation) { queue.sync { pings.append(expectation) } }
+  func stop() {
+    queue.sync {
+      listener.cancel()
+      connections.forEach { $0.cancel() }
+    }
+  }
+
+  private func receive(from connection: NWConnection) {
+    connection.receiveMessage { [weak self] data, _, _, error in
+      guard let self, error == nil, let data else { return }
+      if let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         message["type"] as? String == "ping", let id = message["requestId"] as? String {
+        if !self.pings.isEmpty { self.pings.removeFirst().fulfill() }
+        self.queue.asyncAfter(deadline: .now() + .milliseconds(120)) {
+          self.send(["version": 1, "type": "pong", "timestamp": 0, "requestId": id], to: connection)
+        }
+      }
+      self.receive(from: connection)
+    }
+  }
+
+  private func send(_ message: [String: Any], to connection: NWConnection) {
+    let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
+    let context = NWConnection.ContentContext(identifier: "latency-test", metadata: [metadata])
+    connection.send(content: try? JSONSerialization.data(withJSONObject: message),
+      contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
+  }
+}
+
 final class WebParityFormattingTests: XCTestCase {
   func testStopLossPreviewRoundsAcrossWebStepBoundaries() {
     let examples = [
@@ -163,7 +352,7 @@ final class WebParityFormattingTests: XCTestCase {
         WebStopLossAmount.roundUp(Decimal(string: input)!), Decimal(string: expected)!, input)
     }
   }
-  func testResearchAndRecordTimesAcceptFractionalISOAndExchangeMilliseconds() throws {
+  func testRecordTimesAcceptFractionalISOAndExchangeMilliseconds() throws {
     let fractional = try XCTUnwrap(WebFormat.date("2026-10-31T02:00:00.123Z"))
     let milliseconds = String(Int64((fractional.timeIntervalSince1970 * 1000).rounded()))
     XCTAssertEqual(

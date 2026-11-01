@@ -9,6 +9,49 @@ final class ChartEngineCoreTests: XCTestCase {
         interval: "1h"
     )
 
+    @MainActor
+    func testBusinessDarkPaletteMatchesMarketPalette() {
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        for (business, market) in [(WebTheme.page, BinanceTheme.background),
+                                   (WebTheme.surface, BinanceTheme.surface),
+                                   (WebTheme.border, BinanceTheme.border),
+                                   (WebTheme.text, BinanceTheme.primaryText),
+                                   (WebTheme.secondary, BinanceTheme.secondaryText)] {
+            XCTAssertEqual(UIColor(business).resolvedColor(with: dark), UIColor(market).resolvedColor(with: dark))
+        }
+    }
+
+    func testRepairSnapshotKeepsNewerSocketTailAndClosedBars() async throws {
+        func candle(_ at: Int64, _ price: Double, _ closure: ChartCandleClosure) -> ChartCandle {
+            ChartCandle(openTime: at, closeTime: at + 59999, openPrice: 100,
+                        highPrice: max(100, price), lowPrice: min(100, price),
+                        closePrice: price, volume: 10, quoteVolume: 1000, closure: closure)
+        }
+        let store = CandleStore()
+        _ = await store.installSnapshot(closedCandles: [candle(0, 100, .closed)],
+                                        liveCandle: candle(60000, 115, .provisional))
+        let repaired = await store.installSnapshot(closedCandles: [candle(0, 100, .closed)],
+            liveCandle: candle(60000, 105, .provisional), preservingNewerData: true)
+        XCTAssertEqual(repaired.liveTail?.closePrice, 115)
+        // A delayed snapshot must not reopen a candle already closed by Socket.
+        _ = await store.installSnapshot(closedCandles: [candle(0, 100, .closed), candle(60000, 120, .closed)])
+        let delayed = await store.installSnapshot(closedCandles: [candle(0, 100, .closed)],
+            liveCandle: candle(60000, 105, .provisional), preservingNewerData: true)
+        XCTAssertEqual(delayed.history.candles.last?.closePrice, 120)
+        XCTAssertNil(delayed.liveTail)
+    }
+
+    func testHistoryPendingMetadataIsOptionalForOriginalServerCompatibility() throws {
+        let legacy = try JSONDecoder().decode(MarketKlineHistoryResponse.self,
+            from: Data(#"{"symbol":"BTCUSDT","interval":"1h","items":[]}"#.utf8))
+        XCTAssertNil(legacy.historyPending)
+        let queued = try JSONDecoder().decode(MarketKlineHistoryResponse.self,
+            from: Data(#"{"symbol":"BTCUSDT","interval":"1h","items":[],"historyPending":true,"statisticsPending":true,"hasMoreHistory":true}"#.utf8))
+        XCTAssertEqual(queued.historyPending, true)
+        XCTAssertEqual(queued.statisticsPending, true)
+        XCTAssertEqual(queued.hasMoreHistory, true)
+    }
+
     func testChartQuickSwitcherSequenceWrapsAroundSelection() {
         let sequence = ChartQuickSwitcherSequence(
             items: MarketKlineInterval.allCases,
@@ -2908,6 +2951,25 @@ final class ChartEngineCoreTests: XCTestCase {
                 initialX: 10
             ),
             .systemNavigation
+        )
+        // Match the 50 pt navigation start zone, including its boundary.
+        for initialX in [40.0, 50.0] {
+            XCTAssertEqual(
+                ChartPanDirectionResolver.ownership(
+                    velocityX: 500,
+                    velocityY: 0,
+                    initialX: initialX
+                ),
+                .systemNavigation
+            )
+        }
+        XCTAssertEqual(
+            ChartPanDirectionResolver.ownership(
+                velocityX: 500,
+                velocityY: 0,
+                initialX: 51
+            ),
+            .chart
         )
 
         var machine = ChartInteractionStateMachine()

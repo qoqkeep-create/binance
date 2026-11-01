@@ -96,7 +96,7 @@ struct BottomNavigationBar: View {
       8
     )
     .background {
-      WebTheme.surface
+      WebTheme.color(0xFFFFFF, 0x212731)
         .ignoresSafeArea(edges: .bottom)
     }
     .overlay(alignment: .top) {
@@ -139,8 +139,8 @@ struct BottomNavigationBar: View {
       }
       .foregroundStyle(
         isSelected
-          ? WebTheme.brand
-          : WebTheme.muted
+          ? WebTheme.color(0xF0B90B, 0xF0B90B, leadLight: 0x58B9EF)
+          : WebTheme.color(0x6B7280, 0x929AA5)
       )
       .frame(maxWidth: .infinity)
       .frame(minHeight: 49)

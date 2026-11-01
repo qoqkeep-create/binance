@@ -4,15 +4,17 @@
 
 手机桌面名称为 **Binance Tools**，Debug、Debug-Seoul、Release 均一致；Bundle ID 仍为 `com.waibao2025.trade.integrated`，更新安装继续使用同一个应用身份。桌面名称由 Xcode 工程的 `INFOPLIST_KEY_CFBundleDisplayName` 指定，不等同于 App Store Connect 中的商店名称。
 
-App 图标采用橙色到珊瑚红的渐变底色与象牙白折带 B 标记。`Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` 是 1024 × 1024、无透明通道的发布图标；`BrandMark.imageset` 保存同源的 64 / 128 / 192 像素标记，对应 1× / 2× / 3× 的 64 pt，供系统启动页、会话恢复页和认证页使用。桌面圆角由系统裁切，App 内标记由 `BinanceLogoMark` 裁切。
+App 图标采用橙色到珊瑚红的渐变底色与象牙白折带 B 标记。`Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` 是 1024 × 1024、无透明通道的发布图标；`BrandMark.imageset` 保存同源的 64 / 128 / 192 像素标记，供 App 内品牌组件使用。桌面圆角由系统裁切，App 内标记由 `BinanceLogoMark` 使用连续圆角裁切。
 
-系统启动页使用 `Info.plist` 的 `UILaunchStoryboardName = BrandLaunchScreen`，由新 `BrandLaunchScreen.storyboard` 指定固定 RGB 纯白与居中、宽高均 64 pt 的新 `BrandMark`；会话恢复页 `AppLaunchView` 同样使用固定白底与居中的 64 pt 新标记，深色模式也保持白底。启动背景独立于业务主题，不能只修改登录页背景。最终删除旧 `LaunchBackground` 颜色，使用新图集名称与独立 storyboard。
+系统启动页使用 `Info.plist` 的 `UILaunchStoryboardName = BrandLaunchScreen`，固定 RGB 纯白，居中图标从 64 pt 放大 50% 至 96 pt；会话恢复页 `AppLaunchView` 同样为固定白底、96 pt 图标，深色模式也保持白底。启动 storyboard 不应用运行时圆角属性，因此使用专用 `LaunchBrandMark.imageset`：在 96 / 192 / 288 像素资源中预渲染 SwiftUI 连续圆角（半径为边长的 22%），四角透明。资源由 [生成脚本](../frontend/ios-app/scripts/render_launch_mark.swift) 从发布图标生成，命令见 [开发文档](development.md)。启动背景独立于业务主题，不能只修改登录页背景。
 
-同一个本地构建号反复更换启动资源会复用旧资源缓存：本轮在替换图集并重装后仍见旧黑底图标，更换图集名称后曾只显示白底；重启模拟器也未解除。以相同源码、命令行临时 `CURRENT_PROJECT_VERSION=4` 重新安装后，冷启动实际显示白底、64 pt 橙红新图标。未改工程中的发布版本号或 Cloud 自动递增规则。后续启动页验收需使用新构建号，不能把相同构建号的旧缓存当成包内资源；手机需安装此次新的 TestFlight 构建后再核对。
+同一个本地构建号反复更换启动资源会复用旧资源缓存：此前替换图集并重装后仍见旧黑底图标，更换图集名称后曾只显示白底；重启模拟器也未解除。当时以命令行临时 `CURRENT_PROJECT_VERSION=4` 重新安装后，冷启动显示白底、当时的 64 pt 新图标；当前尺寸已调整为上述 96 pt。未改工程中的发布版本号或 Cloud 自动递增规则。后续启动页验收需使用新构建号，不能把相同构建号的旧缓存当成包内资源；手机需安装此次新的 TestFlight 构建后再核对。
 
 登录、注册布局依据 [USDC 原始工程](sources.md) 的 `Features/Auth/LoginView.swift`，使用现有 `BinanceTheme`：左右 24 pt、品牌标记 42 pt、品牌区下方间距 48 pt、标题 32 pt、字段标签与输入间距 9 pt、字段间距 18 pt、输入和主按钮圆角 10 pt，保留来源黄色主按钮与浅深色。新增品牌色用于图标，其他业务页面沿用原主题。
 
-登录是根页面；注册、找回密码、重置密码通过原生 `.sheet` 从底部展开，使用 large detent、拖动条、24 pt 顶角与关闭按钮，支持下拉关闭。协议和隐私页也使用 sheet，在注册 sheet 内阅读时继续从底部展示，完成后回到原表单。表单过高或键盘弹出时可以滚动。提交期间禁止重复提交与手势关闭，显式关闭会取消当前页面请求；切到其他表单清空密码，新开注册表单不沿用上一次输入的密码。
+登录页只保留居中的“注册账号”入口，移除其前方“没有账号”文案。全局浮字提示最大宽度从 240 pt 调为 180 pt，纯文字纵向内边距从 11 pt 调为 14 pt，长文字自动折成最多两行。
+
+登录是根页面；注册、找回密码、重置密码使用共享 `WebSheet`，面板高为可用容器的 96%，保留拖动条、24 pt 顶角与关闭按钮，支持头部下拉关闭。协议和隐私页也使用该容器，在注册面板内阅读后回到原表单。大面板以 0.18 秒从底部展开，0.14 秒关闭；启用系统“减弱动态效果”时改为淡入淡出，公共动画规则见 [原生页面](ios-web-parity.md)。表单过高或键盘弹出时可以滚动。提交期间禁止重复提交与手势关闭，显式关闭会取消当前页面请求；切到其他表单清空密码，新开注册表单不沿用上一次输入的密码。
 
 协议内容复用 `USDTLegalView`；该页面隐藏系统导航栏并使用自定义标题，因此认证 sheet 的“完成”操作直接放在标题右侧，不能仅依赖 NavigationStack 的 toolbar。每种认证表单使用独立的控件标识，避免注册 sheet 与背后的登录页混淆。
 

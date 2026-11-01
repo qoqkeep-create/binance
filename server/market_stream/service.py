@@ -1,18 +1,24 @@
 import logging
 import time
+from threading import RLock
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.cache import cache
 from django.db import close_old_connections, connection, transaction
 
 from common.binance import BinanceCredentials, BinanceFuturesClient
-from market_stream import bus
+from market_stream import bus, history_cache
 from market_stream.core import INTERVAL_MS, PRICE_FIELDS, aggregate_complete, rest_candle, wire_candle
 from market_stream.models import MarketCandle
 
 log = logging.getLogger(__name__)
 FIELD_MAP = dict(zip(PRICE_FIELDS, ("open_price", "high_price", "low_price", "close_price", "volume", "quote_volume")))
 RETENTION_DAYS = {"1m": 7, "5m": 14, "15m": 30, "1h": 90, "4h": 180, "1d": 365}
+HOT_WINDOW_SIZE = {"1m": 3000, "5m": 3000, "15m": 3000, "1h": 3000, "4h": 1500, "1d": 1500}
+# All live-cache writers run in the single collector process. Keep its cache
+# comparison/write/publication ordered, without holding this lock for DB I/O.
+LIVE_STATE_LOCK = RLock()
 
 
 def public_request(path, query=None):
@@ -20,14 +26,19 @@ def public_request(path, query=None):
     return client._request("GET", path, query=query, signed=False, budget_priority="background")
 
 
-def symbols(refresh=False):
+def symbols(refresh=False, *, cached_only=False):
     key = "market:universe"
     result = cache.get(key)
+    if result is None and cached_only:
+        return cache.get("market:universe:last", [])
     if result is None or refresh:
         info = public_request("/fapi/v1/exchangeInfo")
         result = sorted(row["symbol"] for row in info["symbols"] if row.get("status") == "TRADING"
                         and row.get("contractType") == "PERPETUAL" and row.get("quoteAsset") == settings.MARKET_QUOTE_ASSET)
         cache.set(key, result, 300)
+        cache.set("market:universe:last", result, 86400)
+        cache.set("market:onboard", {row["symbol"]: int(row.get("onboardDate", 0))
+                                     for row in info["symbols"] if row["symbol"] in result}, 86400)
     return result
 
 
@@ -51,8 +62,7 @@ def update_tickers(rows, *, emit=True):
             updates.append(item)
     cache.set("market:tickers", current, 86400)
     if emit:
-        for item in updates:
-            bus.publish(bus.event("market.ticker", item["symbol"], item))
+        bus.publish_batch("market.ticker", [(item["symbol"], item) for item in updates])
     return current
 
 
@@ -80,49 +90,75 @@ def persist(rows):
     MarketCandle.objects.bulk_create(objects, update_conflicts=True,
                                     update_fields=["close_time", *FIELD_MAP.values()],
                                     unique_fields=["symbol", "interval", "open_time"] if connection.vendor != "mysql" else None)
+    for symbol, interval in {(row["symbol"], row["interval"]) for row in closed}:
+        transaction.on_commit(lambda key=f"market:revision:{symbol}:{interval}": cache.set(key, uuid4().hex, 86400))
 
 
-def load_history(symbol, interval, limit=300, before=None):
-    now = int(time.time() * 1000)
-    key = f"market:history:{symbol}:{interval}:{limit}:{before or 'latest'}"
-    hit = cache.get(key)
-    if hit is not None:
-        return hit
-    query = MarketCandle.objects.filter(symbol=symbol, interval=interval)
-    if before is not None:
-        query = query.filter(open_time__lt=before)
-    stored = [from_model(row) for row in reversed(list(query.order_by("-open_time")[:limit]))]
+def warm_history(symbol, interval, before=None, *, prewarm=False):
+    """A shared, limit-independent hot window, also populated at startup."""
+    revision = cache.get(f"market:revision:{symbol}:{interval}", "initial")
+    key = f"market:history:v4:{symbol}:{interval}:{before or 'latest'}:{revision}"
+    stored = history_cache.get(key)
+    if stored is None:
+        if prewarm and not history_cache.has_room():
+            return []
+        query = MarketCandle.objects.filter(symbol=symbol, interval=interval)
+        if before is not None:
+            query = query.filter(open_time__lt=before)
+        size = HOT_WINDOW_SIZE[interval] if before is None else 1500
+        stored = [from_model(row) for row in reversed(list(query.order_by("-open_time")[:size]))]
+        history_cache.put(key, stored, prewarm=prewarm)
+    return stored
+
+
+def partial_bucket(symbol, interval, now):
     width = INTERVAL_MS[interval]
+    start = now // width * width
+    minutes = {row["openTime"]: row for row in warm_history(symbol, "1m")
+               if start <= row["openTime"] < start + width}
+    live = cache.get(f"market:live:{symbol}:1m")
+    if live and start <= live["openTime"] <= now:
+        minutes[live["openTime"]] = live
+    ordered = sorted(minutes.values(), key=lambda row: row["openTime"])
+    # Match USDC's local partial bucket without inventing missing minutes.
+    if not ordered or [row["openTime"] for row in ordered] != list(range(start, ordered[-1]["openTime"] + 60000, 60000)):
+        return None
+    from market_stream.core import number
+    return {**ordered[-1], "interval": interval, "openTime": start, "closeTime": start + width - 1,
+            "openPrice": ordered[0]["openPrice"], "closed": False,
+            "highPrice": str(max(number(row["highPrice"]) for row in ordered)),
+            "lowPrice": str(min(number(row["lowPrice"]) for row in ordered)),
+            "volume": str(sum((number(row["volume"]) for row in ordered), number(0))),
+            "quoteVolume": str(sum((number(row["quoteVolume"]) for row in ordered), number(0)))}
+
+
+def load_history(symbol, interval, limit=300, before=None, *, schedule_repair=True):
+    """Read a local snapshot only. Exchange I/O belongs to the repair worker."""
+    from market_stream import repair
+    now = int(time.time() * 1000)
+    width = INTERVAL_MS[interval]
+    stored = warm_history(symbol, interval, before)[-limit:]
     latest_closed_open = now // width * width - width
     stale = before is None and (not stored or stored[-1]["openTime"] < latest_closed_open)
     gaps = any(b["openTime"] - a["openTime"] != width for a, b in zip(stored, stored[1:]))
-    if len(stored) < limit or stale or gaps:
-        params = {"pair": symbol, "contractType": "PERPETUAL", "interval": interval, "limit": limit}
-        if before is not None:
-            params["endTime"] = before - 1
-        try:
-            raw = public_request("/fapi/v1/continuousKlines", params)
-            received = [rest_candle(symbol, interval, row, now) for row in raw]
-            with transaction.atomic():
-                persist(received)
-            merged = {row["openTime"]: row for row in stored}
-            merged.update({row["openTime"]: row for row in received})
-            stored = sorted(merged.values(), key=lambda row: row["openTime"])[-limit:]
-        except Exception:
-            if not stored:
-                raise
-            log.warning("Market history repair deferred symbol=%s interval=%s", symbol, interval)
+    pending = False
+    if schedule_repair and (len(stored) < limit or stale or gaps):
+        task = repair.schedule(symbol, interval, before=before)
+        pending = not task.completed_at or task.attempts > 0 or task.lease_until > time.time() or task.due_at <= time.time()
+        if stale and task.completed_at and time.time() - task.completed_at >= 60:
+            pending = True
     if before is None:
         live = cache.get(f"market:live:{symbol}:{interval}")
+        if (not live or live["openTime"] < now // width * width) and interval != "1m":
+            live = partial_bucket(symbol, interval, now)
         if live and live["openTime"] >= now // width * width:
             merged = {row["openTime"]: row for row in stored}
             merged[live["openTime"]] = live
             stored = sorted(merged.values(), key=lambda row: row["openTime"])[-limit:]
-    result = {"symbol": symbol, "interval": interval, "items": [wire_candle(row) for row in stored],
-              "lastOpenTime": stored[-1]["openTime"] if stored else None,
-              "serverTime": now, "stale": not stored or stored[-1]["openTime"] < latest_closed_open}
-    cache.set(key, result, 2 if before is None else 300)
-    return result
+    return {"symbol": symbol, "interval": interval, "items": [wire_candle(row) for row in stored],
+            "lastOpenTime": stored[-1]["openTime"] if stored else None,
+            "serverTime": now, "stale": stale, "historyPending": pending,
+            "hasMoreHistory": pending or len(stored) == limit}
 
 
 def repair_minute_gaps(symbol, *, now=None):
@@ -164,19 +200,45 @@ def prune_history(*, now=None, batch_size=2000):
         close_old_connections()
 
 
+def publish_live_batch(rows, *, emit=True):
+    """No database access: live display never waits for closed-bar storage."""
+    if not rows:
+        return
+    with LIVE_STATE_LOCK:
+        previous_rows = cache.get_many([f"market:live:{row['symbol']}:{row['interval']}" for row in rows])
+        updates, events = {}, []
+        for row in rows:
+            key = f"market:live:{row['symbol']}:{row['interval']}"
+            previous = previous_rows.get(key)
+            if previous and not row["closed"] and (
+                (row["openTime"], row["eventTime"]) < (previous["openTime"], previous["eventTime"])
+                or (previous["closed"] and previous["openTime"] == row["openTime"])
+            ):
+                continue
+            if not previous or (row["openTime"], row["eventTime"]) >= (previous["openTime"], previous["eventTime"]) or (
+                row["closed"] and row["openTime"] == previous["openTime"]
+            ):
+                updates[key] = row
+                previous_rows[key] = row
+            events.append((f"{row['symbol']}:{row['interval']}", wire_candle(row)))
+        cache.set_many(updates, 180)
+        if emit:
+            bus.publish_batch("market.kline", events)
+
+
 def consume_batch(rows):
     close_old_connections()
     try:
+        live = [row for row in rows if not row["closed"]]
+        closed = [row for row in rows if row["closed"]]
+        publish_live_batch(live)
+        if not closed:
+            return
         with transaction.atomic():
-            persist(rows)
-        for row in rows:
-            key = f"market:live:{row['symbol']}:{row['interval']}"
-            previous = cache.get(key)
-            if previous and (row["openTime"], row["eventTime"]) < (previous["openTime"], previous["eventTime"]):
-                continue
-            cache.set(key, row, 180)
-            bus.publish(bus.event("market.kline", f"{row['symbol']}:{row['interval']}", wire_candle(row)))
-            if row["closed"] and row["interval"] == "1m":
+            persist(closed)
+        publish_live_batch(closed)
+        for row in closed:
+            if row["interval"] == "1m":
                 aggregate_closed(row)
     finally:
         close_old_connections()
@@ -193,5 +255,4 @@ def aggregate_closed(last):
         if result:
             with transaction.atomic():
                 persist([result])
-            cache.set(f"market:live:{last['symbol']}:{interval}", result, 180)
-            bus.publish(bus.event("market.kline", f"{last['symbol']}:{interval}", wire_candle(result)))
+            publish_live_batch([result])

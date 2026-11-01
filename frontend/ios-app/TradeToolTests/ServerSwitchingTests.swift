@@ -274,3 +274,115 @@ private actor NativeFixtureClient: APIClient {
         return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
     }
 }
+
+@MainActor
+final class MarketFastPathTests: XCTestCase {
+    func testLegacyBackendKeepsMarketAndAccountSubscriptions() {
+        let subscriptions: [RealtimeSubscription] = [.marketKline(symbols: ["BTCUSDT"]),
+            .marketTicker(symbols: ["BTCUSDT"]), .tradingAccount,
+            .marketHistory(symbols: ["BTCUSDT"], intervals: ["1h"])]
+        XCTAssertEqual(RealtimeSubscription.compatible(subscriptions, capabilities: []).map(\.channel),
+            ["market.kline", "market.ticker", "trading.account"])
+        XCTAssertEqual(RealtimeSubscription.compatible(subscriptions, capabilities: ["market.history"]), subscriptions)
+    }
+
+    func testPreparingSessionMakesNoAccountRequests() async throws {
+        let api = NativeFixtureClient()
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: "market-session-qa")
+        XCTAssertTrue(store.scope.hasPrefix("market-session-qa:"))
+        let paths = await api.paths
+        XCTAssertTrue(paths.isEmpty)
+    }
+
+    func testReadinessNoticeRefreshesOnlyTheSelectedMarket() async throws {
+        let api = PendingChartAPI()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        await viewModel.receive(notice(symbol: "ETHUSDT"))
+        let unchanged = await api.latestReads
+        XCTAssertEqual(unchanged, 1)
+        await viewModel.receive(notice(symbol: "BTCUSDT"))
+        try await waitUntil { viewModel.candles.first?.closePrice == 102 }
+    }
+
+    func testSubscriptionAcknowledgementRecoversAMissedReadinessNotice() async throws {
+        let api = PendingChartAPI()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        let data = Data("""
+        {"version":1,"type":"ack","timestamp":1,"data":{"subscriptions":[{"channel":"market.history","filters":{"symbols":["BTCUSDT"],"intervals":["1h"]}}]}}
+        """.utf8)
+        await viewModel.receive(try JSONDecoder().decode(RealtimeServerMessage.self, from: data))
+        try await waitUntil { viewModel.candles.first?.closePrice == 102 }
+    }
+
+    func testPartialHistoryPageAppearsWhileBackfillIsPending() async throws {
+        let api = PendingChartAPI()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        let first = try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime)
+        viewModel.requestOlderHistory()
+        try await waitUntil {
+            (viewModel.chartDataFrame?.candles.history.candles.first?.openTime ?? first) < first
+        }
+        XCTAssertTrue(viewModel.hasMoreHistory)
+    }
+
+    func testPendingStatisticsDoNotPollAndReinstallTheWholeSnapshot() async throws {
+        let api = PendingChartAPI()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        try await Task.sleep(for: .milliseconds(1300))
+        let count = await api.latestReads
+        XCTAssertEqual(count, 1)
+    }
+
+    private func makeChart(_ api: PendingChartAPI) -> MarketChartViewModel {
+        let market = MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 100,
+            changePercent24h: 0, updatedAt: .now)
+        return MarketChartViewModel(market: market, apiClient: api,
+            realtimeClient: RealtimeClient(baseURL: URL(string: "http://127.0.0.1")!, tokenProvider: { nil }))
+    }
+
+    private func notice(symbol: String) -> RealtimeServerMessage {
+        RealtimeServerMessage(version: 1, type: "event", requestId: nil, channel: "market.history",
+            event: "upsert", key: nil, sequence: 1, timestamp: 1,
+            data: .object(["symbol": .string(symbol), "interval": .string("1h"), "kind": .string("history")]), error: nil)
+    }
+
+    private func waitUntil(_ predicate: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !predicate(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(predicate())
+    }
+}
+
+private actor PendingChartAPI: APIClient {
+    private(set) var latestReads = 0
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        guard request.path == "/api/market/klines" else { throw APIError.invalidResponse }
+        let before = request.queryItems.first { $0.name == "beforeOpenTime" }?.value.flatMap(Int64.init)
+        if before == nil { latestReads += 1 }
+        let width: Int64 = 3_600_000
+        let now = Int64(Date().timeIntervalSince1970 * 1000) / width * width
+        let end = before ?? now
+        let rows = (1...32).reversed().map { index in
+            MarketCandle(openTime: end - Int64(index) * width,
+                closeTime: end - Int64(index - 1) * width - 1,
+                openPrice: 100, highPrice: 110, lowPrice: 99, closePrice: Double(100 + latestReads), volume: 1, quoteVolume: 100)
+        }
+        return MarketKlineHistoryResponse(symbol: "BTCUSDT", interval: "1h", items: rows,
+            historyPending: before != nil, statisticsPending: before == nil, hasMoreHistory: true) as! Response
+    }
+}

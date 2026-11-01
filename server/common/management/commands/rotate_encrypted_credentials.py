@@ -5,11 +5,10 @@ from django.utils import timezone
 
 from api_bindings.models import ApiBinding
 from common.utils import aes_decrypt_with_metadata, aes_encrypt
-from signal_research.models import ResearchAiModel
 
 
 class Command(BaseCommand):
-    help = "Rewrite encrypted database credentials with the current AES_SECRET_KEY."
+    help = "Rewrite active API binding credentials with the current AES_SECRET_KEY."
 
     def add_arguments(self, parser):
         mode = parser.add_mutually_exclusive_group()
@@ -21,7 +20,7 @@ class Command(BaseCommand):
         mode.add_argument(
             "--verify-only",
             action="store_true",
-            help="Fail unless every encrypted value is already readable by the current key.",
+            help="Fail unless every active API binding credential is already readable by the current key.",
         )
 
     def handle(self, *args, **options):
@@ -44,7 +43,6 @@ class Command(BaseCommand):
         try:
             with transaction.atomic():
                 self._process_api_bindings(counters, write=not dry_run and not verify_only)
-                self._process_research_models(counters, write=not dry_run and not verify_only)
         except Exception as exc:
             raise CommandError(
                 f"encrypted credential migration failed ({type(exc).__name__}); no changes committed"
@@ -96,12 +94,3 @@ class Command(BaseCommand):
             if write and any(updates[field] != getattr(binding, field) for field in fields):
                 updates["updated_at"] = timezone.now()
                 ApiBinding.objects.filter(pk=binding.pk).update(**updates)
-
-    def _process_research_models(self, counters: dict[str, int], *, write: bool) -> None:
-        queryset = ResearchAiModel.objects.select_for_update().only("id", "api_key_encrypted")
-        for model in queryset.iterator():
-            counters["records"] += 1
-            encrypted = str(model.api_key_encrypted or "")
-            rewritten = self._rewrite_value(encrypted, counters, write=write)
-            if write and rewritten != encrypted:
-                ResearchAiModel.objects.filter(pk=model.pk).update(api_key_encrypted=rewritten)

@@ -34,12 +34,16 @@
 
 Binance REST 请求预算由 `common/binance_rate_limit.py` 与 settings 管理；增加 worker 或缩短轮询不扩大交易所配额。保持保护 / 交易请求的预算优先级。
 
+当前行情关键路径没有新增环境变量：`collector.py` 固定历史任务 1 路、统计 6 路，启动和每 5 分钟在容量允许时逐项预热；收线待写缓冲上限 10,000 条。`service.HOT_WINDOW_SIZE` 定义共享热窗口；`history_cache.py` 限制为最多 64 窗、每窗压缩后不超过 256 KiB，TTL 为 300 秒，只淘汰公共历史，不修改共享 Redis 的 80 MB / noeviction 配置。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN 预热，不控制原生窗口预热。参数、v2 Redis 主题及 API / market 配套升级边界见 [行情主文档](market-data.md)。
+
 ## 可选能力
 
-SMTP 的 `EMAIL_*`、模型的 `AI_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALERT_*` / `OPS_ALERT_*` 按真实服务地址配置。当前仓库不再包含旧 webhook 容器；保留业务接口不代表外部服务已接通。整合环境尚未配置的能力见 [已知事项](known-issues.md)。
+SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALERT_*` / `OPS_ALERT_*` 按真实服务地址配置。当前仓库不再包含旧 webhook 容器；保留业务接口不代表外部服务已接通。整合环境尚未配置的能力见 [已知事项](known-issues.md)。
 
-交易所凭证与模型密钥经 AES-GCM 加密落库。轮换先发布兼容代码，再配置上一代密钥、迁移并验证全部密文，最后移除上一代密钥。数据库备份应配套保护解密密钥，不能仅替换当前密钥。
+交易所凭证经 AES-GCM 加密落库。轮换先发布兼容代码，再配置上一代密钥、迁移并验证当前 API 绑定密文，最后移除上一代密钥。数据库备份应配套保护解密密钥，不能仅替换当前密钥。
 
 变更配置应同时核对代码读取位置、容器注入、重建需求和回退方法；源码配置不等同于线上状态。实际运行验收见 [变更记录](changes.md)。
 
 注册开关使用数据库 `SystemSetting.open_registration`，不在 env 中；47.80.22.243（首尔服务器）于 2026-11-01 按用户授权开启，管理员可关闭。操作和最后验证见 [运维](operations.md#注册开关)，客户端继续读取实际状态。
+
+信号研究退役后不再读取 `AI_PROVIDER`、`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`。凭证轮换不再处理旧研究表中的模型密钥；历史备份和回滚的密钥边界见 [研究退役](research.md)。

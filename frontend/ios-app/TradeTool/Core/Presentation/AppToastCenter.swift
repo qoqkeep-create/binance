@@ -158,13 +158,14 @@ private struct ToastView: View {
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, toast.iconSystemName == nil ? 18 : 20)
-        .padding(.vertical, toast.iconSystemName == nil ? 11 : 18)
+        .padding(.vertical, toast.iconSystemName == nil ? 14 : 20)
         .frame(
             minWidth: toast.iconSystemName == nil ? 0 : 112,
-            maxWidth: 240
+            maxWidth: 180
         )
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -172,6 +173,7 @@ private struct ToastView: View {
         )
         .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("app.toast")
     }
 }
 

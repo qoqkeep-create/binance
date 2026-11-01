@@ -51,11 +51,15 @@ final class USDTStore: ObservableObject {
     init(api: any APIClient) { self.api = api }
 
     func begin(userID: String) async {
+        prepareSession(userID: userID)
+        await refresh()
+    }
+
+    func prepareSession(userID: String) {
         if self.userID != userID { invalidate() }
         self.userID = userID
         NativeTradingMode.userID = userID
         mode = NativeTradingMode.current
-        await refresh()
     }
 
     func switchMode(_ value: String) {

@@ -146,6 +146,12 @@ class BinanceRequestBudgetTests(TestCase):
         self.assertEqual(history_spec.priority, RequestPriority.BACKGROUND)
         self.assertEqual(history_spec.weight, 30)
 
+    def test_continuous_kline_repair_reserves_full_weight(self):
+        spec = classify_request(method="GET", path="/fapi/v1/continuousKlines",
+            base_url="https://fapi.binance.com", query={"limit": 1500}, priority="background")
+        self.assertEqual(spec.weight, 10)
+        self.assertEqual(spec.priority, RequestPriority.BACKGROUND)
+
     def test_balance_request_weights_match_their_exchange_scopes(self):
         spot = classify_request(
             method="GET",

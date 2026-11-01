@@ -99,7 +99,7 @@ def _estimate_weight(path: str, query: Mapping[str, Any] | None) -> int:
         return 5
     if path.endswith(("/capital/deposit/hisrec", "/capital/withdraw/history")):
         return 10
-    if path.endswith(("/klines", "/markPriceKlines")):
+    if path.endswith(("/klines", "/markPriceKlines", "/continuousKlines")):
         try:
             limit = int(params.get("limit") or 500)
         except (TypeError, ValueError):

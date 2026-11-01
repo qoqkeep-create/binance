@@ -2,6 +2,7 @@ import SwiftUI
 
 struct USDTStrategiesView: View {
   var returnAfterSelection = false
+  var onClose: (() -> Void)? = nil
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: USDTStore
   @State private var notice = ""
@@ -56,7 +57,7 @@ struct USDTStrategiesView: View {
         }.buttonStyle(WebButtonStyle(height: 52, radius: 14))
         USDTNotice(text: notice)
       }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-    }.scrollIndicators(.hidden).usdtPage("我的策略").task { await store.refresh() }
+    }.scrollIndicators(.hidden).usdtPage("我的策略", backAction: onClose).task { await store.refresh() }
       .webModal(isPresented: $selecting) {
         WebModal(title: "确认选择策略") {
           Text("确定要选择策略 \(selected.value("name")) 吗？").foregroundStyle(WebTheme.secondary)
@@ -89,7 +90,9 @@ struct USDTStrategiesView: View {
       do {
         _ = try await store.send("/v1/strategy/" + action, ["strategy_id": selected["id"] ?? .null])
         await store.refresh()
-        if action == "set-active" && returnAfterSelection { dismiss() }
+        if action == "set-active" && returnAfterSelection {
+          if let onClose { onClose() } else { dismiss() }
+        }
       } catch { notice = error.localizedDescription }
     }
   }
@@ -170,7 +173,7 @@ struct USDTStrategyEditor: View {
             }
           }.padding(.bottom, 16)
         }
-      }.onAppear {
+      }.interactivePopGestureEnabled().onAppear {
         guard let strategy else { return }
         name = strategy.value("name")
         levels = (strategy["levels"]?.rows ?? []).map { row in
@@ -307,7 +310,7 @@ private struct WebIndicator: Codable, Identifiable {
 }
 
 struct USDTIndicatorsView: View {
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @State private var indicators: [WebIndicator] = []
   @State private var screen = "list"
   @State private var selected: WebIndicator? = nil
@@ -434,6 +437,7 @@ struct USDTIndicatorsView: View {
     }.background(WebTheme.page.ignoresSafeArea()).foregroundStyle(WebTheme.text).toolbar(
       .hidden, for: .navigationBar
     ).buttonStyle(.plain)
+      .interactivePopGestureEnabled(localBack: screen == "list" ? nil : { screen = "list" })
       .safeAreaInset(edge: .bottom, spacing: 0) {
         if screen != "list" {
           Button(screen == "edit" ? "保存指标" : "确定") {
@@ -448,7 +452,7 @@ struct USDTIndicatorsView: View {
           .frame(maxWidth: 448).padding(16).frame(maxWidth: .infinity)
           .background(
             LinearGradient(
-              colors: [Color(red: 11 / 255, green: 14 / 255, blue: 17 / 255), .clear],
+              colors: [WebTheme.page, .clear],
               startPoint: .bottom, endPoint: .top
             ).ignoresSafeArea(edges: .bottom))
         }
@@ -514,7 +518,7 @@ enum WebStrategyText {
 
 struct WebStrategyPicker: View {
   @EnvironmentObject private var store: USDTStore
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @Binding var selection: String
   @Binding var enabled: Bool
   var autoOnly = false
@@ -525,7 +529,7 @@ struct WebStrategyPicker: View {
   var body: some View {
     GeometryReader { geometry in
       ZStack(alignment: .bottom) {
-        Color.black.opacity(0.6).ignoresSafeArea().onTapGesture { if !busy { dismiss() } }
+        WebModalBackdrop()
         VStack(spacing: 0) {
           HStack {
             Text("止盈止损策略").font(.system(size: 18, weight: .bold))
@@ -593,12 +597,14 @@ struct WebStrategyPicker: View {
           ).disabled(busy || ((enabled || autoOnly) && selection.isEmpty)).padding(.horizontal, 16)
             .padding(.bottom, 24)
         }.font(.system(size: 16)).foregroundStyle(WebTheme.text).background(
-          WebTheme.color(0xF8FAFC, 0x0B0E11)
+          WebTheme.color(0xF8FAFC, 0x272F3A)
         ).clipShape(UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)).frame(
           maxWidth: 448
-        ).padding(.bottom, -geometry.safeAreaInsets.bottom)
+        ).padding(.bottom, -geometry.safeAreaInsets.bottom).webModalCard()
       }
-    }.presentationBackground(.clear).buttonStyle(.plain)
-      .fullScreenCover(isPresented: $manage) { NavigationStack { USDTStrategiesView() } }
+    }.presentationBackground(.clear).buttonStyle(.plain).webModalDismissDisabled(busy)
+      .webSheet(isPresented: $manage) {
+        NavigationStack { USDTStrategiesView(onClose: { manage = false }) }
+      }
   }
 }

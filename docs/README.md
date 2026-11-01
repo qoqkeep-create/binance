@@ -19,7 +19,7 @@
 | [资金](capital-and-transfers.md) | 归集状态机与历史归属 |
 | [带单模式](lead-trading.md) | 模式身份、能力和开放边界 |
 | [信号与通知](signals-and-notifications.md) | 入库、事件和独立投递 |
-| [信号研究](research.md) | 样本、模型、草案与回测 |
+| [观察计划与研究退役](research.md) | 保留能力、已移除接口、历史资料与数据库兼容 |
 | [操作日志](operation-logs.md) | 日志口径、状态与分页 |
 | [入站信号接口](api/external-signals.md) | 合作方鉴权、字段和去重 |
 | [出站通知接口](api/trade-notifications.md) | 事件、渠道与投递协议 |

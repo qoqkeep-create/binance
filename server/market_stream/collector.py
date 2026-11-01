@@ -9,18 +9,40 @@ from django.conf import settings
 from django.core.cache import cache
 from websockets.asyncio.client import connect
 
-from market_stream import service
+from market_stream import repair, service
 from market_stream.core import INTERVAL_MS, normalize_kline
 
 log = logging.getLogger(__name__)
+MAX_PENDING_CLOSED = 10000
 
 
 class MarketCollector:
     def __init__(self):
         self.pending = {}
         self.ticker_pending = {}
+        self.closed_pending = {}
+        self.closed_overflow = 0
+        self.live_ready = asyncio.Event()
+        self.closed_ready = asyncio.Event()
+        self.tickers_ready = asyncio.Event()
+        self.warm_ready = asyncio.Event()
         self.symbols = []
         self.last_seen_written = 0
+
+    def accept(self, candle):
+        if candle["closed"]:
+            key = (candle["symbol"], candle["interval"], candle["openTime"])
+            self.closed_pending[key] = candle
+            if len(self.closed_pending) > MAX_PENDING_CLOSED:
+                self.closed_pending.pop(next(iter(self.closed_pending)))
+                self.closed_overflow += 1
+            self.closed_ready.set()
+        else:
+            key = (candle["symbol"], candle["interval"])
+            previous = self.pending.get(key)
+            if not previous or (candle["openTime"], candle["eventTime"]) >= (previous["openTime"], previous["eventTime"]):
+                self.pending[key] = candle
+                self.live_ready.set()
 
     async def consume(self, streams):
         url = settings.MARKET_WS_URL.rstrip("/") + "/stream?streams=" + "/".join(streams)
@@ -38,13 +60,9 @@ class MarketCollector:
                         if isinstance(data, list):
                             for ticker in data:
                                 self.ticker_pending[ticker["s"]] = ticker
+                            self.tickers_ready.set()
                         elif isinstance(data, dict) and "k" in data:
-                            candle = normalize_kline(data)
-                            # Keep closed and next-minute candles distinct while coalescing live updates.
-                            key = (candle["symbol"], candle["openTime"])
-                            previous = self.pending.get(key)
-                            if not previous or candle["eventTime"] >= previous["eventTime"]:
-                                self.pending[key] = candle
+                            self.accept(normalize_kline(data))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -54,29 +72,67 @@ class MarketCollector:
 
     async def flush(self):
         while True:
-            await asyncio.sleep(0.2)
+            await self.live_ready.wait()
+            self.live_ready.clear()
             candles, self.pending = self.pending, {}
-            tickers, self.ticker_pending = self.ticker_pending, {}
+            try:
+                if candles:
+                    await asyncio.to_thread(service.publish_live_batch, list(candles.values()))
+            except Exception as exc:
+                log.warning("Market live delivery deferred (%s)", type(exc).__name__)
+
+    async def store_closed(self):
+        while True:
+            await self.closed_ready.wait()
+            self.closed_ready.clear()
+            candles, self.closed_pending = self.closed_pending, {}
+            if self.closed_overflow:
+                log.warning("Market closed buffer dropped %s old entries; continuity repair will recover them", self.closed_overflow)
+                self.closed_overflow = 0
             try:
                 if candles:
                     await asyncio.to_thread(service.consume_batch, list(candles.values()))
+            except Exception as exc:
+                log.warning("Market closed storage deferred (%s); continuity repair will recover it", type(exc).__name__)
+
+    async def flush_tickers(self):
+        while True:
+            await self.tickers_ready.wait()
+            self.tickers_ready.clear()
+            tickers, self.ticker_pending = self.ticker_pending, {}
+            try:
                 if tickers:
                     await asyncio.to_thread(service.update_tickers, list(tickers.values()))
-                await asyncio.to_thread(cache.set, "market:collector:heartbeat", int(time.time()*1000), 30)
             except Exception as exc:
-                # Database repair is authoritative after a failure; avoid replaying stale live quotes.
-                log.warning("Market batch deferred (%s); continuity repair will recover closed candles", type(exc).__name__)
+                log.warning("Market ticker delivery deferred (%s)", type(exc).__name__)
 
-    async def backfill(self):
+    async def backfill(self, lane="history"):
         while True:
-            for symbol in self.symbols:
-                try:
-                    await asyncio.to_thread(service.load_history, symbol, "1m", 500)
-                    await asyncio.to_thread(service.repair_minute_gaps, symbol)
-                except Exception as exc:
-                    log.warning("Minute repair deferred symbol=%s (%s)", symbol, type(exc).__name__)
-                await asyncio.sleep(0.15)
-            await asyncio.sleep(60)
+            try:
+                worked = await asyncio.to_thread(repair.run_next, lane=lane)
+            except Exception as exc:
+                worked = False
+                log.warning("Market repair worker deferred (%s)", type(exc).__name__)
+            await asyncio.sleep(0.2 if worked else 1)
+
+    async def warm(self):
+        while True:
+            await self.warm_ready.wait()
+            self.warm_ready.clear()
+            tickers = await asyncio.to_thread(cache.get, "market:tickers", {})
+            ranked = sorted(self.symbols, key=lambda symbol: tickers.get(symbol, {}).get("quoteVolume24h", 0), reverse=True)
+            for symbol in ranked:
+                for interval in INTERVAL_MS:
+                    try:
+                        await asyncio.to_thread(service.warm_history, symbol, interval, prewarm=True)
+                    except Exception as exc:
+                        log.warning("Market warmup deferred (%s)", type(exc).__name__)
+                    await asyncio.sleep(0)
+
+    async def heartbeat(self):
+        while True:
+            await asyncio.to_thread(cache.set, "market:collector:heartbeat", int(time.time()*1000), 30)
+            await asyncio.sleep(5)
 
     async def retention(self):
         while True:
@@ -96,6 +152,7 @@ class MarketCollector:
                     log.warning("Market universe unavailable (%s)", type(exc).__name__)
                     await asyncio.sleep(10)
                     continue
+                await asyncio.to_thread(repair.seed, discovered)
                 if discovered != self.symbols:
                     for task in tasks:
                         task.cancel()
@@ -104,9 +161,13 @@ class MarketCollector:
                     streams = [f"{symbol.lower()}_perpetual@continuousKline_1m" for symbol in discovered]
                     tasks = [asyncio.create_task(self.consume(streams[i:i+80])) for i in range(0, len(streams), 80)]
                     tasks += [asyncio.create_task(self.consume(["!ticker@arr"])),
-                              asyncio.create_task(self.flush()), asyncio.create_task(self.backfill()),
+                              asyncio.create_task(self.flush()), asyncio.create_task(self.store_closed()),
+                              asyncio.create_task(self.flush_tickers()), asyncio.create_task(self.backfill()),
+                              *[asyncio.create_task(self.backfill("statistics")) for _ in range(6)],
+                              asyncio.create_task(self.warm()), asyncio.create_task(self.heartbeat()),
                               asyncio.create_task(self.retention())]
                     log.info("Market collector subscribed to %s %s contracts", len(discovered), settings.MARKET_QUOTE_ASSET)
+                self.warm_ready.set()
                 await asyncio.sleep(300)
         finally:
             for task in tasks:

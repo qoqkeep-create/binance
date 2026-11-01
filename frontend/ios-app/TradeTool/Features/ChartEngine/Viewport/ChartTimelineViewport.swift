@@ -11,7 +11,8 @@ struct ChartInteractionMetrics: Equatable, Sendable {
         candleGapPoints: 1,
         latestBoundaryVisibleCandleCount: 5,
         directionLockRatio: 1.15,
-        systemNavigationEdgeWidthPoints: 20,
+        // Keep the chart's horizontal pan outside WidePopController's start zone.
+        systemNavigationEdgeWidthPoints: 50,
         crosshairMinimumPressDurationSeconds: 0.35,
         crosshairAllowableMovementPoints: 12
     )

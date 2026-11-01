@@ -64,10 +64,49 @@ Cloud 分发使用平台自动递增的构建号，首次在后台核对 Next Bu
 
 认证页现采用 USDC 原生布局和底部 sheet；显示名、图标、已有接口及注册开关替身见 [品牌与认证](ios-authentication.md)。认证 UI 测试只提交本地验证失败的表单，后端协议用 SQLite / LocMem 的 `users.tests.AuthApiTests` 和 `mobile.tests.MobileAuthTests` 验证，重置邮件使用 locmem。
 
+`TradeToolTests/NetworkLatencyAndModalTests` 覆盖 WSS RTT 匹配、中位数、超时重置、颜色阈值、大小弹窗动画及编译后启动 storyboard 的 96 pt 尺寸和资源透明圆角。相关 UI 回归入口为 `WebParityUITests.testMarketLatencySignalAndInternalOnlyHeader`、`testCollectionButtonAndSmallConfirmationCanReopen` 及认证面板流程。
+
+修改发布图标后，在 macOS 重新生成启动专用连续圆角资源，再构建并检查冷启动（保留工程发布版本号，缓存排查见品牌文档）：
+
+```bash
+swift frontend/ios-app/scripts/render_launch_mark.swift \
+  frontend/ios-app/TradeTool/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png \
+  frontend/ios-app/TradeTool/Resources/Assets.xcassets/LaunchBrandMark.imageset
+```
+
 持仓浮窗的数据生命周期、单测、两项 App 内与一项跨 App UI 测试见 [持仓浮窗](ios-floating-positions.md)。视觉模式使用独立 UserDefaults suite，每次启动重置开关和位置；普通运行的浮窗偏好保持不变。App 内测试显式传 `--fixture-inline-floating`；跨 App 测试使用系统 AVKit，仅在明确不支持时跳过，不能把跳过当作画中画通过。
+
+## 行情补全与交互回归
+
+2026-11-01 本地补全任务测试位于 `market_stream.tests`，使用隔离 SQLite / LocMem 与公共交易所替身。覆盖快照读取不调用交易所、任务合并、过期租约恢复、失败退避、轮询不重置退避、各周期缺口、上市／保留边界、历史分页及提交后缓存版本更新。`common.tests` 补充 continuousKlines 的请求权重回归。
+
+```bash
+PYTHON_DOTENV_DISABLED=1 DB_ENGINE=sqlite USE_REDIS_CACHE=False RUN_SCHEDULER_IN_WEB=false \
+  server/.venv/bin/python server/manage.py test market_stream.tests mobile.tests common.tests
+```
+
+`ChartEngineCoreTests` 增加兼容旧响应、晚到快照不回退 Socket 数据、K 线横拖让出 50 pt 返回范围及业务／行情暗色色板一致性测试。两项 `WebParityUITests` 为 `testWideSwipeReturnsFromBusinessPagesAndNestedStrategy`、`testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage`，使用无网络 fixture，覆盖业务多层导航、40 pt 起手、取消手势、表格边界、指标编辑内部返回、暗色止损和按钮／拖动关闭。本轮使用独立 `Binance Navigation Review` 模拟器，避免其他本地 UI 校验干扰。
+
+### USDC 行情关键路径回归
+
+`market_stream.test_fast_path` 覆盖 live 无数据库依赖、慢收线不阻塞 live、并发更新保持收盘状态、缓冲上限、主题路由、历史／统计任务隔离、共享窗口、上市边界与分钟部分桶。协议测试可指定本机 Redis 可执行文件；测试自行选择临时回环端口并启动无持久化实例，结束后关闭，不连接已有或远程 Redis：
+
+```bash
+PYTHON_DOTENV_DISABLED=1 DB_ENGINE=sqlite USE_REDIS_CACHE=False RUN_SCHEDULER_IN_WEB=false \
+  MARKET_TEST_REDIS_BINARY=/absolute/path/to/redis-server \
+  server/.venv/bin/python server/manage.py test \
+  market_stream.tests market_stream.test_fast_path mobile.tests common.tests --keepdb --noinput
+```
+
+真实 Redis ASGI 测试覆盖 ready 能力、订阅确认、币种／周期主题、序号、就绪事件、账户模式隔离与退订；另一项并发生产者暂停回归确保分配 sequence 与发布保持原子性，容量测试检查历史缓存只淘汰自身旧窗口、限制单窗大小、预热不挤占空间并保留模拟账户锁。未传入可执行文件时这三项跳过，不能把跳过写为协议验证通过。
+
+iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pending 分页立即合并、统计不短轮询、匹配的就绪通知、订阅确认恢复漏通知与旧后端兼容。图表无网络 UI 入口为 `TradeTool Chart Calibration` 的 `testCaptureTradeToolChartOnlyDetail`、`testCaptureTradeToolQuickSwitcherFlow` 和 `testCaptureTradeToolIndicatorSettingsShortcut`；固定 OHLC 替身用于交互与布局，不代表不同币种真实价格或链路耗时。
+
+2026-11-01 本地 177 项后端回归（含三项独立真实 Redis）、190 项 iOS 单测通过；图表／切币切周期／指标返回三项 UI 流程分轮通过，已查看截图；generic iOS Release 未签名构建通过，具体报告见 [变更](changes.md)。MySQL 跨进程锁、生产 Redis 缓存配置、线上首屏延迟与物理手机仍待验收。新任务表及 API / market 配套升级与回滚见 [行情](market-data.md#后台自动补全与首屏读取)。
 
 ## 回归范围
 
+- 行情延迟：`NetworkLatencyAndModalTests` 用临时回环端口的真实 WebSocket 服务与 `URLSessionWebSocketTask` 收发应用层 ping / pong，服务延迟 120 ms 后回复，验证实际 RTT、重复连接后继续采样；另覆盖匹配、超时、数值上限和弹窗动画策略。该服务不使用生产账号，UI 的固定延迟替身只检查呈现，不能替代收发链路测试。
 - 行情与命令：`market_stream.tests`、`mobile.tests`，覆盖聚合、缺口、分页、鉴权、模式及绑定代际、幂等与恢复。
 - 交易与资金：既有 `trading`、`positions`、`accounts`、`api_bindings` 测试覆盖精度、保护、未知结果及账户隔离。
 - iOS：图表、Keychain、服务器切换和业务会话测试；设备运行单独记录。

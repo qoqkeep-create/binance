@@ -876,7 +876,8 @@ final class ChartCalibrationUITests: XCTestCase {
         let favorite = app.buttons["market-chart-favorite"]
         XCTAssertTrue(favorite.isHittable)
         XCTAssertFalse(app.images["bell"].exists)
-        XCTAssertEqual(favorite.frame.midX, header.frame.maxX - 26, accuracy: 1)
+        // The existing 44 pt target is inset 11 pt from the header edge.
+        XCTAssertEqual(favorite.frame.midX, header.frame.maxX - 33, accuracy: 1)
         XCTAssertLessThanOrEqual(favorite.frame.maxX, header.frame.maxX - 11)
         favorite.tap()
         XCTAssertEqual(favorite.value as? String, "未收藏")
@@ -2797,7 +2798,7 @@ final class IntegratedNativeUITests: XCTestCase {
         XCTAssertFalse(submit.isEnabled, "Unbound account must not place an order")
         capture(app, "integrated-ios-open")
         app.buttons["信号"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["外部"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["内部信号规则"].waitForExistence(timeout: 10))
         app.buttons["我的"].firstMatch.tap()
         XCTAssertTrue(app.buttons["profile.bind"].waitForExistence(timeout: 10))
         capture(app, "integrated-ios-profile")
@@ -2833,6 +2834,179 @@ final class WebParityUITests: XCTestCase {
     image.lifetime = .keepAlways
     add(image)
   }
+  func testUnboundPositionsAndLimitsOnlyShowBindingPrompt() {
+    launch("positions", ["--fixture-unbound"])
+    for tab in ["持仓", "限价委托"] {
+      if tab == "限价委托" { app.buttons[tab].tap() }
+      XCTAssertTrue(app.staticTexts["请先绑定 Binance Api"].waitForExistence(timeout: 5))
+      XCTAssertFalse(app.buttons["重新加载"].exists)
+      XCTAssertFalse(app.staticTexts["开仓额度："].exists)
+      XCTAssertFalse(app.buttons["追单"].exists)
+      capture(tab == "持仓" ? "positions-unbound-compact" : "limits-unbound-compact")
+    }
+    app.buttons["历史仓位"].tap()
+    XCTAssertTrue(app.staticTexts["平仓盈亏"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["请先绑定 Binance Api"].exists)
+  }
+
+  func testMarketLatencySignalAndInternalOnlyHeader() {
+    for (options, value) in [([], "86 ms, good"), (["--fixture-latency-fair"], "280 ms, fair"),
+                              (["--fixture-latency-slow", "--fixture-dark"], "780 ms, poor"),
+                              (["--fixture-latency-overflow"], "999 ms, poor"),
+                              (["--fixture-latency-unavailable"], "999 ms, poor"),
+                              (["--fixture-latency-measuring"], "999 ms, fair")] {
+      launch("market", options)
+      let latency = app.descendants(matching: .any)["market.latency"].firstMatch
+      XCTAssertTrue(latency.waitForExistence(timeout: 5))
+      XCTAssertEqual(latency.value as? String, value)
+      XCTAssertLessThan(latency.frame.maxX, app.buttons["编辑行情列表"].frame.minX)
+      capture("market-latency-" + value)
+    }
+    launch("signals")
+    XCTAssertTrue(app.buttons["内部信号规则"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["自有"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["外部"].exists)
+    XCTAssertFalse(app.buttons["内部"].exists)
+    capture("signals-internal-only")
+    app.buttons["内部信号规则"].tap()
+    XCTAssertTrue(app.staticTexts["信号规则"].waitForExistence(timeout: 5))
+    app.buttons["我知道了"].tap()
+    XCTAssertTrue(app.buttons["内部信号规则"].waitForExistence(timeout: 5))
+  }
+
+  func testCollectionButtonAndSmallConfirmationCanReopen() {
+    launch("profile")
+    let collect = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "归集余额")).firstMatch
+    XCTAssertTrue(collect.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "补资提醒")).firstMatch.exists)
+    capture("profile-collection-lower-position")
+    let logout = app.buttons["profile.logout"]
+    for _ in 0..<4 where !logout.isHittable { app.swipeUp() }
+    for _ in 0..<2 {
+      logout.tap()
+      XCTAssertTrue(app.staticTexts["确认退出登录"].waitForExistence(timeout: 5))
+      capture("small-confirmation-fade")
+      app.buttons["取消"].tap()
+      XCTAssertTrue(logout.waitForExistence(timeout: 5))
+    }
+    launch("launch")
+    capture("launch-96pt-rounded")
+  }
+
+  func testAllPositionTabsRefreshFromEmptyLists() {
+    launch("positions", ["--fixture-refresh-lists"])
+    for (tab, empty, content) in [
+      ("持仓", "暂无持仓", "开仓额度："),
+      ("限价委托", "暂无限价委托", "追单"),
+      ("历史仓位", "暂无历史仓位记录", "平仓盈亏"),
+    ] {
+      if tab != "持仓" { app.buttons[tab].tap() }
+      XCTAssertTrue(app.staticTexts[empty].waitForExistence(timeout: 5))
+      let list = app.scrollViews["positions.list"]
+      list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+        .press(forDuration: 0.1,
+          thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)))
+      XCTAssertTrue(app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label CONTAINS %@", content)).firstMatch
+        .waitForExistence(timeout: 10), tab)
+      capture("refreshed-" + tab)
+    }
+  }
+
+  func testProfileLogoutButtonAndRemovedResearchEntry() {
+    launch("profile")
+    profileLink("更多功能")
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "看盘计划"))
+      .firstMatch.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "信号研究"))
+      .firstMatch.exists)
+    let logout = app.buttons["profile.logout"]
+    for _ in 0..<4 where !logout.isHittable { app.swipeUp() }
+    XCTAssertTrue(logout.isHittable)
+    XCTAssertGreaterThan(logout.frame.width, app.frame.width * 0.8)
+    XCTAssertGreaterThanOrEqual(logout.frame.height, 48)
+    capture("profile-logout-button")
+    logout.tap()
+    XCTAssertTrue(app.staticTexts["确认退出登录"].waitForExistence(timeout: 5))
+    app.buttons["取消"].tap()
+  }
+
+  func testLoginCompactTwoLineToast() {
+    launch("login", ["--fixture-toast"])
+    XCTAssertTrue(app.buttons["注册账号"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["没有账号"].exists)
+    let toast = app.descendants(matching: .any)["app.toast"].firstMatch
+    XCTAssertTrue(toast.waitForExistence(timeout: 3))
+    XCTAssertLessThanOrEqual(toast.frame.width, 181)
+    XCTAssertGreaterThan(toast.frame.height, 60)
+    capture("login-two-line-toast")
+  }
+  private func rightSwipe(fromX: CGFloat = 40, toX: CGFloat = 350) {
+    let origin = app.coordinate(withNormalizedOffset: .zero)
+    origin.withOffset(CGVector(dx: fromX, dy: 270)).press(forDuration: 0.1,
+      thenDragTo: origin.withOffset(CGVector(dx: toX, dy: 275)),
+      withVelocity: .slow, thenHoldForDuration: 0.1)
+  }
+  private func profileLink(_ label: String) {
+    let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+    XCTAssertTrue(button.waitForExistence(timeout: 5), label)
+    if !button.isHittable { app.swipeUp() }
+    button.tap()
+  }
+  func testWideSwipeReturnsFromBusinessPagesAndNestedStrategy() {
+    launch("profile", ["--fixture-dark"])
+    for (label, title) in [("转账历史", "转账历史"), ("设置", "设置"), ("止盈止损策略", "我的策略")] {
+      profileLink(label)
+      XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 5))
+      capture("wide-pop-" + title)
+      if title == "我的策略" {
+        app.buttons["新建策略"].tap()
+        XCTAssertTrue(app.buttons["保存策略"].firstMatch.waitForExistence(timeout: 5))
+        rightSwipe()
+        XCTAssertTrue(app.staticTexts["我的策略"].firstMatch.waitForExistence(timeout: 5))
+      }
+      rightSwipe()
+      XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5))
+    }
+    profileLink("更多功能")
+    for (label, title) in [("日志", "日志"), ("看盘计划", "看盘计划"),
+                           ("开仓理由/指标校验", "开仓理由/指标校验"), ("交易命令", "交易命令")] {
+      profileLink(label)
+      XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 5), title)
+      if label == "开仓理由/指标校验" {
+        app.buttons["创建指标"].tap()
+        XCTAssertTrue(app.buttons["保存指标"].waitForExistence(timeout: 5))
+        rightSwipe()
+        XCTAssertTrue(app.buttons["创建指标"].waitForExistence(timeout: 5))
+      }
+      rightSwipe()
+      XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5), label)
+    }
+  }
+  func testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage() {
+    launch("profile", ["--fixture-dark"])
+    profileLink("设置")
+    XCTAssertTrue(app.staticTexts["颜色模式"].waitForExistence(timeout: 5))
+    rightSwipe(toX: 85)
+    XCTAssertTrue(app.staticTexts["颜色模式"].exists)
+    rightSwipe()
+    XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5))
+    app.swipeDown()
+    profileLink("止损额设置")
+    XCTAssertTrue(app.buttons["关闭"].firstMatch.waitForExistence(timeout: 5))
+    capture("dark-stop-loss-independent-backdrop")
+    app.buttons["关闭"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5))
+    profileLink("止损额设置")
+    XCTAssertTrue(app.buttons["关闭"].firstMatch.waitForExistence(timeout: 5))
+    let close = app.buttons["关闭"].firstMatch
+    let start = close.coordinate(withNormalizedOffset: CGVector(dx: -2, dy: 0.5))
+    start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 250)))
+    let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: close)
+    XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 4), .completed)
+    capture("dark-profile-after-modal")
+  }
+
   func testFloatingPositionsAcrossPagesAndDragging() {
     launch("profile", ["--fixture-multiple", "--fixture-inline-floating"])
     let toggle = app.buttons["profile.floatingPositions"]
@@ -2942,7 +3116,7 @@ final class WebParityUITests: XCTestCase {
     }
   }
 
-  func testWatchEditingAndResearchModel() {
+  func testWatchEditing() {
     launch("watch-editor")
     XCTAssertTrue(app.staticTexts["写计划"].waitForExistence(timeout: 10))
     capture("watch-editor-final")
@@ -2966,18 +3140,13 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(app.textFields["usdt.field.止盈止损金额"].value as? String, "25")
     XCTAssertTrue(app.buttons["确定"].isHittable)
     capture("watch-result")
-    launch("research-rules")
-    let model = app.buttons["选择大模型"]
-    XCTAssertTrue(model.waitForExistence(timeout: 10))
-    model.tap()
-    XCTAssertTrue(app.buttons["确定使用"].waitForExistence(timeout: 5))
-    capture("research-model")
+
   }
   func testCorePagesAndDialogs() {
     let pages: [(String, String)] = [
-      ("trade", "币价"), ("positions", "开仓额度："), ("signals", "外部"), ("profile", "止损额设置"),
+      ("trade", "币价"), ("positions", "开仓额度："), ("signals", "信号"), ("profile", "止损额设置"),
       ("strategies", "我的策略"), ("strategy-editor", "不移动止损位"), ("operations", "北京时间 · 最新记录在前"),
-      ("transfers", "累计转出"), ("watch", "记录"), ("watch-editor", "写计划"), ("research", "录入一个已收盘信号样本"),
+      ("transfers", "累计转出"), ("watch", "记录"), ("watch-editor", "写计划"),
       ("settings", "颜色模式"), ("legal", "用户协议"), ("privacy", "隐私政策"), ("stop-loss", "止损设置"),
       ("collect", "资金归集账号"), ("login", "Binance Tools"),
     ]
@@ -3017,15 +3186,13 @@ final class WebParityUITests: XCTestCase {
     capture("stop-loss-bottom-modal")
     app.buttons["关闭"].firstMatch.tap()
     app.buttons["信号"].firstMatch.tap()
-    app.buttons["内部"].firstMatch.tap()
     app.buttons["内部信号规则"].tap()
     XCTAssertTrue(app.staticTexts["信号规则"].waitForExistence(timeout: 5))
     capture("signal-rules-modal")
   }
-  func testSecondaryResearchCapitalAndPreflight() {
+  func testSecondaryCapitalAndPreflight() {
     for (page, text) in [
-      ("research-analysis", "量化特征快照"), ("research-rules", "AI 生成策略草案"),
-      ("research-backtest", "运行策略回测"), ("capital", "调整账户资金"), ("reminder", "补资提醒"),
+      ("capital", "调整账户资金"), ("reminder", "补资提醒"),
       ("indicators", "创建指标"), ("preflight", "交易前校准"),
     ] {
       launch(page)
@@ -3064,13 +3231,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["我的策略"].waitForExistence(timeout: 5))
     capture("trade-strategy-navigation")
   }
-  func testResearchDateCapitalAndBatchPreview() {
-    launch("research-analysis")
-    let chart = app.buttons["查看蜡烛图"]
-    XCTAssertTrue(chart.waitForExistence(timeout: 10))
-    chart.tap()
-    XCTAssertTrue(app.descendants(matching: .any)["research.candles"].waitForExistence(timeout: 10))
-    capture("research-candles")
+  func testCapitalAndBatchPreview() {
     launch("capital", ["--fixture-capital-refill"])
     XCTAssertTrue(app.buttons["确认调整"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["确认调整"].isEnabled)
@@ -3165,7 +3326,9 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.buttons["注册账号"].waitForExistence(timeout: 5))
     app.buttons["注册账号"].tap()
     XCTAssertEqual(app.secureTextFields["register.confirmPassword"].value as? String, "请再次输入密码")
-    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+    // Start in the presented panel's header, independent of its safe-area inset.
+    let start = app.buttons["auth.sheet.close"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .withOffset(CGVector(dx: -100, dy: 0))
     start.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
     XCTAssertFalse(app.buttons["auth.sheet.close"].waitForExistence(timeout: 2))
     XCTAssertTrue(app.buttons["注册账号"].isHittable)

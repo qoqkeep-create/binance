@@ -7,7 +7,7 @@ struct LoginView: View {
 
   var body: some View {
     AuthForm(mode: .login, open: { destination = $0 })
-      .sheet(item: $destination) { destination in
+      .webSheet(item: $destination) { destination in
         AuthSheet(destination: destination)
       }
       .onOpenURL { url in
@@ -75,7 +75,7 @@ private enum AuthMode {
 }
 
 private struct AuthSheet: View {
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @EnvironmentObject private var toastCenter: AppToastCenter
   let destination: AuthDestination
 
@@ -98,10 +98,6 @@ private struct AuthSheet: View {
       .toolbarBackground(BinanceTheme.background, for: .navigationBar)
       .globalAPIToasts(using: toastCenter)
     }
-    .presentationDetents([.large])
-    .presentationDragIndicator(.visible)
-    .presentationCornerRadius(24)
-    .presentationBackground(BinanceTheme.background)
   }
 }
 
@@ -116,7 +112,7 @@ private struct AuthForm: View {
 
   @EnvironmentObject private var authStore: AuthStore
   @EnvironmentObject private var store: USDTStore
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   let mode: AuthMode
   var initialEmail = ""
   var resetUID = ""
@@ -189,8 +185,8 @@ private struct AuthForm: View {
     .scrollDismissesKeyboard(.interactively)
     .background(BinanceTheme.background.ignoresSafeArea())
     .tint(BinanceTheme.accentText)
-    .interactiveDismissDisabled(isSubmitting)
-    .sheet(item: $legal) { document in
+    .webModalDismissDisabled(isSubmitting)
+    .webSheet(item: $legal) { document in
       NavigationStack {
         USDTLegalView(document: document.title)
           .overlay(alignment: .topTrailing) {
@@ -200,8 +196,7 @@ private struct AuthForm: View {
               .frame(minWidth: 44, minHeight: 60).padding(.horizontal, 16)
               .accessibilityIdentifier("auth.legal.close")
           }
-      }.presentationDetents([.large]).presentationDragIndicator(.visible)
-        .presentationCornerRadius(24)
+      }
     }
     .task {
       email = initialEmail
@@ -309,17 +304,13 @@ private struct AuthForm: View {
 
   @ViewBuilder private var modeSwitch: some View {
     if mode == .login {
-      HStack(spacing: 8) {
-        Text("没有账号").font(.footnote).foregroundStyle(BinanceTheme.secondaryText)
-          .frame(width: 58, alignment: .trailing)
-        Button("注册账号") {
-          dismissKeyboard()
-          password = ""
-          showsPassword = false
-          open?(.register(email: email))
-        }.font(.footnote.weight(.semibold)).foregroundStyle(BinanceTheme.accentText)
-          .buttonStyle(.plain).frame(width: 68, alignment: .leading)
-      }.frame(maxWidth: .infinity)
+      Button("注册账号") {
+        dismissKeyboard()
+        password = ""
+        showsPassword = false
+        open?(.register(email: email))
+      }.font(.footnote.weight(.semibold)).foregroundStyle(BinanceTheme.accentText)
+        .buttonStyle(.plain).frame(maxWidth: .infinity)
     } else {
       Button("返回登录") { dismiss() }.font(.footnote.weight(.semibold))
         .foregroundStyle(BinanceTheme.accentText).buttonStyle(.plain).frame(maxWidth: .infinity)
