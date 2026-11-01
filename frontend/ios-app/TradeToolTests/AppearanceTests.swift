@@ -203,6 +203,21 @@ final class NetworkLatencyAndModalTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(milliseconds, 100)
     XCTAssertLessThan(milliseconds, 3_000)
     XCTAssertEqual(client.state, .connected)
+    let previousReading = client.latency
+    client.requestLatencyTest()
+    XCTAssertEqual(client.latency, previousReading, "Refreshing must retain the last measured value")
+    XCTAssertTrue(client.isTestingLatency)
+    let refreshed = expectation(description: "Matching pong completes manual refresh")
+    let refreshObservation = client.$isTestingLatency.dropFirst().filter { !$0 }.prefix(1)
+      .sink { _ in refreshed.fulfill() }
+    defer { refreshObservation.cancel() }
+    await DashboardViewModel(realtimeClient: client).refresh()
+    XCTAssertEqual(client.state, .connected, "Pull to refresh must keep a healthy socket open")
+    XCTAssertEqual(client.latency, previousReading)
+    XCTAssertTrue(client.isTestingLatency)
+    await fulfillment(of: [refreshed], timeout: 3)
+    XCTAssertFalse(client.isTestingLatency)
+    guard case .measured = client.latency else { return XCTFail("Refresh must install the new RTT") }
     peer.expectNextPing(nextPing)
     client.connect()
     XCTAssertEqual(client.state, .connected)

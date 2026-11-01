@@ -2,6 +2,8 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+2026-11-01 用户后续授权整批提交和推送，源码交付范围见 [最新变更记录](changes.md#2026-11-01整批源码提交与-github-交付)。下文“本地／未提交”描述各批验证结束当时的状态；本次交付没有重复测试、部署或手动上传 TestFlight，真实 iPhone 性能和云端分发仍按各主题待验项处理。
+
 2026-11-01 的绑定与延迟界面任务中，用户当时要求停止进一步测试、先部署后自行验收。“我的”绑定长按钮、点击测延迟、三点等待动画和 2 秒单在途采样已完成，`Debug-Seoul` 模拟器目标仅执行 `build`，编译通过（`.integration-runtime/profile-latency-build.log`）；未运行修改后的单测、UI 或速度回归。既有断言已同步新状态并补充慢在途样本及点击重测场景，不能据此称为本轮测试通过。服务端仅执行发布必要的迁移、容器健康、HTTPS 与一次鉴权 WSS 心跳检查，未作交易操作和完整性能验收。新客户端与 WSS 数据库连接清理改动留在本地未提交、未推送；后者已包含在本次 SSH 部署中，版本及备份见 [运维](operations.md)。
 
 本轮按用户后续的 BTC 加载排障要求恢复定向验证：行情后端 `manage.py test market_stream` 共 41 项，38 项通过、3 项专用 Redis 验证未启用；iOS `MarketFastPathTests` 10 项加 5 项快照／epoch／翻页回归全部通过（`.integration-runtime/ChartHistoryRefreshFinal.xcresult`）。新增慢响应门闩测试先复现取消下载，再验证首个响应优先展示、通知合并、切周期和 stop 的取消边界、pending 分页；这些结果不代替全部业务 UI、Release 或手机测试。后端和公网／GPU 分段样本、旧 USDC 的逐段对照见 [行情](market-data.md#与原-usdc-实现的核对2026-11-01)，本轮客户端仍未提交／推送。
@@ -9,6 +11,20 @@
 随后按首屏交接计划补验：`market_stream.tests market_stream.test_fast_path` 41 项全部通过（2.469 秒），本轮显式提供专用 Redis 二进制，三项真实回环 Redis 测试没有跳过；`MarketFastPathTests` 18 项加 `ChartEngineCoreTests` 127 项全部通过（52.965 秒，`.integration-runtime/KlineFirstFrame/CorrectnessFinal.xcresult`）。新增分页重连／恢复顺序测试均先失败后修复，包含真实 15 秒校对、真实结构 ack、下载失败及不响应取消的旧请求。上述为本地隔离测试，未执行交易操作。
 
 2026-11-01 本轮全部源码发布前，针对当前改动补跑 `market_stream.tests market_stream.test_fast_path common.test_retired_modules users.tests` 共 69 项，8.748 秒通过，显式使用专用临时 Redis；鸿蒙核心 40 项及工程检查通过。iOS 复用上方同内容 145 项与移除探针后的 Release 构建证据，本轮没有重跑手机性能或上传 TestFlight。发布后公网冒烟与源码版本关联见 [运维](operations.md#最新发布与核验2026-11-01)，代码评估与未实施项见 [行情](market-data.md#性能与可替换性评估2026-11-01)。
+
+2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
+
+## K 线协调与出口保护回归
+
+2026-11-01 本地实现及待发布范围见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。回归先复现同历史重建、刷新丢旧分页和首屏／恢复重复读取，再验证对象与指标复用、旧页及修订保留、取消／旧 epoch、并发快照／分页／配置一致性，以及 historyPending 等待通知。
+
+专用模拟器 `A9B09AF9-195A-4F50-B706-7F07A0EB4CD4`、Debug-Seoul、关闭覆盖率及并行测试：`ChartEngineCoreTests` 131 项加 `MarketFastPathTests` 20 项全部通过（30.903 秒，`.integration-runtime/KlineCoordination/IOSVerified.xcresult`）。本轮未重新采样首帧、执行业务 UI 或安装手机。
+
+后端 `market_stream.tests market_stream.test_fast_path market_stream.test_coordination common.tests mobile.tests` 共 196 项通过（8.807 秒，`KlineCoordination/backend-verified.log`），显式指定独立临时 Redis，无相关跳过。覆盖窗口合并与等待到期、缓存失联、公共 REST 共享预算失败时不出站、已知冷却任务不领取、独立 Redis 客户端共享滚动建连预算／封禁、无共享进程锁时的 owner lease、短连接退避、主动轮换与取消，以及慢发送／队列满／订阅超时／Redis／无效事件／过期／正常断开的诊断与资源清理。首轮故障测试暴露超时取消竞态，真实 Redis 测试暴露冷却 Lua 语法问题，修复后重跑通过。
+
+调用命令与下方既有行情回归相同，只需加入 `market_stream.test_coordination`；所有交易所访问使用替身，无真实交易或生产限频试验。generic iOS Release 构建结果与最终静态检查见 [变更](changes.md)。Redis 共享接口测试不代替 MySQL 事务、真实 NAT 全流量及长稳验收。
+
+连续纵轴适配已在本地接入：横拖／捏合／惯性按显示帧合并，单个交互场景在途，新场景保持手指基准和惯性时钟；主图／MACD 复用同一场景映射。`ChartEngineCoreTests` 新增 5 项真实 UIKit 宿主回归，包含回到起始比例时覆盖中间请求；模拟器使用 `ChartCalibrationUITests.testContinuousScalePinchPanAndCrosshairFixture` 和 `--chart-calibration-fixture`，无需账号或真实交易。离线优化基准保留 20 次预热、500 次采样及源码哈希，范围和结果见 [行情主文档](market-data.md#连续纵轴适配2026-11-01本地实现)。完整核心、UI 与 Release 的实际结果见 [变更](changes.md)；Mac／模拟器不能代替 iPhone 60／120 Hz、功耗及实时行情并发 A/B。
 
 ## Python
 
@@ -88,7 +104,7 @@ AX 的存在／label 等待用于操作与确认，不作为点击到首帧的�
 
 认证页现采用 USDC 原生布局和底部 sheet；显示名、图标、已有接口及注册开关替身见 [品牌与认证](ios-authentication.md)。认证 UI 测试只提交本地验证失败的表单，后端协议用 SQLite / LocMem 的 `users.tests.AuthApiTests` 和 `mobile.tests.MobileAuthTests` 验证，重置邮件使用 locmem。
 
-`TradeToolTests/NetworkLatencyAndModalTests` 覆盖 WSS RTT 匹配、中位数、超时重置、颜色阈值、大小弹窗动画及编译后启动 storyboard 的 96 pt 尺寸和资源透明圆角。相关 UI 回归入口为 `WebParityUITests.testMarketLatencySignalAndInternalOnlyHeader`、`testCollectionButtonAndSmallConfirmationCanReopen` 及认证面板流程。
+`TradeToolTests/NetworkLatencyAndModalTests` 覆盖 WSS RTT 匹配、中位数、超时重置、颜色阈值、保留读数重测和健康连接、大小弹窗动画及编译后启动 storyboard 的 96 pt 尺寸和资源透明圆角。延迟刷新及原生止损回归入口为 `WebParityUITests.testLatencyRefreshRetainsValueAndNativeStopLossFooterStaysFixed` 与 `testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage`；相关既有入口还有 `testMarketLatencySignalAndInternalOnlyHeader`、`testCollectionButtonAndSmallConfirmationCanReopen` 及认证面板流程。
 
 修改发布图标后，在 macOS 重新生成启动专用连续圆角资源，再构建并检查冷启动（保留工程发布版本号，缓存排查见品牌文档）：
 

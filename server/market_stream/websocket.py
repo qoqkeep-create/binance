@@ -7,6 +7,7 @@ import uuid
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
+from django.core.cache import cache
 from django.db import close_old_connections
 import redis.asyncio as redis
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -17,6 +18,30 @@ from market_stream.core import INTERVAL_MS
 PUBLIC_CHANNELS = {"market.kline", "market.ticker", "market.history", "strategy.signal"}
 PRIVATE_CHANNELS = {"trading.account", "trading.position", "trading.order", "trading.fill"}
 logger = logging.getLogger(__name__)
+OUTGOING_CAPACITY = 128
+SEND_TIMEOUT = 5
+SUBSCRIPTION_TIMEOUT = 3
+CLOSE_REASONS = frozenset({"client_disconnect", "token_expired", "slow_consumer", "send_timeout",
+    "receive_timeout", "subscription_timeout", "redis_error", "invalid_event", "invalid_message",
+    "authentication_rejected", "cancelled", "internal_error"})
+
+
+class SocketEnded(Exception):
+    def __init__(self, reason):
+        self.reason = reason
+
+
+def record_close(reason):
+    # A fixed set of reasons and 120s TTL bound metric cardinality. No identities,
+    # tokens, URLs or payloads enter metrics/logs, including exception messages.
+    reason = reason if reason in CLOSE_REASONS else "internal_error"
+    logger.info("market_ws_closed reason=%s", reason)
+    try:
+        key = f"market:ws:closed:{int(time.time() // 60)}:{reason}"
+        if not cache.add(key, 1, 120):
+            cache.incr(key)
+    except Exception:
+        pass
 
 
 def authenticate(headers):
@@ -85,10 +110,11 @@ async def application(scope, receive, send):
             raise ValueError("Invalid mode")
     except Exception as exc:
         logger.warning("WebSocket authentication rejected (%s)", type(exc).__name__)
+        await asyncio.to_thread(record_close, "authentication_rejected")
         await send({"type": "websocket.close", "code": 4401})
         return
     await send({"type": "websocket.accept"})
-    outgoing = asyncio.Queue(maxsize=128)
+    outgoing = asyncio.Queue(maxsize=OUTGOING_CAPACITY)
     subscriptions = {}
     client = redis.Redis.from_url(settings.MARKET_REDIS_URL, socket_connect_timeout=3)
     pubsub = client.pubsub()
@@ -98,22 +124,33 @@ async def application(scope, receive, send):
     subscription_applied = asyncio.Event()
 
     async def enqueue(payload):
-        outgoing.put_nowait(json.dumps(payload, separators=(",", ":")))
+        try:
+            outgoing.put_nowait(json.dumps(payload, separators=(",", ":")))
+        except asyncio.QueueFull:
+            raise SocketEnded("slow_consumer") from None
 
     async def sender():
         while True:
             payload = await outgoing.get()
-            await asyncio.wait_for(send({"type": "websocket.send", "text": payload}), 5)
+            try:
+                async with asyncio.timeout(SEND_TIMEOUT):
+                    await send({"type": "websocket.send", "text": payload})
+            except TimeoutError:
+                raise SocketEnded("send_timeout") from None
 
     async def receiver():
         nonlocal topics
         while True:
-            incoming = await asyncio.wait_for(receive(), 60)
+            try:
+                async with asyncio.timeout(60):
+                    incoming = await receive()
+            except TimeoutError:
+                raise SocketEnded("receive_timeout") from None
             if incoming["type"] == "websocket.disconnect":
-                return
+                return "client_disconnect"
             raw = incoming.get("text", "")
             if len(raw) > 65536:
-                raise ValueError("Message too large")
+                raise SocketEnded("invalid_message")
             try:
                 data = json.loads(raw)
                 if data.get("version", 1) != 1:
@@ -142,7 +179,11 @@ async def application(scope, receive, send):
                     # before its subscription became active.
                     while not desired.issubset(applied_topics):
                         subscription_applied.clear()
-                        await asyncio.wait_for(subscription_applied.wait(), 3)
+                        try:
+                            async with asyncio.timeout(SUBSCRIPTION_TIMEOUT):
+                                await subscription_applied.wait()
+                        except TimeoutError:
+                            raise SocketEnded("subscription_timeout") from None
                     await enqueue(message("ack", requestId=request_id, data={"subscriptions": items}))
                 else:
                     raise ValueError("Unsupported message type")
@@ -152,7 +193,7 @@ async def application(scope, receive, send):
     async def subscriber():
         while True:
             if time.time() >= expires:
-                return
+                return "token_expired"
             incoming = await pubsub.get_message(ignore_subscribe_messages=False, timeout=1)
             if incoming is None:
                 await asyncio.sleep(0.01)
@@ -166,10 +207,16 @@ async def application(scope, receive, send):
                     applied_topics.discard(topic)
                 subscription_applied.set()
                 continue
-            payload = json.loads(incoming["data"])
-            if matches(payload, subscriptions, user_id, mode):
-                await enqueue({key: value for key, value in payload.items() if not key.startswith("_")})
+            try:
+                payload = json.loads(incoming["data"])
+                if not isinstance(payload, dict):
+                    raise ValueError("Invalid event")
+                if matches(payload, subscriptions, user_id, mode):
+                    await enqueue({key: value for key, value in payload.items() if not key.startswith("_")})
+            except (ValueError, TypeError, KeyError, AttributeError):
+                raise SocketEnded("invalid_event") from None
 
+    reason = "internal_error"
     try:
         await pubsub.subscribe(BUS_CHANNEL)
         await enqueue(message("ready", data={"connectionId": str(uuid.uuid4()), "heartbeatIntervalMillis": 20000,
@@ -177,16 +224,30 @@ async def application(scope, receive, send):
         tasks = [asyncio.create_task(sender()), asyncio.create_task(receiver()), asyncio.create_task(subscriber())]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
-            task.result()
-    except (Exception, asyncio.CancelledError):
-        pass
+            reason = task.result() or reason
+    except SocketEnded as exc:
+        reason = exc.reason
+    except redis.RedisError:
+        reason = "redis_error"
+    except asyncio.CancelledError:
+        reason = "cancelled"
+        raise
+    except Exception as exc:
+        logger.warning("Market WebSocket ended (%s)", type(exc).__name__)
     finally:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await pubsub.aclose()
-        await client.aclose()
+        for resource in (pubsub, client):
+            try:
+                async with asyncio.timeout(3):
+                    await resource.aclose()
+            except Exception:
+                pass
+        await asyncio.to_thread(record_close, reason)
         try:
-            await send({"type": "websocket.close", "code": 4401 if time.time() >= expires else 1013})
+            code = 4401 if reason == "token_expired" else 1000 if reason == "client_disconnect" else 1013
+            async with asyncio.timeout(SEND_TIMEOUT):
+                await send({"type": "websocket.close", "code": code})
         except Exception:
             pass

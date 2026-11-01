@@ -9,7 +9,7 @@ from django.conf import settings
 from django.core.cache import cache
 from websockets.asyncio.client import connect
 
-from market_stream import repair, service
+from market_stream import repair, service, upstream
 from market_stream.core import INTERVAL_MS, normalize_kline
 
 log = logging.getLogger(__name__)
@@ -46,29 +46,53 @@ class MarketCollector:
 
     async def consume(self, streams):
         url = settings.MARKET_WS_URL.rstrip("/") + "/stream?streams=" + "/".join(streams)
-        backoff = 1
+        attempt = 0
         while True:
+            wait = await asyncio.to_thread(upstream.reserve_connection)
+            if wait > 0:
+                await asyncio.sleep(min(wait, 60))
+                continue
+            connected_at = None
             try:
                 async with connect(url, ping_interval=20, ping_timeout=20, open_timeout=15,
                                    max_size=4_000_000, max_queue=64, proxy=os.getenv("MARKET_WS_PROXY") or None) as socket:
-                    backoff = 1
-                    async for message in socket:
-                        data = json.loads(message).get("data")
-                        if data and time.monotonic() - self.last_seen_written >= 1:
-                            self.last_seen_written = time.monotonic()
-                            await asyncio.to_thread(cache.set, "market:collector:last_message", int(time.time()*1000), 300)
-                        if isinstance(data, list):
-                            for ticker in data:
-                                self.ticker_pending[ticker["s"]] = ticker
-                            self.tickers_ready.set()
-                        elif isinstance(data, dict) and "k" in data:
-                            self.accept(normalize_kline(data))
+                    connected_at = time.monotonic()
+                    try:
+                        # Spread rotations before Binance's 24h connection expiry.
+                        async with asyncio.timeout(upstream.rotation_seconds()):
+                            await self.receive_messages(socket)
+                    except TimeoutError:
+                        log.info("Market stream rotating before expiry")
+                        attempt = 0
+                        continue
+                    raise ConnectionError("Market stream ended")
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                log.warning("Market stream disconnected (%s); retry in %ss", type(exc).__name__, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30)
+                # Brief handshakes must not reset the retry delay in an outage.
+                if connected_at is not None and time.monotonic() - connected_at >= 60:
+                    attempt = 0
+                attempt += 1
+                cooldown = await asyncio.to_thread(upstream.defer_handshake, exc)
+                delay = max(cooldown, upstream.reconnect_delay(attempt))
+                log.warning("Market stream disconnected (%s); retry in %.1fs", type(exc).__name__, delay)
+                await asyncio.sleep(delay)
+
+    async def receive_messages(self, socket):
+        async for message in socket:
+            try:
+                data = json.loads(message).get("data")
+                if data and time.monotonic() - self.last_seen_written >= 1:
+                    self.last_seen_written = time.monotonic()
+                    await asyncio.to_thread(cache.set, "market:collector:last_message", int(time.time()*1000), 300)
+                if isinstance(data, list):
+                    for ticker in data:
+                        self.ticker_pending[ticker["s"]] = ticker
+                    self.tickers_ready.set()
+                elif isinstance(data, dict) and "k" in data:
+                    self.accept(normalize_kline(data))
+            except (ValueError, TypeError, KeyError, AttributeError):
+                log.warning("Market stream invalid public event skipped")
 
     async def flush(self):
         while True:

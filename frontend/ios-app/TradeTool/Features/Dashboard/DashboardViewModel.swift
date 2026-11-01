@@ -241,7 +241,7 @@ final class DashboardViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
 
-        realtimeClient?.reconnect()
+        realtimeClient?.connect()
         await loadMarketTickerSnapshot()
         lastUpdated = .now
     }

@@ -46,6 +46,7 @@ final class KlineChartHostView: UIView {
     private var gestureViewportBaseline: ChartTimelineViewport?
     private var interactionBaseStaticRevision: UInt64?
     private var pendingGuardBandRebase: ChartTimelineViewport?
+    private var pendingContinuousViewport: ChartTimelineViewport?
     private var committedViewportAwaitingRender:
         ChartTimelineViewport?
     private var baseRenderState: RenderState?
@@ -348,6 +349,7 @@ final class KlineChartHostView: UIView {
         onPriceViewportChange = nil
         baseRenderState = nil
         pendingGuardBandRebase = nil
+        pendingContinuousViewport = nil
         committedViewportAwaitingRender = nil
         timelinePanGesture.isEnabled = false
         priceScalePanGesture.isEnabled = false
@@ -395,6 +397,10 @@ final class KlineChartHostView: UIView {
 
     func diagnosticDraw() {
         metalView.draw()
+    }
+
+    func diagnosticInteractionFrame(at timestamp: CFTimeInterval) {
+        interactionFrameDidFire(timestamp)
     }
 
     func diagnosticInjectCommandFailure() {
@@ -937,21 +943,12 @@ final class KlineChartHostView: UIView {
         _ viewport: ChartTimelineViewport
     ) {
         guard !isDisposed,
-              let baseline = interactionBaseline else {
+              interactionBaseline != nil else {
             return
         }
         timelineViewport = viewport
         updateTimelineAccessibilityState()
         submitInteractiveFrame()
-        guard !viewport.isRenderable(
-            from: baseline,
-            guardBandSlotCount:
-                interactionMetrics.guardBandSlotCount
-        ) else {
-            return
-        }
-        pendingGuardBandRebase = viewport
-        onTimelineViewportChange?(viewport)
     }
 
     private func submitInteractiveFrame() {
@@ -1030,10 +1027,17 @@ final class KlineChartHostView: UIView {
     ) -> Bool {
         let priorRevision = interactionBaseStaticRevision
         guard let target = pendingGuardBandRebase
-                ?? committedViewportAwaitingRender,
+                ?? committedViewportAwaitingRender
+                ?? pendingContinuousViewport,
               priorRevision != state.staticScene.revision else {
             return false
         }
+        let isContinuousUpdate = (interactionState.state != .idle
+                || timelineMotion.isActive)
+            && committedViewportAwaitingRender == nil
+            && (pendingContinuousViewport != nil
+                || pendingGuardBandRebase != nil)
+        let wasWaitingForGuardBand = pendingGuardBandRebase != nil
         let renderedViewport = (
             state.staticScene.timelineViewport ?? target
         ).clamped(
@@ -1050,6 +1054,18 @@ final class KlineChartHostView: UIView {
         updateTimelineAccessibilityState()
         interactionBaseline = renderedViewport
         interactionBaseStaticRevision = state.staticScene.revision
+        pendingContinuousViewport = nil
+        if isContinuousUpdate {
+            // Rebase drawing only. The recognizer's cumulative translation,
+            // pinch anchor and inertia clock still describe the same gesture.
+            pendingGuardBandRebase = nil
+            if wasWaitingForGuardBand, timelineMotion.isActive {
+                lastInteractionFrameTimestamp = nil
+                startInteractionFrames()
+            }
+            submitInteractiveFrame()
+            return true
+        }
         let shouldResumeMotion = timelineMotion.isActive
         boundaryTranslationPoints = 0
         lastInteractionFrameTimestamp = nil
@@ -1094,6 +1110,7 @@ final class KlineChartHostView: UIView {
     private func interactionFrameDidFire(
         _ timestamp: CFTimeInterval
     ) {
+        defer { publishContinuousViewportIfNeeded() }
         guard timelineMotion.isActive,
               pendingGuardBandRebase == nil,
               let timelineViewport else {
@@ -1126,6 +1143,36 @@ final class KlineChartHostView: UIView {
         if step.isFinished {
             settleInteractionViewport()
         }
+    }
+
+    private func publishContinuousViewportIfNeeded() {
+        guard !isDisposed,
+              interactionState.state == .panningTimeline
+                || interactionState.state == .pinchingTimeline
+                || timelineMotion.isActive,
+              pendingContinuousViewport == nil,
+              pendingGuardBandRebase == nil,
+              committedViewportAwaitingRender == nil,
+              let viewport = timelineViewport,
+              let baseline = interactionBaseline,
+              viewport != interactionBaseline else {
+            return
+        }
+        // One in-flight scene; gesture events continue updating the latest
+        // viewport and the cheap horizontal Metal transform while it builds.
+        if viewport.isRenderable(
+            from: baseline,
+            guardBandSlotCount: interactionMetrics.guardBandSlotCount
+        ) {
+            pendingContinuousViewport = viewport
+        } else {
+            pendingGuardBandRebase = viewport
+            if timelineMotion.isActive {
+                lastInteractionFrameTimestamp = nil
+                stopInteractionFrames()
+            }
+        }
+        onTimelineViewportChange?(viewport)
     }
 
     private func interruptTimelineMotionForGesture() {
@@ -1354,13 +1401,18 @@ final class KlineChartHostView: UIView {
     private func settleInteractionViewport() {
         let committedViewport = timelineViewport
         let baseline = interactionBaseline
+        // An intermediate scene can still arrive after the fingers return
+        // to the drawing baseline. Always supersede that request on finish.
+        let hasPendingScene = pendingContinuousViewport != nil
+            || pendingGuardBandRebase != nil
         timelineMotion.cancel()
         boundaryTranslationPoints = 0
         lastInteractionFrameTimestamp = nil
         gestureViewportBaseline = nil
+        pendingContinuousViewport = nil
         stopInteractionFrames()
         if let committedViewport,
-           committedViewport != baseline {
+           committedViewport != baseline || hasPendingScene {
             committedViewportAwaitingRender = committedViewport
             onTimelineViewportChange?(committedViewport)
         } else {
@@ -1383,6 +1435,7 @@ final class KlineChartHostView: UIView {
                 || currentCrosshair != nil else {
             return
         }
+        let hasPendingContinuousScene = pendingContinuousViewport != nil
         if interactionState.state != .idle
             || isPriceScaleGestureActive {
             priceScalePanGesture.isEnabled = false
@@ -1398,6 +1451,7 @@ final class KlineChartHostView: UIView {
         }
         interactionState.finishInteraction()
         isPriceScaleGestureActive = false
+        pendingContinuousViewport = nil
         priceViewportBaseline = nil
         lastPublishedPriceViewport = nil
         currentCrosshair = nil
@@ -1420,7 +1474,8 @@ final class KlineChartHostView: UIView {
             return
         }
         if let timelineViewport,
-           timelineViewport != interactionBaseline {
+           timelineViewport != interactionBaseline
+                || hasPendingContinuousScene {
             committedViewportAwaitingRender = timelineViewport
             onTimelineViewportChange?(timelineViewport)
         } else {

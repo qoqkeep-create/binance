@@ -39,7 +39,8 @@ actor ChartDataPipeline {
     private let stream: ChartStreamKey
     private let intervalMilliseconds: Int64
     private let historyLimit: Int
-    private let store: CandleStore
+    private var store: CandleStorage
+    private var indicatorHistoryDirty = false
 
     private var epoch: KlineStreamEpoch
     private var ingress: KlineIngressState
@@ -82,7 +83,7 @@ actor ChartDataPipeline {
         self.indicatorEngine = indicatorEngine
         self.indicatorSelection = indicatorSelection
         self.indicatorParameters = indicatorParameters
-        store = CandleStore(historyLimit: historyLimit)
+        store = CandleStorage(historyLimit: historyLimit)
 
         var ingress = KlineIngressState(
             barrierCapacity: barrierCapacity
@@ -154,7 +155,7 @@ actor ChartDataPipeline {
         epoch snapshotEpoch: KlineStreamEpoch,
         preservingNewerData: Bool = false
     ) async -> ChartDataPipelineDrainResult {
-        guard snapshotEpoch == epoch else {
+        guard !Task.isCancelled, snapshotEpoch == epoch else {
             return ChartDataPipelineDrainResult(
                 frame: nil,
                 recoveryRequest: ingress.recoveryRequest
@@ -186,21 +187,22 @@ actor ChartDataPipeline {
                 )
             }
 
-        let installed = await store.installSnapshot(
+        let previousHistory = store.snapshot().history
+        let installed = store.installSnapshot(
             closedCandles: closed,
             liveCandle: live,
             preservingNewerData: preservingNewerData
         )
-        rebuildIndicators(
-            from: installed.history.candles
-        )
+        if previousHistory !== installed.history || indicatorHistoryDirty {
+            rebuildIndicators(from: installed.history.candles)
+        }
         ingress.completeRecovery(
             newestOpenTime:
-                live?.openTime
+                installed.liveTail?.openTime
                 ?? installed.history.candles.last?.openTime
         )
 
-        let drained = await applyPendingMutations()
+        let drained = applyPendingMutations()
         if drained.frame != nil {
             return drained
         }
@@ -213,7 +215,7 @@ actor ChartDataPipeline {
     }
 
     func drain() async -> ChartDataPipelineDrainResult {
-        await applyPendingMutations()
+        applyPendingMutations()
     }
 
     func mergeLatestPrice(
@@ -247,7 +249,7 @@ actor ChartDataPipeline {
             )
         }
 
-        let current = await store.snapshot()
+        let current = store.snapshot()
         let base: ChartCandle?
         if let live = current.liveTail {
             guard bucketOpenTime >= live.openTime else {
@@ -291,7 +293,7 @@ actor ChartDataPipeline {
         }
 
         lastMergedPriceEventTime = eventTimeMilliseconds
-        let updated = await store.upsertProvisional(candle)
+        let updated = store.upsertProvisional(candle)
         return ChartDataPipelineDrainResult(
             frame: makeFrame(candles: updated),
             recoveryRequest: ingress.recoveryRequest
@@ -302,13 +304,13 @@ actor ChartDataPipeline {
         _ marketCandles: [MarketCandle],
         epoch pageEpoch: KlineStreamEpoch
     ) async -> ChartDataPipelineDrainResult {
-        guard pageEpoch == epoch else {
+        guard !Task.isCancelled, pageEpoch == epoch else {
             return ChartDataPipelineDrainResult(
                 frame: nil,
                 recoveryRequest: ingress.recoveryRequest
             )
         }
-        let current = await store.snapshot()
+        let current = store.snapshot()
         guard let oldestOpenTime = current.history.candles
             .first?.openTime else {
             return ChartDataPipelineDrainResult(
@@ -330,7 +332,7 @@ actor ChartDataPipeline {
                 recoveryRequest: ingress.recoveryRequest
             )
         }
-        let installed = await store.prependClosedHistory(older)
+        let installed = store.prependClosedHistory(older)
         rebuildIndicators(from: installed.history.candles)
         return ChartDataPipelineDrainResult(
             frame: makeFrame(candles: installed),
@@ -339,7 +341,7 @@ actor ChartDataPipeline {
     }
 
     func currentFrame() async -> ChartDataFrame {
-        makeFrame(candles: await store.snapshot())
+        makeFrame(candles: store.snapshot())
     }
 
     func updateIndicatorConfiguration(
@@ -367,48 +369,19 @@ actor ChartDataPipeline {
         indicatorParameters = parameters
         indicatorConfigurationRevision = revision
 
-        while true {
-            let candles = await store.snapshot()
-            guard revision == indicatorConfigurationRevision else {
-                return nil
-            }
-            guard var nextEngine = ChartIndicatorEngine(
-                registry: registry,
-                configurations: configurations,
-                intervalMilliseconds: intervalMilliseconds,
-                historyLimit: historyLimit
-            ) else {
-                return nil
-            }
-            let indicatorHealth = nextEngine.installHistory(
-                candles.history.candles
-            )
-            let currentCandles = await store.snapshot()
-            guard revision == indicatorConfigurationRevision else {
-                return nil
-            }
-            guard currentCandles.revision == candles.revision else {
-                continue
-            }
-
-            indicatorEngine = nextEngine
-            if indicatorHealth.requiresRecovery {
-                ingress.requireDownstreamRecovery(
-                    openTime:
-                        currentCandles.history.candles.last?.openTime
-                        ?? currentCandles.liveTail?.openTime
-                        ?? 0
-                )
-            }
-            return ChartDataPipelineDrainResult(
-                frame: makeFrame(candles: currentCandles),
-                recoveryRequest: ingress.recoveryRequest
-            )
+        let candles = store.snapshot()
+        if rebuildIndicators(from: candles.history.candles) {
+            ingress.requireDownstreamRecovery(openTime:
+                candles.history.candles.last?.openTime ?? candles.liveTail?.openTime ?? 0)
         }
+        return ChartDataPipelineDrainResult(
+            frame: makeFrame(candles: candles),
+            recoveryRequest: ingress.recoveryRequest
+        )
     }
 
     func health() async -> ChartDataPipelineHealth {
-        let candles = await store.snapshot()
+        let candles = store.snapshot()
         return ChartDataPipelineHealth(
             stream: stream,
             epoch: epoch,
@@ -431,8 +404,7 @@ actor ChartDataPipeline {
         )
     }
 
-    private func applyPendingMutations()
-        async -> ChartDataPipelineDrainResult {
+    private func applyPendingMutations() -> ChartDataPipelineDrainResult {
         let drain = ingress.drain()
         guard !drain.mutations.isEmpty else {
             return ChartDataPipelineDrainResult(
@@ -441,7 +413,7 @@ actor ChartDataPipeline {
             )
         }
 
-        var candleSnapshot = await store.snapshot()
+        var candleSnapshot = store.snapshot()
         for mutation in drain.mutations {
             let candle = mutation.candle
             if candle.closure == .closed,
@@ -458,7 +430,8 @@ actor ChartDataPipeline {
                     )
                     continue
                 }
-                candleSnapshot = await store.apply(mutation)
+                candleSnapshot = store.apply(mutation)
+                indicatorHistoryDirty = true
                 ingress.requireDownstreamRecovery(
                     openTime: candle.openTime
                 )
@@ -468,7 +441,7 @@ actor ChartDataPipeline {
                 continue
             }
 
-            candleSnapshot = await store.apply(mutation)
+            candleSnapshot = store.apply(mutation)
             if candle.closure == .closed {
                 appendCommittedIndicators(candle)
             }
@@ -483,9 +456,10 @@ actor ChartDataPipeline {
         )
     }
 
+    @discardableResult
     private func rebuildIndicators(
         from candles: [ChartCandle]
-    ) {
+    ) -> Bool {
         guard let registry = ChartIndicatorRegistry.standard,
               let configurations = ChartIndicatorEngine
                 .productionConfigurations(
@@ -498,10 +472,12 @@ actor ChartDataPipeline {
                 intervalMilliseconds: intervalMilliseconds,
                 historyLimit: historyLimit
               ) else {
-            return
+            return false
         }
-        _ = nextEngine.installHistory(candles)
+        let health = nextEngine.installHistory(candles)
         indicatorEngine = nextEngine
+        indicatorHistoryDirty = false
+        return health.requiresRecovery
     }
 
     private func appendCommittedIndicators(

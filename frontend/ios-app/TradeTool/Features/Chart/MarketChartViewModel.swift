@@ -71,7 +71,6 @@ final class MarketChartViewModel: ObservableObject {
     private var pendingHistoryBoundary: Int64?
     private var historyNoticeTask: Task<Void, Never>?
     private var waitingForHistory = false
-    private var chartRecoveryTask: Task<Void, Never>?
     private var chartIndicatorUpdateTask: Task<Void, Never>?
     private var pendingChartPriceUpdate: MarketChartPriceUpdate?
     private var previousRealtimePrice: Double?
@@ -80,7 +79,7 @@ final class MarketChartViewModel: ObservableObject {
     private var chartPipelineEpoch: KlineStreamEpoch?
     private var chartPipelineSessionID = UUID()
     private var chartPipelineGeneration: UInt64 = 0
-    private var chartRecoveryCheckRequested = false
+    private var chartRecoveryNeeded = false
     private var chartIndicatorConfigurationRevision: UInt64 = 0
 #if DEBUG
     private static let performanceLog = Logger(subsystem: "BinanceTools", category: "MarketChart")
@@ -161,9 +160,7 @@ final class MarketChartViewModel: ObservableObject {
         waitingForHistory = false
         isLoading = false
         isLoadingOlderHistory = false
-        chartRecoveryTask?.cancel()
-        chartRecoveryTask = nil
-        chartRecoveryCheckRequested = false
+        chartRecoveryNeeded = false
         chartIndicatorUpdateTask?.cancel()
         chartIndicatorUpdateTask = nil
         pendingChartPriceUpdate = nil
@@ -252,24 +249,46 @@ final class MarketChartViewModel: ObservableObject {
         let sessionID = chartPipelineSessionID
         intervalTask = Task { [weak self] in
             guard let self else { return }
-            await self.loadHistory(
-                interval: requestedInterval,
-                pipeline: pipeline,
-                epoch: epoch,
-                sessionID: sessionID,
-                requestID: requestID
-            )
-            guard self.historyRequestID == requestID else { return }
-            self.intervalTask = nil
-            if self.historyRefreshPending {
-                self.historyRefreshPending = false
-                self.refreshHistoryWhenIdle()
-            } else if self.historyPageAwaitingSnapshot,
-                      self.chartDataFrame?.epoch == epoch {
-                self.historyPageAwaitingSnapshot = false
-                if let before = self.pendingHistoryBoundary {
-                    self.loadOlderHistory(before: before)
+            var recoveryAttempt = 0
+            while !Task.isCancelled {
+                await self.loadHistory(
+                    interval: requestedInterval,
+                    pipeline: pipeline,
+                    epoch: epoch,
+                    sessionID: sessionID,
+                    requestID: requestID
+                )
+                guard !Task.isCancelled, self.historyRequestID == requestID,
+                      self.chartPipelineSessionID == sessionID,
+                      self.chartPipelineEpoch == epoch else { return }
+                let health = await pipeline?.health()
+                guard !Task.isCancelled, self.historyRequestID == requestID,
+                      self.chartPipelineSessionID == sessionID,
+                      self.chartPipelineEpoch == epoch else { return }
+                // A snapshot already in flight can satisfy a new recovery request.
+                // Only retry if the pipeline still needs repair after installing it.
+                self.chartRecoveryNeeded = !self.waitingForHistory
+                    && self.chartRecoveryNeeded && health?.recoveryRequest != nil
+                if self.historyRefreshPending {
+                    self.historyRefreshPending = false
+                    continue
                 }
+                if self.chartRecoveryNeeded {
+                    let delay = min(30, pow(2, Double(min(recoveryAttempt, 5))) * Double.random(in: 0.8...1.2))
+                    recoveryAttempt += 1
+                    do { try await Task.sleep(for: .seconds(delay)) }
+                    catch { return }
+                    continue
+                }
+                self.intervalTask = nil
+                if self.historyPageAwaitingSnapshot,
+                   self.chartDataFrame?.epoch == epoch {
+                    self.historyPageAwaitingSnapshot = false
+                    if let before = self.pendingHistoryBoundary {
+                        self.loadOlderHistory(before: before)
+                    }
+                }
+                return
             }
         }
     }
@@ -649,9 +668,7 @@ final class MarketChartViewModel: ObservableObject {
         chartIndicatorUpdateTask?.cancel()
         chartIndicatorUpdateTask = nil
         pendingChartPriceUpdate = nil
-        chartRecoveryTask?.cancel()
-        chartRecoveryTask = nil
-        chartRecoveryCheckRequested = false
+        chartRecoveryNeeded = false
         chartPipelineSessionID = UUID()
         historyPageTask?.cancel()
         historyPageTask = nil
@@ -734,9 +751,7 @@ final class MarketChartViewModel: ObservableObject {
         guard let pipeline = chartPipeline else {
             return
         }
-        chartRecoveryTask?.cancel()
-        chartRecoveryTask = nil
-        chartRecoveryCheckRequested = false
+        chartRecoveryNeeded = false
         // A page belongs to the connection epoch that requested it. Keep its
         // boundary, but invalidate its completion before starting a new epoch.
         historyPageTask?.cancel()
@@ -847,113 +862,10 @@ final class MarketChartViewModel: ObservableObject {
                 == interval.rawValue else {
             return
         }
-        guard chartRecoveryTask == nil else {
-            chartRecoveryCheckRequested = true
-            return
-        }
-        chartRecoveryCheckRequested = false
-        let recoveryInterval = interval
-        chartRecoveryTask = Task { [weak self] in
-            await self?.recoverChartPipeline(
-                interval: recoveryInterval,
-                pipeline: pipeline,
-                epoch: epoch,
-                sessionID: sessionID
-            )
-        }
-    }
-
-    private func recoverChartPipeline(
-        interval recoveryInterval: MarketKlineInterval,
-        pipeline: ChartDataPipeline,
-        epoch: KlineStreamEpoch,
-        sessionID: UUID
-    ) async {
-        var attempt = 0
-        defer {
-            if chartPipelineSessionID == sessionID,
-               chartPipelineEpoch == epoch {
-                finishChartRecovery(
-                    pipeline: pipeline,
-                    epoch: epoch,
-                    sessionID: sessionID
-                )
-            }
-        }
-
-        while !Task.isCancelled {
-            guard chartPipelineSessionID == sessionID,
-                  chartPipelineEpoch == epoch,
-                  interval == recoveryInterval else {
-                return
-            }
-            do {
-                let response = try await fetchHistory(
-                    interval: recoveryInterval,
-                    beforeOpenTime: nil,
-                    limit: 1_500
-                )
-                let sorted = response.items.sorted {
-                    $0.openTime < $1.openTime
-                }
-                let result = await pipeline.installSnapshot(
-                    sorted,
-                    fetchedAtMilliseconds:
-                        currentTimeMilliseconds(),
-                    epoch: epoch
-                )
-                guard chartPipelineSessionID == sessionID,
-                      chartPipelineEpoch == epoch else {
-                    return
-                }
-                candles = Array(sorted.suffix(500))
-                if let frame = result.frame {
-                    chartDataFrame = frame
-                }
-                if result.recoveryRequest == nil {
-                    return
-                }
-            } catch {
-                guard !Task.isCancelled else {
-                    return
-                }
-            }
-
-            attempt += 1
-            let delaySeconds = min(
-                pow(2.0, Double(attempt - 1)),
-                30
-            )
-            try? await Task.sleep(
-                for: .seconds(delaySeconds)
-            )
-        }
-    }
-
-    private func finishChartRecovery(
-        pipeline: ChartDataPipeline,
-        epoch: KlineStreamEpoch,
-        sessionID: UUID
-    ) {
-        chartRecoveryTask = nil
-        guard chartRecoveryCheckRequested else {
-            return
-        }
-        chartRecoveryCheckRequested = false
-        Task { [weak self] in
-            let health = await pipeline.health()
-            guard let self,
-                  self.chartPipelineSessionID == sessionID,
-                  self.chartPipelineEpoch == epoch else {
-                return
-            }
-            self.scheduleChartRecoveryIfNeeded(
-                health.recoveryRequest,
-                pipeline: pipeline,
-                epoch: epoch,
-                sessionID: sessionID
-            )
-        }
+        guard chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
+              chartPipeline === pipeline, !waitingForHistory else { return }
+        chartRecoveryNeeded = true
+        if intervalTask == nil { reload() }
     }
 
     private func currentTimeMilliseconds() -> Int64 {

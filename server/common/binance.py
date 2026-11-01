@@ -1671,6 +1671,7 @@ class BinanceFuturesClient:
         query: Optional[dict[str, Any]],
         signed: bool,
         priority: RequestPriority | str | None,
+        require_shared: bool = False,
     ):
         budget_spec = classify_request(
             method=method,
@@ -1684,6 +1685,7 @@ class BinanceFuturesClient:
                 budget_spec,
                 account_api_key=self.credentials.api_key if signed else "",
                 lead_trading=self.credentials.trading_mode == "lead",
+                **({"require_shared": True} if require_shared else {}),
             )
         except RequestBudgetExceeded as exc:
             raise BinanceApiError(
@@ -1836,6 +1838,7 @@ class BinanceFuturesClient:
         signed: bool = True,
         base_url: Optional[str] = None,
         budget_priority: RequestPriority | str | None = None,
+        require_shared_budget: bool = False,
     ) -> Any:
         normalized_method = method.upper()
         if self.credentials.trading_mode == "lead" and signed and not (
@@ -1856,6 +1859,7 @@ class BinanceFuturesClient:
             query=query,
             signed=signed,
             priority=budget_priority,
+            require_shared=require_shared_budget,
         )
         url, headers = self._build_request_target(
             path=path,

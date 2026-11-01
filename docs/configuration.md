@@ -23,6 +23,8 @@
 | `BINANCE_QUOTE_ASSET` | 整合环境默认 USDT，影响行情发现和订阅 |
 | `MARKET_WS_URL` / `ACCOUNT_WS_URL` | `/market` 公共流和 `/private` 用户流，省略前缀可能握手后无数据 |
 | `MARKET_WS_PROXY` | 本机开发显式代理；服务器直接连接 |
+| `MARKET_WS_ATTEMPTS_PER_MINUTE` | 公共行情建连滚动 60 秒预算，默认且最多 30，可下调；自设保守值，不是币安官方额度 |
+| `MARKET_WS_CONNECT_SPACING_SECONDS` | 公共行情相邻建连间隔，默认且最少 1 秒，可增大 |
 | `MARKET_STREAM_ENABLED` / `ACCOUNT_STREAM_ENABLED` | 对应独立采集和账户流开关 |
 | `RUN_SCHEDULER_IN_WEB` | 设为 false，调度仅由独立 scheduler 运行 |
 | `MARKET_SNAPSHOT_PREWARM_ENABLED` | 整合环境关闭旧 Web CDN 预热 |
@@ -34,7 +36,7 @@
 
 Binance REST 请求预算由 `common/binance_rate_limit.py` 与 settings 管理；增加 worker 或缩短轮询不扩大交易所配额。保持保护 / 交易请求的预算优先级。
 
-当前行情关键路径没有新增环境变量：`collector.py` 固定历史任务 1 路、统计 6 路，启动和每 5 分钟在容量允许时逐项预热；收线待写缓冲上限 10,000 条。`service.HOT_WINDOW_SIZE` 定义共享热窗口；`history_cache.py` 限制为最多 64 窗、每窗压缩后不超过 256 KiB，TTL 为 300 秒，只淘汰公共历史，不修改共享 Redis 的 80 MB / noeviction 配置。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN 预热，不控制原生窗口预热。参数、v2 Redis 主题及 API / market 配套升级边界见 [行情主文档](market-data.md)。
+本轮新增上表两个公共连接守卫参数，缺省即启用，无新增必填凭证或 migration。`collector.py` 仍为历史任务 1 路、统计 6 路，启动和每 5 分钟按容量预热；收线缓冲上限 10,000。`service.HOT_WINDOW_SIZE` 定义窗口；`history_cache.py` 仍限 64 窗、每窗压缩后最多 256 KiB、TTL 300 秒，不改共享 Redis 的 80 MB / noeviction。冷读增加 300 ms 锁竞争预算和 10 秒 owner lease；上游冷却、轮换及共享预算失败处理见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。同出口其他应用不共享 Redis／key prefix 时仍会消耗总额度，应核对实际出口并预留配额。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN，v2 主题及 API / market 配套发布边界不变。
 
 ## 可选能力
 

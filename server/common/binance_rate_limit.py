@@ -286,6 +286,7 @@ def reserve_request_budget(
     account_api_key: str = "",
     now: float | None = None,
     lead_trading: bool = False,
+    require_shared: bool = False,
 ) -> None:
     current_time = float(now if now is not None else time.time())
     minute_window = int(current_time // 60)
@@ -303,6 +304,9 @@ def reserve_request_budget(
         _priority_limit(spec.scope, spec.priority, account_weight=uses_account_weight),
         timeout=120,
     )
+    if weight_backend == "local" and require_shared:
+        _release_counter(weight_key, spec.weight, backend=weight_backend)
+        raise RequestBudgetExceeded(scope=spec.scope, priority=spec.priority, retry_after=5)
     if weight_backend is None:
         raise RequestBudgetExceeded(
             scope=spec.scope,

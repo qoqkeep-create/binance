@@ -379,6 +379,37 @@ final class MarketFastPathTests: XCTestCase {
         XCTAssertEqual(finalReads, 3, "All page notices must merge into one follow-up")
     }
 
+    func testRecoverySharesTheDownloadingFirstSnapshot() async throws {
+        let api = GatedChartHistoryAPI()
+        let viewModel = makeChart(api)
+        defer { viewModel.stop() }
+        viewModel.start()
+        try await waitForReads(1, api)
+        await viewModel.receive(liveKline())
+        try await Task.sleep(for: .milliseconds(100))
+        let reads = await api.reads
+        XCTAssertEqual(reads, 1, "Recovery must join the snapshot already downloading")
+        await api.openGate()
+        try await waitUntil { viewModel.chartDataFrame != nil }
+    }
+
+    func testPendingSnapshotWaitsForReadinessDespiteRealtimeUpdates() async throws {
+        let api = EmptyPendingChartAPI()
+        let viewModel = makeChart(api)
+        defer { viewModel.stop() }
+        viewModel.start()
+        try await waitUntil { viewModel.isLoading }
+        try await Task.sleep(for: .milliseconds(30))
+        await viewModel.receive(liveKline())
+        try await Task.sleep(for: .milliseconds(100))
+        let reads = await api.reads
+        XCTAssertEqual(reads, 1, "A pending server backfill must wait for readiness or reconciliation")
+        await viewModel.receive(notice(symbol: "BTCUSDT"))
+        try await Task.sleep(for: .milliseconds(100))
+        let afterNotice = await api.reads
+        XCTAssertEqual(afterNotice, 2)
+    }
+
     func testMatchingAckCoalescesWhileUnrelatedFiltersDoNotQueueARefresh() async throws {
         let api = GatedChartHistoryAPI()
         let viewModel = makeChart(api)
@@ -625,6 +656,19 @@ final class MarketFastPathTests: XCTestCase {
             realtimeClient: RealtimeClient(baseURL: URL(string: "http://127.0.0.1")!, tokenProvider: { nil }))
     }
 
+    private func liveKline() -> RealtimeServerMessage {
+        let at = Int64(Date().timeIntervalSince1970 * 1000) / 3_600_000 * 3_600_000
+        let data: JSONValue = .object([
+            "symbol": .string("BTCUSDT"), "contractType": .string("PERPETUAL"), "interval": .string("1h"),
+            "openTime": .number(Double(at)), "closeTime": .number(Double(at + 3_599_999)),
+            "openPrice": .number(100), "highPrice": .number(110), "lowPrice": .number(99),
+            "closePrice": .number(105), "volume": .number(1), "quoteVolume": .number(100),
+            "closed": .bool(false), "eventTime": .number(Double(at + 1000))])
+        return RealtimeServerMessage(version: 1, type: "event", requestId: nil,
+            channel: "market.kline", event: "upsert", key: "BTCUSDT:1h", sequence: 1,
+            timestamp: at + 1000, data: data, error: nil)
+    }
+
     private func notice(symbol: String, interval: String = "1h") -> RealtimeServerMessage {
         RealtimeServerMessage(version: 1, type: "event", requestId: nil, channel: "market.history",
             event: "upsert", key: nil, sequence: 1, timestamp: 1,
@@ -677,6 +721,15 @@ private actor PendingChartAPI: APIClient {
         }
         return MarketKlineHistoryResponse(symbol: "BTCUSDT", interval: "1h", items: rows,
             historyPending: before != nil, statisticsPending: before == nil, hasMoreHistory: true) as! Response
+    }
+}
+
+private actor EmptyPendingChartAPI: APIClient {
+    private(set) var reads = 0
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        reads += 1
+        return MarketKlineHistoryResponse(symbol: "BTCUSDT", interval: "1h", items: [],
+            historyPending: true, hasMoreHistory: true) as! Response
     }
 }
 

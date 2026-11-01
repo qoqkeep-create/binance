@@ -26,9 +26,9 @@ struct USDTProfileView: View {
             } label: {
               WebLabel("请先绑定 API", "link")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(WebTheme.color(0x16734B, 0x7FE0AE))
+                .foregroundStyle(WebTheme.danger)
                 .frame(maxWidth: .infinity, minHeight: 46)
-                .background(WebTheme.color(0xE3F5EA, 0x203E34), in: RoundedRectangle(cornerRadius: 10))
+                .background(WebTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
                 .contentShape(RoundedRectangle(cornerRadius: 10))
             }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
               .padding(.bottom, 20)
@@ -217,7 +217,7 @@ struct USDTProfileView: View {
         collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
       }.refreshable { await store.refresh() }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
-      .webModal(isPresented: $stopLoss) { USDTStopLossView() }
+      .sheet(isPresented: $stopLoss) { USDTStopLossView() }
       .webModal(isPresented: $collect) {
         USDTCollectAccountView().onDisappear {
           Task {
@@ -413,105 +413,137 @@ struct USDTBindingView: View {
   }
 }
 
+private struct StopLossPresentationDetent: CustomPresentationDetent {
+  static func height(in context: Context) -> CGFloat? {
+    context.dynamicTypeSize.isAccessibilitySize ? context.maxDetentValue : min(650, context.maxDetentValue)
+  }
+}
+
 struct USDTStopLossView: View {
   @EnvironmentObject private var store: USDTStore
+  @Environment(\.dismiss) private var dismiss
   @State private var value: JSONValue = .null
   @State private var percentage = 2
   @State private var loading = true
   @State private var saving = false
-  @State private var now = Date()
   @State private var notice = ""
   @State private var confirm = false
   @State private var cancelPending = false
   @State private var completed: (from: Decimal, to: Decimal)?
   var body: some View {
-    WebModal(
-      title: "止损设置", alignment: .bottom, maximumWidth: 448, titleSize: 20, overlayOpacity: 0.45,
-      contentSpacing: 16, closeIconSize: 20, closeButtonSize: 36
-    ) {
-      VStack(alignment: .leading, spacing: 24) {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("账户总资产（USDT）").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
-          Text("\(money(balance)) USDT").font(.system(size: 24, weight: .bold))
-        }
-        VStack(spacing: 12) {
-          HStack {
-            Text("单笔止损占账户总资产百分比").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
-            Spacer()
-            Text("\(percentage)%").font(.system(size: 24, weight: .bold)).foregroundStyle(
-              WebTheme.brand)
-            Text(percentage <= 4 ? "低风险" : percentage <= 10 ? "中风险" : "高风险").font(.system(size: 14))
-              .foregroundStyle(
-                percentage <= 4
-                  ? WebTheme.success : percentage <= 10 ? WebTheme.brand : WebTheme.danger)
+    VStack(spacing: 0) {
+      HStack {
+        Text("止损设置").font(.system(size: 20, weight: .bold))
+        Spacer()
+        Button { dismiss() } label: {
+          WebIcon("xmark", size: 20).foregroundStyle(WebTheme.muted).frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel("关闭").disabled(saving)
+      }.padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 8)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 24) {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("账户总资产（USDT）").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+            Text("\(money(balance)) USDT").font(.system(size: 24, weight: .bold))
           }
-          VStack(alignment: .leading, spacing: 4) {
-            (Text("单笔止损额：").font(.system(size: 14))
-              + Text(
-                " (\(money(balance))*\(percentage)%=\(money(balance * Decimal(percentage) / 100)) USDT 向上取整)"
-              ).font(.system(size: 12))).foregroundStyle(WebTheme.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-              Text("\(money(target)) USDT").font(.system(size: 24, weight: .bold))
-              if !loading && target == value["current_amount"]?.decimal {
-                Text("当前").font(.system(size: 11))
+          VStack(spacing: 12) {
+            HStack {
+              Text("单笔止损占账户总资产百分比").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+              Spacer()
+              Text("\(percentage)%").font(.system(size: 24, weight: .bold)).foregroundStyle(
+                WebTheme.brand)
+              Text(percentage <= 4 ? "低风险" : percentage <= 10 ? "中风险" : "高风险").font(.system(size: 14))
+                .foregroundStyle(
+                  percentage <= 4
+                    ? WebTheme.success : percentage <= 10 ? WebTheme.brand : WebTheme.danger)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+              (Text("单笔止损额：").font(.system(size: 14))
+                + Text(
+                  " (\(money(balance))*\(percentage)%=\(money(balance * Decimal(percentage) / 100)) USDT 向上取整)"
+                ).font(.system(size: 12))).foregroundStyle(WebTheme.secondary)
+              HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(money(target)) USDT").font(.system(size: 24, weight: .bold))
+                if !loading && target == value["current_amount"]?.decimal {
+                  Text("当前").font(.system(size: 11))
+                }
+              }.foregroundStyle(WebTheme.brand)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(
+              WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
+            Slider(value: Binding(get: { Double(percentage) }, set: { percentage = Int($0) }),
+              in: 1...25, step: 1)
+              .tint(WebTheme.brand).disabled(loading)
+              .accessibilityLabel("止损比例").accessibilityValue("\(percentage)%")
+              .accessibilityIdentifier("stop-loss.percentage")
+            HStack {
+              Text("1%")
+              Spacer()
+              Text("25%")
+            }.font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+          }
+          VStack(alignment: .leading, spacing: 8) {
+            Text("1. 止损金额按合约、资金、现货三类账户的 USDT 总资产计算")
+            Text("2. 止损金额设定后，不再随账户余额变动而变动")
+            Text("3. 确认后止损额立即生效（测试阶段暂不启用调高冷却）")
+          }.font(.system(size: 12)).foregroundStyle(WebTheme.muted).lineSpacing(4)
+          if let pending = value["pending_amount"], pending != .null {
+            HStack {
+              TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                Text("您已调整止损金额\(value.value("pending_from_amount")) → \(pending.text)，\(countdownText(at: timeline.date))后生效")
+                  .font(.system(size: 14))
               }
-            }.foregroundStyle(WebTheme.brand)
-          }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(
-            WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
-          WebRangeSlider(value: $percentage).disabled(loading)
-          HStack {
-            Text("1%")
-            Spacer()
-            Text("25%")
-          }.font(.system(size: 12)).foregroundStyle(WebTheme.muted)
-        }
-        VStack(alignment: .leading, spacing: 8) {
-          Text("1. 止损金额按合约、资金、现货三类账户的 USDT 总资产计算")
-          Text("2. 止损金额设定后，不再随账户余额变动而变动")
-          Text("3. 确认后止损额立即生效（测试阶段暂不启用调高冷却）")
-        }.font(.system(size: 12)).foregroundStyle(WebTheme.muted).lineSpacing(4)
-        if let pending = value["pending_amount"], pending != .null {
-          HStack {
-            Text(
-              "您已调整止损金额\(value.value("pending_from_amount")) → \(pending.text)，\(countdownText)后生效"
-            ).font(
-              .system(size: 14))
-            Spacer()
-            Button("取消") {
-              cancelPending = true
-              confirm = true
-            }.underline()
-          }.foregroundStyle(WebTheme.brand).padding(12).background(
-            WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-        }
-        if let completed {
-          HStack {
-            Text("您已调整止损金额\(money(completed.from)) → \(money(completed.to))。")
-            Spacer()
-            Button("知道了") { self.completed = nil }.underline()
-          }.font(.system(size: 14)).foregroundStyle(WebTheme.success).padding(12)
-            .background(WebTheme.success.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-        }
-        USDTNotice(text: notice)
-        Button(saving ? "提交中..." : "确定") {
-          cancelPending = false
-          confirm = true
-        }.buttonStyle(
-          WebButtonStyle(height: 56, radius: 14, weight: .bold, mutedDisabled: true)
-        ).disabled(
-          loading || saving || target == (value["current_amount"]?.decimal ?? 0) || balance <= 0)
-      }
-    }.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }.task {
-      defer { loading = false }
+              Spacer()
+              Button("取消") {
+                cancelPending = true
+                confirm = true
+              }.underline()
+            }.foregroundStyle(WebTheme.brand).padding(12).background(
+              WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+          }
+          if let completed {
+            HStack {
+              Text("您已调整止损金额\(money(completed.from)) → \(money(completed.to))。")
+              Spacer()
+              Button("知道了") { self.completed = nil }.underline()
+            }.font(.system(size: 14)).foregroundStyle(WebTheme.success).padding(12)
+              .background(WebTheme.success.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+          }
+          USDTNotice(text: notice)
+        }.padding(.horizontal, 24).padding(.vertical, 8)
+      }.scrollIndicators(.hidden)
+    }.frame(maxWidth: 448).frame(maxWidth: .infinity)
+    .font(.system(size: 14)).foregroundStyle(WebTheme.text)
+    .background(WebTheme.surface)
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      Button(saving ? "提交中..." : "确定") {
+        cancelPending = false
+        confirm = true
+      }.buttonStyle(WebButtonStyle(height: 56, radius: 14, weight: .bold, mutedDisabled: true))
+        .disabled(loading || saving || target == (value["current_amount"]?.decimal ?? 0) || balance <= 0)
+        .accessibilityIdentifier("stop-loss.submit")
+        .padding(.horizontal, 24).padding(.vertical, 12)
+        .frame(maxWidth: 448).frame(maxWidth: .infinity).background(WebTheme.surface)
+    }
+    .presentationDetents([.custom(StopLossPresentationDetent.self)])
+    .presentationDragIndicator(.visible)
+    .presentationCornerRadius(24)
+    .presentationBackground(WebTheme.surface)
+    .interactiveDismissDisabled(saving)
+    .task {
       do {
-        value = try await store.get("/v1/account/stop-loss")
-        let current = value["current_amount"]?.decimal ?? 0
-        if balance > 0 {
-          percentage = min(
-            25, max(1, Int(NSDecimalNumber(decimal: current / balance * 100).doubleValue.rounded()))
-          )
+        let response = try await store.get("/v1/account/stop-loss")
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+          value = response
+          let current = value["current_amount"]?.decimal ?? 0
+          if balance > 0 {
+            percentage = min(25, max(1,
+              Int(NSDecimalNumber(decimal: current / balance * 100).doubleValue.rounded())))
+          }
+          loading = false
         }
-      } catch { notice = error.localizedDescription }
+      } catch { notice = error.localizedDescription; loading = false }
     }
     .webModal(isPresented: $confirm) {
       WebModal(title: "", overlayOpacity: 0.45, contentSpacing: 24) {
@@ -536,7 +568,7 @@ struct USDTStopLossView: View {
         $0 + (store.account[$1]?.decimal ?? 0)
       }
   }
-  private var countdownText: String {
+  private func countdownText(at now: Date) -> String {
     let deadline = WebFormat.date(value.value("pending_effective_at"))
     let seconds = max(0, Int(deadline?.timeIntervalSince(now) ?? 0))
     return String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)

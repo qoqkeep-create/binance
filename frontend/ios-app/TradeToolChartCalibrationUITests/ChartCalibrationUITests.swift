@@ -788,6 +788,31 @@ final class ChartCalibrationUITests: XCTestCase {
         }
     }
 
+    func testContinuousScalePinchPanAndCrosshairFixture() throws {
+        let app = XCUIApplication(bundleIdentifier: AppID.tradeTool)
+        app.launchArguments = ["--chart-calibration-fixture"]
+        app.launch()
+        openTradeToolDetailIfNeeded(in: app)
+        let chart = app.descendants(matching: .any)["market-chart-plot"]
+        XCTAssertTrue(chart.waitForExistence(timeout: 15))
+        waitForAnimations()
+        attachScreenshot(named: "continuous-scale-start")
+        chart.pinch(withScale: 0.5, velocity: -0.25)
+        attachScreenshot(named: "continuous-scale-zoom-out")
+        let start = chart.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2))
+        let end = chart.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.2))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0)
+        wait(seconds: 2.2)
+        XCTAssertTrue(chart.exists)
+        XCTAssertTrue((chart.value as? String)?.contains("历史") == true)
+        attachScreenshot(named: "continuous-scale-pan")
+        chart.pinch(withScale: 1.5, velocity: 0.3)
+        attachScreenshot(named: "continuous-scale-zoom-in")
+        chart.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).press(forDuration: 0.6)
+        attachScreenshot(named: "continuous-scale-crosshair")
+        XCTAssertFalse(app.staticTexts["K线渲染器初始化失败"].exists)
+    }
+
     func testCaptureTradeToolCandleGeometryZoomSequence() {
         let app = XCUIApplication(bundleIdentifier: AppID.tradeTool)
         app.launch()
@@ -2917,7 +2942,7 @@ final class WebParityUITests: XCTestCase {
                               (["--fixture-latency-slow", "--fixture-dark"], "780 ms, poor"),
                               (["--fixture-latency-overflow"], "999 ms, poor"),
                               (["--fixture-latency-unavailable"], "-- ms, poor"),
-                              (["--fixture-latency-measuring"], "测量中, fair")] {
+                              (["--fixture-latency-measuring"], "测量中, fair, 正在刷新")] {
       launch("market", options)
       let latency = app.descendants(matching: .any)["market.latency"].firstMatch
       XCTAssertTrue(latency.waitForExistence(timeout: 5))
@@ -2928,7 +2953,7 @@ final class WebParityUITests: XCTestCase {
     launch("market")
     let latencyButton = app.buttons["market.latency"]
     latencyButton.tap()
-    XCTAssertEqual(latencyButton.value as? String, "测量中, fair")
+    XCTAssertEqual(latencyButton.value as? String, "86 ms, good, 正在刷新")
     let measuredAgain = expectation(for: NSPredicate(format: "value == %@", "86 ms, good"),
       evaluatedWith: latencyButton)
     wait(for: [measuredAgain], timeout: 3)
@@ -2942,6 +2967,45 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["信号规则"].waitForExistence(timeout: 5))
     app.buttons["我知道了"].tap()
     XCTAssertTrue(app.buttons["内部信号规则"].waitForExistence(timeout: 5))
+  }
+
+  func testLatencyRefreshRetainsValueAndNativeStopLossFooterStaysFixed() {
+    launch("market", ["--fixture-latency-refresh-slow"])
+    let latency = app.buttons["market.latency"]
+    XCTAssertTrue(latency.waitForExistence(timeout: 5))
+    latency.tap()
+    XCTAssertEqual(latency.value as? String, "86 ms, good, 正在刷新")
+    capture("latency-refresh-keeps-number")
+    let refreshed = expectation(for: NSPredicate(format: "value == %@", "86 ms, good"), evaluatedWith: latency)
+    wait(for: [refreshed], timeout: 8)
+    app.swipeDown()
+    XCTAssertEqual(latency.value as? String, "86 ms, good, 正在刷新")
+    let pulled = expectation(for: NSPredicate(format: "value == %@", "86 ms, good"), evaluatedWith: latency)
+    wait(for: [pulled], timeout: 8)
+
+    for (options, name) in [(["--fixture-unbound"], "light"),
+                             (["--fixture-unbound", "--fixture-dark"], "dark")] {
+      launch("profile", options)
+      XCTAssertTrue(app.buttons["profile.bind"].waitForExistence(timeout: 5))
+      capture("profile-red-binding-" + name)
+      app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止损额设置")).firstMatch.tap()
+      let submit = app.buttons["stop-loss.submit"]
+      XCTAssertTrue(submit.waitForExistence(timeout: 5))
+      let footerY = submit.frame.maxY
+      let slider = app.sliders["stop-loss.percentage"]
+      XCTAssertTrue(slider.waitForExistence(timeout: 5))
+      slider.adjust(toNormalizedSliderPosition: 0.7)
+      XCTAssertEqual(submit.frame.maxY, footerY, accuracy: 1)
+      XCTAssertTrue(submit.isEnabled)
+      capture("native-stop-loss-fixed-footer-" + name)
+      submit.tap()
+      XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 5))
+      app.buttons["取消"].tap()
+      XCTAssertTrue(submit.waitForExistence(timeout: 5))
+      XCTAssertEqual(submit.frame.maxY, footerY, accuracy: 1)
+      app.buttons["关闭"].firstMatch.tap()
+      XCTAssertTrue(app.buttons["profile.bind"].waitForExistence(timeout: 5))
+    }
   }
 
   func testCollectionButtonAndSmallConfirmationCanReopen() {
@@ -3065,8 +3129,12 @@ final class WebParityUITests: XCTestCase {
     profileLink("止损额设置")
     XCTAssertTrue(app.buttons["关闭"].firstMatch.waitForExistence(timeout: 5))
     let close = app.buttons["关闭"].firstMatch
-    let start = close.coordinate(withNormalizedOffset: CGVector(dx: -2, dy: 0.5))
-    start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 250)))
+    let grabber = app.buttons.matching(NSPredicate(format: "label IN %@", ["表单控制柄", "Sheet Grabber"])).firstMatch
+    XCTAssertTrue(grabber.waitForExistence(timeout: 5))
+    grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .press(forDuration: 0.1,
+        thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)),
+        withVelocity: .fast, thenHoldForDuration: 0)
     let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: close)
     XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 4), .completed)
     capture("dark-profile-after-modal")

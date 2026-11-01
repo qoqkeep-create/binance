@@ -2,6 +2,7 @@
 import hashlib
 import logging
 import time
+import random
 
 from django.core.cache import cache
 from django.db import close_old_connections, transaction
@@ -111,6 +112,10 @@ def run_next(lane="history"):
     """One bounded task per pass. Failed/abandoned leases become retryable."""
     close_old_connections()
     now = time.time()
+    from common.binance import rate_limit_cooldown_remaining
+    if rate_limit_cooldown_remaining("futures") > 0:
+        close_old_connections()
+        return False
     try:
         with transaction.atomic():
             query = MarketHistoryTask.objects.filter(due_at__lte=now, lease_until__lte=now)
@@ -141,8 +146,10 @@ def run_next(lane="history"):
                 transaction.on_commit(lambda: notify_ready(task))
         except Exception as exc:
             attempts = min(task.attempts + 1, 16)
+            budget_wait = getattr(exc.__cause__, "retry_after", 0)
+            delay = max(min(300, 2 ** attempts), budget_wait, rate_limit_cooldown_remaining("futures"))
             MarketHistoryTask.objects.filter(pk=task.pk, lease_until=lease).update(
-                attempts=attempts, lease_until=0, due_at=time.time() + min(300, 2 ** attempts), priority=5)
+                attempts=attempts, lease_until=0, due_at=time.time() + delay + random.uniform(0, 1), priority=5)
             log.warning("Market repair deferred symbol=%s interval=%s kind=%s (%s)",
                         task.symbol, task.interval, task.kind, type(exc).__name__)
         return True

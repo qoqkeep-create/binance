@@ -1496,6 +1496,98 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertEqual(health.historyCount, 200)
     }
 
+    func testCancelledSnapshotAndPageCannotMutateThePipeline() async throws {
+        let epoch = KlineStreamEpoch(generation: 1)
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: 3_600_000, epoch: epoch))
+        let rows = (20..<40).map { marketCandle(openTime: Int64($0) * 3_600_000, closePrice: 100) }
+        let installed = await pipeline.installSnapshot(rows, fetchedAtMilliseconds: 40 * 3_600_000, epoch: epoch)
+        let original = try XCTUnwrap(installed.frame)
+        let older = (0..<20).map { marketCandle(openTime: Int64($0) * 3_600_000, closePrice: 105) }
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            let snapshot = await pipeline.installSnapshot(older,
+                fetchedAtMilliseconds: 40 * 3_600_000, epoch: epoch)
+            let page = await pipeline.prependHistory(older, epoch: epoch)
+            return (snapshot.frame == nil, page.frame == nil)
+        }
+        let rejected = await task.value
+        XCTAssertTrue(rejected.0 && rejected.1)
+        let current = await pipeline.currentFrame()
+        XCTAssertTrue(current.candles.history === original.candles.history)
+        XCTAssertTrue(current.indicators.history === original.indicators.history)
+    }
+
+    func testConcurrentSnapshotPageAndConfigurationKeepFramesConsistent() async throws {
+        let epoch = KlineStreamEpoch(generation: 1)
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: 3_600_000, epoch: epoch))
+        let older = (0..<20).map { marketCandle(openTime: Int64($0) * 3_600_000, closePrice: 100) }
+        let rows = (20..<40).map { marketCandle(openTime: Int64($0) * 3_600_000, closePrice: 100) }
+        _ = await pipeline.installSnapshot(rows, fetchedAtMilliseconds: 40 * 3_600_000, epoch: epoch)
+        await withTaskGroup(of: ChartDataFrame?.self) { group in
+            for index in 0..<20 {
+                group.addTask {
+                    switch index % 3 {
+                    case 0:
+                        return await pipeline.installSnapshot(rows, fetchedAtMilliseconds: 40 * 3_600_000,
+                            epoch: epoch, preservingNewerData: true).frame
+                    case 1:
+                        return await pipeline.prependHistory(older, epoch: epoch).frame
+                    default:
+                        return await pipeline.updateIndicatorConfiguration(selection: .standard,
+                            parameters: .standard, revision: UInt64(index + 1))?.frame
+                    }
+                }
+            }
+            for await frame in group {
+                if let frame {
+                    XCTAssertTrue(frame.indicators.history.series.allSatisfy {
+                        $0.points.count == frame.candles.history.candles.count
+                    })
+                    XCTAssertEqual(frame.epoch, epoch)
+                }
+            }
+        }
+        let current = await pipeline.currentFrame()
+        XCTAssertEqual(current.candles.history.candles.count, 40)
+    }
+
+    func testReconciliationReusesUnchangedHistoryAndIndicators() async throws {
+        let epoch = KlineStreamEpoch(generation: 1)
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: 3_600_000, epoch: epoch))
+        let rows = (0..<40).map { marketCandle(openTime: Int64($0) * 3_600_000, closePrice: 100) }
+        let firstResult = await pipeline.installSnapshot(rows, fetchedAtMilliseconds: 40 * 3_600_000,
+            epoch: epoch, preservingNewerData: true)
+        let first = try XCTUnwrap(firstResult.frame)
+        let repeatedResult = await pipeline.installSnapshot(rows, fetchedAtMilliseconds: 40 * 3_600_000,
+            epoch: epoch, preservingNewerData: true)
+        let repeated = try XCTUnwrap(repeatedResult.frame)
+        XCTAssertTrue(first.candles.history === repeated.candles.history)
+        XCTAssertTrue(first.indicators.history === repeated.indicators.history)
+        XCTAssertEqual(first.candles.revision, repeated.candles.revision)
+    }
+
+    func testReconciliationKeepsOlderPagesAndAppliesCorrections() async throws {
+        let epoch = KlineStreamEpoch(generation: 1)
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: 3_600_000, epoch: epoch))
+        let older = (0..<20).map { marketCandle(openTime: Int64($0) * 3_600_000, closePrice: 100) }
+        let latest = (20..<40).map { marketCandle(openTime: Int64($0) * 3_600_000, closePrice: 100) }
+        _ = await pipeline.installSnapshot(latest, fetchedAtMilliseconds: 40 * 3_600_000, epoch: epoch)
+        _ = await pipeline.prependHistory(older, epoch: epoch)
+        var corrected = latest
+        corrected[0] = marketCandle(openTime: 20 * 3_600_000, closePrice: 105)
+        let result = await pipeline.installSnapshot(corrected, fetchedAtMilliseconds: 40 * 3_600_000,
+            epoch: epoch, preservingNewerData: true)
+        let frame = try XCTUnwrap(result.frame)
+        XCTAssertEqual(frame.candles.history.candles.count, 40)
+        XCTAssertEqual(frame.candles.history.candles.first?.openTime, 0)
+        XCTAssertEqual(frame.candles.history.candles.first { $0.openTime == 20 * 3_600_000 }?.closePrice, 105)
+        XCTAssertTrue(frame.indicators.history.series.allSatisfy { $0.points.count == 40 })
+    }
+
     func testChartDataPipelineCoalescesLiveTailWithoutCopyingHistory()
         async throws {
         let epoch = KlineStreamEpoch(generation: 1)
@@ -6445,6 +6537,197 @@ final class ChartEngineCoreTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testTimelinePinchUpdatesPriceAndMACDDuringGestureAndCoalescesFrames() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let baseline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 20, trailingOffsetSlots: 20))
+        let builder = ChartSceneBuilder()
+        let initial = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: baseline)
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        var requested: [ChartTimelineViewport] = []
+        host.configureTimelineInteraction(viewport: baseline, totalSlotCount: 221) { requested.append($0) }
+        host.submit(initial.renderState)
+        let gesture = ContinuousScaleTestPinch()
+        gesture.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        gesture.phase = .changed
+        gesture.scale = 0.5
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        XCTAssertTrue(requested.isEmpty, "Gesture callbacks must wait for the display frame")
+        host.diagnosticInteractionFrame(at: 10)
+        XCTAssertEqual(requested.count, 1, "Vertical fitting must start before the fingers lift")
+        guard let first = requested.first else { return }
+
+        gesture.scale = 0.4
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        gesture.scale = 0.3
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        host.diagnosticInteractionFrame(at: 10.016)
+        XCTAssertEqual(requested.count, 1, "Keep only the latest viewport while a scene is in flight")
+        let fitted = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: first)
+        XCTAssertNotEqual(fitted.priceLowerBound, initial.priceLowerBound)
+        XCTAssertNotEqual(fitted.renderState.staticScene.crosshairData?.panelDomains[ChartPanelID.macd],
+                          initial.renderState.staticScene.crosshairData?.panelDomains[ChartPanelID.macd])
+        XCTAssertEqual(fitted.renderState.staticScene.crosshairData?.priceDomain.lower, fitted.priceLowerBound)
+        host.submit(fitted.renderState)
+        host.diagnosticInteractionFrame(at: 10.033)
+        XCTAssertEqual(requested.count, 2)
+        XCTAssertEqual(requested.last, baseline.pinched(scale: 0.3, anchorFraction: 0.5, totalSlotCount: 221),
+                       "Receiving a fitted scene must preserve the original finger anchor")
+        gesture.phase = .ended
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+    }
+
+    @MainActor
+    func testTimelinePinchReturningToStartSupersedesPendingScene() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let baseline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: 30))
+        let builder = ChartSceneBuilder()
+        let initial = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: baseline)
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        var requested: [ChartTimelineViewport] = []
+        host.configureTimelineInteraction(viewport: baseline, totalSlotCount: 221) { requested.append($0) }
+        host.submit(initial.renderState)
+        let gesture = ContinuousScaleTestPinch()
+        gesture.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        gesture.phase = .changed
+        gesture.scale = 0.7
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        host.diagnosticInteractionFrame(at: 10)
+        XCTAssertEqual(requested.count, 1)
+        gesture.scale = 1
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        gesture.phase = .ended
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        XCTAssertEqual(requested.last, baseline, "The final viewport must supersede a scene still being prepared, even after returning to the starting position")
+    }
+
+    @MainActor
+    func testTimelinePanPreservesTranslationAndCommitsLatestAfterCancel() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let baseline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: 30))
+        let builder = ChartSceneBuilder()
+        let initial = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: baseline)
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        var requested: [ChartTimelineViewport] = []
+        host.configureTimelineInteraction(viewport: baseline, totalSlotCount: 221) { requested.append($0) }
+        host.submit(initial.renderState)
+        let gesture = ContinuousScaleTestPan()
+        gesture.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        gesture.phase = .changed
+        gesture.translationX = 60
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        host.diagnosticInteractionFrame(at: 10)
+        let first = try XCTUnwrap(requested.first)
+        let fitted = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: first)
+        host.submit(fitted.renderState)
+        gesture.translationX = 90
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        host.diagnosticInteractionFrame(at: 10.016)
+        let final = baseline.panned(translationPoints: 90, plotWidthPoints: 328, totalSlotCount: 221)
+        XCTAssertEqual(requested.count, 2)
+        XCTAssertEqual(requested.last, final, "Cumulative translation must still use the original gesture baseline")
+
+        gesture.phase = .cancelled
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        XCTAssertEqual(requested.last, final)
+        let countAfterCancel = requested.count
+        host.diagnosticInteractionFrame(at: 10.033)
+        XCTAssertEqual(requested.count, countAfterCancel, "Cancellation must stop continuous fitting")
+        let committed = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: final)
+        host.submit(committed.renderState)
+        host.diagnosticInteractionFrame(at: 10.05)
+        XCTAssertEqual(requested.count, countAfterCancel)
+    }
+
+    @MainActor
+    func testTimelineInertiaContinuesWhileSceneIsPendingAndAfterRebase() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let baseline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: 30))
+        let builder = ChartSceneBuilder()
+        let initial = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: baseline)
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        var requested: [ChartTimelineViewport] = []
+        host.configureTimelineInteraction(viewport: baseline, totalSlotCount: 221) { requested.append($0) }
+        host.submit(initial.renderState)
+        let gesture = ContinuousScaleTestPan()
+        gesture.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        gesture.phase = .ended
+        gesture.velocityX = 900
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        var motion = ChartTimelineMotion()
+        XCTAssertTrue(motion.begin(velocityPointsPerSecond: 900, boundaryTranslationPoints: 0))
+        host.diagnosticInteractionFrame(at: 20)
+        host.diagnosticInteractionFrame(at: 20.016)
+        let first = try XCTUnwrap(requested.first)
+        var expected = motion.advance(from: baseline, deltaTimeSeconds: 0.016, plotWidthPoints: 328, totalSlotCount: 221).viewport
+        XCTAssertEqual(first.trailingOffsetSlots, expected.trailingOffsetSlots, accuracy: 0.000_001)
+        host.diagnosticInteractionFrame(at: 20.032)
+        expected = motion.advance(from: expected, deltaTimeSeconds: 0.016, plotWidthPoints: 328, totalSlotCount: 221).viewport
+        XCTAssertEqual(requested.count, 1, "In-flight work must not queue another scene")
+        let fitted = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: first)
+        host.submit(fitted.renderState)
+        host.diagnosticInteractionFrame(at: 20.048)
+        expected = motion.advance(from: expected, deltaTimeSeconds: 0.016, plotWidthPoints: 328, totalSlotCount: 221).viewport
+        XCTAssertEqual(requested.count, 2)
+        XCTAssertEqual(try XCTUnwrap(requested.last).trailingOffsetSlots, expected.trailingOffsetSlots, accuracy: 0.000_001,
+                       "Fitting must preserve both the motion clock and movement made while awaiting the scene")
+    }
+
+    @MainActor
+    func testTimelineFastPinchCoalescesGuardBandRebaseAndPreservesAnchor() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let baseline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 20, trailingOffsetSlots: 40))
+        let builder = ChartSceneBuilder()
+        let initial = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: baseline)
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        var requested: [ChartTimelineViewport] = []
+        host.configureTimelineInteraction(viewport: baseline, totalSlotCount: 221) { requested.append($0) }
+        host.submit(initial.renderState)
+        let gesture = ContinuousScaleTestPinch()
+        gesture.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        gesture.phase = .changed
+        gesture.scale = 0.15
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        XCTAssertTrue(requested.isEmpty)
+        host.diagnosticInteractionFrame(at: 30)
+        let first = try XCTUnwrap(requested.first)
+        XCTAssertFalse(first.isRenderable(from: baseline, guardBandSlotCount: 48))
+        gesture.scale = 0.12
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        host.diagnosticInteractionFrame(at: 30.016)
+        XCTAssertEqual(requested.count, 1)
+        let fitted = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: first)
+        host.submit(fitted.renderState)
+        gesture.scale = 0.2
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        host.diagnosticInteractionFrame(at: 30.032)
+        XCTAssertEqual(requested.count, 2)
+        XCTAssertEqual(requested.last, baseline.pinched(scale: 0.2, anchorFraction: 0.5, totalSlotCount: 221))
+        gesture.phase = .ended
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: gesture)
+        let final = try XCTUnwrap(requested.last)
+        let committed = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: final)
+        host.submit(committed.renderState)
+        let countAfterEnd = requested.count
+        host.diagnosticInteractionFrame(at: 30.048)
+        XCTAssertEqual(requested.count, countAfterEnd)
+    }
+
     func testBinanceKlineLoadingAnimationUsesMeasuredGeometry() {
         XCTAssertEqual(BinanceKlineLoadingAnimation.barCount, 4)
         XCTAssertEqual(
@@ -6886,5 +7169,34 @@ private struct TestConstantIndicatorCalculator:
             legendValue: validity == .valid ? value : nil,
             legendColorToken: .neutral
         )
+    }
+}
+
+@MainActor
+private final class ContinuousScaleTestPinch: UIPinchGestureRecognizer {
+    var phase: UIGestureRecognizer.State = .possible
+    override var state: UIGestureRecognizer.State {
+        get { phase }
+        set { phase = newValue }
+    }
+    override func location(in view: UIView?) -> CGPoint {
+        CGPoint(x: 168, y: 120)
+    }
+}
+
+@MainActor
+private final class ContinuousScaleTestPan: UIPanGestureRecognizer {
+    var phase: UIGestureRecognizer.State = .possible
+    var translationX: CGFloat = 0
+    var velocityX: CGFloat = 0
+    override var state: UIGestureRecognizer.State {
+        get { phase }
+        set { phase = newValue }
+    }
+    override func translation(in view: UIView?) -> CGPoint {
+        CGPoint(x: translationX, y: 0)
+    }
+    override func velocity(in view: UIView?) -> CGPoint {
+        CGPoint(x: velocityX, y: 0)
     }
 }

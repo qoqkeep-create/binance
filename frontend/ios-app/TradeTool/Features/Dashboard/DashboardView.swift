@@ -118,6 +118,7 @@ struct DashboardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .refreshable {
+                    realtimeClient.requestLatencyTest()
                     await viewModel.refresh()
                 }
             }
@@ -190,7 +191,8 @@ struct DashboardView: View {
 
             Spacer()
 
-            MarketLatencyBadge(latency: realtimeClient.latency) {
+            MarketLatencyBadge(latency: realtimeClient.latency,
+                isRefreshing: realtimeClient.isTestingLatency) {
                 realtimeClient.requestLatencyTest()
             }
                 .padding(.trailing, 6)
@@ -343,8 +345,9 @@ struct DashboardView: View {
 
 private struct MarketLatencyBadge: View {
     let latency: RealtimeLatency
+    let isRefreshing: Bool
     let retry: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var showsProgress: Bool { isRefreshing || latency == .measuring }
     private var color: Color {
         switch latency.quality {
         case .good: BinanceTheme.positive
@@ -358,19 +361,15 @@ private struct MarketLatencyBadge: View {
     var body: some View {
         Button(action: retry) {
           HStack(spacing: 5) {
-            if latency == .measuring {
-                TimelineView(.animation(minimumInterval: 0.15, paused: reduceMotion)) { timeline in
-                    HStack(spacing: 3) {
-                        ForEach(0..<3) { index in
-                            let phase = Int(timeline.date.timeIntervalSinceReferenceDate * 5) % 3
-                            Circle().fill(color.opacity(reduceMotion || phase == index ? 1 : 0.25))
-                                .frame(width: 4, height: 4)
-                        }
-                    }.frame(width: 38, height: 14)
-                }.accessibilityHidden(true)
-            } else {
-                Text(latency.text).font(.system(size: 11, weight: .medium)).monospacedDigit()
-            }
+            ZStack {
+                if showsProgress {
+                    ProgressView().progressViewStyle(.circular).controlSize(.mini).tint(color)
+                        .scaleEffect(0.65)
+                }
+            }.frame(width: 10, height: 10).accessibilityHidden(true)
+            Text(latency == .measuring ? "-- ms" : latency.text)
+                .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                .contentTransition(.identity)
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(0..<4) { index in
                     RoundedRectangle(cornerRadius: 1)
@@ -380,9 +379,9 @@ private struct MarketLatencyBadge: View {
             }.accessibilityHidden(true)
           }.foregroundStyle(color).frame(minWidth: 66, minHeight: 44).contentShape(Rectangle())
         }.buttonStyle(.plain)
-            .accessibilityElement(children: .ignore)
             .accessibilityLabel("网络延迟")
-            .accessibilityValue(latency.text + ", " + latency.quality.rawValue)
+            .accessibilityValue(latency.text + ", " + latency.quality.rawValue
+                + (showsProgress ? ", 正在刷新" : ""))
             .accessibilityHint("点击立即重新测量")
             .accessibilityIdentifier("market.latency")
     }

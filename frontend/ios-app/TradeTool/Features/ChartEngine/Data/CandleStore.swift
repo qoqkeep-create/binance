@@ -14,7 +14,8 @@ struct ChartCandleSnapshot: Sendable {
     let revision: UInt64
 }
 
-actor CandleStore {
+// Owned synchronously by the pipeline so candle and indicator updates cannot interleave.
+struct CandleStorage {
     private var history: ChartCandleHistory
     private var liveTail: ChartCandle?
     private var revision: UInt64 = 0
@@ -33,7 +34,7 @@ actor CandleStore {
         )
     }
 
-    func apply(
+    mutating func apply(
         _ mutation: KlineIngressMutation
     ) -> ChartCandleSnapshot {
         let candle = preservingTradingData(in: mutation.candle)
@@ -57,21 +58,20 @@ actor CandleStore {
         return snapshot()
     }
 
-    func installSnapshot(
+    mutating func installSnapshot(
         closedCandles: [ChartCandle],
         liveCandle: ChartCandle? = nil,
         preservingNewerData: Bool = false
     ) -> ChartCandleSnapshot {
         let previousLive = liveTail
-        let latestIncomingClosed = closedCandles.map(\.openTime).max() ?? Int64.min
-        let newerClosed = preservingNewerData
-            ? history.candles.filter { $0.openTime > latestIncomingClosed } : []
-        history = ChartCandleHistory(
-            candles: Self.normalizedClosed(
-                closedCandles + newerClosed,
-                limit: historyLimit
-            )
+        let merged = Self.normalizedClosed(
+            (preservingNewerData ? history.candles : []) + closedCandles,
+            limit: historyLimit
         )
+        let historyChanged = merged != history.candles
+        if historyChanged {
+            history = ChartCandleHistory(candles: merged)
+        }
         liveTail = liveCandle.map(preservingTradingData(in:))
         if preservingNewerData, let previousLive,
            previousLive.openTime >= (liveCandle?.openTime ?? Int64.min),
@@ -82,11 +82,11 @@ actor CandleStore {
         }
         if preservingNewerData, let tail = liveTail,
            tail.openTime <= (history.candles.last?.openTime ?? Int64.min) { liveTail = nil }
-        revision &+= 1
+        if historyChanged || liveTail != previousLive { revision &+= 1 }
         return snapshot()
     }
 
-    func upsertProvisional(
+    mutating func upsertProvisional(
         _ candle: ChartCandle
     ) -> ChartCandleSnapshot {
         let resolved = preservingTradingData(in: candle)
@@ -102,19 +102,17 @@ actor CandleStore {
         return snapshot()
     }
 
-    func prependClosedHistory(
+    mutating func prependClosedHistory(
         _ candles: [ChartCandle]
     ) -> ChartCandleSnapshot {
         guard !candles.isEmpty else {
             return snapshot()
         }
-        history = ChartCandleHistory(
-            candles: Self.normalizedClosed(
-                candles + history.candles,
-                limit: historyLimit
-            )
-        )
-        revision &+= 1
+        let merged = Self.normalizedClosed(candles + history.candles, limit: historyLimit)
+        if merged != history.candles {
+            history = ChartCandleHistory(candles: merged)
+            revision &+= 1
+        }
         return snapshot()
     }
 
@@ -126,7 +124,7 @@ actor CandleStore {
         )
     }
 
-    private func commit(_ candle: ChartCandle) {
+    private mutating func commit(_ candle: ChartCandle) {
         var candles = history.candles
         let insertion = candles.partitioningIndex {
             $0.openTime >= candle.openTime
@@ -179,6 +177,35 @@ actor CandleStore {
                 .suffix(limit)
         )
     }
+}
+
+// Standalone consumers retain actor isolation; the pipeline owns its own value storage.
+actor CandleStore {
+    private var storage: CandleStorage
+
+    init(initialClosed: [ChartCandle] = [], historyLimit: Int = 3_000) {
+        storage = CandleStorage(initialClosed: initialClosed, historyLimit: historyLimit)
+    }
+
+    func apply(_ mutation: KlineIngressMutation) -> ChartCandleSnapshot {
+        storage.apply(mutation)
+    }
+
+    func installSnapshot(closedCandles: [ChartCandle], liveCandle: ChartCandle? = nil,
+                         preservingNewerData: Bool = false) -> ChartCandleSnapshot {
+        storage.installSnapshot(closedCandles: closedCandles, liveCandle: liveCandle,
+                                preservingNewerData: preservingNewerData)
+    }
+
+    func upsertProvisional(_ candle: ChartCandle) -> ChartCandleSnapshot {
+        storage.upsertProvisional(candle)
+    }
+
+    func prependClosedHistory(_ candles: [ChartCandle]) -> ChartCandleSnapshot {
+        storage.prependClosedHistory(candles)
+    }
+
+    func snapshot() -> ChartCandleSnapshot { storage.snapshot() }
 }
 
 private extension Array {

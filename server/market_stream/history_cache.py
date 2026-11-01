@@ -2,6 +2,9 @@
 import json
 import time
 import zlib
+from threading import Lock
+
+from redis.exceptions import RedisError
 
 from django.conf import settings
 from django.core.cache import cache
@@ -68,3 +71,70 @@ def put(key, rows, *, prewarm=False):
                                          raw, TTL, time.time(), MAX_WINDOWS, int(prewarm)))
     cache.set(key, raw, TTL)
     return True
+
+
+# Fixed stripes bound local synchronization memory even for arbitrary page keys.
+_BUILD_LOCKS = tuple(Lock() for _ in range(64))
+BUILD_WAIT = 0.3
+
+
+def read_through(key, loader, *, prewarm=False):
+    """Coalesce cache misses; a slow builder never holds up HTTP indefinitely.
+
+    Locks only cover a local SQL snapshot, never an exchange request. Redis
+    leases use owner tokens so an expired builder cannot release a newer lease.
+    """
+    cache_failed = False
+    def read():
+        nonlocal cache_failed
+        if cache_failed:
+            return None
+        try:
+            return get(key)
+        except RedisError:
+            cache_failed = True
+            return None
+
+    stored = read()
+    if stored is not None:
+        return stored
+    deadline = time.monotonic() + (0 if prewarm else BUILD_WAIT)
+    local = _BUILD_LOCKS[hash(key) % len(_BUILD_LOCKS)]
+    acquired = local.acquire(timeout=max(0, deadline - time.monotonic()))
+    lease = None
+    try:
+        if acquired and settings.USE_REDIS_CACHE and not cache_failed:
+            try:
+                candidate = bus.connection().lock(cache.make_key(key + ":build"), timeout=10,
+                    blocking_timeout=max(0, deadline - time.monotonic()), sleep=0.02)
+                if candidate.acquire():
+                    lease = candidate
+            except RedisError:
+                cache_failed = True
+        stored = read()
+        if stored is not None:
+            return stored
+        # Prewarm never competes with an active request or evicts a hot window.
+        if prewarm:
+            if not acquired or (settings.USE_REDIS_CACHE and lease is None):
+                return []
+            try:
+                if not has_room():
+                    return []
+            except RedisError:
+                return []
+        stored = loader()
+        if not cache_failed:
+            try:
+                put(key, stored, prewarm=prewarm)
+            except RedisError:
+                pass
+        return stored
+    finally:
+        if lease is not None:
+            try:
+                lease.release()
+            except RedisError:
+                pass
+        if acquired:
+            local.release()

@@ -23,7 +23,8 @@ LIVE_STATE_LOCK = RLock()
 
 def public_request(path, query=None):
     client = BinanceFuturesClient(BinanceCredentials("", ""))
-    return client._request("GET", path, query=query, signed=False, budget_priority="background")
+    return client._request("GET", path, query=query, signed=False, budget_priority="background",
+                           require_shared_budget=settings.USE_REDIS_CACHE)
 
 
 def symbols(refresh=False, *, cached_only=False):
@@ -98,17 +99,13 @@ def warm_history(symbol, interval, before=None, *, prewarm=False):
     """A shared, limit-independent hot window, also populated at startup."""
     revision = cache.get(f"market:revision:{symbol}:{interval}", "initial")
     key = f"market:history:v4:{symbol}:{interval}:{before or 'latest'}:{revision}"
-    stored = history_cache.get(key)
-    if stored is None:
-        if prewarm and not history_cache.has_room():
-            return []
+    def read_window():
         query = MarketCandle.objects.filter(symbol=symbol, interval=interval)
         if before is not None:
             query = query.filter(open_time__lt=before)
         size = HOT_WINDOW_SIZE[interval] if before is None else 1500
-        stored = [from_model(row) for row in reversed(list(query.order_by("-open_time")[:size]))]
-        history_cache.put(key, stored, prewarm=prewarm)
-    return stored
+        return [from_model(row) for row in reversed(list(query.order_by("-open_time")[:size]))]
+    return history_cache.read_through(key, read_window, prewarm=prewarm)
 
 
 def partial_bucket(symbol, interval, now):

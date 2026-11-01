@@ -10,7 +10,7 @@
 
 持仓和限价委托未绑定 API 时，显示“请先绑定 Binance API”的下划线链接及右向开口箭头，在页签下方可用内容区水平、垂直居中，最小点击高度 44 pt；点击以原位渐变打开已有 API 绑定界面。不展示后端长错误或“重新加载”按钮。三个页签的刷新直接挂在 ScrollView 上，空列表仍可下拉；刷新先读取绑定与账户，再从第一页更新当前列表。历史仓位保留原有记录查询和日期筛选。
 
-“我的”顶部未绑定 API 时，使用资产卡内容区等宽的浅绿色按钮，文字与链接图标居中，高度 46 pt、圆角 10 pt、不加描边；深色使用对应深绿色底。点击打开已有 API 绑定弹窗，模式切换独立占行，避免挤窄绑定按钮。本轮仅本地编译通过，视觉和手机验收待用户测试。
+“我的”顶部未绑定 API 时，使用资产卡内容区等宽的浅红色按钮，背景为 `#F6465D` 的 12% 透明度，红色文字与链接图标居中，配色与“退出登录”一致。按钮高度 46 pt、圆角 10 pt、不加描边，浅深色使用同一透明度叠加。点击打开已有 API 绑定弹窗，模式切换独立占行，避免挤窄绑定按钮。
 
 顶部资产卡按原 USDT `tools/src/pages/profile/index.tsx` 的配色：普通模式为左上至右下 `yellow-50`（`#FEFCE8`）→ `amber-50`（`#FFFBEB`）渐变，边框为 Tailwind 4 `yellow-200`（`#FFF085`），分隔线使用边框色的 50% 透明度。深色在当前页面底色上叠加品牌黄 `#F0B90B` 的 5%→10% 渐变，边框 20%、分隔线 10%，替代原先的灰色 surface / elevated 渐变。带单模式沿用原版对应蓝色：浅色 `#F0F9FF`→`#EFF6FF`、边框 `#B8E6FE`，深色使用品牌蓝 `#58B9EF` 的相同透明度。
 
@@ -48,7 +48,7 @@
 | 次级文字 | `#4B5563` | `#848E9C` |
 | 品牌 / 盈利 / 亏损 | `#F0B90B` / `#0ECB81` / `#F6465D` | 同左 |
 
-沿用来源实际圆角：4、8、10、14、16、24；常见弹窗最大宽 384、内边距 24、遮罩 60%。止损浮层使用 45% 遮罩和底部 8 加安全区；资金弹窗按各自来源布局实现。带单模式保留来源蓝色品牌；暗色页面与卡片按本轮用户要求统一 USDC 色板。
+沿用来源实际圆角：4、8、10、14、16、24；常见弹窗最大宽 384、内边距 24、遮罩 60%。止损设置使用下文说明的原生底部面板；资金弹窗按各自来源布局实现。带单模式保留来源蓝色品牌；暗色页面与卡片按本轮用户要求统一 USDC 色板。
 
 看盘计划、专用校准问答及手动开仓理由／指标校验已按新要求删除，移除范围与历史代码索引见 [功能退役](research.md)。SwiftUI 与浏览器的字体光栅化、系统日期控件、键盘及菜单呈现存在平台差别，截图回归不能等同于所有设备和所有动态状态的逐像素一致认证。
 
@@ -60,7 +60,9 @@
 
 公共 `webModal` 使用透明且禁用系统整体转场的容器。首次布局时按实际卡片高度选择动画：达到可用容器一半的大弹窗以 0.18 秒从下方滑入，较小弹窗以 0.16 秒原位淡入，关闭均为 0.14 秒；系统“减弱动态效果”开启时统一淡入淡出。绑定 API／API 管理窗口明确指定淡入淡出，无论表单高度、账户模式或键盘状态都不改为上滑。动画选择在本次展示内固定，键盘或内容变化不会切换动画类型。遮罩原位渐变，嵌套弹窗按底层已有遮罩补足透明度，避免重复叠黑。
 
-大面板头部下拉时卡片位移和遮罩透明度同步，小弹窗下拉时原位淡出；未达到关闭条件则恢复。适用于止损、资金、账户、交易确认、持仓操作和策略选择。认证、图表、图表下单及策略管理大面板统一使用 `WebSheet`，保留拖动条与顶部圆角。导航子页右滑返回。
+大面板头部下拉时卡片位移和遮罩透明度同步，小弹窗下拉时原位淡出；未达到关闭条件则恢复。适用于资金、账户、交易确认、持仓操作和策略选择。认证、图表、图表下单及策略管理大面板统一使用 `WebSheet`，保留拖动条与顶部圆角。导航子页右滑返回。
+
+止损设置单独使用 Apple 原生 [`sheet`](https://developer.apple.com/documentation/swiftui/view/sheet(ispresented:ondismiss:content:))，由系统处理上滑转场、遮罩、下拉关闭和安全区；24 pt 顶角，单一 detent 最高 650 pt 并受当前窗口可用高度限制，辅助功能字号时使用完整可用高度。标题固定、表单滚动，底部“确定”放在 `safeAreaInset` 内保持位置稳定。比例滑杆改用原生 `Slider`，数据返回一次性无动画更新；倒计时只在存在待生效提示时用局部 `TimelineView` 更新。提交中禁止重复操作与关闭，二次确认仍使用原位淡入淡出。止损金额的 Decimal 算法与提交接口沿用既有实现。
 
 大面板根页的返回按钮通过展示绑定执行关闭动画；嵌套导航子页继续使用导航返回，避免退出整个面板。认证下拉测试从实际面板头部起手，不依赖系统 sheet 的固定屏幕坐标。
 
@@ -80,7 +82,7 @@
 
 提示条回归参数 `--fixture-toast` 在本地替身展示一条持续 30 秒的两行提示；正常运行继续使用原有 1.5 秒自动消失。刷新回归专用参数 `--fixture-refresh-lists` 使持仓、限价和历史各自首次读取为空、下拉后返回静态记录，用于验证三个空列表实际触发重新请求；不连接网络。
 
-附加状态参数为 `--fixture-dark`、`--fixture-lead`、`--fixture-empty`、`--fixture-unbound`、`--fixture-multiple`、`--fixture-capital-refill`。页面包括 `market`、`launch`、`trade`、`positions`、`signals`、`profile`、`strategies`、`strategy-editor`、`operations`、`transfers`、`settings`、`legal`、`privacy`、`binding`、`stop-loss`、`collect`、`capital`、`reminder`、`login`。行情延迟替身默认 86 ms（绿），`--fixture-latency-fair` 为 280 ms（黄），`--fixture-latency-slow` 为 780 ms（红）；`--fixture-latency-overflow` 模拟 1520 ms 并显示 999，`--fixture-latency-unavailable` / `--fixture-latency-measuring` 分别模拟不可用（红色 `-- ms`）与测量中（三个动画圆点）。点击延迟替身先显示圆点，800 ms 后恢复固定 86 ms，只用于界面演示。这些 UI 替身不建立网络连接；实际探测口径见 [行情](market-data.md)。
+附加状态参数为 `--fixture-dark`、`--fixture-lead`、`--fixture-empty`、`--fixture-unbound`、`--fixture-multiple`、`--fixture-capital-refill`。页面包括 `market`、`launch`、`trade`、`positions`、`signals`、`profile`、`strategies`、`strategy-editor`、`operations`、`transfers`、`settings`、`legal`、`privacy`、`binding`、`stop-loss`、`collect`、`capital`、`reminder`、`login`。行情延迟替身默认 86 ms（绿），`--fixture-latency-fair` 为 280 ms（黄），`--fixture-latency-slow` 为 780 ms（红）；`--fixture-latency-overflow` 模拟 1520 ms 并显示 999，`--fixture-latency-unavailable` / `--fixture-latency-measuring` 分别模拟不可用（红色 `-- ms`）与首次测量（`-- ms` 加小型圆形进度）。点击或下拉重测保留读数并显示进度，800 ms 后恢复固定 86 ms，`--fixture-latency-refresh-slow` 将此过程延长至 6 秒，覆盖 UI 自动化等待下拉回弹的时间，只用于校对中间状态。这些 UI 替身不建立网络连接；实际探测口径见 [行情](market-data.md)。
 
 ```bash
 xcodebuild -project frontend/ios-app/TradeTool.xcodeproj \

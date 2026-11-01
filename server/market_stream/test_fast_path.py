@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest import skipUnless
 from unittest.mock import patch
 
+from django.conf import settings
 from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase, override_settings
 
@@ -286,6 +287,55 @@ class RedisMarketProtocolTests(SimpleTestCase):
         with patch("market_stream.history_cache.MAX_WINDOW_BYTES", 1):
             self.assertFalse(history_cache.put("qa:window:5", [candle()]))
         self.assertEqual(client.zcard(cache.make_key(history_cache.INDEX)), 2)
+
+    @override_settings(USE_REDIS_CACHE=True, MARKET_WS_ATTEMPTS_PER_MINUTE=2)
+    def test_independent_redis_clients_share_connection_budget_and_ban(self):
+        from market_stream import upstream
+        import redis
+        client = bus.connection()
+        other = redis.Redis.from_url(settings.MARKET_REDIS_URL)
+        keys = [cache.make_key(upstream.STATE + suffix) for suffix in (":attempts", ":next", ":cooldown")]
+        client.delete(*keys)
+        try:
+            with patch("market_stream.upstream.bus.connection", side_effect=[client, other, client]):
+                self.assertEqual(upstream.reserve_connection(now=100), 0)
+                self.assertEqual(upstream.reserve_connection(now=101), 0)
+                self.assertGreaterEqual(upstream.reserve_connection(now=102), 58)
+            from types import SimpleNamespace
+            exc = SimpleNamespace(response=SimpleNamespace(status_code=429, headers={"retry-after": "80"}))
+            with patch("market_stream.upstream.time.time", return_value=100):
+                upstream.defer_handshake(exc)
+            self.assertGreaterEqual(upstream.reserve_connection(now=101), 79)
+        finally:
+            client.delete(*keys)
+            other.close()
+
+    @override_settings(USE_REDIS_CACHE=True)
+    def test_redis_lease_coalesces_builders_without_a_shared_process_mutex(self):
+        from unittest.mock import Mock
+        key = "qa:cross-worker-window"
+        client = bus.connection()
+        client.delete(cache.make_key(key), cache.make_key(key + ":build"))
+        local = Mock(acquire=Mock(return_value=True), release=Mock())
+        entered, release = threading.Event(), threading.Event()
+        def load():
+            entered.set()
+            self.assertTrue(release.wait(2))
+            return [candle()]
+        loader = Mock(side_effect=load)
+        # Model separate worker mutexes: only the Redis owner lease coordinates.
+        with patch.object(history_cache, "_BUILD_LOCKS", (local,)), ThreadPoolExecutor(4) as pool:
+            first = pool.submit(history_cache.read_through, key, loader)
+            try:
+                self.assertTrue(entered.wait(1))
+                others = [pool.submit(history_cache.read_through, key, loader) for _ in range(3)]
+            finally:
+                release.set()
+            self.assertEqual(first.result(2), [candle()])
+            for result in others:
+                self.assertEqual(result.result(2), [candle()])
+        self.assertEqual(loader.call_count, 1)
+        self.assertFalse(client.exists(cache.make_key(key + ":build")))
 
     async def test_real_asgi_routes_kline_history_and_private_events_by_subscription(self):
         from market_stream.websocket import application
