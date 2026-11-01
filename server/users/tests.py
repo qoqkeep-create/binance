@@ -511,31 +511,3 @@ class AuthApiTests(APITestCase):
         )
         user = User.objects.get(email="bcrypt@example.com")
         self.assertTrue(user.password.startswith("bcrypt_sha256$"))
-
-    def test_preflight_status_and_complete(self):
-        user = User.objects.create_user(email="preflight@example.com", password="123456")
-        login = self.client.post(
-            "/v1/auth/login",
-            {"email": "preflight@example.com", "password": "123456", "agreed": True},
-            format="json",
-        )
-        self.assertEqual(login.status_code, status.HTTP_200_OK)
-        self.assertEqual(login.data["data"]["preflight_completed_at"], "")
-
-        token = login.data["data"]["token"]
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
-
-        before = self.client.get("/v1/auth/preflight-status")
-        self.assertEqual(before.status_code, status.HTTP_200_OK)
-        self.assertEqual(before.data["data"]["preflight_completed_at"], "")
-
-        complete = self.client.post("/v1/auth/preflight-complete", {}, format="json")
-        self.assertEqual(complete.status_code, status.HTTP_200_OK)
-        self.assertTrue(complete.data["data"]["preflight_completed_at"])
-
-        after = self.client.get("/v1/auth/preflight-status")
-        self.assertEqual(after.status_code, status.HTTP_200_OK)
-        self.assertEqual(after.data["data"]["preflight_completed_at"], complete.data["data"]["preflight_completed_at"])
-
-        user.refresh_from_db()
-        self.assertIsNotNone(user.preflight_completed_at)

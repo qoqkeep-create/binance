@@ -12,7 +12,6 @@ urlpatterns = [
     path("v1/account/", include("accounts.urls")),
     path("v1/trade/", include("trading.urls")),
     path("v1/position/", include("positions.urls")),
-    path("v1/watch-plan/", include("watch_plans.urls")),
     path("v1/strategy/", include("positions.strategy_urls")),
     path("v1/strategy/", include("trading.strategy_urls")),
 ]

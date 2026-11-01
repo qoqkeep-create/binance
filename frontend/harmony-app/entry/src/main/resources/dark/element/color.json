@@ -1,0 +1,48 @@
+{
+  "color": [
+    {
+      "name": "background",
+      "value": "#212731"
+    },
+    {
+      "name": "page",
+      "value": "#212731"
+    },
+    {
+      "name": "surface",
+      "value": "#272F3A"
+    },
+    {
+      "name": "input",
+      "value": "#212731"
+    },
+    {
+      "name": "border",
+      "value": "#333B47"
+    },
+    {
+      "name": "text_primary",
+      "value": "#EAECEF"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#848E9C"
+    },
+    {
+      "name": "brand",
+      "value": "#F0B90B"
+    },
+    {
+      "name": "positive",
+      "value": "#0ECB81"
+    },
+    {
+      "name": "negative",
+      "value": "#F6465D"
+    },
+    {
+      "name": "launch_background",
+      "value": "#FFFFFF"
+    }
+  ]
+}

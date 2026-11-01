@@ -61,9 +61,13 @@ final class MarketChartViewModel: ObservableObject {
     private let chartIndicatorParametersStore: ChartIndicatorParametersStore
     private var realtimeTask: Task<Void, Never>?
     private var intervalTask: Task<Void, Never>?
+    private var historyRequestID = UUID()
+    private var historyRefreshPending = false
     private var historyRefreshTask: Task<Void, Never>?
     private var historyPageTask: Task<Void, Never>?
     private var historyPageRequestID = UUID()
+    private var historyPageRefreshPending = false
+    private var historyPageAwaitingSnapshot = false
     private var pendingHistoryBoundary: Int64?
     private var historyNoticeTask: Task<Void, Never>?
     private var waitingForHistory = false
@@ -129,7 +133,7 @@ final class MarketChartViewModel: ObservableObject {
                       let self else {
                     return
                 }
-                self.reload()
+                self.refreshHistoryWhenIdle()
                 if let before = self.pendingHistoryBoundary, !self.isLoadingOlderHistory {
                     self.loadOlderHistory(before: before)
                 }
@@ -142,11 +146,15 @@ final class MarketChartViewModel: ObservableObject {
         realtimeTask = nil
         intervalTask?.cancel()
         intervalTask = nil
+        historyRequestID = UUID()
+        historyRefreshPending = false
         historyRefreshTask?.cancel()
         historyRefreshTask = nil
         historyPageTask?.cancel()
         historyPageTask = nil
         historyPageRequestID = UUID()
+        historyPageRefreshPending = false
+        historyPageAwaitingSnapshot = false
         pendingHistoryBoundary = nil
         historyNoticeTask?.cancel()
         historyNoticeTask = nil
@@ -235,17 +243,44 @@ final class MarketChartViewModel: ObservableObject {
             configureChartPipeline(for: interval)
         }
         intervalTask?.cancel()
+        let requestID = UUID()
+        historyRequestID = requestID
+        historyRefreshPending = false
         let requestedInterval = interval
         let pipeline = chartPipeline
         let epoch = chartPipelineEpoch
         let sessionID = chartPipelineSessionID
         intervalTask = Task { [weak self] in
-            await self?.loadHistory(
+            guard let self else { return }
+            await self.loadHistory(
                 interval: requestedInterval,
                 pipeline: pipeline,
                 epoch: epoch,
-                sessionID: sessionID
+                sessionID: sessionID,
+                requestID: requestID
             )
+            guard self.historyRequestID == requestID else { return }
+            self.intervalTask = nil
+            if self.historyRefreshPending {
+                self.historyRefreshPending = false
+                self.refreshHistoryWhenIdle()
+            } else if self.historyPageAwaitingSnapshot,
+                      self.chartDataFrame?.epoch == epoch {
+                self.historyPageAwaitingSnapshot = false
+                if let before = self.pendingHistoryBoundary {
+                    self.loadOlderHistory(before: before)
+                }
+            }
+        }
+    }
+
+    // Ready notices and reconciliation must not restart a downloading snapshot.
+    // Present that response first, then recover all overlapping notices in one read.
+    private func refreshHistoryWhenIdle() {
+        if intervalTask != nil {
+            historyRefreshPending = true
+        } else {
+            reload()
         }
     }
 
@@ -262,11 +297,15 @@ final class MarketChartViewModel: ObservableObject {
 
     private func loadOlderHistory(before beforeOpenTime: Int64) {
         guard let pipeline = chartPipeline, let epoch = chartPipelineEpoch else { return }
+        guard !historyPageAwaitingSnapshot else { return }
+        if historyPageTask != nil {
+            historyPageRefreshPending = true
+            return
+        }
         let requestedInterval = interval
         let sessionID = chartPipelineSessionID
         let pageLimit = 1_500
         isLoadingOlderHistory = true
-        historyPageTask?.cancel()
         let requestID = UUID()
         historyPageRequestID = requestID
         pendingHistoryBoundary = beforeOpenTime
@@ -278,6 +317,12 @@ final class MarketChartViewModel: ObservableObject {
                 if self.chartPipelineSessionID == sessionID && self.historyPageRequestID == requestID {
                     self.isLoadingOlderHistory = false
                     self.historyPageTask = nil
+                    if self.historyPageRefreshPending {
+                        self.historyPageRefreshPending = false
+                        if let before = self.pendingHistoryBoundary {
+                            self.loadOlderHistory(before: before)
+                        }
+                    }
                 }
             }
             do {
@@ -356,7 +401,8 @@ final class MarketChartViewModel: ObservableObject {
         interval requestedInterval: MarketKlineInterval,
         pipeline: ChartDataPipeline?,
         epoch: KlineStreamEpoch?,
-        sessionID: UUID
+        sessionID: UUID,
+        requestID: UUID
     ) async {
 #if DEBUG
         let snapshotStarted = Date.timeIntervalSinceReferenceDate
@@ -364,7 +410,8 @@ final class MarketChartViewModel: ObservableObject {
         isLoading = candles.isEmpty
         lastError = nil
         defer {
-            if chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch {
+            if chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
+               historyRequestID == requestID {
                 isLoading = candles.isEmpty && waitingForHistory
             }
         }
@@ -376,7 +423,8 @@ final class MarketChartViewModel: ObservableObject {
                 limit: 1_500
             )
             guard !Task.isCancelled, interval == requestedInterval,
-                  chartPipelineSessionID == sessionID else {
+                  chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
+                  historyRequestID == requestID else {
                 return
             }
             waitingForHistory = response.historyPending == true
@@ -403,7 +451,7 @@ final class MarketChartViewModel: ObservableObject {
                 epoch: epoch,
                 preservingNewerData: true
             )
-            guard chartPipelineSessionID == sessionID,
+            guard !Task.isCancelled, chartPipelineSessionID == sessionID,
                   chartPipelineEpoch == epoch else {
                 return
             }
@@ -415,6 +463,7 @@ final class MarketChartViewModel: ObservableObject {
                 epoch: epoch,
                 sessionID: sessionID
             ) {
+                guard !Task.isCancelled, historyRequestID == requestID else { return }
                 chartDataFrame = frame
                 upsertLiveTail(from: frame)
 #if DEBUG
@@ -436,7 +485,7 @@ final class MarketChartViewModel: ObservableObject {
                 sessionID: sessionID
             )
         } catch {
-            guard !Task.isCancelled else {
+            guard !Task.isCancelled, historyRequestID == requestID else {
                 return
             }
             waitingForHistory = false
@@ -581,7 +630,7 @@ final class MarketChartViewModel: ObservableObject {
             await Task.yield()
             guard let self, !Task.isCancelled, self.chartPipelineSessionID == sessionID else { return }
             self.historyNoticeTask = nil
-            self.reload()
+            self.refreshHistoryWhenIdle()
             if let before = self.pendingHistoryBoundary { self.loadOlderHistory(before: before) }
         }
     }
@@ -593,6 +642,9 @@ final class MarketChartViewModel: ObservableObject {
         historyNoticeTask = nil
         pendingHistoryBoundary = nil
         historyPageRequestID = UUID()
+        historyPageRefreshPending = false
+        historyPageAwaitingSnapshot = false
+        historyRefreshPending = false
         waitingForHistory = false
         chartIndicatorUpdateTask?.cancel()
         chartIndicatorUpdateTask = nil
@@ -685,6 +737,14 @@ final class MarketChartViewModel: ObservableObject {
         chartRecoveryTask?.cancel()
         chartRecoveryTask = nil
         chartRecoveryCheckRequested = false
+        // A page belongs to the connection epoch that requested it. Keep its
+        // boundary, but invalidate its completion before starting a new epoch.
+        historyPageTask?.cancel()
+        historyPageTask = nil
+        historyPageRequestID = UUID()
+        historyPageRefreshPending = false
+        historyPageAwaitingSnapshot = pendingHistoryBoundary != nil
+        isLoadingOlderHistory = false
         chartPipelineGeneration &+= 1
         let epoch = KlineStreamEpoch(
             generation: chartPipelineGeneration

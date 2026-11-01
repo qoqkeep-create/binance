@@ -53,7 +53,6 @@ INSTALLED_APPS = [
     "accounts",
     "trading",
     "positions",
-    "watch_plans",
     "market_analysis",
     "common",
     "market_stream",

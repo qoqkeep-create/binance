@@ -1,11 +1,13 @@
 import asyncio
 import json
+import logging
 import re
 import time
 import uuid
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
+from django.db import close_old_connections
 import redis.asyncio as redis
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
@@ -14,17 +16,24 @@ from market_stream.core import INTERVAL_MS
 
 PUBLIC_CHANNELS = {"market.kline", "market.ticker", "market.history", "strategy.signal"}
 PRIVATE_CHANNELS = {"trading.account", "trading.position", "trading.order", "trading.fill"}
+logger = logging.getLogger(__name__)
 
 
 def authenticate(headers):
-    header = headers.get(b"authorization", b"").decode()
-    authenticator = JWTAuthentication()
-    token = authenticator.get_raw_token(header.encode())
-    if token is None:
-        raise ValueError("Missing bearer token")
-    validated = authenticator.get_validated_token(token)
-    user = authenticator.get_user(validated)
-    return str(user.pk), int(validated["exp"])
+    # ASGI sockets do not pass through Django's HTTP request connection cleanup.
+    # A reused authentication thread must not retain an idle MySQL connection.
+    close_old_connections()
+    try:
+        header = headers.get(b"authorization", b"").decode()
+        authenticator = JWTAuthentication()
+        token = authenticator.get_raw_token(header.encode())
+        if token is None:
+            raise ValueError("Missing bearer token")
+        validated = authenticator.get_validated_token(token)
+        user = authenticator.get_user(validated)
+        return str(user.pk), int(validated["exp"])
+    finally:
+        close_old_connections()
 
 
 def message(kind, **fields):
@@ -74,7 +83,8 @@ async def application(scope, receive, send):
         mode = headers.get(b"x-trading-mode", b"ordinary").decode()
         if mode not in {"ordinary", "lead"}:
             raise ValueError("Invalid mode")
-    except Exception:
+    except Exception as exc:
+        logger.warning("WebSocket authentication rejected (%s)", type(exc).__name__)
         await send({"type": "websocket.close", "code": 4401})
         return
     await send({"type": "websocket.accept"})

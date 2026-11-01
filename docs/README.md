@@ -1,6 +1,6 @@
 # 文档目录
 
-本文档集只描述 Python + 原生 iOS 整合版。源码与配置是当前实现的依据；来源项目的历史资料从 [来源索引](sources.md) 查询。
+本文档集描述 Python + 原生 iOS 整合版，以及共用后端的独立鸿蒙客户端。源码与配置是当前实现的依据；来源项目的历史资料从 [来源索引](sources.md) 查询。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -9,17 +9,19 @@
 | [Web 原生复刻](ios-web-parity.md) | 页面映射、尺寸、主题、截图回归及验证边界 |
 | [品牌与认证](ios-authentication.md) | Binance Tools 名称与图标、USDC 认证布局、底部弹窗及已有接口 |
 | [持仓浮窗](ios-floating-positions.md) | App 内与系统画中画、刷新与账户隔离、跨 App 真机待验范围 |
+| [鸿蒙客户端](harmony-client.md) | 原生源码、已编译未签名 HAP、Mate 80 安装待验与功能差异 |
 | [开发验证](development.md) | 后端、Xcode、测试与回归范围 |
 | [配置](configuration.md) | 整合环境的配置入口和关键参数 |
 | [部署运维](operations.md) | 独立部署、回滚、GitHub 源码交付 |
 | [变更与验收](changes.md) | 有日期和范围的实际结果 |
 | [TestFlight](testflight.md) | 签名、隐私清单、上传和手机安装 |
 | [行情与图表](market-data.md) | 采集、分页、推送、Metal 与排障 |
+| [K 线首屏交接原稿](plans/2026-11-01-ios-kline-first-frame-handoff.md) | 保留用户原始材料；执行结果已归入行情、开发、运维与变更主文档 |
 | [交易安全](trading-safety.md) | 幂等、保护、结算和测试边界 |
 | [资金](capital-and-transfers.md) | 归集状态机与历史归属 |
 | [带单模式](lead-trading.md) | 模式身份、能力和开放边界 |
 | [信号与通知](signals-and-notifications.md) | 入库、事件和独立投递 |
-| [观察计划与研究退役](research.md) | 保留能力、已移除接口、历史资料与数据库兼容 |
+| [计划、校验与研究退役](research.md) | 已移除页面与接口、内部扫描、历史资料与数据库兼容 |
 | [操作日志](operation-logs.md) | 日志口径、状态与分页 |
 | [入站信号接口](api/external-signals.md) | 合作方鉴权、字段和去重 |
 | [出站通知接口](api/trade-notifications.md) | 事件、渠道与投递协议 |

@@ -2730,6 +2730,64 @@ final class ChartCalibrationUITests: XCTestCase {
 
 /// Opt-in smoke against a configured account without an exchange binding.
 final class IntegratedNativeUITests: XCTestCase {
+    /// Explicitly opted in; reads market data only. App logs provide the timing
+    /// boundaries, since accessibility waits include XCTest polling overhead.
+    func testConfiguredKlineFirstFramePerformance() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["INTEGRATION_KLINE_PERFORMANCE"] == "1",
+              let password = environment["INTEGRATION_QA_PASSWORD"], !password.isEmpty,
+              let account = environment["INTEGRATION_QA_ACCOUNT"],
+              let baseURL = environment["INTEGRATION_QA_API_BASE"] else {
+            throw XCTSkip("Requires explicit performance opt-in and an unbound QA account")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.waibao2025.trade.integrated")
+        addUIInterruptionMonitor(withDescription: "Password save prompt during chart measurement") { alert in
+            for title in ["以后", "暂不", "Not Now"] where alert.buttons[title].exists {
+                alert.buttons[title].tap()
+                return true
+            }
+            return false
+        }
+        app.launchArguments = ["-selectedAPIOrigin", baseURL]
+        app.terminate()
+        app.launch()
+        if app.secureTextFields.firstMatch.waitForExistence(timeout: 5) {
+            app.textFields.firstMatch.tap()
+            app.textFields.firstMatch.typeText(account)
+            app.secureTextFields.firstMatch.tap()
+            app.secureTextFields.firstMatch.typeText(password)
+            let agreement = app.buttons["login.agreement"]
+            if (agreement.value as? String) != "1" { agreement.tap() }
+            app.buttons["登录"].tap()
+        }
+        let market = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "BTCUSDT、")).firstMatch
+        XCTAssertTrue(market.waitForExistence(timeout: 30))
+        let postpone = app.buttons["以后"]
+        if postpone.waitForExistence(timeout: 3) { postpone.tap() }
+        let warmCount = Int(environment["INTEGRATION_KLINE_WARM_COUNT"] ?? "20") ?? 20
+        let coldCount = Int(environment["INTEGRATION_KLINE_COLD_COUNT"] ?? "5") ?? 5
+        for index in 0..<(warmCount + coldCount) {
+            if index >= warmCount {
+                app.terminate()
+                app.launch()
+            }
+            XCTAssertTrue(market.waitForExistence(timeout: 20))
+            market.tap()
+            let chart = app.descendants(matching: .any)["market-chart-plot"].firstMatch
+            XCTAssertTrue(chart.waitForExistence(timeout: 20))
+            let loaded = expectation(for: NSPredicate(format: "label == %@", "K线图"), evaluatedWith: chart)
+            wait(for: [loaded], timeout: 30)
+            // iOS may show this asynchronously after login, once the chart is open.
+            let delayedPasswordPrompt = app.buttons["以后"]
+            if delayedPasswordPrompt.exists { delayedPasswordPrompt.tap() }
+            if index == 0 || index == warmCount - 1 || index == warmCount + coldCount - 1 {
+                capture(app, "kline-first-frame-\(index)")
+            }
+            app.buttons["market-chart-back"].tap()
+        }
+    }
+
     func testConfiguredLoginMarketAndBusinessPages() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let password = environment["INTEGRATION_QA_PASSWORD"] ?? environment["INTEGRATION_LOCAL_QA_PASSWORD"], !password.isEmpty else {
@@ -2838,23 +2896,28 @@ final class WebParityUITests: XCTestCase {
     launch("positions", ["--fixture-unbound"])
     for tab in ["持仓", "限价委托"] {
       if tab == "限价委托" { app.buttons[tab].tap() }
-      XCTAssertTrue(app.staticTexts["请先绑定 Binance Api"].waitForExistence(timeout: 5))
+      let bind = app.buttons["positions.bind"]
+      XCTAssertTrue(bind.waitForExistence(timeout: 5))
+      XCTAssertEqual(bind.frame.midY, app.scrollViews["positions.list"].frame.midY, accuracy: 2)
       XCTAssertFalse(app.buttons["重新加载"].exists)
       XCTAssertFalse(app.staticTexts["开仓额度："].exists)
       XCTAssertFalse(app.buttons["追单"].exists)
       capture(tab == "持仓" ? "positions-unbound-compact" : "limits-unbound-compact")
+      bind.tap()
+      XCTAssertTrue(app.buttons["确认绑定"].waitForExistence(timeout: 5))
+      app.buttons["关闭"].firstMatch.tap()
     }
     app.buttons["历史仓位"].tap()
     XCTAssertTrue(app.staticTexts["平仓盈亏"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.staticTexts["请先绑定 Binance Api"].exists)
+    XCTAssertFalse(app.staticTexts["请先绑定 Binance API"].exists)
   }
 
   func testMarketLatencySignalAndInternalOnlyHeader() {
     for (options, value) in [([], "86 ms, good"), (["--fixture-latency-fair"], "280 ms, fair"),
                               (["--fixture-latency-slow", "--fixture-dark"], "780 ms, poor"),
                               (["--fixture-latency-overflow"], "999 ms, poor"),
-                              (["--fixture-latency-unavailable"], "999 ms, poor"),
-                              (["--fixture-latency-measuring"], "999 ms, fair")] {
+                              (["--fixture-latency-unavailable"], "-- ms, poor"),
+                              (["--fixture-latency-measuring"], "测量中, fair")] {
       launch("market", options)
       let latency = app.descendants(matching: .any)["market.latency"].firstMatch
       XCTAssertTrue(latency.waitForExistence(timeout: 5))
@@ -2862,6 +2925,13 @@ final class WebParityUITests: XCTestCase {
       XCTAssertLessThan(latency.frame.maxX, app.buttons["编辑行情列表"].frame.minX)
       capture("market-latency-" + value)
     }
+    launch("market")
+    let latencyButton = app.buttons["market.latency"]
+    latencyButton.tap()
+    XCTAssertEqual(latencyButton.value as? String, "测量中, fair")
+    let measuredAgain = expectation(for: NSPredicate(format: "value == %@", "86 ms, good"),
+      evaluatedWith: latencyButton)
+    wait(for: [measuredAgain], timeout: 3)
     launch("signals")
     XCTAssertTrue(app.buttons["内部信号规则"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["自有"].waitForExistence(timeout: 5))
@@ -2916,8 +2986,10 @@ final class WebParityUITests: XCTestCase {
   func testProfileLogoutButtonAndRemovedResearchEntry() {
     launch("profile")
     profileLink("更多功能")
-    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "看盘计划"))
-      .firstMatch.waitForExistence(timeout: 5))
+    for retired in ["看盘计划", "开仓理由/指标校验"] {
+      XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", retired))
+        .firstMatch.exists)
+    }
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "信号研究"))
       .firstMatch.exists)
     let logout = app.buttons["profile.logout"]
@@ -2969,16 +3041,9 @@ final class WebParityUITests: XCTestCase {
       XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5))
     }
     profileLink("更多功能")
-    for (label, title) in [("日志", "日志"), ("看盘计划", "看盘计划"),
-                           ("开仓理由/指标校验", "开仓理由/指标校验"), ("交易命令", "交易命令")] {
+    for (label, title) in [("日志", "日志"), ("交易命令", "交易命令")] {
       profileLink(label)
       XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 5), title)
-      if label == "开仓理由/指标校验" {
-        app.buttons["创建指标"].tap()
-        XCTAssertTrue(app.buttons["保存指标"].waitForExistence(timeout: 5))
-        rightSwipe()
-        XCTAssertTrue(app.buttons["创建指标"].waitForExistence(timeout: 5))
-      }
       rightSwipe()
       XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5), label)
     }
@@ -3116,37 +3181,11 @@ final class WebParityUITests: XCTestCase {
     }
   }
 
-  func testWatchEditing() {
-    launch("watch-editor")
-    XCTAssertTrue(app.staticTexts["写计划"].waitForExistence(timeout: 10))
-    capture("watch-editor-final")
-    launch("watch-score")
-    let save = app.buttons["确定"]
-    XCTAssertTrue(save.waitForExistence(timeout: 10))
-    capture("watch-score-initial")
-    XCTAssertTrue(app.staticTexts["评分"].isHittable)
-    XCTAssertTrue(save.isHittable)
-    let pinnedY = save.frame.minY
-    app.swipeUp()
-    XCTAssertEqual(save.frame.minY, pinnedY, accuracy: 1)
-    capture("watch-score-pinned")
-    launch("watch-review")
-    XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 10))
-    XCTAssertTrue((app.textViews.firstMatch.value as? String)?.contains("严格按计划执行") == true)
-    XCTAssertLessThan(app.textViews.firstMatch.frame.minY - app.buttons["关闭"].frame.maxY, 50)
-    capture("watch-review")
-    launch("watch-result")
-    XCTAssertTrue(app.textFields["usdt.field.止盈止损金额"].waitForExistence(timeout: 10))
-    XCTAssertEqual(app.textFields["usdt.field.止盈止损金额"].value as? String, "25")
-    XCTAssertTrue(app.buttons["确定"].isHittable)
-    capture("watch-result")
-
-  }
   func testCorePagesAndDialogs() {
     let pages: [(String, String)] = [
       ("trade", "币价"), ("positions", "开仓额度："), ("signals", "信号"), ("profile", "止损额设置"),
       ("strategies", "我的策略"), ("strategy-editor", "不移动止损位"), ("operations", "北京时间 · 最新记录在前"),
-      ("transfers", "累计转出"), ("watch", "记录"), ("watch-editor", "写计划"),
+      ("transfers", "累计转出"),
       ("settings", "颜色模式"), ("legal", "用户协议"), ("privacy", "隐私政策"), ("stop-loss", "止损设置"),
       ("collect", "资金归集账号"), ("login", "Binance Tools"),
     ]
@@ -3190,10 +3229,9 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["信号规则"].waitForExistence(timeout: 5))
     capture("signal-rules-modal")
   }
-  func testSecondaryCapitalAndPreflight() {
+  func testSecondaryCapitalPanels() {
     for (page, text) in [
       ("capital", "调整账户资金"), ("reminder", "补资提醒"),
-      ("indicators", "创建指标"), ("preflight", "交易前校准"),
     ] {
       launch(page)
       XCTAssertTrue(
@@ -3258,7 +3296,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(open.isHittable)
     capture("ema-passed")
   }
-  func testLoginAndLocalIndicatorEditing() {
+  func testLoginAndPasswordResetRequest() {
     launch("login")
     XCTAssertTrue(app.staticTexts["Binance Tools"].waitForExistence(timeout: 10))
     capture("binance-tools-login")
@@ -3274,10 +3312,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["请输入有效的邮箱地址"].waitForExistence(timeout: 5))
     app.buttons["auth.sheet.close"].tap()
     XCTAssertTrue(app.buttons["注册账号"].waitForExistence(timeout: 5))
-    launch("indicators")
-    app.buttons["创建指标"].tap()
-    XCTAssertTrue(app.buttons["保存指标"].waitForExistence(timeout: 5))
-    capture("indicator-editor")
+
   }
 
   func testAuthenticationSheetsPasswordVisibilityAndValidation() {

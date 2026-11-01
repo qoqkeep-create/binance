@@ -12,7 +12,6 @@ from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.utils import timezone
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
@@ -315,7 +314,6 @@ class LoginView(APIView):
                 "token": str(refresh.access_token),
                 "user_id": str(user.pk),
                 "email": user.email,
-                "preflight_completed_at": user.preflight_completed_at.isoformat() if user.preflight_completed_at else "",
             },
         )
         return _set_refresh_cookie(response, str(refresh))
@@ -425,29 +423,6 @@ class PasswordResetConfirmView(APIView):
             user.set_password(data["new_password"])
             user.save(update_fields=["password", "updated_at"])
         return _clear_refresh_cookie(ok(message="密码已重置，请使用新密码登录"))
-
-
-class PreflightStatusView(APIView):
-    def get(self, request):
-        user = request.user
-        return ok(
-            data={
-                "preflight_completed_at": user.preflight_completed_at.isoformat() if user.preflight_completed_at else "",
-            }
-        )
-
-
-class PreflightCompleteView(APIView):
-    def post(self, request):
-        user = request.user
-        user.preflight_completed_at = timezone.now()
-        user.save(update_fields=["preflight_completed_at"])
-        return ok(
-            message="校准完成",
-            data={
-                "preflight_completed_at": user.preflight_completed_at.isoformat() if user.preflight_completed_at else "",
-            },
-        )
 
 
 class AdminSettingsView(APIView):

@@ -5,56 +5,6 @@ enum ChartAppearance: Hashable, Sendable {
     case dark
 }
 
-struct ChartBarKey: Hashable, Sendable {
-    let stream: ChartStreamKey
-    let openTime: Int64
-}
-
-struct ChartBarSlot: Hashable, Sendable {
-    let key: ChartBarKey
-    let ordinal: Int64
-}
-
-enum ChartFigurePrimitive: String, Sendable {
-    case candle
-    case polyline
-    case bar
-    case text
-}
-
-struct ChartFigureDefinition: Hashable, Sendable {
-    let id: String
-    let primitive: ChartFigurePrimitive
-    let panelID: String
-    let zIndex: Int
-    let visualLineWidth: Float
-    let hitSlop: Float
-
-    init?(
-        id: String,
-        primitive: ChartFigurePrimitive,
-        panelID: String,
-        zIndex: Int,
-        visualLineWidth: Float,
-        hitSlop: Float
-    ) {
-        guard !id.isEmpty,
-              !panelID.isEmpty,
-              visualLineWidth.isFinite,
-              visualLineWidth >= 0,
-              hitSlop.isFinite,
-              hitSlop >= visualLineWidth / 2 else {
-            return nil
-        }
-        self.id = id
-        self.primitive = primitive
-        self.panelID = panelID
-        self.zIndex = zIndex
-        self.visualLineWidth = visualLineWidth
-        self.hitSlop = hitSlop
-    }
-}
-
 struct ChartColor: Equatable, Sendable {
     let red: Float
     let green: Float

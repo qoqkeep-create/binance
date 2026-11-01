@@ -190,7 +190,9 @@ struct DashboardView: View {
 
             Spacer()
 
-            MarketLatencyBadge(latency: realtimeClient.latency)
+            MarketLatencyBadge(latency: realtimeClient.latency) {
+                realtimeClient.requestLatencyTest()
+            }
                 .padding(.trailing, 6)
             Button {
                 isShowingMarketSettings = true
@@ -341,6 +343,8 @@ struct DashboardView: View {
 
 private struct MarketLatencyBadge: View {
     let latency: RealtimeLatency
+    let retry: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var color: Color {
         switch latency.quality {
         case .good: BinanceTheme.positive
@@ -352,8 +356,21 @@ private struct MarketLatencyBadge: View {
         switch latency.quality { case .good: 4; case .fair: 3; case .poor: 1 }
     }
     var body: some View {
-        HStack(spacing: 5) {
-            Text(latency.text).font(.system(size: 11, weight: .medium)).monospacedDigit()
+        Button(action: retry) {
+          HStack(spacing: 5) {
+            if latency == .measuring {
+                TimelineView(.animation(minimumInterval: 0.15, paused: reduceMotion)) { timeline in
+                    HStack(spacing: 3) {
+                        ForEach(0..<3) { index in
+                            let phase = Int(timeline.date.timeIntervalSinceReferenceDate * 5) % 3
+                            Circle().fill(color.opacity(reduceMotion || phase == index ? 1 : 0.25))
+                                .frame(width: 4, height: 4)
+                        }
+                    }.frame(width: 38, height: 14)
+                }.accessibilityHidden(true)
+            } else {
+                Text(latency.text).font(.system(size: 11, weight: .medium)).monospacedDigit()
+            }
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(0..<4) { index in
                     RoundedRectangle(cornerRadius: 1)
@@ -361,10 +378,12 @@ private struct MarketLatencyBadge: View {
                         .frame(width: 3, height: CGFloat(4 + index * 3))
                 }
             }.accessibilityHidden(true)
-        }.foregroundStyle(color).frame(minHeight: 30)
+          }.foregroundStyle(color).frame(minWidth: 66, minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("网络延迟")
             .accessibilityValue(latency.text + ", " + latency.quality.rawValue)
+            .accessibilityHint("点击立即重新测量")
             .accessibilityIdentifier("market.latency")
     }
 }

@@ -104,14 +104,9 @@ private struct MarketChartDetailView: View {
     @State private var isFavorite = true
     @State private var isIndicatorSettingsPresented = false
     @State private var isOrderSettingsPresented = false
-    @State private var isLeveragePresented = false
     @State private var isLoadingOrderSettings = false
-    @State private var isLoadingLeverage = false
-    @State private var didLoadOrderSettings = false
     @State private var orderDrawing: ChartOrderDrawingState?
     @State private var chartPriceProjection: ChartPriceProjection?
-    @State private var isSubmittingOrder = false
-    @State private var orderIdempotencyState = ChartOrderIdempotencyState()
     @State private var wheelPreview: ChartWheelPreviewState?
 
     init(
@@ -161,7 +156,7 @@ private struct MarketChartDetailView: View {
 
                 quickSwitcherBar
                     .allowsHitTesting(
-                        orderDrawing == nil && !isSubmittingOrder
+                        orderDrawing == nil
                     )
                     .opacity(orderDrawing == nil ? 1 : 0.42)
 
@@ -208,6 +203,7 @@ private struct MarketChartDetailView: View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 BinanceBackButton(action: onClose)
+                    .accessibilityIdentifier("market-chart-back")
 
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
@@ -326,10 +322,8 @@ private struct MarketChartDetailView: View {
             if let drawing = orderDrawing {
                 HStack(spacing: 9) {
                     Button {
-                        guard !isSubmittingOrder else { return }
                         withAnimation(.easeOut(duration: 0.16)) {
                             orderDrawing = nil
-                            orderIdempotencyState.reset()
                         }
                     } label: {
                         Image(systemName: "xmark")
@@ -349,8 +343,6 @@ private struct MarketChartDetailView: View {
                             }
                     }
                     .buttonStyle(.plain)
-                    .disabled(isSubmittingOrder)
-                    .opacity(isSubmittingOrder ? 0.55 : 1)
                     .accessibilityLabel("取消划线下单")
                     .accessibilityIdentifier(
                         "market-chart-order-cancel"
@@ -369,12 +361,7 @@ private struct MarketChartDetailView: View {
                                     in: Capsule()
                                 )
 
-                            if isSubmittingOrder {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(BinanceTheme.onTradeAction)
-                            }
-                            Text(isSubmittingOrder ? "提交中" : "下单")
+                            Text("下单")
                                 .font(.system(size: 15, weight: .semibold))
                         }
                         .foregroundStyle(BinanceTheme.onTradeAction)
@@ -388,9 +375,7 @@ private struct MarketChartDetailView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .disabled(isSubmittingOrder)
-                    .opacity(isSubmittingOrder ? 0.72 : 1)
-                    .accessibilityHint("按当前R金额提交真实订单")
+                    .accessibilityHint("打开开仓表单并确认订单")
                     .accessibilityIdentifier(
                         "market-chart-order-submit"
                     )

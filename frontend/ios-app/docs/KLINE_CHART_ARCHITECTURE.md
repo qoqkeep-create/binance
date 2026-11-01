@@ -17,6 +17,8 @@ Kline ingress 使用 epoch / sequence / 收线屏障，恢复请求和旧连接�
 
 渲染使用容量 1 mailbox 和有租约代次的 GPU 资源槽；屏幕与离屏共用场景和 shader 路径。价格采用相对坐标，文字使用 Core Text 字形图集。暂停时保留最新状态，恢复后重画；故障按已有重建 / 熔断策略显示受控错误。
 
+2026-11-01 引用清理删除未接入的通用标注模块、Signpost、旧杠杆界面及 Java 账户设置适配；当前价格线覆盖层仍由 `ChartOrderDrawingOverlay` 提供，提交入口进入 Python 对应的原生业务表单。图表中的技术指标与已退役的手动“开仓理由／指标校验”属于不同模块。清理前后计数、目录构成与 Debug 压力工具的发布边界统一见 [代码体积与引用清理](../../../docs/market-data.md#图表代码体积与引用清理2026-11-01)。
+
 ## 验证
 
 `TradeToolTests` 包含入口、存储、增量指标、投影、Metal 离屏、命令资源和故障策略测试。`TradeTool Chart Calibration` 包含 UI 校准与 opt-in 的整合原生流程。

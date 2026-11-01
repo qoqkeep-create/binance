@@ -17,7 +17,16 @@ class RetiredResearchTests(SimpleTestCase):
     def test_research_is_not_a_runtime_app(self):
         self.assertFalse(apps.is_installed("signal_research"))
 
-    def test_observation_and_trading_modules_remain_available(self):
-        for endpoint in ("watch-plan/list", "position/list", "trade/limit-order/list"):
+    def test_watch_plan_and_calibration_endpoints_are_removed(self):
+        for endpoint in (
+            "watch-plan/list", "watch-plan/create", "watch-plan/update", "watch-plan/delete",
+            "auth/preflight-status", "auth/preflight-complete",
+        ):
+            with self.subTest(endpoint=endpoint), self.assertRaises(Resolver404):
+                resolve(f"/v1/{endpoint}")
+        self.assertFalse(apps.is_installed("watch_plans"))
+
+    def test_trading_modules_remain_available(self):
+        for endpoint in ("position/list", "trade/limit-order/list"):
             with self.subTest(endpoint=endpoint):
                 self.assertIsNotNone(resolve(f"/v1/{endpoint}"))

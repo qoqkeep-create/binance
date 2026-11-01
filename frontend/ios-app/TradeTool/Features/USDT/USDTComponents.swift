@@ -287,7 +287,7 @@ struct WebPageHeader<Trailing: View>: View {
           Button {
             if let backAction { backAction() } else { dismiss() }
           } label: {
-            WebIcon("arrow.left", size: 20).frame(width: 36, height: 36)
+            WebIcon("chevron-left", size: 20).frame(width: 44, height: 44).contentShape(Rectangle())
           }.buttonStyle(.plain).accessibilityLabel("返回")
         }
         if !centered { Text(title).font(.system(size: 18, weight: .bold)).lineLimit(1) }
@@ -378,7 +378,7 @@ private struct WebPageModifier: ViewModifier {
       .safeAreaInset(edge: .top, spacing: 0) {
         if !root {
           WebPageHeader(
-            title, centered: !["用户协议", "隐私政策", "看盘计划"].contains(title),
+            title, centered: !["用户协议", "隐私政策"].contains(title),
             height: title == "日志" ? 56 : 60, backAction: backAction
           ) {
             if let refresh {
@@ -635,7 +635,6 @@ struct WebIcon: View {
     }.frame(width: size, height: size).contentShape(Rectangle())
   }
   private static let aliases: [String: String] = [
-    "arrow.left": "arrow-left",
     "arrow.up.right": "arrow-up-right",
     "arrow.down.left": "arrow-down-left",
     "chevron.left": "chevron-left",
@@ -662,7 +661,6 @@ struct WebIcon: View {
     "envelope": "mail",
   ]
   private static let paths: [String: String] = [
-    "arrow-left": "M12 19 l-7-7 7-7 M19 12H5",
     "arrow-up-right": "M7 7h10v10 M7 17 17 7",
     "arrow-down-left": "M17 7 7 17 M17 17H7V7",
     "chevron-left": "M15 18 l-6-6 6-6",

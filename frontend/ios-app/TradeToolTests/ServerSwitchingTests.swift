@@ -277,6 +277,278 @@ private actor NativeFixtureClient: APIClient {
 
 @MainActor
 final class MarketFastPathTests: XCTestCase {
+    func testReadinessBurstDoesNotCancelTheFirstHistoryDownload() async throws {
+        let cancelled = expectation(description: "Readiness must preserve the in-flight history download")
+        cancelled.isInverted = true
+        cancelled.assertForOverFulfill = false
+        let started = expectation(description: "First history download started")
+        let api = GatedChartHistoryAPI(onFirstRead: { started.fulfill() },
+                                       onCancelled: { cancelled.fulfill() })
+        let market = MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 100,
+            changePercent24h: 0, updatedAt: .now)
+        let viewModel = MarketChartViewModel(market: market, apiClient: api,
+            realtimeClient: RealtimeClient(baseURL: URL(string: "http://127.0.0.1")!, tokenProvider: { nil }))
+        viewModel.start()
+        defer { viewModel.stop() }
+        await fulfillment(of: [started], timeout: 2)
+        for _ in 0..<6 {
+            await viewModel.receive(notice(symbol: "BTCUSDT"))
+            await Task.yield()
+        }
+        await fulfillment(of: [cancelled], timeout: 0.2)
+        let initialReads = await api.reads
+        XCTAssertEqual(initialReads, 1, "Ready notices must coalesce while the first response is downloading")
+        await api.releaseCurrentRead()
+        try await waitUntil { viewModel.candles.first?.closePrice == 101 }
+        XCTAssertNotNil(viewModel.chartDataFrame, "The first response must appear before the follow-up completes")
+        await api.openGate()
+        try await waitUntil { viewModel.candles.first?.closePrice == 102 }
+        let finalReads = await api.reads
+        XCTAssertEqual(finalReads, 2, "One follow-up read must recover notices received during the first request")
+    }
+
+    func testIntervalSwitchStillCancelsTheObsoleteHistoryDownload() async throws {
+        let started = expectation(description: "First history download started")
+        let cancelled = expectation(description: "Changing interval cancels the obsolete download")
+        let api = GatedChartHistoryAPI(onFirstRead: { started.fulfill() },
+                                       onCancelled: { cancelled.fulfill() })
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        await fulfillment(of: [started], timeout: 2)
+        await viewModel.receive(notice(symbol: "BTCUSDT"))
+        viewModel.selectInterval(.fiveMinutes)
+        await fulfillment(of: [cancelled], timeout: 2)
+        await api.openGate()
+        try await waitUntil { viewModel.chartDataFrame?.stream.interval == "5m" }
+        let reads = await api.reads
+        XCTAssertEqual(reads, 2, "The queued notice for the old interval must be discarded")
+        XCTAssertEqual(viewModel.candles.first?.closePrice, 102)
+    }
+
+    func testStoppingChartCancelsDownloadAndQueuedReadinessRefresh() async throws {
+        let started = expectation(description: "First history download started")
+        let cancelled = expectation(description: "Leaving the chart cancels its download")
+        let api = GatedChartHistoryAPI(onFirstRead: { started.fulfill() },
+                                       onCancelled: { cancelled.fulfill() })
+        let viewModel = makeChart(api)
+        viewModel.start()
+        await fulfillment(of: [started], timeout: 2)
+        await viewModel.receive(notice(symbol: "BTCUSDT"))
+        viewModel.stop()
+        await fulfillment(of: [cancelled], timeout: 2)
+        await api.openGate()
+        await Task.yield()
+        let reads = await api.reads
+        XCTAssertEqual(reads, 1)
+        XCTAssertTrue(viewModel.candles.isEmpty)
+        XCTAssertNil(viewModel.chartDataFrame)
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    func testPageReadinessBurstPreservesTheDownloadingPage() async throws {
+        let cancelled = expectation(description: "Ready notices must preserve an in-flight page")
+        cancelled.isInverted = true
+        cancelled.assertForOverFulfill = false
+        let api = GatedChartHistoryAPI(onFirstRead: {}, onCancelled: { cancelled.fulfill() })
+        await api.openGate()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        let first = try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime)
+        await api.closeGate()
+        viewModel.requestOlderHistory()
+        let pageStarted = ContinuousClock.now.advanced(by: .seconds(2))
+        while await api.reads < 2, ContinuousClock.now < pageStarted { await Task.yield() }
+        let notice = RealtimeServerMessage(version: 1, type: "event", requestId: nil, channel: "market.history",
+            event: "upsert", key: nil, sequence: 1, timestamp: 1,
+            data: .object(["symbol": .string("BTCUSDT"), "interval": .string("1h"),
+                           "kind": .string("history"), "beforeOpenTime": .number(Double(first))]), error: nil)
+        for _ in 0..<6 { await viewModel.receive(notice) }
+        await fulfillment(of: [cancelled], timeout: 0.2)
+        let beforeCompletion = await api.reads
+        XCTAssertEqual(beforeCompletion, 2)
+        await api.releaseCurrentRead()
+        try await waitUntil {
+            (viewModel.chartDataFrame?.candles.history.candles.first?.openTime ?? first) < first
+        }
+        await api.openGate()
+        try await waitUntil { !viewModel.isLoadingOlderHistory }
+        let finalReads = await api.reads
+        XCTAssertEqual(finalReads, 3, "All page notices must merge into one follow-up")
+    }
+
+    func testMatchingAckCoalescesWhileUnrelatedFiltersDoNotQueueARefresh() async throws {
+        let api = GatedChartHistoryAPI()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitForReads(1, api)
+        await viewModel.receive(ack(symbol: "ETHUSDT", interval: "1h"))
+        await viewModel.receive(ack(symbol: "BTCUSDT", interval: "4h"))
+        await viewModel.receive(notice(symbol: "BTCUSDT", interval: "4h"))
+        await api.finishRead(1)
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        await Task.yield()
+        let unrelatedReads = await api.reads
+        XCTAssertEqual(unrelatedReads, 1)
+        viewModel.reload()
+        try await waitForReads(2, api)
+        for _ in 0..<6 { await viewModel.receive(ack(symbol: "BTCUSDT", interval: "1h")) }
+        await api.finishRead(2)
+        try await waitUntil { viewModel.candles.first?.closePrice == 102 }
+        try await waitForReads(3, api)
+        await api.openGate()
+        try await waitUntil { viewModel.candles.first?.closePrice == 103 }
+        let finalReads = await api.reads
+        XCTAssertEqual(finalReads, 3)
+    }
+
+    func testFailedHistoryReleasesItsSlotForTheNextReadinessNotice() async throws {
+        let api = GatedChartHistoryAPI()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitForReads(1, api)
+        await api.finishRead(1, error: APIError.invalidResponse)
+        try await waitUntil { viewModel.lastError != nil && !viewModel.isLoading }
+        await viewModel.receive(notice(symbol: "BTCUSDT"))
+        try await waitForReads(2, api)
+        await api.openGate()
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        XCTAssertNil(viewModel.lastError)
+    }
+
+    func testLateCancelledRequestCannotReleaseTheNewRequestSlot() async throws {
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitForReads(1, api)
+        viewModel.reload()
+        try await waitForReads(2, api)
+        await api.finishRead(1)
+        await viewModel.receive(notice(symbol: "BTCUSDT"))
+        await Task.yield()
+        XCTAssertNil(viewModel.chartDataFrame)
+        XCTAssertTrue(viewModel.isLoading)
+        let inFlightReads = await api.reads
+        XCTAssertEqual(inFlightReads, 2)
+        await api.finishRead(2)
+        try await waitUntil { viewModel.candles.first?.closePrice == 102 }
+        await api.openGate()
+        try await waitUntil { viewModel.candles.first?.closePrice == 103 }
+        let finalReads = await api.reads
+        XCTAssertEqual(finalReads, 3)
+    }
+
+    func testRealReconnectCancelsOldEpochHistoryAndKeepsNewResponse() async throws {
+        let cancelled = expectation(description: "A new connection epoch cancels the old snapshot")
+        let api = GatedChartHistoryAPI(onCancelled: { cancelled.fulfill() })
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitForReads(1, api)
+        await viewModel.receive(ready())
+        await fulfillment(of: [cancelled], timeout: 2)
+        try await waitForReads(2, api)
+        await api.openGate()
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        XCTAssertEqual(viewModel.candles.first?.closePrice, 102)
+    }
+
+    func testRealReconnectCancelsAndResumesAnOldEpochHistoryPage() async throws {
+        let cancelled = expectation(description: "A new epoch cancels its obsolete page")
+        let api = GatedChartHistoryAPI(onCancelled: { cancelled.fulfill() })
+        await api.openGate()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        let first = try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime)
+        await api.closeGate()
+        viewModel.requestOlderHistory()
+        try await waitForReads(2, api)
+        await viewModel.receive(ready())
+        await fulfillment(of: [cancelled], timeout: 1)
+        await api.openGate()
+        try await waitUntil { !viewModel.isLoadingOlderHistory }
+        try await waitUntil {
+            (viewModel.chartDataFrame?.candles.history.candles.first?.openTime ?? first) < first
+        }
+    }
+
+    func testReconciliationTimerCoalescesWithTheDownloadingFirstSnapshot() async throws {
+        let api = GatedChartHistoryAPI()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitForReads(1, api)
+        // Exercise the production timer itself, including its cancellation path.
+        try await Task.sleep(for: .milliseconds(15_200))
+        let readsDuringDownload = await api.reads
+        XCTAssertEqual(readsDuringDownload, 1)
+        await api.finishRead(1)
+        try await waitUntil { viewModel.candles.first?.closePrice == 101 }
+        try await waitForReads(2, api)
+        await api.openGate()
+        try await waitUntil { viewModel.candles.first?.closePrice == 102 }
+        let finalReads = await api.reads
+        XCTAssertEqual(finalReads, 2)
+    }
+
+    func testReconnectResumesItsPageOnlyAfterTheNewSnapshotIsInstalled() async throws {
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        await api.openGate()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        let first = try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime)
+        await api.closeGate()
+        viewModel.requestOlderHistory()
+        try await waitForReads(2, api)
+        await viewModel.receive(ready())
+        try await waitForReads(3, api)
+        await api.finishRead(2)
+        await Task.yield()
+        let readsWhileSnapshotIsPending = await api.reads
+        XCTAssertEqual(readsWhileSnapshotIsPending, 3, "Do not install a page that the next snapshot will discard")
+        await api.finishRead(3)
+        try await waitForReads(4, api)
+        await api.openGate()
+        try await waitUntil { !viewModel.isLoadingOlderHistory }
+        XCTAssertLessThan(try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime), first)
+    }
+
+    func testIntervalSwitchDiscardsALatePageFromTheOldInterval() async throws {
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        await api.openGate()
+        let viewModel = makeChart(api)
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil { viewModel.chartDataFrame != nil }
+        await api.closeGate()
+        viewModel.requestOlderHistory()
+        try await waitForReads(2, api)
+        viewModel.selectInterval(.fiveMinutes)
+        try await waitForReads(3, api)
+        await api.finishRead(3)
+        try await waitUntil { viewModel.candles.first?.closePrice == 103 }
+        let first = viewModel.chartDataFrame?.candles.history.candles.first?.openTime
+        await api.finishRead(2)
+        await Task.yield()
+        XCTAssertEqual(viewModel.chartDataFrame?.candles.history.candles.first?.openTime, first)
+        XCTAssertFalse(viewModel.isLoadingOlderHistory)
+        viewModel.requestOlderHistory()
+        try await waitForReads(4, api)
+        await api.openGate()
+        try await waitUntil { !viewModel.isLoadingOlderHistory }
+        XCTAssertLessThan(try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime),
+                          try XCTUnwrap(first))
+    }
+
     func testLegacyBackendKeepsMarketAndAccountSubscriptions() {
         let subscriptions: [RealtimeSubscription] = [.marketKline(symbols: ["BTCUSDT"]),
             .marketTicker(symbols: ["BTCUSDT"]), .tradingAccount,
@@ -346,17 +618,38 @@ final class MarketFastPathTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
-    private func makeChart(_ api: PendingChartAPI) -> MarketChartViewModel {
+    private func makeChart(_ api: any APIClient) -> MarketChartViewModel {
         let market = MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 100,
             changePercent24h: 0, updatedAt: .now)
         return MarketChartViewModel(market: market, apiClient: api,
             realtimeClient: RealtimeClient(baseURL: URL(string: "http://127.0.0.1")!, tokenProvider: { nil }))
     }
 
-    private func notice(symbol: String) -> RealtimeServerMessage {
+    private func notice(symbol: String, interval: String = "1h") -> RealtimeServerMessage {
         RealtimeServerMessage(version: 1, type: "event", requestId: nil, channel: "market.history",
             event: "upsert", key: nil, sequence: 1, timestamp: 1,
-            data: .object(["symbol": .string(symbol), "interval": .string("1h"), "kind": .string("history")]), error: nil)
+            data: .object(["symbol": .string(symbol), "interval": .string(interval), "kind": .string("history")]), error: nil)
+    }
+
+    private func ack(symbol: String, interval: String) -> RealtimeServerMessage {
+        let data = Data("""
+        {"version":1,"type":"ack","timestamp":1,"data":{"subscriptions":[{"channel":"market.history","filters":{"symbols":["\(symbol)"],"intervals":["\(interval)"]}}]}}
+        """.utf8)
+        return try! JSONDecoder().decode(RealtimeServerMessage.self, from: data)
+    }
+
+    private func ready() -> RealtimeServerMessage {
+        RealtimeServerMessage(version: 1, type: "ready", requestId: nil, channel: nil,
+            event: nil, key: nil, sequence: nil, timestamp: 1, data: nil, error: nil)
+    }
+
+    private func waitForReads(_ expected: Int, _ api: GatedChartHistoryAPI) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await api.reads < expected, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let reads = await api.reads
+        XCTAssertEqual(reads, expected)
     }
 
     private func waitUntil(_ predicate: () -> Bool) async throws {
@@ -384,5 +677,74 @@ private actor PendingChartAPI: APIClient {
         }
         return MarketKlineHistoryResponse(symbol: "BTCUSDT", interval: "1h", items: rows,
             historyPending: before != nil, statisticsPending: before == nil, hasMoreHistory: true) as! Response
+    }
+}
+
+private actor GatedChartHistoryAPI: APIClient {
+    private(set) var reads = 0
+    private var isOpen = false
+    private var waiting: [Int: CheckedContinuation<Void, Error>] = [:]
+    private let ignoresCancellation: Bool
+    private let onFirstRead: @Sendable () -> Void
+    private let onCancelled: @Sendable () -> Void
+
+    init(onFirstRead: @escaping @Sendable () -> Void = {}, onCancelled: @escaping @Sendable () -> Void = {},
+         ignoresCancellation: Bool = false) {
+        self.ignoresCancellation = ignoresCancellation
+        self.onFirstRead = onFirstRead
+        self.onCancelled = onCancelled
+    }
+
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        guard request.path == "/api/market/klines" else { throw APIError.invalidResponse }
+        reads += 1
+        let read = reads
+        if read == 1 { onFirstRead() }
+        if !isOpen {
+            let id = read
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { waiting[id] = $0 }
+            } onCancel: {
+                Task { await self.cancel(id) }
+            }
+        }
+        if !ignoresCancellation { try Task.checkCancellation() }
+        let interval = request.queryItems.first { $0.name == "interval" }?.value ?? "1h"
+        let before = request.queryItems.first { $0.name == "beforeOpenTime" }?.value.flatMap(Int64.init)
+        let width: Int64 = interval == "5m" ? 300_000 : 3_600_000
+        let end = before ?? Int64(Date().timeIntervalSince1970 * 1000) / width * width
+        let rows = (1...32).reversed().map { index in
+            MarketCandle(openTime: end - Int64(index) * width,
+                closeTime: end - Int64(index - 1) * width - 1,
+                openPrice: 100, highPrice: 110, lowPrice: 99, closePrice: Double(100 + read), volume: 1, quoteVolume: 100)
+        }
+        return MarketKlineHistoryResponse(symbol: "BTCUSDT", interval: interval, items: rows,
+            historyPending: before != nil && !isOpen, hasMoreHistory: true) as! Response
+    }
+
+    func releaseCurrentRead() {
+        guard let id = waiting.keys.min(),
+              let continuation = waiting.removeValue(forKey: id) else { return }
+        continuation.resume()
+    }
+
+    func finishRead(_ read: Int, error: Error? = nil) {
+        guard let continuation = waiting.removeValue(forKey: read) else { return }
+        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+    }
+
+    func openGate() {
+        isOpen = true
+        let continuations = waiting.values
+        waiting.removeAll()
+        for continuation in continuations { continuation.resume() }
+    }
+
+    func closeGate() { isOpen = false }
+
+    private func cancel(_ id: Int) {
+        guard waiting[id] != nil else { return }
+        if !isOpen { onCancelled() }
+        if !ignoresCancellation { finishRead(id, error: CancellationError()) }
     }
 }

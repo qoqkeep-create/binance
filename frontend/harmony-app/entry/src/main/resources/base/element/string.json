@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "Binance Tools"
+    },
+    {
+      "name": "module_desc",
+      "value": "行情与交易管理"
+    }
+  ]
+}

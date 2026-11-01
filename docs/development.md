@@ -2,6 +2,12 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+2026-11-01 的绑定与延迟界面任务中，用户当时要求停止进一步测试、先部署后自行验收。“我的”绑定长按钮、点击测延迟、三点等待动画和 2 秒单在途采样已完成，`Debug-Seoul` 模拟器目标仅执行 `build`，编译通过（`.integration-runtime/profile-latency-build.log`）；未运行修改后的单测、UI 或速度回归。既有断言已同步新状态并补充慢在途样本及点击重测场景，不能据此称为本轮测试通过。服务端仅执行发布必要的迁移、容器健康、HTTPS 与一次鉴权 WSS 心跳检查，未作交易操作和完整性能验收。新客户端与 WSS 数据库连接清理改动留在本地未提交、未推送；后者已包含在本次 SSH 部署中，版本及备份见 [运维](operations.md)。
+
+本轮按用户后续的 BTC 加载排障要求恢复定向验证：行情后端 `manage.py test market_stream` 共 41 项，38 项通过、3 项专用 Redis 验证未启用；iOS `MarketFastPathTests` 10 项加 5 项快照／epoch／翻页回归全部通过（`.integration-runtime/ChartHistoryRefreshFinal.xcresult`）。新增慢响应门闩测试先复现取消下载，再验证首个响应优先展示、通知合并、切周期和 stop 的取消边界、pending 分页；这些结果不代替全部业务 UI、Release 或手机测试。后端和公网／GPU 分段样本、旧 USDC 的逐段对照见 [行情](market-data.md#与原-usdc-实现的核对2026-11-01)，本轮客户端仍未提交／推送。
+
+随后按首屏交接计划补验：`market_stream.tests market_stream.test_fast_path` 41 项全部通过（2.469 秒），本轮显式提供专用 Redis 二进制，三项真实回环 Redis 测试没有跳过；`MarketFastPathTests` 18 项加 `ChartEngineCoreTests` 127 项全部通过（52.965 秒，`.integration-runtime/KlineFirstFrame/CorrectnessFinal.xcresult`）。新增分页重连／恢复顺序测试均先失败后修复，包含真实 15 秒校对、真实结构 ack、下载失败及不响应取消的旧请求。上述为本地隔离测试，未执行交易操作。
+
 ## Python
 
 使用 Python 3.11，按锁定依赖创建本地环境：
@@ -60,6 +66,22 @@ Cloud 分发使用平台自动递增的构建号，首次在后台核对 Next Bu
 
 测试覆盖真实 BTC 列表、图表加载、持仓、无绑定开仓禁用、信号、我的和 API 表单；若启动时已有会话，先通过页面退出，再执行新登录，避免只测到会话恢复。进入图表前等待系统保存密码按钮消失及行情行可点击，避免在系统弹窗退场时误点。其他 UI 校准脚本和 Debug harness 用于行情 / Metal，不把离屏测试当作真机帧率或长稳结果。实际结果见 [变更](changes.md)。
 
+`IntegratedNativeUITests.testConfiguredKlineFirstFramePerformance` 是另一个显式 opt-in 的只读采样入口。除上述三个 QA 变量外，测试进程必须收到 `INTEGRATION_KLINE_PERFORMANCE=1`；xcodebuild 同样使用 `TEST_RUNNER_` 前缀。默认连续 20 次热进入及 5 次 App 重启后进入 BTCUSDT 1h，不通过清理服务端缓存制造冷读。可用 `INTEGRATION_KLINE_WARM_COUNT`／`INTEGRATION_KLINE_COLD_COUNT` 缩小排障批次；这些名称中的 cold 只代表 App 重启，缓存命中须另测。测试处理登录后延迟出现的保存密码弹窗，返回使用 `market-chart-back`，避免选中隐藏导航栏的同名按钮。
+
+使用专用模拟器，关闭覆盖率以减少测量干扰，例如：
+
+```bash
+xcodebuild -project frontend/ios-app/TradeTool.xcodeproj \
+  -scheme 'TradeTool Chart Calibration' -configuration Debug-Seoul \
+  -destination 'platform=iOS Simulator,id=<专用模拟器 UDID>' \
+  -derivedDataPath .integration-runtime/KlineFirstFrame/DerivedData \
+  -parallel-testing-enabled NO -enableCodeCoverage NO \
+  -only-testing:TradeToolChartCalibrationUITests/IntegratedNativeUITests/testConfiguredKlineFirstFramePerformance \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test
+```
+
+AX 的存在／label 等待用于操作与确认，不作为点击到首帧的时间；阶段测量使用单调时钟，并区分模拟器 GPU completion 与真机 drawable presentedTime。必要临时探针测完删除，日志、凭证、xcresult 和构建目录保持忽略。当前维护结论见 [首屏补验](market-data.md#按首屏交接计划补验2026-11-01)。
+
 业务页面的原 Web 对照、DEBUG 隔离数据和 `WebParityUITests` 命令见 [Web 原生复刻](ios-web-parity.md)。该模式无需账号，不连接真实交易；只有本地资金预检和 EMA 预览返回静态响应。Release 不包含该入口。
 
 认证页现采用 USDC 原生布局和底部 sheet；显示名、图标、已有接口及注册开关替身见 [品牌与认证](ios-authentication.md)。认证 UI 测试只提交本地验证失败的表单，后端协议用 SQLite / LocMem 的 `users.tests.AuthApiTests` 和 `mobile.tests.MobileAuthTests` 验证，重置邮件使用 locmem。
@@ -85,7 +107,7 @@ PYTHON_DOTENV_DISABLED=1 DB_ENGINE=sqlite USE_REDIS_CACHE=False RUN_SCHEDULER_IN
   server/.venv/bin/python server/manage.py test market_stream.tests mobile.tests common.tests
 ```
 
-`ChartEngineCoreTests` 增加兼容旧响应、晚到快照不回退 Socket 数据、K 线横拖让出 50 pt 返回范围及业务／行情暗色色板一致性测试。两项 `WebParityUITests` 为 `testWideSwipeReturnsFromBusinessPagesAndNestedStrategy`、`testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage`，使用无网络 fixture，覆盖业务多层导航、40 pt 起手、取消手势、表格边界、指标编辑内部返回、暗色止损和按钮／拖动关闭。本轮使用独立 `Binance Navigation Review` 模拟器，避免其他本地 UI 校验干扰。
+`ChartEngineCoreTests` 增加兼容旧响应、晚到快照不回退 Socket 数据、K 线横拖让出 50 pt 返回范围及业务／行情暗色色板一致性测试。两项 `WebParityUITests` 为 `testWideSwipeReturnsFromBusinessPagesAndNestedStrategy`、`testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage`，使用无网络 fixture，覆盖业务多层导航、40 pt 起手、取消手势、表格边界、暗色止损和按钮／拖动关闭。本轮使用独立 `Binance Navigation Review` 模拟器，避免其他本地 UI 校验干扰。
 
 ### USDC 行情关键路径回归
 
@@ -111,3 +133,11 @@ iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pendin
 - 交易与资金：既有 `trading`、`positions`、`accounts`、`api_bindings` 测试覆盖精度、保护、未知结果及账户隔离。
 - iOS：图表、Keychain、服务器切换和业务会话测试；设备运行单独记录。
 - 提交前检查文档链接、敏感信息、`git diff --check` 和未追踪文件。实际结果写入 [变更记录](changes.md)。
+
+## 计划与手动校验退役的本轮范围
+
+2026-11-01 移除看盘计划、校准问答、手动指标清单及无调用的旧 Java 账户／风控／杠杆适配、图表标注和 Signpost。同步删除仅验证已移除实现的测试；保留仍服务于当前图表的数据、指标、GPU、安全和压力测试。`common.test_retired_modules` 更新旧接口不可解析的断言；UI 用例更新未绑定链接的居中／打开绑定界面及菜单移除断言。用户安排先不测试，本轮仅执行 `TradeTool` 的 `build-for-testing` 编译（没有运行 XCTest）、Python AST／Django check／migration 漂移检查和项目文件解析；报告 `.integration-runtime/retire-watch-checklist-build.log`。UI 源码使用 Swift parser 检查，没有启动模拟器验收。实际发布与设备待验范围见 [变更](changes.md)。
+
+## HarmonyOS
+
+独立工程为 `frontend/harmony-app/`，面向 Mate 80 的原生鸿蒙测试；不接应用市场。`npm test` / `npm run check` 仅作隔离核心与配置检查。本轮40项替身测试、核心 strict 类型检查与工程静态检查通过；安装 Command Line Tools 26.0.0.865、API 26 SDK 与 JDK 21 后，真实 ArkTS 编译及未签名 HAP 打包通过，调试签名和手机运行仍待验证。工具链版本与验收边界以 [鸿蒙主文档](harmony-client.md) 为准。使用忽略的 `.local-build/project/` 配置调试签名，保护公开工程中的签名口令与证书；具体命令见 [工程 README](../frontend/harmony-app/README.md)。

@@ -258,6 +258,29 @@ class FastHistoryApiTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(User.objects.create_user("history-qa@example.invalid", "test-only-password"))
 
+    @patch("market_stream.service.load_history")
+    def test_history_compresses_on_the_wire_without_changing_the_snapshot(self, history):
+        import gzip
+        import json
+        from market_stream.core import wire_candle
+        cache.set("market:universe", ["BTCUSDT"])
+        rows = [wire_candle(rest_candle("BTCUSDT", "1h", [
+            i * 3600000, "77793.50", "78000.10", "77000.20", str(77700 + i / 100),
+            "1234.56789", (i + 1) * 3600000 - 1, "96000000.12345",
+        ], 1500 * 3600000)) for i in range(1500)]
+        history.return_value = {"symbol": "BTCUSDT", "interval": "1h", "items": rows,
+                                "historyPending": False, "hasMoreHistory": True}
+        params = {"symbol": "BTCUSDT", "interval": "1h", "limit": 1500}
+        plain = self.client.get("/api/market/klines", params, HTTP_ACCEPT_ENCODING="identity")
+        compressed = self.client.get("/api/market/klines", params, HTTP_ACCEPT_ENCODING="gzip")
+        self.assertEqual(compressed.status_code, 200)
+        self.assertEqual(compressed.get("Content-Encoding"), "gzip")
+        self.assertIn("Accept-Encoding", compressed["Vary"])
+        self.assertIn("history;dur=", compressed["Server-Timing"])
+        self.assertEqual(json.loads(gzip.decompress(compressed.content)), plain.json())
+        self.assertLess(len(compressed.content), len(plain.content) // 2)
+        self.assertNotIn("Content-Encoding", plain)
+
     @patch("market_stream.service.public_request", side_effect=AssertionError("No exchange I/O in HTTP"))
     def test_api_warms_asynchronously_and_reports_timing(self, request):
         cache.set("market:universe", ["BTCUSDT"])

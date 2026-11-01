@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+TASK_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$TASK_ROOT/scripts/toolchain-env.sh"
+if [ ! -f "$HVIGOR_HOME/bin/hvigorw.js" ]; then
+  echo '未找到鸿蒙构建工具。安装 DevEco Studio 或 Command Line Tools，设置 HARMONY_TOOLCHAIN_HOME。' >&2
+  exit 2
+fi
+exec "$HARMONY_NODE" "$HVIGOR_HOME/bin/hvigorw.js" "$@"

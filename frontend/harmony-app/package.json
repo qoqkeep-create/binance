@@ -1,0 +1,10 @@
+{
+  "name": "tradetools-harmony-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-loader.mjs --test tests/*.test.mjs",
+    "check": "node scripts/check-project.mjs"
+  },
+  "engines": { "node": ">=24" }
+}

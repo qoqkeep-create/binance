@@ -51,7 +51,6 @@
 		01000000000000000000002D /* MetalFrameCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MetalFrameCoordinator.swift */; };
 		01000000000000000000002E /* KlineChartHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* KlineChartHostView.swift */; };
 		01000000000000000000002F /* KlineChartRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* KlineChartRepresentable.swift */; };
-		010000000000000000000030 /* ChartSignposts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* ChartSignposts.swift */; };
 		010000000000000000000031 /* ChartFigure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000037 /* ChartFigure.swift */; };
 		010000000000000000000032 /* ChartText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000038 /* ChartText.swift */; };
 		010000000000000000000033 /* MetalGlyphAtlas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000039 /* MetalGlyphAtlas.swift */; };
@@ -74,10 +73,7 @@
 		010000000000000000000044 /* ChartTimelineViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004A /* ChartTimelineViewport.swift */; };
 		010000000000000000000045 /* ChartCrosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004B /* ChartCrosshair.swift */; };
 		010000000000000000000046 /* RSIIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004C /* RSIIndicator.swift */; };
-		010000000000000000000047 /* ChartDrawingTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004D /* ChartDrawingTools.swift */; };
-		010000000000000000000048 /* TradingSettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000004E /* TradingSettingsModels.swift */; };
 		01000000000000000000004B /* ChartOrderDrawingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000051 /* ChartOrderDrawingView.swift */; };
-		01000000000000000000004E /* ChartLeverageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000054 /* ChartLeverageSettingsView.swift */; };
 		01000000000000000000004F /* SimpleMovingAverageIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000056 /* SimpleMovingAverageIndicator.swift */; };
 		010000000000000000000050 /* BollingerBandsIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000057 /* BollingerBandsIndicator.swift */; };
 		010000000000000000000051 /* ParabolicSARIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000058 /* ParabolicSARIndicator.swift */; };
@@ -103,7 +99,6 @@
 		3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */; };
 		4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7B56A4F1642013DF78DC36 /* USDTSession.swift */; };
 		4ADC1ECF7B1D2C2AF8904860 /* USDTAccountViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */; };
-		51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */; };
 		9CD0D87DCEBB99A36EE4B57C /* USDTComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33600721399D7B8EDD04A732 /* USDTComponents.swift */; };
 		F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */; };
 		010000000000000000000057 /* Lucide-ISC.txt in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* Lucide-ISC.txt */; };
@@ -179,7 +174,6 @@
 		020000000000000000000033 /* MetalFrameCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalFrameCoordinator.swift; sourceTree = "<group>"; };
 		020000000000000000000034 /* KlineChartHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineChartHostView.swift; sourceTree = "<group>"; };
 		020000000000000000000035 /* KlineChartRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineChartRepresentable.swift; sourceTree = "<group>"; };
-		020000000000000000000036 /* ChartSignposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSignposts.swift; sourceTree = "<group>"; };
 		020000000000000000000037 /* ChartFigure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartFigure.swift; sourceTree = "<group>"; };
 		020000000000000000000038 /* ChartText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartText.swift; sourceTree = "<group>"; };
 		020000000000000000000039 /* MetalGlyphAtlas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalGlyphAtlas.swift; sourceTree = "<group>"; };
@@ -202,10 +196,7 @@
 		02000000000000000000004A /* ChartTimelineViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartTimelineViewport.swift; sourceTree = "<group>"; };
 		02000000000000000000004B /* ChartCrosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCrosshair.swift; sourceTree = "<group>"; };
 		02000000000000000000004C /* RSIIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSIIndicator.swift; sourceTree = "<group>"; };
-		02000000000000000000004D /* ChartDrawingTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDrawingTools.swift; sourceTree = "<group>"; };
-		02000000000000000000004E /* TradingSettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingSettingsModels.swift; sourceTree = "<group>"; };
 		020000000000000000000051 /* ChartOrderDrawingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartOrderDrawingView.swift; sourceTree = "<group>"; };
-		020000000000000000000054 /* ChartLeverageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLeverageSettingsView.swift; sourceTree = "<group>"; };
 		020000000000000000000055 /* TradeTool.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TradeTool.entitlements; sourceTree = "<group>"; };
 		020000000000000000000056 /* SimpleMovingAverageIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMovingAverageIndicator.swift; sourceTree = "<group>"; };
 		020000000000000000000057 /* BollingerBandsIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BollingerBandsIndicator.swift; sourceTree = "<group>"; };
@@ -231,7 +222,6 @@
 		120000000000000000000005 /* ServerSwitchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSwitchingTests.swift; sourceTree = "<group>"; };
 		18C443B8F02115C83974CD29 /* USDTStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStore.swift; sourceTree = "<group>"; };
 		33600721399D7B8EDD04A732 /* USDTComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTComponents.swift; sourceTree = "<group>"; };
-		72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTWatchViews.swift; sourceTree = "<group>"; };
 		7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTRecordsViews.swift; sourceTree = "<group>"; };
 		7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTAccountViews.swift; sourceTree = "<group>"; };
 		9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStrategyViews.swift; sourceTree = "<group>"; };
@@ -394,7 +384,6 @@
 			isa = PBXGroup;
 			children = (
 				120000000000000000000004 /* ServerSettingsView.swift */,
-				02000000000000000000004E /* TradingSettingsModels.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -448,7 +437,6 @@
 			isa = PBXGroup;
 			children = (
 				020000000000000000000048 /* ChartIndicatorSettingsView.swift */,
-				020000000000000000000054 /* ChartLeverageSettingsView.swift */,
 				020000000000000000000051 /* ChartOrderDrawingView.swift */,
 				020000000000000000000026 /* MarketChartView.swift */,
 				020000000000000000000024 /* MarketChartViewModel.swift */,
@@ -495,7 +483,6 @@
 			isa = PBXGroup;
 			children = (
 				02000000000000000000004B /* ChartCrosshair.swift */,
-				02000000000000000000004D /* ChartDrawingTools.swift */,
 				02000000000000000000002B /* ChartInvalidation.swift */,
 				02000000000000000000002C /* ChartRenderBatch.swift */,
 				020000000000000000000040 /* ChartSceneBuilder.swift */,
@@ -552,7 +539,6 @@
 			isa = PBXGroup;
 			children = (
 				02000000000000000000003D /* ChartMetricKitSubscriber.swift */,
-				020000000000000000000036 /* ChartSignposts.swift */,
 				02000000000000000000003E /* ChartStressHarnessView.swift */,
 			);
 			path = Diagnostics;
@@ -613,7 +599,6 @@
 				A17000000000000000000006 /* FloatingPositionsPiP.swift */,
 				9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */,
 				F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */,
-				72DDC1011D5B60B533185BC9 /* USDTWatchViews.swift */,
 			);
 			path = USDT;
 			sourceTree = "<group>";
@@ -766,7 +751,6 @@
 				A17000000000000000000005 /* FloatingPositionsPiP.swift in Sources */,
 				F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */,
 				3A8A36BA0CC8FDFA19FDBA5E /* USDTTradingViews.swift in Sources */,
-				51611F5D5DD4001609DB5D82 /* USDTWatchViews.swift in Sources */,
 				130000000000000000000004 /* ServerSettingsView.swift in Sources */,
 				130000000000000000000003 /* ServerNetworkProbe.swift in Sources */,
 				130000000000000000000002 /* AppRuntime.swift in Sources */,
@@ -785,9 +769,7 @@
 				01000000000000000000001E /* MarketChartViewModel.swift in Sources */,
 				01000000000000000000001B /* MarketWatchlistStore.swift in Sources */,
 				010000000000000000000007 /* DashboardViewModel.swift in Sources */,
-				010000000000000000000048 /* TradingSettingsModels.swift in Sources */,
 				01000000000000000000004B /* ChartOrderDrawingView.swift in Sources */,
-				01000000000000000000004E /* ChartLeverageSettingsView.swift in Sources */,
 				01000000000000000000000B /* BottomNavigationBar.swift in Sources */,
 				01000000000000000000000C /* APIError.swift in Sources */,
 				01000000000000000000000D /* APIRequest.swift in Sources */,
@@ -824,7 +806,6 @@
 				01000000000000000000002E /* KlineChartHostView.swift in Sources */,
 				01000000000000000000002F /* KlineChartRepresentable.swift in Sources */,
 				01000000000000000000003B /* KlineChartSceneView.swift in Sources */,
-				010000000000000000000030 /* ChartSignposts.swift in Sources */,
 				010000000000000000000031 /* ChartFigure.swift in Sources */,
 				010000000000000000000032 /* ChartText.swift in Sources */,
 				010000000000000000000033 /* MetalGlyphAtlas.swift in Sources */,
@@ -840,7 +821,6 @@
 				01000000000000000000003E /* VolumeIndicator.swift in Sources */,
 				01000000000000000000003F /* MACDIndicator.swift in Sources */,
 				010000000000000000000046 /* RSIIndicator.swift in Sources */,
-				010000000000000000000047 /* ChartDrawingTools.swift in Sources */,
 				010000000000000000000040 /* PanelLayout.swift in Sources */,
 				010000000000000000000041 /* ChartIndicatorSelection.swift in Sources */,
 				010000000000000000000042 /* ChartIndicatorSettingsView.swift in Sources */,

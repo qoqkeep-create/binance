@@ -1,10 +1,16 @@
-# 观察计划与信号研究退役
+# 看盘计划、手动校验与信号研究退役
 
 核对日期：2026-11-01；以下为当前本地源码状态，发布和验证范围见 [变更与验收](changes.md)。
 
-## 当前保留的能力
+## 看盘计划与手动校验已移除
 
-观察计划由独立的 [watch_plans](../server/watch_plans/models.py) 模块维护，原生入口为“我的 → 更多功能 → 看盘计划”。[API](../server/watch_plans/urls.py) 仍为 `/v1/watch-plan/list/create/update/delete`，按当前用户读写计划、复盘、结果金额、0–100 分和评分明细。金额使用 Decimal；观察记录不作为自动下单指令。
+2026-11-01 按用户新要求删除“我的 → 更多功能”中的“看盘计划”和“开仓理由/指标校验”。计划列表、编辑、复盘、评分、结果、交易前校准问答及手动指标清单的页面、状态、持久化读写和 DEBUG 替身均已删除。手动清单原先只使用本机 `integrated.indicators.<userID>`，没有独立服务端接口；退休不批量擦除用户旧偏好。
+
+后端移除 `watch_plans` 应用注册、模型、服务、路由和专属 CRUD 测试，`/v1/watch-plan/list/create/update/delete` 不再解析；移除 `/v1/auth/preflight-status`、`preflight-complete` 及登录响应的校准时间。`users.0009_retire_watch_calibration` 通过 `SeparateDatabaseAndState` 删除 ORM 字段，数据库操作为空：历史 nullable 列、计划表、数据和已应用的 migration 记录保留，便于回滚。`server/watch_plans/` 仅保留空包及历史 migrations，新库不再创建计划表。
+
+移除范围是手动清单和计划功能。资金预检、EMA 方向初筛、图表技术指标及内部信号扫描仍属于各自现行业务。后端发布状态见 [运维](operations.md)，客户端改动仍在本地，尚未推送或分发。
+
+## 当前保留的能力
 
 [market_analysis](../server/market_analysis/trend.py) 继续承担闭合 K 线的内部趋势扫描，输出供信号页使用。其行情扫描与交易信号链路独立于已移除的研究功能。
 
@@ -22,4 +28,6 @@
 
 新库若回滚到退役前代码，必须使用该版本执行 migrate 补建研究表；旧库回滚仍需核对迁移记录和历史密钥。代码回滚不会恢复已主动删除的数据库资料。本次没有清理历史数据，也没有修改实盘持仓、保护或交易策略。
 
-验证入口为 [退役回归](../server/common/test_retired_modules.py)、[凭证轮换](../server/common/test_key_rotation.py)、[观察计划](../server/watch_plans/tests.py) 与 [内部扫描](../server/market_analysis/tests.py)。
+计划、问答及手动清单的删除前基线为整合版 Git `74b8e5da76544321e6d4960c0c7e646201a79828`；查询该版本的 `server/watch_plans/`、`USDTWatchViews.swift` 与 `USDTStrategyViews.swift`。普通发布不执行历史数据删除，代码回滚不代表数据库回滚。
+
+验证入口为 [退役回归](../server/common/test_retired_modules.py)、[凭证轮换](../server/common/test_key_rotation.py) 与 [内部扫描](../server/market_analysis/tests.py)。本轮仅做编译、系统及迁移漂移检查，按用户安排未运行测试；旧通过记录不能当作本轮功能验收。

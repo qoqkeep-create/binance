@@ -16,7 +16,8 @@ enum RealtimeLatency: Equatable {
     }
     var text: String {
         switch self {
-        case .measuring, .unavailable: "999 ms"
+        case .measuring: "测量中"
+        case .unavailable: "-- ms"
         case .measured(let milliseconds):
             milliseconds.isFinite ? "\(Int(min(999, max(0, milliseconds.rounded())))) ms" : "999 ms"
         }
@@ -25,14 +26,18 @@ enum RealtimeLatency: Equatable {
 
 /// Matches application ping/pong by identity and measures only with a monotonic clock.
 struct RealtimeLatencyTracker {
-    static let sampleInterval: Duration = .seconds(5)
+    static let sampleInterval: Duration = .seconds(2)
     static let timeout: Duration = .seconds(3)
     private var pending: (id: String, sentAt: ContinuousClock.Instant)?
     private var samples: [Double] = []
     private(set) var reading: RealtimeLatency = .measuring
+    var isPending: Bool { pending != nil }
 
-    mutating func begin(id: String, at now: ContinuousClock.Instant) {
+    @discardableResult
+    mutating func begin(id: String, at now: ContinuousClock.Instant) -> Bool {
+        guard pending == nil else { return false }
         pending = (id, now)
+        return true
     }
     mutating func receive(id: String?, at now: ContinuousClock.Instant) {
         guard let pending, pending.id == id else { return }
@@ -302,6 +307,10 @@ final class RealtimeClient: ObservableObject {
     @Published private(set) var latency: RealtimeLatency = .unavailable
     private var latencyTracker = RealtimeLatencyTracker()
     private var monitorsLatency = false
+    private var manualLatencyTestPending = false
+    #if DEBUG
+    private var fixtureLatencyTask: Task<Void, Never>?
+    #endif
     private var pathMonitor: NWPathMonitor?
     private var pathGeneration = UUID()
     private var pathSignature = ""
@@ -396,6 +405,8 @@ final class RealtimeClient: ObservableObject {
     func setLatencyMonitoring(_ enabled: Bool) {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--web-parity-fixture") {
+            fixtureLatencyTask?.cancel()
+            fixtureLatencyTask = nil
             let args = ProcessInfo.processInfo.arguments
             latency = args.contains("--fixture-latency-unavailable") ? .unavailable
                 : args.contains("--fixture-latency-overflow") ? .measured(1_520)
@@ -435,8 +446,37 @@ final class RealtimeClient: ObservableObject {
     }
 
     private func resetLatency() {
+        manualLatencyTestPending = false
         latencyTracker.reset(to: state == .connected && networkAvailable ? .measuring : .unavailable)
         latency = latencyTracker.reading
+    }
+
+    func requestLatencyTest() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--web-parity-fixture") {
+            guard fixtureLatencyTask == nil else { return }
+            latency = .measuring
+            fixtureLatencyTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
+                self?.latency = .measured(86)
+                self?.fixtureLatencyTask = nil
+            }
+            return
+        }
+        #endif
+        guard monitorsLatency else { return }
+        guard networkAvailable else { resetLatency(); return }
+        guard state == .connected else {
+            latency = .measuring
+            connect()
+            return
+        }
+        guard !manualLatencyTestPending else { return }
+        manualLatencyTestPending = true
+        // A manual reading starts fresh; late replies to the previous sample are ignored.
+        latencyTracker.reset()
+        latency = .measuring
+        startHeartbeat()
     }
 
     func subscribe(_ desiredSubscriptions: [RealtimeSubscription]) {
@@ -596,8 +636,10 @@ final class RealtimeClient: ObservableObject {
 
         case "pong":
             if monitorsLatency {
+                let wasPending = latencyTracker.isPending
                 latencyTracker.receive(id: serverMessage.requestId, at: .now)
                 latency = latencyTracker.reading
+                if wasPending && !latencyTracker.isPending { manualLatencyTestPending = false }
             }
             reconnectAttempt = 0
 
@@ -664,8 +706,10 @@ final class RealtimeClient: ObservableObject {
             while !Task.isCancelled, state == .connected {
                 let now = ContinuousClock.now
                 if monitorsLatency {
+                    let wasPending = latencyTracker.isPending
                     latencyTracker.expire(at: now)
                     latency = latencyTracker.reading
+                    if wasPending && !latencyTracker.isPending { manualLatencyTestPending = false }
                 }
 
                 if ContinuousClock.now - lastServerMessageAt > serverTimeout {
@@ -673,7 +717,7 @@ final class RealtimeClient: ObservableObject {
                     return
                 }
 
-                if now >= nextPing, !monitorsLatency || networkAvailable {
+                if now >= nextPing, !monitorsLatency || (networkAvailable && !latencyTracker.isPending) {
                   let requestID = UUID().uuidString
                   if monitorsLatency { latencyTracker.begin(id: requestID, at: now) }
                   await send(
@@ -688,7 +732,7 @@ final class RealtimeClient: ObservableObject {
                   )
                   nextPing = now.advanced(by: monitorsLatency ? RealtimeLatencyTracker.sampleInterval : heartbeatInterval)
                 }
-                do { try await Task.sleep(for: monitorsLatency ? .seconds(1) : heartbeatInterval) }
+                do { try await Task.sleep(for: monitorsLatency ? .milliseconds(250) : heartbeatInterval) }
                 catch { return }
             }
         }

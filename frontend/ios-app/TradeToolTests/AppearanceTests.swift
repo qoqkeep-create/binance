@@ -156,14 +156,23 @@ final class AppearanceTests: XCTestCase {
 
 @MainActor
 final class NetworkLatencyAndModalTests: XCTestCase {
-  func testLatencyAlwaysDisplaysANumberCappedAt999() {
-    XCTAssertEqual(RealtimeLatency.unavailable.text, "999 ms")
-    XCTAssertEqual(RealtimeLatency.measuring.text, "999 ms")
+  func testLatencyDistinguishesMissingSamplesFromMeasuredNumbers() {
+    XCTAssertEqual(RealtimeLatency.unavailable.text, "-- ms")
+    XCTAssertEqual(RealtimeLatency.measuring.text, "测量中")
     XCTAssertEqual(RealtimeLatency.measured(86.4).text, "86 ms")
     XCTAssertEqual(RealtimeLatency.measured(998.8).text, "999 ms")
     XCTAssertEqual(RealtimeLatency.measured(2_500).text, "999 ms")
     XCTAssertEqual(RealtimeLatency.measured(-1).text, "0 ms")
     XCTAssertEqual(RealtimeLatency.measured(.infinity).text, "999 ms")
+  }
+
+  func testAutomaticSamplingDoesNotReplaceASlowInFlightPing() {
+    let start = ContinuousClock.now
+    var tracker = RealtimeLatencyTracker()
+    tracker.begin(id: "slow", at: start)
+    tracker.begin(id: "next-tick", at: start.advanced(by: .seconds(2)))
+    tracker.receive(id: "slow", at: start.advanced(by: .milliseconds(2_500)))
+    XCTAssertEqual(tracker.reading, .measured(2_500))
   }
 
   func testRealSocketMeasuresPongAndRepeatedConnectKeepsSampling() async throws {
@@ -245,7 +254,7 @@ final class NetworkLatencyAndModalTests: XCTestCase {
     XCTAssertEqual(RealtimeLatency.measured(499).quality, .fair)
     XCTAssertEqual(RealtimeLatency.measured(500).quality, .poor)
     XCTAssertEqual(RealtimeLatency.unavailable.quality, .poor)
-    XCTAssertEqual(RealtimeLatencyTracker.sampleInterval, .seconds(5))
+    XCTAssertEqual(RealtimeLatencyTracker.sampleInterval, .seconds(2))
   }
 
   func testSmallDialogsFadeAndLargePanelsSlideUnlessReducedMotionIsEnabled() {

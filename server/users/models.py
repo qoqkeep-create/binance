@@ -33,7 +33,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     # 资金归集目标：主账户归集时使用目标主账户 Spot 充值地址和网络，子账户不使用。
     capital_collect_account = models.CharField(max_length=128, blank=True, default="")
     capital_collect_network = models.CharField(max_length=32, blank=True, default="")
-    preflight_completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

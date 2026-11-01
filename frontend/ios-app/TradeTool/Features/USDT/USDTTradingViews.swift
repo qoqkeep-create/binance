@@ -460,6 +460,7 @@ struct USDTPositionsView: View {
   @State private var selected: JSONValue = .null
   @State private var operation: WebPositionOperation? = nil
   @State private var chart = false
+  @State private var binding = false
   @State private var skipCloseAllConfirm = false
   @State private var closeAllConfirm = false
   @State private var closingAll = false
@@ -475,6 +476,7 @@ struct USDTPositionsView: View {
     VStack(spacing: 0) {
       WebTabs(
         tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
+      GeometryReader { geometry in
       ScrollView {
         VStack(spacing: 10) {
           if segment == "history" {
@@ -494,8 +496,13 @@ struct USDTPositionsView: View {
             }
           }
           if segment != "history" && !store.isBound {
-            Text("请先绑定 Binance Api").font(.system(size: 16))
-              .foregroundStyle(WebTheme.muted).frame(maxWidth: .infinity).padding(.vertical, 48)
+            Button { binding = true } label: {
+              HStack(spacing: 6) {
+                Text("请先绑定 Binance API").underline()
+                WebIcon("chevron-right", size: 16)
+              }.font(.system(size: 16)).foregroundStyle(WebTheme.muted)
+                .frame(minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("positions.bind")
           } else {
             USDTNotice(text: notice)
             if model.loading && model.items.isEmpty {
@@ -526,7 +533,8 @@ struct USDTPositionsView: View {
               }.buttonStyle(WebButtonStyle(kind: .secondary, fontSize: 14))
             }
           }
-        }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
+        }.frame(minHeight: segment != "history" && !store.isBound ? max(0, geometry.size.height - 32) : nil)
+          .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
         .accessibilityIdentifier("positions.list")
         .refreshable {
@@ -536,7 +544,9 @@ struct USDTPositionsView: View {
           model.page = 1
           await reload()
         }
+      }
     }.usdtPage("持仓")
+      .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
       .task(id: store.scope) {
         if let data = UserDefaults.standard.data(forKey: closeQueueKey),
           let saved = try? JSONDecoder().decode([WebCloseTarget].self, from: data)

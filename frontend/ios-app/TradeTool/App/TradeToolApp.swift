@@ -166,10 +166,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
             return response as! Response
         }
 
-        if Response.self == [BinanceFuturesAccountSnapshot].self {
-            return [] as! Response
-        }
-
         if Response.self == EmptyResponse.self {
             return EmptyResponse() as! Response
         }
@@ -268,7 +264,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       if Self.empty
         && [
           "/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list",
-          "/v1/trade/tradingview/signals", "/v1/watch-plan/list",
+          "/v1/trade/tradingview/signals",
           "/v1/strategy/list",
         ].contains(request.path)
       {
@@ -549,28 +545,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
             }
           ]
         },
-        "/v1/watch-plan/list": [
-          {
-            "id": 1,
-            "symbol": "BTCUSDT",
-            "plan_date": "2026-10-31",
-            "plan_type": 0,
-            "timeframe": "1h",
-            "direction": 0,
-            "content": "回踩 EMA144，等待关键位置确认",
-            "take_profit_expectation": "前高附近分批止盈",
-            "review_content": "严格按计划执行",
-            "status": 1,
-            "result": 2,
-            "result_amount": "25",
-            "score": 85,
-            "score_payload": {
-              "checks": [],
-              "vetoes": []
-            },
-            "created_at": "2026-10-31T02:00:00Z"
-          }
-        ],
         "/v1/auth/admin-settings": {
           "open_registration": false
         },
@@ -620,9 +594,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
             "collection_total": "50",
             "destination_address": "0x0000000000000000000000000000000000000000",
             "destination_network": "BSC"
-        },
-        "/v1/auth/preflight-status": {
-          "preflight_completed_at": "2026-10-31T23:59:59Z"
         },
         "/api/commands": [],
         "/v1/strategy/log": {
@@ -674,11 +645,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       return args[index + 1]
     }
     private var dark: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-dark") }
-    private var watchPlan: JSONValue? {
-      (try? JSONDecoder().decode(
-        [String: JSONValue].self, from: Data(WebParityFixtureAPI.payload.utf8)))?[
-          "/v1/watch-plan/list"]?.rows.first
-    }
     var body: some View {
       NavigationStack {
         VStack(spacing: 0) {
@@ -728,13 +694,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       case "strategy-editor": USDTStrategyEditor(strategy: nil)
       case "operations": USDTRecordsView(kind: .operations)
       case "transfers": USDTRecordsView(kind: .transfers)
-      case "watch": USDTWatchPlansView()
-      case "watch-editor": USDTWatchEditor(plan: nil)
-      case "watch-score": USDTWatchEditor(plan: watchPlan, pane: "score")
-      case "watch-review": USDTWatchEditor(plan: watchPlan, pane: "review")
-      case "watch-result": USDTWatchEditor(plan: watchPlan, pane: "result")
-      case "indicators": USDTIndicatorsView()
-      case "preflight": USDTPreflightView(completed: {})
       case "settings": USDTSettingsView()
       case "legal": USDTLegalView()
       case "privacy": USDTLegalView(document: "隐私政策")

@@ -6,8 +6,6 @@ from users.views import (
     LogoutView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
-    PreflightCompleteView,
-    PreflightStatusView,
     RefreshAccessTokenView,
     RegisterView,
 )
@@ -19,7 +17,5 @@ urlpatterns = [
     path("refresh", RefreshAccessTokenView.as_view()),
     path("password-reset/request", PasswordResetRequestView.as_view()),
     path("password-reset/confirm", PasswordResetConfirmView.as_view()),
-    path("preflight-status", PreflightStatusView.as_view()),
-    path("preflight-complete", PreflightCompleteView.as_view()),
     path("admin-settings", AdminSettingsView.as_view()),
 ]

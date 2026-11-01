@@ -1,5 +1,21 @@
 import SwiftUI
 
+enum TradingOrderType: String, Codable, CaseIterable, Identifiable {
+    case makerOnly = "MAKER_ONLY"
+    case limit = "LIMIT"
+    case market = "MARKET"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .makerOnly: "只做Maker"
+        case .limit: "限价单"
+        case .market: "市价单"
+        }
+    }
+}
+
 enum ChartOrderSide: Equatable {
     case long
     case short
@@ -11,12 +27,6 @@ enum ChartOrderSide: Equatable {
         }
     }
 
-    var apiValue: String {
-        switch self {
-        case .long: "LONG"
-        case .short: "SHORT"
-        }
-    }
 }
 
 enum ChartOrderLineKind: Equatable {
@@ -166,36 +176,6 @@ struct ChartOrderDrawingState: Equatable {
         _ range: ClosedRange<Double>
     ) -> Double {
         min(range.upperBound, max(range.lowerBound, value))
-    }
-}
-
-struct ChartOrderSubmissionRequest: Equatable {
-    let symbol: String
-    let direction: String
-    let entryPrice: Double?
-    let stopPrice: Double
-}
-
-struct ChartOrderIdempotencyState: Equatable {
-    private(set) var request: ChartOrderSubmissionRequest?
-    private(set) var key: String?
-
-    mutating func key(
-        for request: ChartOrderSubmissionRequest,
-        generate: () -> String = { UUID().uuidString }
-    ) -> String {
-        if self.request == request, let key {
-            return key
-        }
-        let key = generate()
-        self.request = request
-        self.key = key
-        return key
-    }
-
-    mutating func reset() {
-        request = nil
-        key = nil
     }
 }
 

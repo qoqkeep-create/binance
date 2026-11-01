@@ -127,6 +127,24 @@ class HistoryFastPathTests(TestCase):
     def setUp(self):
         cache.clear()
 
+    def test_partial_bucket_only_reads_minutes_inside_the_current_bucket(self):
+        # Older minutes must not add cold-database work to the current 1h bar.
+        start = 3_600_000
+        service.persist([candle(at, closed=True) for at in range(0, start + 120_000, 60_000)])
+        cache.set("market:live:BTCUSDT:1m", candle(start + 120_000))
+        with patch("market_stream.service.from_model", wraps=service.from_model) as convert:
+            partial = service.partial_bucket("BTCUSDT", "1h", start + 130_000)
+        self.assertEqual(convert.call_count, 2)
+        self.assertEqual(partial["openTime"], start)
+        self.assertEqual(partial["closeTime"], start + 3_600_000 - 1)
+        self.assertEqual(float(partial["volume"]), 9)
+        self.assertFalse(partial["closed"])
+
+    def test_partial_bucket_does_not_invent_a_missing_opening_minute(self):
+        service.persist([candle(3_660_000, closed=True)])
+        cache.set("market:live:BTCUSDT:1m", candle(3_720_000))
+        self.assertIsNone(service.partial_bucket("BTCUSDT", "1h", 3_730_000))
+
     @patch("market_stream.bus.publish_batch")
     @patch("market_stream.service.public_request", return_value=[])
     def test_history_worker_skips_statistics_and_publishes_completion(self, _request, publish):

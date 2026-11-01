@@ -1,6 +1,8 @@
 import time
 
 from django.conf import settings
+from django.utils.decorators import method_decorator
+from django.views.decorators.gzip import gzip_page
 from rest_framework.views import APIView
 from common.response import fail, ok
 from market_stream.core import INTERVAL_MS, symbol_name
@@ -35,6 +37,9 @@ class WatchlistView(APIView):
 
 
 class KlinesView(APIView):
+    # Keep the full indicator warm-up window without sending ~400 KiB of
+    # repetitive JSON over the mobile link. URLSession negotiates gzip itself.
+    @method_decorator(gzip_page)
     def get(self, request):
         try:
             requested = set(filter(None, request.query_params.get("tradingData", "").split(",")))

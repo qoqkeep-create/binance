@@ -20,6 +20,21 @@ struct USDTProfileView: View {
     ScrollView {
       VStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 0) {
+          if !store.isBound {
+            Button {
+              binding = true
+            } label: {
+              WebLabel("请先绑定 API", "link")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(WebTheme.color(0x16734B, 0x7FE0AE))
+                .frame(maxWidth: .infinity, minHeight: 46)
+                .background(WebTheme.color(0xE3F5EA, 0x203E34), in: RoundedRectangle(cornerRadius: 10))
+                .contentShape(RoundedRectangle(cornerRadius: 10))
+            }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
+              .padding(.bottom, 20)
+          }
+          if store.isBound || lead || version["lead_trading_enabled"]?.flag == true
+            || version["lead_trading_bound"]?.flag == true {
           HStack(alignment: .top, spacing: 12) {
             if store.isBound {
               AsyncImage(url: URL(string: store.profile.value("avatar_url", fallback: ""))) {
@@ -49,13 +64,6 @@ struct USDTProfileView: View {
                 Button("解除 API 绑定") { binding = true }.font(.system(size: 12)).underline()
                   .foregroundStyle(WebTheme.danger).frame(height: 32)
               }
-            } else {
-              Button {
-                binding = true
-              } label: {
-                WebLabel("请先绑定 API", "link").font(.system(size: 14, weight: .semibold))
-                  .foregroundStyle(WebTheme.text).padding(.vertical, 8)
-              }.accessibilityIdentifier("profile.bind")
             }
             Spacer(minLength: 0)
             if lead || version["lead_trading_enabled"]?.flag == true
@@ -70,7 +78,8 @@ struct USDTProfileView: View {
               }
             }
           }.padding(.bottom, 20)
-          Rectangle().fill(WebTheme.brand.opacity(0.1)).frame(height: 1).padding(.bottom, 16)
+          }
+          Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 16)
           HStack(spacing: 8) {
             Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)").font(.system(size: 14, weight: .medium))
               .foregroundStyle(WebTheme.secondary)
@@ -117,8 +126,7 @@ struct USDTProfileView: View {
           }
         }.padding(24).background(accountBackground, in: RoundedRectangle(cornerRadius: 16)).overlay
         {
-          RoundedRectangle(cornerRadius: 16).stroke(
-            WebTheme.brand.opacity(scheme == .dark ? 0.2 : 0.3), lineWidth: 1)
+          RoundedRectangle(cornerRadius: 16).stroke(accountBorder, lineWidth: 1)
         }.shadow(color: scheme == .dark ? .clear : .black.opacity(0.1), radius: 3, y: 3)
         VStack(spacing: 0) {
           Button {
@@ -164,18 +172,6 @@ struct USDTProfileView: View {
               USDTRecordsView(kind: .operations)
             } label: {
               menuRow("日志", "clock.arrow.circlepath", small: true)
-            }
-            if !lead {
-              NavigationLink {
-                USDTWatchPlansView()
-              } label: {
-                menuRow("看盘计划", "doc.text", small: true)
-              }
-            }
-            NavigationLink {
-              USDTIndicatorsView()
-            } label: {
-              menuRow("开仓理由/指标校验", "checkmark.circle", small: true)
             }
             NavigationLink {
               USDTCommandsView()
@@ -260,10 +256,17 @@ struct USDTProfileView: View {
   private var separator: some View {
     Rectangle().fill(WebTheme.border).frame(height: 1).padding(.horizontal, 16)
   }
+  private var accountBorder: Color {
+    if scheme == .dark { return WebTheme.brand.opacity(0.2) }
+    // Tailwind 4 yellow-200 / sky-200 from the original USDT profile card.
+    return lead
+      ? Color(red: 184 / 255, green: 230 / 255, blue: 254 / 255)
+      : Color(red: 255 / 255, green: 240 / 255, blue: 133 / 255)
+  }
   private var accountBackground: LinearGradient {
     LinearGradient(
       colors: scheme == .dark
-        ? [BinanceTheme.surface, BinanceTheme.elevated]
+        ? [WebTheme.brand.opacity(0.05), WebTheme.brand.opacity(0.1)]
         : lead
           ? [
             Color(red: 240 / 255, green: 249 / 255, blue: 255 / 255),

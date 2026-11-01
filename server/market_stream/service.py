@@ -114,8 +114,11 @@ def warm_history(symbol, interval, before=None, *, prewarm=False):
 def partial_bucket(symbol, interval, now):
     width = INTERVAL_MS[interval]
     start = now // width * width
-    minutes = {row["openTime"]: row for row in warm_history(symbol, "1m")
-               if start <= row["openTime"] < start + width}
+    # Like USDC's selectClosedInRange: only read this forming bucket.
+    # Warming 3000 unrelated minutes here made a cache miss delay first paint.
+    source = MarketCandle.objects.filter(symbol=symbol, interval="1m",
+        open_time__gte=start, open_time__lt=start + width).order_by("open_time")
+    minutes = {row.open_time: from_model(row) for row in source}
     live = cache.get(f"market:live:{symbol}:1m")
     if live and start <= live["openTime"] <= now:
         minutes[live["openTime"]] = live
