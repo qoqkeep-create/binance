@@ -29,7 +29,8 @@ services:
       MYSQL_USER: ${DB_USER:-tt_integrated}
       MYSQL_PASSWORD: ${DB_PASSWORD:?Set an independent database password}
     command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --innodb-buffer-pool-size=128M, --max-connections=100]
-    mem_limit: 512m
+    mem_limit: 1g
+    memswap_limit: 2g
     volumes: [integrated-mysql:/var/lib/mysql]
     healthcheck:
       test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -uroot -N -e "SELECT 1" >/dev/null']

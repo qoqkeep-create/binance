@@ -28,7 +28,7 @@
 - `/opt/trade-tools-integrated/server.env`：600 权限的独立配置，各 release 通过链接读取。
 - Compose 项目 `tradetools-integrated`，使用 `--profile pro`；API、market、worker、scheduler、MySQL、Redis 共六个服务，仅使用项目默认网络。
 - API 仅发布 `127.0.0.1:8787`。MySQL、Redis 不发布宿主端口，使用各自命名卷 `integrated-mysql`、`integrated-redis`。
-- MySQL 8.4 镜像在 Compose 中固定 digest，独立 `tradetools_integrated` schema / `tt_integrated` 用户。应用不再依赖 `trade_mysql` 或 `trade_network`。
+- MySQL 8.4 镜像在 Compose 中固定 digest，独立 `tradetools_integrated` schema / `tt_integrated` 用户，当前内存 1 GiB、内存加 swap 总限额 2 GiB；本次在线调整和后续发布配置见 [压力恢复](#mysql-内存限额与压力恢复2026-11-01)。应用不再依赖 `trade_mysql` 或 `trade_network`。
 - 宿主 Nginx 为 HTTPS / WSS 代理，仅 `/integrated/` 指向 API；旧根路径和 `/ws/` 返回 404。
 - 保留 Docker / containerd、Nginx、`/opt/certbot` 和有效 TLS 证书，它们现在支撑整合版。
 
@@ -47,6 +47,16 @@
 最终发布备份位于 `/opt/trade-tools-integrated/backups/integrated-20261101-kline-range-6413a8768d2b/`，包含受限数据库逻辑压缩备份、`previous-release` 和变更文件哈希；前置 gzip 版备份位于同级同名目录。当前兼容回滚候选为 gzip 版及 pruned 版，均保留原 release／镜像；代码回滚不会恢复数据库。本轮未修改 Nginx 全局配置、凭证、保护单或既有交易策略。
 
 随后执行首屏交接计划，2026-11-01 13:43～14:04（北京时间）仅只读核对 47.80.22.243（首尔服务器）：`current` 与运行 API 仍为 range 版，六容器 healthy，内部健康 200／约 13 ms；真实 gzip、不同币种／周期和 ZEC／SOL 按需补线完成状态已复核，范围见 [首屏补验](market-data.md#按首屏交接计划补验2026-11-01)。本轮没有修改服务器配置、清空 Redis、迁移或重新发布。新增客户端分页恢复修复仍在本地，手机 TestFlight 12 未升级；不能将此轮验收当作新的后端或客户端部署。
+
+## MySQL 内存限额与压力恢复（2026-11-01）
+
+本次 16:42～16:44 发布初期六容器及接口通过；后续检查发现 47.80.22.243（首尔服务器）的 MySQL 接近旧 512 MiB cgroup 上限并持续回收，数据库和应用健康检查随后超时。现场 `memory.current=536489984`／`memory.max=536870912`，`memory.events.max=355300`，PSI full avg10 为 89.79%，MySQL CPU 约 194.55%；没有 OOM kill 或数据库重启。宿主仍有约 1.9 GiB 可用内存，不能把它误判成主机内存已耗尽。
+
+先暂停公共 market 减少请求，再用 `docker update --memory 1g --memory-swap 2g tradetools-integrated-mysql-1` 在线增加限额；没有重启 MySQL、修改数据库卷／账号／订单或调整交易规则。阻塞的诊断查询立即完成，确认同 trace 只有一条 build 0 样本、注册仍开启；随后恢复 market。
+
+恢复采集后的 30 秒观察：cgroup 约 609～612 MB，已超过旧限额；`memory.events.max` 保持 384713、没有新增限额命中，PSI some／full avg10 均为 0。随后再次验证 HTTPS 健康、BTC1h 1500 根 gzip（单次 633.84 ms，history 171.37 ms，无 stale／pending）、诊断提交／重复上报及 WSS ready／ack／ticker／1m K 线／ping-pong。该短观察不能代替长期容量验收，也不能据此宣称最初 TestFlight 13／14 的慢加载只有这一个原因。
+
+当前部署源码仍为 `7daa362`；此次数据库内存采用在线更新，release 存档中的原 Compose 作为来源证据保留。本轮源码 `compose.integrated.yaml` 已将 MySQL `mem_limit: 1g`、`memswap_limit: 2g` 固化，并在 47.80.22.243（首尔服务器）通过实际 Compose `config --quiet` 校验。后续发布使用更新后的 Compose；回滚 Python 代码也必须保留至少该内存限额，不能把旧 512 MiB 设置重新应用到运行容器。备份中的 `compose-memory-1g.yaml` 仅作本次校验证据，不另立部署手册。
 
 ## 注册开关
 

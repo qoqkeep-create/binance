@@ -53,3 +53,7 @@ SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*
 ## 图表诊断固定边界
 
 本轮不新增 env 或外部日志服务。`market_stream/diagnostics.py` 限制正文 24 KiB、每用户 180 次／小时、约 5000 条全局容量；`prune_reports` 由行情每小时维护调用，单轮最多 500 条、七天过期且容量达到 4500 时提前淘汰。客户端每次加载最多 64 事件／8 请求／每请求 3 个网络 metrics，40 秒超时，异步上报每次 5 秒、最多两次。详细协议、挂起／缓存及丢失边界见 [行情](market-data.md#客户端加载诊断本地实现尚未分发)，发布与只读查询见 [运维](operations.md#图表加载诊断)。
+
+## MySQL 容器内存
+
+`compose.integrated.yaml` 将 MySQL 内存上限固定为 1 GiB、内存加 swap 总上限 2 GiB，buffer pool 仍为 128 MiB、最大连接数 100。47.80.22.243（首尔服务器）已在线应用同等限额；旧 512 MiB 导致持续回收和接口超时，现场数据及恢复验证见 [运维](operations.md#mysql-内存限额与压力恢复2026-11-01)。这些是容器资源配置，不是 env 或交易所参数；后续发布／代码回滚保持足够限额，避免恢复旧值。较长时间和更高并发的容量仍待观察。
