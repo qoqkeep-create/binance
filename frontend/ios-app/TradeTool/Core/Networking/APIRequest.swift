@@ -22,6 +22,8 @@ struct APIRequest<Response: Decodable> {
     let responseMode: APIResponseMode
     let showsErrorToast: Bool
     let timeoutInterval: TimeInterval
+    let diagnostics: RequestDiagnostics?
+    let invalidatesSessionOnUnauthorized: Bool
 
     init(
         path: String,
@@ -31,7 +33,9 @@ struct APIRequest<Response: Decodable> {
         body: Data? = nil,
         responseMode: APIResponseMode = .envelope,
         showsErrorToast: Bool = true,
-        timeoutInterval: TimeInterval = 30
+        timeoutInterval: TimeInterval = 30,
+        diagnostics: RequestDiagnostics? = nil,
+        invalidatesSessionOnUnauthorized: Bool = true
     ) {
         self.path = path
         self.method = method
@@ -41,6 +45,8 @@ struct APIRequest<Response: Decodable> {
         self.responseMode = responseMode
         self.showsErrorToast = showsErrorToast
         self.timeoutInterval = timeoutInterval
+        self.diagnostics = diagnostics
+        self.invalidatesSessionOnUnauthorized = invalidatesSessionOnUnauthorized
     }
 
     static func json<Body: Encodable>(

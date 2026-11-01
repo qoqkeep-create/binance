@@ -287,6 +287,13 @@ final class MetalRendererHealth: @unchecked Sendable {
         )
     private var nextCommandFailureIndex = 0
     private var commandFailureCount = 0
+    private var firstPresentationHandler: (@Sendable (TimeInterval) -> Void)?
+
+    func observeFirstPresentation(_ handler: @escaping @Sendable (TimeInterval) -> Void) {
+        lock.lock()
+        if value.presentedFrames == 0 { firstPresentationHandler = handler }
+        lock.unlock()
+    }
 
     @discardableResult
     func recordSubmitted() -> MetalPresentationContext {
@@ -314,6 +321,8 @@ final class MetalRendererHealth: @unchecked Sendable {
             ProcessInfo.processInfo.systemUptime
     ) {
         lock.lock()
+        let firstPresentation = presentedTime > 0 ? firstPresentationHandler : nil
+        if presentedTime > 0 { firstPresentationHandler = nil }
         if presentedTime > 0 {
             value.presentedFrames &+= 1
             value.lastPresentedRevision = revision
@@ -394,6 +403,7 @@ final class MetalRendererHealth: @unchecked Sendable {
             )
         }
         lock.unlock()
+        firstPresentation?(presentedTime)
     }
 
     func recordCommandCompleted(

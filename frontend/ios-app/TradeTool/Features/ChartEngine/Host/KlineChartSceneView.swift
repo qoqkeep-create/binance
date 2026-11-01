@@ -56,6 +56,7 @@ struct ChartPriceProjection: Equatable, Sendable {
 
 @MainActor
 final class KlineChartSceneController: ObservableObject {
+  var diagnostics: ChartLoadDiagnostics?
   @Published private(set) var renderState: RenderState?
   @Published private(set) var timelineViewport:
     ChartTimelineViewport?
@@ -219,6 +220,8 @@ final class KlineChartSceneController: ObservableObject {
     )
     requestKey = key
     do {
+      let trace = diagnostics
+      trace?.record("scene_started")
       let output = try await builder.build(
         frame: frame,
         viewport: viewport,
@@ -232,6 +235,7 @@ final class KlineChartSceneController: ObservableObject {
         return
       }
       renderedOwner = owner
+      trace?.record("scene_ready")
       renderState = output.renderState
       let projection = Self.priceProjection(
         output: output,
@@ -354,6 +358,8 @@ final class KlineChartSceneController: ObservableObject {
 
 struct KlineChartSceneView: View {
   let frame: ChartDataFrame?
+  var diagnostics: ChartLoadDiagnostics? = nil
+  var onFirstFramePresented: (KlineStreamEpoch, TimeInterval) -> Void = { _, _ in }
   var onNeedsOlderHistory: () -> Void = {}
   var onPriceProjectionChange:
     (ChartPriceProjection?) -> Void = { _ in }
@@ -409,6 +415,9 @@ struct KlineChartSceneView: View {
             },
             onPriceViewportChange: { next in
               controller.updatePriceViewport(next)
+            },
+            onFirstFramePresented: { time in
+              if let epoch = frame?.epoch { onFirstFramePresented(epoch, time) }
             }
           )
           .transition(.opacity)
@@ -418,6 +427,7 @@ struct KlineChartSceneView: View {
       }
       .background(BinanceTheme.background)
       .task(id: key) {
+        controller.diagnostics = diagnostics
         controller.requestRender(
           frame: frame,
           viewport: viewport,

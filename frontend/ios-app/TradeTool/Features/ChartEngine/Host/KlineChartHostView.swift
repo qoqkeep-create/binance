@@ -65,6 +65,23 @@ final class KlineChartHostView: UIView {
         MetalApplicationActivity = .unknown
     private var isDisposed = false
     private var appearance: ChartAppearance = .dark
+    private var firstPresentationTime: TimeInterval?
+    private var firstPresentationDelivered = false
+    private var onFirstFramePresented: ((TimeInterval) -> Void)?
+
+    func observeFirstPresentation(_ callback: @escaping (TimeInterval) -> Void) {
+        guard !firstPresentationDelivered, onFirstFramePresented == nil else { return }
+        onFirstFramePresented = callback
+        deliverFirstPresentationIfReady()
+    }
+
+    private func deliverFirstPresentationIfReady() {
+        guard !isDisposed, !firstPresentationDelivered, let time = firstPresentationTime,
+              let callback = onFirstFramePresented else { return }
+        firstPresentationDelivered = true
+        onFirstFramePresented = nil
+        callback(time)
+    }
 
     private var isApplicationActive: Bool {
         applicationActivity == .active
@@ -120,6 +137,12 @@ final class KlineChartHostView: UIView {
         }
 
         do {
+            rendererHealth.observeFirstPresentation { [weak self] time in
+                Task { @MainActor [weak self] in
+                    self?.firstPresentationTime = time
+                    self?.deliverFirstPresentationIfReady()
+                }
+            }
             let health = rendererHealth
             let pixelFormat = metalView.colorPixelFormat
             let rendererFactory = {
@@ -347,6 +370,7 @@ final class KlineChartHostView: UIView {
         cancelActiveInteraction(publishViewport: false)
         onTimelineViewportChange = nil
         onPriceViewportChange = nil
+        onFirstFramePresented = nil
         baseRenderState = nil
         pendingGuardBandRebase = nil
         pendingContinuousViewport = nil

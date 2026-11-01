@@ -36,36 +36,50 @@ struct URLSessionAPIClient: APIClient {
     ) async throws -> Response {
         do {
             var urlRequest = try request.makeURLRequest(baseURL: baseURL)
+            let metricsDelegate = request.diagnostics.map(RequestMetricsDelegate.init)
+            if let diagnostics = request.diagnostics {
+                urlRequest.setValue(diagnostics.traceID.uuidString, forHTTPHeaderField: "X-Chart-Trace-ID")
+                urlRequest.setValue(diagnostics.requestID.uuidString, forHTTPHeaderField: "X-Chart-Request-ID")
+            }
 
             for interceptor in interceptors {
                 urlRequest = try await interceptor.adapt(urlRequest)
             }
 
-            var (data, response) = try await session.data(for: urlRequest)
+            request.diagnostics?.mark("request_adapted")
+            var (data, response) = try await session.data(for: urlRequest, delegate: metricsDelegate)
             if (response as? HTTPURLResponse)?.statusCode == 401,
                !["/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/api/auth/logout"].contains(request.path), let refreshAccessToken {
+                request.diagnostics?.mark("auth_refresh_started")
                 let token = try await refreshAccessToken()
+                request.diagnostics?.mark("auth_refresh_finished")
                 urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                (data, response) = try await session.data(for: urlRequest)
+                (data, response) = try await session.data(for: urlRequest, delegate: metricsDelegate)
             }
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw APIError.invalidResponse
             }
+            request.diagnostics?.received(httpResponse, bytes: data.count)
 
             for interceptor in interceptors {
                 try interceptor.validate(data: data, response: httpResponse)
             }
 
-            return try decode(
+            request.diagnostics?.mark("decode_started")
+            let result = try decode(
                 Response.self,
                 from: data,
                 mode: request.responseMode
             )
+            request.diagnostics?.mark("decode_finished")
+            request.diagnostics?.finished()
+            return result
         } catch {
+            request.diagnostics?.finished(error: error)
             let apiError = APIError.map(error)
 
-            if case .unauthorized = apiError {
+            if case .unauthorized = apiError, request.invalidatesSessionOnUnauthorized {
                 notificationCenter.post(
                     name: .apiSessionUnauthorized,
                     object: nil

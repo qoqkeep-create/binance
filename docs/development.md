@@ -16,6 +16,8 @@
 
 ## K 线协调与出口保护回归
 
+构建 13／14 速度排查新增 `HistoryFastPathTests.test_cold_first_page_does_not_materialize_unused_history`，在实际 `load_history` 冷读路径填入 3001 根并检查只物化所需 1500 根，同时核对返回窗口和非 stale 状态；修复前断言为 `3000 != 1500`。2026-11-01 使用下文临时 Redis 配置执行 `manage.py test market_stream --noinput`，58 项全部通过。这一步仅本地后端窗口减量，未部署；随后新增持久诊断，见下节。隔离源码副本上的 4 轮首帧 UI 对照和 36 个进入样本见 [行情排查](market-data.md#构建-1314-速度回退排查2026-11-01)，不能用它替代手机 TestFlight 13／14 的验收。
+
 2026-11-01 本地实现及待发布范围见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。回归先复现同历史重建、刷新丢旧分页和首屏／恢复重复读取，再验证对象与指标复用、旧页及修订保留、取消／旧 epoch、并发快照／分页／配置一致性，以及 historyPending 等待通知。
 
 专用模拟器 `A9B09AF9-195A-4F50-B706-7F07A0EB4CD4`、Debug-Seoul、关闭覆盖率及并行测试：`ChartEngineCoreTests` 131 项加 `MarketFastPathTests` 20 项全部通过（30.903 秒，`.integration-runtime/KlineCoordination/IOSVerified.xcresult`）。本轮未重新采样首帧、执行业务 UI 或安装手机。
@@ -159,3 +161,13 @@ iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pendin
 ## HarmonyOS
 
 独立工程为 `frontend/harmony-app/`，面向 Mate 80 的原生鸿蒙测试；不接应用市场。`npm test` / `npm run check` 仅作隔离核心与配置检查。本轮40项替身测试、核心 strict 类型检查与工程静态检查通过；安装 Command Line Tools 26.0.0.865、API 26 SDK 与 JDK 21 后，真实 ArkTS 编译及未签名 HAP 打包通过，调试签名和手机运行仍待验证。工具链版本与验收边界以 [鸿蒙主文档](harmony-client.md) 为准。使用忽略的 `.local-build/project/` 配置调试签名，保护公开工程中的签名口令与证书；具体命令见 [工程 README](../frontend/harmony-app/README.md)。
+
+## 图表加载诊断回归
+
+2026-11-01 本地 `market_stream` 67 项通过，包含五项独立临时 Redis 回归及九项诊断入口测试：鉴权、合法网络字段、未知字段拒绝、实际 24 KiB 正文限制、非有限数值、用户节流、容量／重复报告幂等、用户隔离、retention 和 K 线关联响应头。migration 漂移检查通过，仅新增诊断表。
+
+专用模拟器 `A9B09AF9-195A-4F50-B706-7F07A0EB4CD4` 上 `ChartEngineCoreTests` 136、`MarketFastPathTests` 21、`ChartLoadDiagnosticsTests` 4，共 161 项通过（33.188 秒）。覆盖旧 epoch 首帧拒绝、周期替换和结束一次、取消、固定诊断字段／事件上限、HTTP 追踪头及解码边界、诊断 401 不全局登出、Metal 有效首帧 observer 可重入且只触发一次。日志保存在忽略目录 `.integration-runtime/KlineDiagnostics/`。
+
+在独立 SQLite 数据库与回环 HTTP API 中迁移新表，种入 1500 根合成 BTC1h，禁止外部交易所请求，以真实 URLSession、图表 pipeline、Metal 模拟器完成回调、异步 POST 和 Django 入库串通验证。三次进入均保存 displayed、首尾时间、网络 metrics 和完整图表阶段；模拟器完成属于 GPU 代理，不是物理手机呈现或公网性能。初次配置用不在已知列表的回环端口，App 回落到了既有远端选择，因此那一轮 UI 虽通过但没有本地记录，不计入隔离贯通；随后通过构建设置显式指定回环 API，并核对实际数据库三条记录。
+
+最后补充网络／本地缓存来源字段及隐私清单后，九项后端诊断与五项 iOS 定向回归再次通过，隔离 UI 再次完成三次加载并入库；数据库确认缓存来源标记存在，原始网络读取在前一轮已验证。只读 trace 查询通过，最终 generic iOS Release 无签名编译通过并确认成品清单包含新增声明。两轮隔离验证均不作为手机／公网性能数据；没有上传 TestFlight 或执行真实交易。

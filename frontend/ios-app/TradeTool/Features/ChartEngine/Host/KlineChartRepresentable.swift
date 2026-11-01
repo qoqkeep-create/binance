@@ -8,6 +8,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
     let totalSlotCount: Int
     let onTimelineViewportChange: (ChartTimelineViewport) -> Void
     let onPriceViewportChange: (ChartPriceViewport) -> Void
+    var onFirstFramePresented: (TimeInterval) -> Void = { _ in }
 
     func makeUIView(
         context: Context
@@ -20,6 +21,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
         context: Context
     ) {
         view.setAppearance(colorScheme == .light ? .light : .dark)
+        view.observeFirstPresentation(onFirstFramePresented)
         view.configureTimelineInteraction(
             viewport: timelineViewport,
             totalSlotCount: totalSlotCount,

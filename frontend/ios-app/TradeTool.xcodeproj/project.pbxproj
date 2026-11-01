@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D1A600000000000000000001 /* ChartLoadDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A600000000000000000011 /* ChartLoadDiagnostics.swift */; };
+		D1A600000000000000000000 /* RequestDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A600000000000000000010 /* RequestDiagnostics.swift */; };
 		010000000000000000000001 /* TradeToolApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000001 /* TradeToolApp.swift */; };
 		010000000000000000000002 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000002 /* RootView.swift */; };
 		010000000000000000000003 /* MarketSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000003 /* MarketSnapshot.swift */; };
@@ -126,6 +128,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D1A600000000000000000011 /* ChartLoadDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLoadDiagnostics.swift; sourceTree = "<group>"; };
+		D1A600000000000000000010 /* RequestDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestDiagnostics.swift; sourceTree = "<group>"; };
 		020000000000000000000060 /* BrandLaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = BrandLaunchScreen.storyboard; sourceTree = "<group>"; };
 		020000000000000000000001 /* TradeToolApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeToolApp.swift; sourceTree = "<group>"; };
 		020000000000000000000002 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -321,6 +325,8 @@
 			isa = PBXGroup;
 			children = (
 				020000000000000000000005 /* APIClient.swift */,
+				D1A600000000000000000011 /* ChartLoadDiagnostics.swift */,
+				D1A600000000000000000010 /* RequestDiagnostics.swift */,
 				120000000000000000000003 /* ServerNetworkProbe.swift */,
 				02000000000000000000000D /* APIError.swift */,
 				02000000000000000000000E /* APIRequest.swift */,
@@ -762,6 +768,8 @@
 				010000000000000000000004 /* StrategySignal.swift in Sources */,
 				010000000000000000000055 /* ReferenceTradeNotification.swift in Sources */,
 				010000000000000000000005 /* APIClient.swift in Sources */,
+				D1A600000000000000000001 /* ChartLoadDiagnostics.swift in Sources */,
+				D1A600000000000000000000 /* RequestDiagnostics.swift in Sources */,
 				010000000000000000000006 /* DashboardView.swift in Sources */,
 				010000000000000000000019 /* MarketListSettingsView.swift in Sources */,
 				01000000000000000000001C /* MarketSearchView.swift in Sources */,

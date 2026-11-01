@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -35,3 +36,19 @@ class MarketHistoryTask(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["due_at", "lease_until"], name="market_repair_due")]
+
+
+class ChartLoadReport(models.Model):
+    """Client diagnostics, independent of trading and candle persistence."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    trace_id = models.UUIDField()
+    app_build = models.CharField(max_length=10, db_index=True)
+    symbol = models.CharField(max_length=32)
+    interval = models.CharField(max_length=4)
+    outcome = models.CharField(max_length=16)
+    duration_ms = models.FloatField()
+    received_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    payload = models.JSONField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "trace_id"], name="chart_report_owner_trace")]

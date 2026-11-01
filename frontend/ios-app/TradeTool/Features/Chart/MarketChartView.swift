@@ -130,7 +130,10 @@ private struct MarketChartDetailView: View {
             market: market,
             apiClient: apiClient,
             realtimeClient: realtimeClient,
-            initialInterval: initialInterval
+            initialInterval: initialInterval,
+            diagnosticUpload: apiClient is URLSessionAPIClient ? { data in
+                ChartLoadDiagnostics.upload(data, using: apiClient)
+            } : nil
         ))
     }
 
@@ -272,6 +275,10 @@ private struct MarketChartDetailView: View {
         ZStack {
             KlineChartSceneView(
                 frame: viewModel.chartDataFrame,
+                diagnostics: viewModel.loadDiagnostics,
+                onFirstFramePresented: { epoch, time in
+                    viewModel.chartFirstFramePresented(epoch: epoch, at: time)
+                },
                 onNeedsOlderHistory: {
                     viewModel.requestOlderHistory()
                 },

@@ -86,7 +86,9 @@ open frontend/ios-app/TradeTool.xcodeproj
 | API 类别 | Reason | 本项目用途 |
 | --- | --- | --- |
 | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | 读写仅本 App 可访问的偏好 |
-| `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | 测量 App 内事件间隔与图表计时 |
+| `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1`、`8FFB.1` | 测量 App 内事件间隔，并转换 UIKit／Metal 事件的绝对时间 |
+
+本轮新增图表诊断上报，清单增加与用户关联、仅用于 App 功能的性能与其他诊断数据声明。仅上报事件绝对时间和间隔，不上报原始 uptime；理由核对见 Apple [required reason 说明](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitypereasons)及[数据声明](https://developer.apple.com/documentation/technotes/tn3184-adding-data-collection-details-to-your-privacy-manifest)。App Store Connect 的 App Privacy 后续需同步实际收集用途，本轮未修改 Apple 后台。
 
 归档后确认清单实际进入 `.app`，如依赖发生变化同时检查依赖声明。App Store Connect 的 App Privacy 是另一份披露，按邮箱、账户标识和交易数据等实际收集用途填写；此清单不声明 App“不收集数据”。
 
@@ -129,7 +131,13 @@ Cloud 首次启用测试时，构建 6 的图表压力测试出现 426ms P95，�
 - [内部测试组](https://appstoreconnect.apple.com/apps/6829222305/testflight/groups/df7e47dd-6266-41c0-9e5c-344dac1ad6f1/builds)：`1.0.1 (7)` 已自动加入，状态“正在测试”，1 名测试员已邀请，Apple 处理已完成。未手工绕过测试门槛分发构建 6。
 - 当前测试者在 iPhone 使用被邀请的 Apple 账号接受 TestFlight 邀请并安装。后台分发完成不代表手机已接受邀请、安装或运行；此三项仍由测试者实机验收。
 
-### 构建号自动递增
+### 本次 K 线诊断的打包授权
+
+2026-11-01 用户说明 GitHub 推送后由其既有 Jenkins 调用 Apple 打包服务，并明确授权本次需要手机测试的新客户端完成后直接推送。一般任务仍需用户批准；这不构成长期自动推送授权。本轮复用现有配置，不新建或改动 Jenkins／Apple 工作流。后端接收接口部署与 TestFlight 处理、测试组分发及手机安装分别核实，结果见 [运维](operations.md#图表加载诊断)和[变更](changes.md)。
+
+## 构建号自动递增
+
+2026-11-01 用户后续确认手机已从 `1.0.1 (13)` 升至 `(14)`，BTC K 线等待约 1 秒变为约 3 秒。上方构建 7 是最后直接核实的历史后台记录，不代表手机仍在该版本。本轮 App Store Connect 登录失效，尚未取得 13／14 各自的源码 commit 和构建配置；不得仅按发布时间将其等同 `9091179`／`915aee0`。源码候选对照、实测和待验边界见 [行情排查](market-data.md#构建-1314-速度回退排查2026-11-01)，本轮没有上传或分发。新增加载诊断需后端迁移及新包后生效，TestFlight 14 不会自动获得；协议与验证边界见 [客户端诊断](market-data.md#客户端加载诊断本地实现尚未分发)。
 
 使用 Xcode Cloud 原生编号：每次云端构建自动增加整数 Build，TestFlight 使用该编号。`MARKETING_VERSION = 1.0.1` 仍由发布时按需调整；源码的 `CURRENT_PROJECT_VERSION = 3` 仅作本地构建基线，不需要自动写回 Git，也不叠加 `agvtool`、时间戳或“当前值 + 1”脚本。
 

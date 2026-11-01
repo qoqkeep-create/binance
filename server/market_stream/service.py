@@ -15,7 +15,9 @@ from market_stream.models import MarketCandle
 log = logging.getLogger(__name__)
 FIELD_MAP = dict(zip(PRICE_FIELDS, ("open_price", "high_price", "low_price", "close_price", "volume", "quote_volume")))
 RETENTION_DAYS = {"1m": 7, "5m": 14, "15m": 30, "1h": 90, "4h": 180, "1d": 365}
-HOT_WINDOW_SIZE = {"1m": 3000, "5m": 3000, "15m": 3000, "1h": 3000, "4h": 1500, "1d": 1500}
+# Every HTTP page is capped at 1500. Older history has a separate boundary key;
+# materializing 3000 here only doubled cold reads and cache serialization work.
+HOT_WINDOW_SIZE = {interval: 1500 for interval in INTERVAL_MS}
 # All live-cache writers run in the single collector process. Keep its cache
 # comparison/write/publication ordered, without holding this lock for DB I/O.
 LIVE_STATE_LOCK = RLock()

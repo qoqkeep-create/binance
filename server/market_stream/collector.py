@@ -164,6 +164,11 @@ class MarketCollector:
                 await asyncio.to_thread(service.prune_history)
             except Exception as exc:
                 log.warning("Market retention deferred (%s)", type(exc).__name__)
+            try:
+                from market_stream.diagnostics import prune_reports
+                await asyncio.to_thread(prune_reports)
+            except Exception as exc:
+                log.warning("Chart diagnostics retention deferred (%s)", type(exc).__name__)
             await asyncio.sleep(3600)
 
     async def run(self):

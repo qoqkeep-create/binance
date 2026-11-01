@@ -277,6 +277,36 @@ private actor NativeFixtureClient: APIClient {
 
 @MainActor
 final class MarketFastPathTests: XCTestCase {
+    func testDiagnosticFirstFrameIgnoresOldEpochAndFinishesEachLoadOnce() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        var reports: [Data] = []
+        let market = MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 100,
+            changePercent24h: 0, updatedAt: .now)
+        let model = MarketChartViewModel(market: market, apiClient: api,
+            realtimeClient: RealtimeClient(baseURL: URL(string: "http://127.0.0.1")!, tokenProvider: { nil }),
+            diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        let old = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.selectInterval(.fiveMinutes)
+        XCTAssertEqual(reports.count, 1)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        model.chartFirstFramePresented(epoch: old, at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(reports.count, 1)
+        let current = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.chartFirstFramePresented(epoch: current, at: ProcessInfo.processInfo.systemUptime)
+        model.chartFirstFramePresented(epoch: current, at: ProcessInfo.processInfo.systemUptime)
+        model.stop()
+        XCTAssertEqual(reports.count, 2)
+        let first = try XCTUnwrap(JSONSerialization.jsonObject(with: reports[0]) as? [String: Any])
+        let second = try XCTUnwrap(JSONSerialization.jsonObject(with: reports[1]) as? [String: Any])
+        XCTAssertEqual(first["outcome"] as? String, "superseded")
+        XCTAssertEqual(second["outcome"] as? String, "displayed")
+        XCTAssertEqual(second["interval"] as? String, "5m")
+    }
+
     func testReadinessBurstDoesNotCancelTheFirstHistoryDownload() async throws {
         let cancelled = expectation(description: "Readiness must preserve the in-flight history download")
         cancelled.isInverted = true
@@ -800,4 +830,110 @@ private actor GatedChartHistoryAPI: APIClient {
         if !isOpen { onCancelled() }
         if !ignoresCancellation { finishRead(id, error: CancellationError()) }
     }
+}
+
+final class ChartLoadDiagnosticsTests: XCTestCase {
+    func testReportKeepsWallTimesMonotonicDurationsAndBoundedEvents() throws {
+        let trace = ChartLoadDiagnostics(symbol: "BTCUSDT", interval: "1h")
+        let request = try XCTUnwrap(trace.request())
+        request.received(HTTPURLResponse(url: URL(string: "https://example.invalid")!, statusCode: 200,
+            httpVersion: "HTTP/2", headerFields: ["Server-Timing": "history;dur=12.5, statistics_cache;dur=0.1",
+            "X-Chart-Server-Received-At": "1793520000010", "X-Chart-Server-Ready-At": "1793520000020"]), bytes: 400000)
+        request.mark("decode_started")
+        request.mark("decode_finished")
+        request.finished()
+        for _ in 0..<100 { trace.record("scene_ready") }
+        let data = try XCTUnwrap(trace.report(outcome: "displayed",
+            presentedAt: ProcessInfo.processInfo.systemUptime, completionKind: "gpu_completion_proxy"))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(payload["completedAtMs"] as? Int64),
+                                  try XCTUnwrap(payload["startedAtMs"] as? Int64))
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(payload["durationMs"] as? Double), 0)
+        let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+        XCTAssertEqual(events.count, 64)
+        XCTAssertEqual(events.last?["stage"] as? String, "first_frame")
+        XCTAssertEqual(payload["truncated"] as? Bool, true)
+        let saved = try XCTUnwrap((payload["requests"] as? [[String: Any]])?.first)
+        XCTAssertEqual(saved["serverHistoryMs"] as? Double, 12.5)
+        XCTAssertEqual(saved["result"] as? String, "success")
+        XCTAssertNil(trace.report(outcome: "cancelled"), "A displayed load must never report twice")
+        XCTAssertLessThan(data.count, 24 * 1024)
+    }
+
+    func testOptInAPITracingUsesHeadersAndRecordsDecoding() async throws {
+        let session = diagnosticSession()
+        defer { session.invalidateAndCancel() }
+        let trace = ChartLoadDiagnostics(symbol: "BTCUSDT", interval: "1h")
+        let request = try XCTUnwrap(trace.request())
+        let api = URLSessionAPIClient(baseURL: URL(string: "https://example.invalid")!, session: session)
+        let _: EmptyResponse = try await api.send(APIRequest(path: "/history", diagnostics: request))
+        let data = try XCTUnwrap(trace.report(outcome: "cancelled"))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let stages = try XCTUnwrap(payload["events"] as? [[String: Any]]).compactMap { $0["stage"] as? String }
+        XCTAssertEqual(stages, ["load_started", "request_started", "request_adapted", "response_received",
+                                "decode_started", "decode_finished", "load_cancelled"])
+        XCTAssertEqual(request.snapshot()["statusCode"] as? Int, 200)
+    }
+
+    func testDiagnosticUnauthorizedDoesNotExpireSessionButNormalRequestDoes() async throws {
+        let session = diagnosticSession()
+        defer { session.invalidateAndCancel() }
+        let center = NotificationCenter()
+        let expired = expectation(description: "Only a normal API request expires the session")
+        expired.expectedFulfillmentCount = 1
+        let observer = center.addObserver(forName: .apiSessionUnauthorized, object: nil, queue: nil) { _ in expired.fulfill() }
+        defer { center.removeObserver(observer) }
+        let api = URLSessionAPIClient(baseURL: URL(string: "https://example.invalid")!, session: session,
+            notificationCenter: center)
+        for invalidates in [false, true] {
+            do {
+                let _: EmptyResponse = try await api.send(APIRequest(path: "/unauthorized",
+                    showsErrorToast: false, invalidatesSessionOnUnauthorized: invalidates))
+                XCTFail("Expected unauthorized")
+            } catch {
+                guard case .unauthorized = error as? APIError else { return XCTFail("Expected unauthorized") }
+            }
+        }
+        await fulfillment(of: [expired], timeout: 1)
+    }
+
+    func testPresentationObserverIgnoresZeroAndCallsOnceOutsideHealthLock() async {
+        let health = MetalRendererHealth()
+        let presented = expectation(description: "First valid presentation")
+        presented.expectedFulfillmentCount = 1
+        health.observeFirstPresentation { time in
+            XCTAssertEqual(time, 10)
+            XCTAssertEqual(health.snapshot().presentedFrames, 1, "Callback may safely read health")
+            presented.fulfill()
+        }
+        for time in [0.0, 10.0, 11.0] {
+            health.recordPresented(revision: 1, liveRevision: 1, liveReadyTime: 1,
+                presentedTime: time, readyTime: 1, submittedTime: 2)
+        }
+        await fulfillment(of: [presented], timeout: 1)
+    }
+
+    private func diagnosticSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ChartDiagnosticURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+}
+
+private final class ChartDiagnosticURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let status = request.url?.path == "/unauthorized" ? 401 : 200
+        if status == 200 {
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "X-Chart-Trace-ID").flatMap(UUID.init(uuidString:)))
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "X-Chart-Request-ID").flatMap(UUID.init(uuidString:)))
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("{\"code\":\(status),\"data\":{}}".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

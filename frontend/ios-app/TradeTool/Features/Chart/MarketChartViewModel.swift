@@ -54,6 +54,9 @@ final class MarketChartViewModel: ObservableObject {
     private(set) var latestPriceMovement = MarketPriceMovement.unchanged
 
     let market: MarketSnapshot
+    private(set) var loadDiagnostics: ChartLoadDiagnostics?
+    private let diagnosticUpload: ((Data) -> Void)?
+    private var diagnosticTimeout: Task<Void, Never>?
 
     private let apiClient: any APIClient
     private let realtimeClient: RealtimeClient
@@ -91,11 +94,13 @@ final class MarketChartViewModel: ObservableObject {
         realtimeClient: RealtimeClient,
         initialInterval: MarketKlineInterval = .oneHour,
         chartIndicatorSelectionStore: ChartIndicatorSelectionStore = .init(),
-        chartIndicatorParametersStore: ChartIndicatorParametersStore = .init()
+        chartIndicatorParametersStore: ChartIndicatorParametersStore = .init(),
+        diagnosticUpload: ((Data) -> Void)? = nil
     ) {
         self.market = market
         self.apiClient = apiClient
         self.realtimeClient = realtimeClient
+        self.diagnosticUpload = diagnosticUpload
         _interval = Published(initialValue: initialInterval)
         self.chartIndicatorSelectionStore = chartIndicatorSelectionStore
         self.chartIndicatorParametersStore = chartIndicatorParametersStore
@@ -108,6 +113,7 @@ final class MarketChartViewModel: ObservableObject {
             return
         }
 
+        startLoadDiagnostics()
         configureChartPipeline(for: interval)
         let events = realtimeClient.events(
             bufferingPolicy: .bufferingNewest(64)
@@ -141,6 +147,7 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     func stop() {
+        finishLoadDiagnostics(outcome: "cancelled")
         realtimeTask?.cancel()
         realtimeTask = nil
         intervalTask?.cancel()
@@ -180,6 +187,8 @@ final class MarketChartViewModel: ObservableObject {
             return
         }
         self.interval = interval
+        finishLoadDiagnostics(outcome: "superseded")
+        startLoadDiagnostics()
         configureChartPipeline(for: interval)
         subscribe()
         reload()
@@ -239,6 +248,7 @@ final class MarketChartViewModel: ObservableObject {
         if chartPipeline == nil {
             configureChartPipeline(for: interval)
         }
+        if intervalTask != nil { loadDiagnostics?.record("request_cancelled") }
         intervalTask?.cancel()
         let requestID = UUID()
         historyRequestID = requestID
@@ -464,6 +474,7 @@ final class MarketChartViewModel: ObservableObject {
                 return
             }
             let loadedAt = currentTimeMilliseconds()
+            loadDiagnostics?.record("snapshot_started", value: sorted.count)
             let result = await pipeline.installSnapshot(
                 sorted,
                 fetchedAtMilliseconds: loadedAt,
@@ -474,6 +485,7 @@ final class MarketChartViewModel: ObservableObject {
                   chartPipelineEpoch == epoch else {
                 return
             }
+            loadDiagnostics?.record("snapshot_installed")
             if let frame = await initialFrame(
                 result.frame,
                 interval: requestedInterval,
@@ -484,6 +496,7 @@ final class MarketChartViewModel: ObservableObject {
             ) {
                 guard !Task.isCancelled, historyRequestID == requestID else { return }
                 chartDataFrame = frame
+                loadDiagnostics?.record("frame_ready")
                 upsertLiveTail(from: frame)
 #if DEBUG
                 let elapsed = (Date.timeIntervalSinceReferenceDate - snapshotStarted) * 1000
@@ -552,7 +565,8 @@ final class MarketChartViewModel: ObservableObject {
             APIRequest<MarketKlineHistoryResponse>(
                 path: "/api/market/klines",
                 queryItems: queryItems,
-                showsErrorToast: false
+                showsErrorToast: false,
+                diagnostics: loadDiagnostics?.request()
             )
         )
 #if DEBUG
@@ -572,6 +586,7 @@ final class MarketChartViewModel: ObservableObject {
         _ message: RealtimeServerMessage
     ) async {
         if message.type == "ready" {
+            loadDiagnostics?.record("socket_ready")
             await beginRealtimeEpoch()
             return
         }
@@ -643,6 +658,7 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func scheduleHistoryNoticeRefresh() {
+        loadDiagnostics?.record("history_notice")
         guard historyNoticeTask == nil else { return }
         let sessionID = chartPipelineSessionID
         historyNoticeTask = Task { [weak self] in
@@ -748,6 +764,7 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func beginRealtimeEpoch() async {
+        loadDiagnostics?.record("epoch_changed")
         guard let pipeline = chartPipeline else {
             return
         }
@@ -865,7 +882,38 @@ final class MarketChartViewModel: ObservableObject {
         guard chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
               chartPipeline === pipeline, !waitingForHistory else { return }
         chartRecoveryNeeded = true
+        loadDiagnostics?.record("recovery_requested")
         if intervalTask == nil { reload() }
+    }
+
+    private func startLoadDiagnostics() {
+        guard diagnosticUpload != nil else { return }
+        diagnosticTimeout?.cancel()
+        let trace = ChartLoadDiagnostics(symbol: market.symbol, interval: interval.rawValue)
+        loadDiagnostics = trace
+        diagnosticTimeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(40)) } catch { return }
+            guard let self, self.loadDiagnostics?.id == trace.id else { return }
+            self.finishLoadDiagnostics(outcome: "timeout")
+        }
+    }
+
+    func chartFirstFramePresented(epoch: KlineStreamEpoch, at time: TimeInterval) {
+        guard chartPipelineEpoch == epoch, chartDataFrame?.epoch == epoch else { return }
+        finishLoadDiagnostics(outcome: "displayed", presentedAt: time)
+    }
+
+    private func finishLoadDiagnostics(outcome: String, presentedAt: TimeInterval? = nil) {
+        diagnosticTimeout?.cancel()
+        diagnosticTimeout = nil
+#if targetEnvironment(simulator)
+        let kind = "gpu_completion_proxy"
+#else
+        let kind = "presented"
+#endif
+        guard let data = loadDiagnostics?.report(outcome: outcome, presentedAt: presentedAt,
+            completionKind: presentedAt == nil ? "none" : kind) else { return }
+        diagnosticUpload?(data)
     }
 
     private func currentTimeMilliseconds() -> Int64 {

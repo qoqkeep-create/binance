@@ -1,4 +1,5 @@
 import time
+import logging
 
 from django.conf import settings
 from django.utils.decorators import method_decorator
@@ -7,6 +8,9 @@ from rest_framework.views import APIView
 from common.response import fail, ok
 from market_stream.core import INTERVAL_MS, symbol_name
 from market_stream import service, trading_data
+from market_stream.diagnostics import correlation
+
+log = logging.getLogger(__name__)
 
 
 class TickersView(APIView):
@@ -41,6 +45,8 @@ class KlinesView(APIView):
     # repetitive JSON over the mobile link. URLSession negotiates gzip itself.
     @method_decorator(gzip_page)
     def get(self, request):
+        received_at_ms = int(time.time() * 1000)
+        trace = correlation(request)
         try:
             requested = set(filter(None, request.query_params.get("tradingData", "").split(",")))
             if not requested.issubset(trading_data.SERIES):
@@ -65,4 +71,9 @@ class KlinesView(APIView):
         response = ok(trading_data.attach(snapshot, requested))
         response["Server-Timing"] = (f"history;dur={(loaded-started)*1000:.2f}, "
                                      f"statistics_cache;dur={(time.perf_counter()-loaded)*1000:.2f}")
+        if trace:
+            response["X-Chart-Trace-ID"], response["X-Chart-Request-ID"] = trace
+            response["X-Chart-Server-Received-At"] = str(received_at_ms)
+            response["X-Chart-Server-Ready-At"] = str(int(time.time() * 1000))
+            log.info("chart_history trace=%s request=%s history_ms=%.2f", *trace, (loaded-started)*1000)
         return response

@@ -128,6 +128,21 @@ class HistoryFastPathTests(TestCase):
     def setUp(self):
         cache.clear()
 
+    def test_cold_first_page_does_not_materialize_unused_history(self):
+        # The chart asks for 1500 bars. A cache miss used to materialize 3000
+        # database rows before discarding half, on the actual HTTP read path.
+        for interval, width in [("1m", 60000), ("1h", 3600000)]:
+            with self.subTest(interval=interval):
+                service.persist([{**candle(at * width, closed=True), "interval": interval,
+                                  "closeTime": (at + 1) * width - 1} for at in range(3001)])
+                with patch("market_stream.service.time.time", return_value=3001 * width / 1000 + 1), \
+                     patch("market_stream.service.from_model", wraps=service.from_model) as convert:
+                    response = service.load_history("BTCUSDT", interval, 1500, schedule_repair=False)
+                self.assertEqual(convert.call_count, 1500)
+                self.assertEqual([row["openTime"] for row in response["items"]],
+                                 [at * width for at in range(1501, 3001)])
+                self.assertFalse(response["stale"])
+
     def test_partial_bucket_only_reads_minutes_inside_the_current_bucket(self):
         # Older minutes must not add cold-database work to the current 1h bar.
         start = 3_600_000
