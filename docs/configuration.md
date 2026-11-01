@@ -36,7 +36,7 @@
 
 Binance REST 请求预算由 `common/binance_rate_limit.py` 与 settings 管理；增加 worker 或缩短轮询不扩大交易所配额。保持保护 / 交易请求的预算优先级。
 
-本轮新增上表两个公共连接守卫参数，缺省即启用，无新增必填凭证；后续客户端诊断另有 `market_stream.0003_chartloadreport` 迁移，见下文。`collector.py` 仍为历史任务 1 路、统计 6 路，启动和每 5 分钟按容量预热；收线缓冲上限 10,000。`service.HOT_WINDOW_SIZE` 定义窗口，本地已统一上限 1500 根，与 HTTP 单页相同；已部署版仍有短周期 3000 根窗口，修复状态见 [构建 13／14 排查](market-data.md#构建-1314-速度回退排查2026-11-01)。`history_cache.py` 仍限 64 窗、每窗压缩后最多 256 KiB、TTL 300 秒，不改共享 Redis 的 80 MB / noeviction。冷读增加 300 ms 锁竞争预算和 10 秒 owner lease；上游冷却、轮换及共享预算失败处理见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。同出口其他应用不共享 Redis／key prefix 时仍会消耗总额度，应核对实际出口并预留配额。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN，v2 主题及 API / market 配套发布边界不变。
+本轮新增上表两个公共连接守卫参数，缺省即启用，无新增必填凭证；后续客户端诊断另有 `market_stream.0003_chartloadreport` 迁移，见下文。`collector.py` 仍为历史任务 1 路、统计 6 路，启动和每 5 分钟按容量预热；收线缓冲上限 10,000。`service.HOT_WINDOW_SIZE` 定义窗口，本地已统一上限 1500 根，与 HTTP 单页相同；47.80.22.243（首尔服务器）已随 `7daa362` 同步为 1500，发布状态见 [构建 13／14 排查](market-data.md#构建-1314-速度回退排查2026-11-01)。`history_cache.py` 仍限 64 窗、每窗压缩后最多 256 KiB、TTL 300 秒，不改共享 Redis 的 80 MB / noeviction。冷读增加 300 ms 锁竞争预算和 10 秒 owner lease；上游冷却、轮换及共享预算失败处理见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。同出口其他应用不共享 Redis／key prefix 时仍会消耗总额度，应核对实际出口并预留配额。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN，v2 主题及 API / market 配套发布边界不变。
 
 ## 可选能力
 
@@ -50,6 +50,6 @@ SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*
 
 信号研究退役后不再读取 `AI_PROVIDER`、`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`。凭证轮换不再处理旧研究表中的模型密钥；历史备份和回滚的密钥边界见 [研究退役](research.md)。
 
-## 图表诊断固定边界（本地，待发布）
+## 图表诊断固定边界
 
 本轮不新增 env 或外部日志服务。`market_stream/diagnostics.py` 限制正文 24 KiB、每用户 180 次／小时、约 5000 条全局容量；`prune_reports` 由行情每小时维护调用，单轮最多 500 条、七天过期且容量达到 4500 时提前淘汰。客户端每次加载最多 64 事件／8 请求／每请求 3 个网络 metrics，40 秒超时，异步上报每次 5 秒、最多两次。详细协议、挂起／缓存及丢失边界见 [行情](market-data.md#客户端加载诊断本地实现尚未分发)，发布与只读查询见 [运维](operations.md#图表加载诊断)。

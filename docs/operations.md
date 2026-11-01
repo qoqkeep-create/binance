@@ -4,6 +4,16 @@
 
 ## 最新发布与核验（2026-11-01）
 
+2026-11-01 16:42～16:44（北京时间）当前更新为 **`integrated-20261101-git-7daa36228c9f`**，位于 **47.80.22.243（首尔服务器）**，后端源码提交 **`7daa36228c9ff48637439da9d8e3cb5d229fdc4d`**。本次用户授权为手机测试直接推送客户端；配套部署诊断接收、冷读减量及此前已交付的行情读取协调／公共出口保护，按现有部署授权执行。下方 14:20 发布为历史基线。
+
+- 发布包从确定 Git commit 导出，SHA-256 两端一致；`current`、四个 Python 镜像、release／备份中的 `source-release.json` 均对应本版。后续部署验收文档提交不改变该后端源码。
+- 发布前只读核对 API 绑定、活动仓位、待成交委托和 PENDING／RUNNING／UNKNOWN 命令均为 0。备份位于 `/opt/trade-tools-integrated/backups/integrated-20261101-git-7daa36228c9f/`，含数据库逻辑压缩备份、`previous-release`、来源和变更哈希，权限受限。兼容回滚目标 `integrated-20261101-git-90911798159b` 及镜像保留；回滚代码不恢复数据库。
+- 唯一待应用 migration `market_stream.0003_chartloadreport` 已完成，仅新增诊断表；初始化检测已有用户，不改账号密码，注册仍开启。六容器 healthy、HTTPS 深度健康 200。
+- 无绑定 QA 公网读取 BTC1h／1500 根，gzip 完整接收 709.45 ms，history 277.84 ms，无 stale／pending；合法 trace／request 和服务端时间头正确。该单次冒烟不等于手机首帧或稳定分位数。鉴权 WSS ready／订阅 ack／BTC ticker 与 1m K 线事件／ping-pong 均通过。
+- 诊断固定样本使用 build `0`／cancelled，鉴权 POST 两次均 200、数据库同 trace 只存一条，匿名 POST 401；这是接口与落库验收，不是手机呈现样本。未执行真实交易。
+- 源码交付分支为 `codex/integrated-ios`，按本次授权推送以交给用户既有 Jenkins／Apple 打包流程；本轮不修改其配置，不把 GitHub 推送当作云端完成、TestFlight 可安装或手机测试通过。
+
+
 2026-11-01 14:20～14:22（北京时间），按用户本次“全部推送并部署”授权，将整合 GitHub 分支 `codex/integrated-ios` 的源码提交 **`90911798159bd08d17fd369193bb83c7c0e7711b`** 发布到 **47.80.22.243（首尔服务器）**。当前版本为 **`integrated-20261101-git-90911798159b`**，`current`、四个 Python 容器镜像及 release 内 `source-release.json` 均对应这一版本。下方先前发布记录保留为历史，不表示仍运行旧版。
 
 - 从确定 Git commit 导出已追踪的后端、Compose 和部署文件；上传包 SHA-256 已与本地核对。后端源码与此前 range 版内容清单相同，本次为建立 Git／运行版本对应而发布，没有追加交易逻辑改动。
@@ -137,7 +147,7 @@ Xcode Cloud 必须单独获得指定 GitHub 仓库的访问授权；本机 Deplo
 
 2026-11-01 按用户实际点击，47.80.22.243（首尔服务器）临时启用仅针对 K 线的 Nginx 阶段日志，采到 build 14 响应头约 72 ms、完整传送 4.62 秒。临时配置已撤销，站点文件与原备份 SHA-256 相同，`nginx -t`／reload 通过。配置备份和脱敏计时位于 `/opt/trade-tools-integrated/backups/kline-diagnostic-20261101/`，目录／日志保持受限；没有清空缓存、修改交易或发布新应用。结论和 upstream 背压解释见 [行情](market-data.md#手机实际请求与响应体传送)。
 
-客户端新诊断及新增表 migration `market_stream.0003_chartloadreport` 仍在本地。后续发布按既有 release／数据库备份流程迁移，再启新 API／market 镜像；API 与 market 配套，行情维护负责有界清理。该迁移只新增表，与旧版回滚兼容；代码回滚可保留表和既有数据，不需要反迁移，更不能通过回滚还原交易数据库。没有新凭证、端口或外部服务。
+客户端新诊断已按本次授权提交交付，新增表 migration `market_stream.0003_chartloadreport` 已在 47.80.22.243（首尔服务器）完成，发布与验收见本页顶部。后续发布继续按既有 release／数据库备份流程迁移，再启新 API／market 镜像；API 与 market 配套，行情维护负责有界清理。该迁移只新增表，与旧版回滚兼容；代码回滚可保留表和既有数据，不需要反迁移，更不能通过回滚还原交易数据库。没有新凭证、端口或外部服务。
 
 迁移部署后在所选 release 的 API 容器执行只读查询（用既有 Compose 参数，不打印 env）：
 
@@ -146,4 +156,4 @@ python manage.py chart_load_reports --build <构建号> --limit 10
 python manage.py chart_load_reports --trace-id <追踪UUID> --limit 1
 ```
 
-命令限最多 50 条，输出服务端接收时间及固定公共诊断 payload，不输出账户标识。诊断表仍按登录用户关联，不能将其当匿名数据公开；访问仅限既有受控运维。保存边界和保留策略见 [行情协议](market-data.md#客户端加载诊断本地实现尚未分发)。新客户端分发前旧 TestFlight 14 不会上报，暂时没有手机端贯通验收；本轮未提交、推送、部署或分发。
+命令限最多 50 条，输出服务端接收时间及固定公共诊断 payload，不输出账户标识。诊断表仍按登录用户关联，不能将其当匿名数据公开；访问仅限既有受控运维。保存边界和保留策略见 [行情协议](market-data.md#客户端加载诊断本地实现尚未分发)。旧 TestFlight 14 不会上报；47.80.22.243（首尔服务器）已验证接收与落库，手机端仍须等待 Jenkins／Apple 新包分发和安装，尚无本轮手机端贯通结果。
