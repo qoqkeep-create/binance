@@ -211,3 +211,9 @@ iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pendin
 `trading.test_capital_wallet`、`trading.test_balance_cap`、`trading.test_lead_mode` 组合 128 项通过（33.806 秒），使用 SQLite / LocMem 和交易所替身。覆盖合约超额加资金钱包只转现货、两个独立补入方向、独立现货转出、原 UUID 终态重试、余额变化重新核对、超时只查回执、逐步骤持仓检查、旧链隔离、Key 隔离及带单路径拒绝。执行命令与前文的隔离环境变量相同；migration 漂移和 `git diff --check` 通过。
 
 DEBUG 无网络 `WebParityUITests` 新增 `testCapitalWalletSheetTabsAndDirections`、`testCapitalCollectionAccountAndModeEntry`、`testCapitalWalletBlockedAndEmptyStates`：三项通过（合计 179.423 秒），已打开浅深色、转账和账号历史截图检查。资金提交接口在视觉替身中始终拒绝，未确认真实划转；原生大面板的方向菜单、模式确认、脱敏地址和原账号编辑窗口已覆盖。首屏合计改为固定底栏后，该页签 / 方向流程再次通过（126.091 秒），确认金额始终在按钮上方可见并重新检查截图。旧归集核对入口移至主按钮后，空态 / 阻断 / 旧链恢复组合再次通过（28.488 秒）。证据位于忽略目录 `.integration-runtime/CapitalUI/`；generic iOS Release 未签名构建通过，手机 / TestFlight 和真实资金动作未验收。
+
+## 归集资金三页签与账号空态（2026-11-02）
+
+将资金面板改为圆角矩形“划转 / 转账 / 记录”三页签，复用现有历史组件并提供嵌入模式；记录页移除账号接口、卡片与编辑入口。转账页补齐未配置账号的 ＋ 卡片，沿用原编辑弹窗；已配置账号保留脱敏卡片与管理入口。现有 UI 流程同步调整为三个页签、无账号历史页、两种账号卡片和菜单直达记录；DEBUG 未配置替身保持资金写请求拒绝。
+
+generic iOS Release 未签名构建及 generic iOS Simulator 的 `build-for-testing` 均通过，证据位于忽略目录 `.integration-runtime/CapitalTabs/`。按用户“简单调整不启动模拟器测试”的偏好，本轮未启动模拟器、未执行 XCTest / UI 测试；编译不等于交互、截图或实机验收。未执行真实资金动作，未上传 TestFlight；本轮只改客户端，不发布后端。

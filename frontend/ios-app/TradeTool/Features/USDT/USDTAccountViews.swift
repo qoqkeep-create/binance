@@ -10,6 +10,7 @@ struct USDTProfileView: View {
   @State private var binding = false
   @State private var stopLoss = false
   @State private var normalize = false
+  @State private var capitalTab: USDTCapitalView.Tab = .move
   @State private var modeConfirm = false
   @State private var collectAccount: JSONValue = .null
   @Environment(\.colorScheme) private var scheme
@@ -95,6 +96,7 @@ struct USDTProfileView: View {
               VStack {
                 Spacer(minLength: 0)
                 Button {
+                  capitalTab = .move
                   normalize = true
                 } label: {
                   WebLabel("归集余额", "wallet.bifold")
@@ -122,8 +124,9 @@ struct USDTProfileView: View {
           }
           separator
           if !lead {
-            NavigationLink {
-              USDTRecordsView(kind: .transfers)
+            Button {
+              capitalTab = .records
+              normalize = true
             } label: {
               menuRow("资金归集", "paperplane")
             }
@@ -190,7 +193,7 @@ struct USDTProfileView: View {
       }.refreshable { await store.refresh() }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
       .sheet(isPresented: $stopLoss) { USDTStopLossView() }
-      .sheet(isPresented: $normalize) { USDTCapitalView() }
+      .sheet(isPresented: $normalize) { USDTCapitalView(initialTab: capitalTab) }
       .webModal(isPresented: $logout) {
         WebModal(title: "确认退出登录") {
           Text("确认要退出登录吗？").foregroundStyle(WebTheme.secondary)
@@ -547,9 +550,19 @@ struct USDTStopLossView: View {
 
 /// Explicit wallet operations use the same native presentation as the pair picker.
 struct USDTCapitalView: View {
+  enum Tab: String, CaseIterable {
+    case move = "划转", transfer = "转账", records = "记录"
+    var identifier: String {
+      switch self {
+      case .move: "capital.tab.move"
+      case .transfer: "capital.tab.transfer"
+      case .records: "capital.tab.records"
+      }
+    }
+  }
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: USDTStore
-  @State private var tab = "划转"
+  @State private var tab: Tab
   @State private var direction = "to_spot"
   @State private var preview: JSONValue = .null
   @State private var busy = false
@@ -558,12 +571,13 @@ struct USDTCapitalView: View {
   @State private var legacy = false
   @State private var editor = false
   @State private var submitted = false
-  private var action: String { tab == "转账" ? "transfer" : direction }
+  init(initialTab: Tab = .move) { _tab = State(initialValue: initialTab) }
+  private var action: String { tab == .transfer ? "transfer" : direction }
   private var pending: Bool { preview.value("status") == "collection_pending" }
   private var completed: Bool { preview.value("reason") == "normalization_completed" }
   private var legacyPending: Bool { pending && preview.value("operation", fallback: "").isEmpty }
   private var canSubmit: Bool {
-    !busy && (pending || preview.value("status") == "normalization_required")
+    tab != .records && !busy && (pending || preview.value("status") == "normalization_required")
       && preview.value("operation") == action
   }
   private var requestStorageKey: String { "capital.request.\(store.scope).\(action)" }
@@ -579,101 +593,146 @@ struct USDTCapitalView: View {
         }.buttonStyle(.plain).disabled(busy).accessibilityLabel("关闭")
           .accessibilityIdentifier("capital.close")
       }.padding(.horizontal, 20).padding(.top, 12)
-      Picker("资金操作", selection: $tab) {
-        Text("划转").tag("划转")
-        Text("转账").tag("转账")
-      }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.vertical, 12)
-        .disabled(busy || pending || submitted).accessibilityIdentifier("capital.tabs")
-      ScrollView {
-        VStack(alignment: .leading, spacing: 20) {
-          if tab == "划转" {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("划转方向").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
-              Picker("划转方向", selection: $direction) {
-                Text("合约、资金 → 现货").tag("to_spot")
-                Text("资金 → 合约").tag("funding_to_futures")
-                Text("现货 → 合约").tag("spot_to_futures")
-              }.pickerStyle(.menu).tint(WebTheme.text).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                .padding(.horizontal, 12).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
-                .disabled(busy || pending || submitted).accessibilityIdentifier("capital.direction")
-            }
-            walletCard
-            VStack(alignment: .leading, spacing: 10) {
-              Text(direction == "to_spot" ? "本次划转明细" : "补入合约")
-                .font(.system(size: 15, weight: .semibold))
-              VStack(spacing: 16) {
-                if direction == "to_spot" {
-                  moneyRow("合约超出保留额", key: "futures_collect")
-                  moneyRow("资金账户可划转", key: "funding_collect")
-                } else {
-                  moneyRow(direction == "funding_to_futures" ? "资金账户可用" : "现货账户可用",
-                    key: direction == "funding_to_futures" ? "funding_available" : "spot_available")
-                  moneyRow("距合约保留上限", value: gap)
-                }
-              }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            }
-            Text(direction == "to_spot"
-              ? "合约余额超过止损额的 5 倍时无法开启新一轮交易。确认后，超额部分与资金账户可划转金额一起转入现货。"
-              : "按合约距 5 倍止损额的差额补入，最多使用所选账户的可用余额。")
-              .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
-          } else {
-            VStack(alignment: .leading, spacing: 12) {
-              Text("转出账户").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
-              VStack(spacing: 18) {
-                HStack { Label("现货账户", systemImage: "wallet.bifold").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
-                moneyRow("现货可用余额", key: "spot_available")
-                Divider().overlay(WebTheme.border)
-                moneyRow("本次转出金额", key: "operation_amount", emphasis: true)
-              }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            }
-            VStack(alignment: .leading, spacing: 12) {
-              HStack {
-                Text("收款账号").font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Button("设置") { editor = true }.font(.system(size: 14, weight: .medium))
-                  .frame(minWidth: 44, minHeight: 44).disabled(busy || pending || submitted)
-              }
-              USDTCollectionAccountCard(data: .object([
-                "account_type": preview["account_type"] ?? .null,
-                "capital_collect_address": preview["destination_address"] ?? .null,
-                "capital_collect_network": preview["destination_network"] ?? .null,
-              ]))
-            }
-            Text("转出金额按现货可用余额计算。子账户转至所属主账户；主账户按已设置的链和地址转出，以交易所最终回执为准。")
-              .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
-          }
-          if busy { HStack(spacing: 8) { ProgressView(); Text(submitted ? "正在提交，请稍候…" : "正在读取资金状态…") }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary) }
-          if completed { Label("本次操作已完成", systemImage: "checkmark.circle.fill").foregroundStyle(WebTheme.success).font(.system(size: 15, weight: .semibold)).accessibilityIdentifier("capital.completed") }
-          if !notice.isEmpty { Text(notice).font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5).accessibilityIdentifier("capital.notice") }
-          if !busy && preview.value("status") == "ready" && !completed {
-            Text(tab == "转账" ? "暂无可转出的现货资金" : "当前方向暂无可划转金额")
-              .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-          }
-        }.padding(20)
-      }.scrollIndicators(.hidden)
+      tabs
+      if tab == .records {
+        USDTRecordsView(kind: .transfers, embedded: true)
+      } else {
+        walletContent
+      }
     }.foregroundStyle(WebTheme.text).background(WebTheme.page)
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        VStack(spacing: 12) {
-          moneyRow(legacyPending ? "原归集转出金额" : tab == "转账" ? "本次转出金额" : direction == "to_spot" ? "合计划转到现货" : "本次转入合约",
-            key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true).accessibilityIdentifier("capital.total")
-          Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == "转账" ? "转账" : "确定划转") {
-            if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
-          }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || (!completed && !legacyPending && !canSubmit))
-            .accessibilityIdentifier("capital.submit")
-          if !busy && !pending && !completed {
-            Button("刷新金额") { Task { await load() } }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary).frame(minHeight: 44)
-              .accessibilityIdentifier("capital.refresh")
-          }
-        }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8).background(WebTheme.page)
+        if tab != .records { walletFooter }
       }
       .largeTradingSheet().interactiveDismissDisabled(busy)
-      .task(id: action) { await load() }
+      .task(id: tab == .records ? "records" : action) {
+        if tab != .records { await load() }
+      }
       .onChange(of: store.scope) { _, _ in dismiss() }
       .webModal(isPresented: $editor) { USDTCollectAccountView() }
       .onChange(of: editor) { _, shown in if !shown { Task { await load() } } }
       .webModal(isPresented: $legacy) { USDTLegacyCapitalView() }
       .onChange(of: legacy) { _, shown in if !shown { Task { await load() } } }
+  }
+  private var tabs: some View {
+    HStack(spacing: 4) {
+      ForEach(Tab.allCases, id: \.self) { item in
+        Button { tab = item } label: {
+          Text(item.rawValue).font(.system(size: 15, weight: tab == item ? .semibold : .medium))
+            .foregroundStyle(tab == item ? Color.black : WebTheme.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(tab == item ? WebTheme.brand : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }.buttonStyle(.plain).accessibilityIdentifier(item.identifier)
+          .accessibilityAddTraits(tab == item ? .isSelected : [])
+      }
+    }.padding(4).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+      .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
+      .padding(.horizontal, 20).padding(.vertical, 12)
+      .disabled(busy || pending || submitted).accessibilityIdentifier("capital.tabs")
+  }
+  private var walletContent: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 20) {
+        if tab == .move {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("划转方向").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+            Picker("划转方向", selection: $direction) {
+              Text("合约、资金 → 现货").tag("to_spot")
+              Text("资金 → 合约").tag("funding_to_futures")
+              Text("现货 → 合约").tag("spot_to_futures")
+            }.pickerStyle(.menu).tint(WebTheme.text).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+              .padding(.horizontal, 12).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+              .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
+              .disabled(busy || pending || submitted).accessibilityIdentifier("capital.direction")
+          }
+          walletCard
+          VStack(alignment: .leading, spacing: 10) {
+            Text(direction == "to_spot" ? "本次划转明细" : "补入合约")
+              .font(.system(size: 15, weight: .semibold))
+            VStack(spacing: 16) {
+              if direction == "to_spot" {
+                moneyRow("合约超出保留额", key: "futures_collect")
+                moneyRow("资金账户可划转", key: "funding_collect")
+              } else {
+                moneyRow(direction == "funding_to_futures" ? "资金账户可用" : "现货账户可用",
+                  key: direction == "funding_to_futures" ? "funding_available" : "spot_available")
+                moneyRow("距合约保留上限", value: gap)
+              }
+            }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+          }
+          Text(direction == "to_spot"
+            ? "合约余额超过止损额的 5 倍时无法开启新一轮交易。确认后，超额部分与资金账户可划转金额一起转入现货。"
+            : "按合约距 5 倍止损额的差额补入，最多使用所选账户的可用余额。")
+            .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
+        } else {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("转出账户").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+            VStack(spacing: 18) {
+              HStack { Label("现货账户", systemImage: "wallet.bifold").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
+              moneyRow("现货可用余额", key: "spot_available")
+              Divider().overlay(WebTheme.border)
+              moneyRow("本次转出金额", key: "operation_amount", emphasis: true)
+            }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+          }
+          VStack(alignment: .leading, spacing: 12) {
+            HStack {
+              Text("收款账号").font(.system(size: 15, weight: .semibold))
+              Spacer()
+              if preview.value("account_type") == "master" && !preview.value("destination_address", fallback: "").isEmpty {
+                Button("管理") { editor = true }.font(.system(size: 14, weight: .medium))
+                  .frame(minWidth: 44, minHeight: 44).disabled(busy || pending || submitted)
+                  .accessibilityIdentifier("collection.manageAccount")
+              }
+            }
+            if preview.value("account_type") == "master" && preview.value("destination_address", fallback: "").isEmpty {
+              Button { editor = true } label: {
+                VStack(spacing: 12) {
+                  Image(systemName: "plus").font(.system(size: 22, weight: .medium))
+                    .frame(width: 48, height: 48)
+                    .foregroundStyle(Color.black)
+                    .background(WebTheme.brand, in: RoundedRectangle(cornerRadius: 12))
+                  Text("添加收款账号").font(.system(size: 15, weight: .medium))
+                  Text("设置收款网络与地址").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+                }.foregroundStyle(WebTheme.text).frame(maxWidth: .infinity).padding(.vertical, 24)
+                  .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                  .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, style: StrokeStyle(lineWidth: 1, dash: [6, 4])) }
+                  .contentShape(RoundedRectangle(cornerRadius: 16))
+              }.buttonStyle(.plain).disabled(busy || pending || submitted)
+                .accessibilityIdentifier("collection.addAccount")
+            } else {
+              USDTCollectionAccountCard(data: preview == .null ? .null : .object([
+                "account_type": preview["account_type"] ?? .null,
+                "capital_collect_address": preview["destination_address"] ?? .null,
+                "capital_collect_network": preview["destination_network"] ?? .null,
+              ]))
+            }
+          }
+          Text("转出金额按现货可用余额计算。子账户转至所属主账户；主账户按已设置的链和地址转出，以交易所最终回执为准。")
+            .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
+        }
+        if busy { HStack(spacing: 8) { ProgressView(); Text(submitted ? "正在提交，请稍候…" : "正在读取资金状态…") }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary) }
+        if completed { Label("本次操作已完成", systemImage: "checkmark.circle.fill").foregroundStyle(WebTheme.success).font(.system(size: 15, weight: .semibold)).accessibilityIdentifier("capital.completed") }
+        if !notice.isEmpty { Text(notice).font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5).accessibilityIdentifier("capital.notice") }
+        if !busy && preview.value("status") == "ready" && !completed {
+          Text(tab == .transfer ? "暂无可转出的现货资金" : "当前方向暂无可划转金额")
+            .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
+        }
+      }.padding(20)
+    }.scrollIndicators(.hidden)
+  }
+  private var walletFooter: some View {
+    VStack(spacing: 12) {
+      moneyRow(legacyPending ? "原归集转出金额" : tab == .transfer ? "本次转出金额" : direction == "to_spot" ? "合计划转到现货" : "本次转入合约",
+        key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true).accessibilityIdentifier("capital.total")
+      Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == .transfer ? "转账" : "确定划转") {
+        if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
+      }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || (!completed && !legacyPending && !canSubmit))
+        .accessibilityIdentifier("capital.submit")
+      if !busy && !pending && !completed {
+        Button("刷新金额") { Task { await load() } }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary).frame(minHeight: 44)
+          .accessibilityIdentifier("capital.refresh")
+      }
+    }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8).background(WebTheme.page)
   }
   private var gap: String {
     guard let maximum = preview["maximum_futures_balance"]?.decimal,
@@ -709,10 +768,10 @@ struct USDTCapitalView: View {
     preview = .object(preview.fields.merging(result.fields) { _, new in new })
     if result.value("status") == "collection_pending" {
       let operation = result.value("operation", fallback: "")
-      if operation == "transfer" { tab = "转账" }
+      if operation == "transfer" { tab = .transfer }
       else if ["to_spot", "funding_to_futures", "spot_to_futures"].contains(operation) {
         direction = operation
-        tab = "划转"
+        tab = .move
       }
     }
     notice = result.value("message", fallback: result.value("collection_error", fallback: ""))
@@ -779,6 +838,9 @@ struct USDTCollectionAccountCard: View {
         } else if data.value("account_type") == "sub" {
           Text("所属主账户").font(.system(size: 15, weight: .semibold))
           Text("币安站内 · 自动识别所属账号").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+        } else if data.value("account_type") != "master" {
+          Text("暂无法读取收款账号").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+          Text("请刷新资金状态后重试").font(.system(size: 13)).foregroundStyle(WebTheme.muted)
         } else {
           Text(address.isEmpty ? "收款账号" : data.value("capital_collect_network", fallback: "--") + " · USDT")
             .font(.system(size: 15, weight: .semibold))

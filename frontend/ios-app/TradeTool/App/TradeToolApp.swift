@@ -282,6 +282,14 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           "account_type": .string("master"), "destination_address": .string("0x123456789012345678901234567890123456BEEF"),
           "destination_network": .string("BSC"),
         ])
+        if ProcessInfo.processInfo.arguments.contains("--fixture-collection-unconfigured"), action == "transfer" {
+          var fields = value.fields
+          fields["status"] = .string("blocked")
+          fields["destination_address"] = .string("")
+          fields["destination_network"] = .string("")
+          fields["message"] = .string("请先添加收款账号")
+          value = .object(fields)
+        }
         if ProcessInfo.processInfo.arguments.contains("--fixture-capital-legacy") {
           var fields = value.fields
           fields["status"] = .string("collection_pending")

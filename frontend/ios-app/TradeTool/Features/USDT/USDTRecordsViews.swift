@@ -135,15 +135,20 @@ struct USDTRecordsView: View {
   @EnvironmentObject private var store: USDTStore
   @StateObject private var model = USDTPageModel()
   let kind: Kind
+  var embedded = false
   @State private var cursor = ""
   @State private var notice = ""
-  @State private var collectAccount: JSONValue = .null
-  @State private var editingAccount = false
   var body: some View {
+    Group {
+      if embedded { records }
+      else { records.usdtPage(kind.title, refresh: { Task { await refresh() } }) }
+    }.task(id: store.scope) { await load(reset: true) }
+      .refreshable { await refresh() }
+  }
+  private var records: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 12) {
         if kind.transfers {
-          collectionHeader
           transferSummary
           HStack {
             Text("历史记录").font(.system(size: 14, weight: .semibold))
@@ -151,6 +156,13 @@ struct USDTRecordsView: View {
             Text("共 \(model.value["pagination"]?.value("total", fallback: "0") ?? "0") 笔").font(
               .system(size: 12)
             ).foregroundStyle(WebTheme.muted)
+            if embedded {
+              Button { Task { await refresh() } } label: {
+                Image(systemName: "arrow.clockwise").font(.system(size: 15, weight: .medium))
+                  .frame(width: 44, height: 44).contentShape(Rectangle())
+              }.buttonStyle(.plain).disabled(model.loading).accessibilityLabel("刷新记录")
+                .accessibilityIdentifier("collection.refresh")
+            }
           }.padding(.top, 8).padding(.horizontal, 4)
         } else {
           Text("北京时间 · 最新记录在前").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
@@ -185,38 +197,7 @@ struct USDTRecordsView: View {
           ).padding(.top, 8)
         }
       }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-    }.scrollIndicators(.hidden).usdtPage(kind.title, refresh: { Task { await refresh() } }).task(
-      id: store.scope
-    ) {
-      collectAccount = .null
-      if kind.transfers {
-        async let account: Void = loadCollectionAccount()
-        await load(reset: true)
-        _ = await account
-      } else { await load(reset: true) }
-    }.refreshable { await refresh() }
-      .webModal(isPresented: $editingAccount) { USDTCollectAccountView() }
-      .onChange(of: editingAccount) { _, shown in
-        if !shown { Task { await loadCollectionAccount() } }
-      }
-  }
-  private var collectionHeader: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Text("收款账号").font(.system(size: 15, weight: .semibold))
-        Spacer()
-        Button { editingAccount = true } label: {
-          Label(collectAccount.value("capital_collect_address", fallback: "").isEmpty ? "添加账号" : "管理账号", systemImage: "plus")
-            .font(.system(size: 14, weight: .medium)).frame(minHeight: 44)
-        }.disabled(!store.isBound).accessibilityIdentifier("collection.addAccount")
-      }
-      USDTCollectionAccountCard(data: collectAccount)
-    }.padding(.bottom, 8)
-  }
-  private func loadCollectionAccount() async {
-    do { collectAccount = try await store.get("/v1/account/capital-collect-account") }
-    catch is CancellationError { }
-    catch { notice = error.localizedDescription }
+    }.scrollIndicators(.hidden).accessibilityIdentifier("collection.history")
   }
   private var transferSummary: some View {
     VStack(spacing: 0) {
@@ -248,7 +229,7 @@ struct USDTRecordsView: View {
       }.fixedSize(horizontal: false, vertical: true)
     }.background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)).overlay {
       RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1)
-    }
+    }.accessibilityIdentifier("collection.summary")
   }
   private func transferTotal(_ label: String, _ value: String, _ color: Color) -> some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -319,7 +300,6 @@ struct USDTRecordsView: View {
   }
   private func refresh() async {
     if kind.transfers {
-      await loadCollectionAccount()
       do { _ = try await store.send("/v1/account/transfer-history/sync") } catch {
         notice = error.localizedDescription
       }
