@@ -2,6 +2,7 @@ import Foundation
 
 enum MarketKlineInterval: String, CaseIterable, Identifiable, Codable {
     case oneMinute = "1m"
+    case threeMinutes = "3m"
     case fiveMinutes = "5m"
     case fifteenMinutes = "15m"
     case oneHour = "1h"
@@ -14,6 +15,8 @@ enum MarketKlineInterval: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .oneMinute:
             return "1分"
+        case .threeMinutes:
+            return "3分"
         case .fiveMinutes:
             return "5分"
         case .fifteenMinutes:
@@ -31,6 +34,8 @@ enum MarketKlineInterval: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .oneMinute:
             return 60
+        case .threeMinutes:
+            return 3 * 60
         case .fiveMinutes:
             return 5 * 60
         case .fifteenMinutes:

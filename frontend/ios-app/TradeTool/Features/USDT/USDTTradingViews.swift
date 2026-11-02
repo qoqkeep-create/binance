@@ -16,10 +16,15 @@ struct USDTTradeView: View {
   @State private var submitted = false
   var initialStop: String = ""
   var initialLimit: String = ""
+  var chartInput: ChartTradeInput? = nil
+  var onChartOrderTypeChange: ((String) -> Void)? = nil
+  @State private var confirmationDraft: USDTEntryDraft?
+  @State private var confirmationScope = ""
+  private var symbol: String { chartInput?.symbol ?? store.selectedSymbol }
 
   @EnvironmentObject private var container: AppContainer
   @EnvironmentObject private var dashboard: DashboardViewModel
-  private var currentQuote: String { dashboard.tradeQuote(for: store.selectedSymbol) }
+  private var currentQuote: String { chartInput?.currentPrice ?? dashboard.tradeQuote(for: symbol) }
   @State private var showSymbols = false
   @State private var showStopLoss = false
   @State private var showChart = false
@@ -27,7 +32,7 @@ struct USDTTradeView: View {
   @State private var emaExpanded = false
   @State private var now = Date()
 
-  var body: some View {
+  private var standardForm: some View {
     VStack(spacing: 0) {
       Text("开仓").font(.system(size: 18, weight: .semibold))
         .frame(maxWidth: .infinity).frame(height: 48)
@@ -38,7 +43,7 @@ struct USDTTradeView: View {
             HStack {
               Button { showSymbols = true } label: {
                 HStack(spacing: 4) {
-                  Text(store.selectedSymbol).font(.system(size: 17, weight: .semibold))
+                  Text(symbol).font(.system(size: 17, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.7)
                   WebIcon("chevron.down", size: 12).foregroundStyle(WebTheme.muted)
                 }.frame(minHeight: 44).contentShape(Rectangle())
@@ -122,20 +127,7 @@ struct USDTTradeView: View {
             }
           }
           if orderType == "market", !ema.fields.isEmpty { emaCard }
-          Button(entryButtonText) {
-            if orderType == "market" && !emaValid {
-              checkEMA()
-            } else {
-              Task {
-                busy = true
-                defer { busy = false }
-                do {
-                  try await store.preflight()
-                  confirm = true
-                } catch { notice = error.localizedDescription }
-              }
-            }
-          }.buttonStyle(
+          Button(entryButtonText, action: advanceEntry).buttonStyle(
             WebButtonStyle(
               kind: !inputValid || !strategyValid
                 ? .inactive
@@ -149,12 +141,32 @@ struct USDTTradeView: View {
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).scrollDismissesKeyboard(.interactively)
     }.usdtPage("开仓")
+  }
+
+  var body: some View {
+    Group {
+      if chartInput != nil { chartTicket } else { standardForm }
+    }
+      .onChange(of: chartInput, initial: true) { _, input in
+        guard let input else { return }
+        orderType = input.orderType
+        stop = input.stopLossPrice
+        limit = input.limitPrice
+      }
+      .onChange(of: store.scope) { _, _ in
+        confirmationDraft = nil; confirm = false; submitted = false
+        requestIdentity = UUID().uuidString; ema = .null
+        strategyID = store.activeStrategy?.value("id") ?? ""
+      }
+      .onChange(of: includeFee) { _, _ in resetDraft() }
+      .onChange(of: risk) { _, _ in resetDraft() }
+      .onChange(of: strategyEnabled) { _, _ in resetDraft() }
       .task(id: store.scope) {
         await store.refresh()
         if strategyID.isEmpty { strategyID = store.activeStrategy?.value("id") ?? "" }
       }
       .onAppear {
-        dashboard.restoreRealtimeSubscriptions()
+        if chartInput == nil { dashboard.restoreRealtimeSubscriptions() }
         if !initialStop.isEmpty { stop = initialStop }
         if !initialLimit.isEmpty {
           limit = initialLimit
@@ -162,7 +174,7 @@ struct USDTTradeView: View {
         }
       }
       .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
-      .onChange(of: store.selectedSymbol) { _, _ in resetDraft() }
+      .onChange(of: symbol) { _, _ in resetDraft() }
       .onChange(of: stop) { _, _ in resetDraft() }
       .onChange(of: limit) { _, _ in resetDraft() }
       .onChange(of: orderType) { _, _ in resetDraft() }
@@ -172,10 +184,10 @@ struct USDTTradeView: View {
         NavigationStack {
           MarketChartView(
             market: container.dashboardViewModel.markets(onlyVisible: false).first {
-              $0.symbol == store.selectedSymbol
+              $0.symbol == symbol
             }
               ?? MarketSnapshot(
-                symbol: store.selectedSymbol, quoteAsset: "USDT", price: 0, changePercent24h: 0,
+                symbol: symbol, quoteAsset: "USDT", price: 0, changePercent24h: 0,
                 updatedAt: .now),
             availableMarkets: container.dashboardViewModel.markets(onlyVisible: false),
             apiClient: container.apiClient, realtimeClient: container.realtimeClient,
@@ -184,7 +196,7 @@ struct USDTTradeView: View {
         }
       }
       .sheet(isPresented: $showSymbols) {
-        MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: store.selectedSymbol) { symbol in
+        MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: symbol) { symbol in
           store.selectedSymbol = symbol
         }
       }
@@ -192,41 +204,40 @@ struct USDTTradeView: View {
         USDTStopLossView()
       }
       .webModal(isPresented: $confirm) {
-        WebModal(title: orderType == "limit" ? "委托确认" : "开仓确认") {
+        let draft = confirmationDraft ?? currentDraft
+        WebModal(title: draft.orderType == "limit" ? "委托确认" : "开仓确认") {
           Text(
-            "即将开\(store.selectedSymbol.replacingOccurrences(of: "USDT", with: "")) \(isLong ? "多" : "空")单"
+            "即将开\(draft.symbol.replacingOccurrences(of: "USDT", with: "")) \(draft.isLong ? "多" : "空")单"
           ).font(.system(size: 18, weight: .bold)).foregroundStyle(
-            isLong ? WebTheme.success : WebTheme.danger
+            draft.isLong ? WebTheme.success : WebTheme.danger
           ).frame(maxWidth: .infinity)
           VStack(spacing: 12) {
-            USDTMetric(title: "币种", value: store.selectedSymbol)
-            USDTMetric(title: "模式", value: orderType == "limit" ? "限价委托" : "市价开仓")
-            USDTMetric(title: "止损价", value: stop)
-            if orderType == "limit" { USDTMetric(title: "限价值", value: limit) }
-            USDTMetric(title: "仓位", value: estimatedPosition + " U")
+            USDTMetric(title: "币种", value: draft.symbol)
+            USDTMetric(title: "模式", value: draft.orderType == "limit" ? "限价委托" : "市价开仓")
+            USDTMetric(title: "止损价", value: draft.stopLossPrice)
+            if draft.orderType == "limit" { USDTMetric(title: "限价值", value: draft.limitPrice) }
+            USDTMetric(title: "仓位", value: draft.positionText + " U")
             HStack {
               Text("手续费").foregroundStyle(WebTheme.secondary)
               Spacer()
-              Text(includeFee ? "(含)" : "(不含)").font(.system(size: 12)).foregroundStyle(
-                includeFee ? WebTheme.success : WebTheme.danger)
-              Text(estimatedFee + " U").fontWeight(.medium)
+              Text(draft.includeFee ? "(含)" : "(不含)").font(.system(size: 12)).foregroundStyle(
+                draft.includeFee ? WebTheme.success : WebTheme.danger)
+              Text(draft.feeText + " U").fontWeight(.medium)
             }
             USDTMetric(
               title: "止损额",
-              value: includeFee
-                ? risk + " U"
-                : risk + "+" + estimatedFee + "="
-                  + NSDecimalNumber(
-                    decimal: (Decimal(string: risk) ?? 0) + positionEstimate * Decimal(
-                      string: "0.001")!
-                  ).stringValue + " U")
+              value: draft.includeFee
+                ? draft.riskAmount + " U"
+                : draft.riskAmount + "+" + draft.feeText + "="
+                  + USDTEntryDraft.amount((Decimal(string: draft.riskAmount) ?? 0)
+                    + draft.positionEstimate * USDTEntryDraft.feeRate) + " U")
             USDTMetric(
               title: "止损回撤",
-              value: referencePrice > 0
+              value: draft.referencePrice > 0
                 ? String(
                   format: "%.2f%%",
                   NSDecimalNumber(
-                    decimal: abs(referencePrice - (Decimal(string: stop) ?? 0)) / referencePrice
+                    decimal: abs(draft.referencePrice - (Decimal(string: draft.stopLossPrice) ?? 0)) / draft.referencePrice
                       * 100
                   ).doubleValue) : "--")
           }.font(.system(size: 14)).padding(16).background(
@@ -236,33 +247,28 @@ struct USDTTradeView: View {
               WebButtonStyle(kind: .secondary, radius: 14))
             Button("确定") {
               confirm = false
-              submit()
+              guard confirmationScope == store.scope, draft.matchesIntent(currentDraft) else {
+                notice = "开仓参数已变化，请重新确认"; return
+              }
+              guard draft.orderType != "market" || emaValid else {
+                notice = "方向初筛已失效，请重新检测"; return
+              }
+              submit(draft)
             }.buttonStyle(WebButtonStyle(radius: 14, weight: .bold))
           }
         }
       }
   }
-  private var referencePrice: Decimal {
-    Decimal(string: orderType == "limit" ? limit : currentQuote) ?? 0
+  private var currentDraft: USDTEntryDraft {
+    USDTEntryDraft(symbol: symbol, orderType: orderType, stopLossPrice: stop,
+      limitPrice: limit, currentPrice: currentQuote, riskAmount: risk, includeFee: includeFee,
+      strategy: strategyEnabled ? store.strategies.first { $0.value("id") == strategyID } : nil)
   }
-  private var isLong: Bool { (Decimal(string: stop) ?? 0) < referencePrice }
-  private var positionEstimate: Decimal {
-    let stopValue = Decimal(string: stop) ?? 0
-    guard referencePrice > 0, stopValue > 0, stopValue != referencePrice else { return 0 }
-    let ratio = abs(referencePrice - stopValue) / referencePrice
-    return (Decimal(string: risk) ?? 0) / (ratio + (includeFee ? Decimal(string: "0.001")! : 0))
-  }
-  private var estimatedPosition: String {
-    NSDecimalNumber(decimal: positionEstimate).stringValue == "0"
-      ? "0" : String(format: "%.2f", NSDecimalNumber(decimal: positionEstimate).doubleValue)
-  }
-  private var estimatedFee: String {
-    positionEstimate == 0
-      ? "0"
-      : String(
-        format: "%.2f",
-        NSDecimalNumber(decimal: positionEstimate * Decimal(string: "0.001")!).doubleValue)
-  }
+  private var referencePrice: Decimal { currentDraft.referencePrice }
+  private var isLong: Bool { currentDraft.isLong }
+  private var positionEstimate: Decimal { currentDraft.positionEstimate }
+  private var estimatedPosition: String { currentDraft.positionText }
+  private var estimatedFee: String { currentDraft.feeText }
   private func estimate(_ title: String, _ value: String) -> some View {
     VStack(spacing: 8) {
       Text(title).font(.system(size: 14)).foregroundStyle(WebTheme.muted).frame(height: 20)
@@ -270,8 +276,7 @@ struct USDTTradeView: View {
     }.frame(maxWidth: .infinity)
   }
   private var inputValid: Bool {
-    referencePrice > 0 && (Decimal(string: stop) ?? 0) > 0
-      && Decimal(string: stop) != referencePrice
+    currentDraft.isValid
   }
   private var strategyValid: Bool {
     !strategyEnabled || store.strategies.contains { $0.value("id") == strategyID }
@@ -284,7 +289,7 @@ struct USDTTradeView: View {
   }
   private var emaValid: Bool {
     ema["has_any_matching_interval"]?.flag == true && !emaExpired && !emaDirectionChanged
-      && ema.value("symbol") == store.selectedSymbol
+      && ema.value("symbol") == symbol
   }
   private var entryButtonText: String {
     if submitted { return "请求已提交，请查看命令记录" }
@@ -373,46 +378,173 @@ struct USDTTradeView: View {
     emaExpanded = false
     if !submitted { requestIdentity = UUID().uuidString }
   }
-  private func checkEMA() {
+  private func advanceEntry() {
+    guard !busy, !submitted, store.isBound, inputValid, strategyValid else { return }
+    if orderType == "market" && !emaValid { checkEMA(); return }
+    let draft = currentDraft
+    let scope = store.scope
     busy = true
     Task {
       defer { busy = false }
       do {
-        ema = try await store.send(
-          "/v1/trade/ema-check",
-          ["symbol": .string(store.selectedSymbol.uppercased()), "stop_loss_price": .string(stop)])
-      } catch { notice = error.localizedDescription }
+        try await store.preflight()
+        guard scope == store.scope, draft.matchesIntent(currentDraft) else { return }
+        confirmationDraft = draft
+        confirmationScope = scope
+        confirm = true
+      } catch { if scope == store.scope { notice = error.localizedDescription } }
     }
   }
-  private func submit() {
+  private func checkEMA() {
+    let draft = currentDraft
+    let scope = store.scope
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        let result = try await store.send("/v1/trade/ema-check",
+          ["symbol": .string(draft.symbol.uppercased()), "stop_loss_price": .string(draft.stopLossPrice)])
+        guard scope == store.scope, draft.matchesIntent(currentDraft) else { return }
+        ema = result
+      } catch { if scope == store.scope { notice = error.localizedDescription } }
+    }
+  }
+  private func submit(_ draft: USDTEntryDraft) {
+    let scope = store.scope
+    let key = requestIdentity
+    let payload = draft.payload(ema: ema)
     busy = true
     submitted = true
     Task {
       defer { busy = false }
-      var payload: [String: JSONValue] = [
-        "symbol": .string(store.selectedSymbol.uppercased()), "stop_loss_price": .string(stop),
-        "stop_loss_amount": .string(risk),
-      ]
-      if orderType == "limit" {
-        payload["limit_price"] = .string(limit)
-      } else {
-        payload["include_fee"] = .bool(includeFee)
-        payload["ema_check_id"] = ema["check_id"]
-      }
-      if strategyEnabled,
-        let strategy = store.strategies.first(where: { $0.value("id") == strategyID })
-      {
-        payload["strategy_id"] = strategy["id"]
-        payload["strategy_name"] = strategy["name"]
-        payload["strategy_config"] = strategy["levels"]
-      }
       do {
         let result = try await store.command(
-          orderType == "limit" ? "limit-create" : "open", payload: payload, key: requestIdentity)
+          draft.orderType == "limit" ? "limit-create" : "open", payload: payload, key: key)
+        guard scope == store.scope else { return }
         notice = store.commandMessage(result)
-        // A new intent requires leaving the submitted ticket; retries retain the same key.
-      } catch { notice = error.localizedDescription + "。请先核对命令记录。" }
+      } catch { if scope == store.scope { notice = error.localizedDescription + "。请先核对命令记录。" } }
     }
+  }
+
+  private var chartTicket: some View {
+    VStack(spacing: 10) {
+      HStack(alignment: .top, spacing: 8) {
+        chartMetric("止损价", stop.isEmpty ? "--" : stop)
+        chartMetric("仓位", inputValid ? estimatedPosition + " U" : "--")
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 2) {
+            Text("止损金额").font(.system(size: 10)).foregroundStyle(WebTheme.muted)
+            Button { showStopLoss = true } label: {
+              Image(systemName: "gearshape").font(.system(size: 10)).frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
+              .accessibilityIdentifier("chart-ticket.risk-settings")
+          }.frame(height: 20)
+          Text(risk.isEmpty ? "--" : risk + " U").font(.system(size: 13, weight: .semibold))
+            .lineLimit(1).minimumScaleFactor(0.6)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+        chartMetric("手续费", inputValid ? estimatedFee + " U" : "--")
+      }.monospacedDigit()
+      HStack(spacing: 12) {
+        Picker("委托类型", selection: Binding(get: { orderType }, set: { value in
+          orderType = value; onChartOrderTypeChange?(value)
+        })) {
+          Text("市价").tag("market")
+          Text("限价").tag("limit")
+        }.pickerStyle(.segmented).frame(width: 136).accessibilityIdentifier("chart-ticket.order-type")
+          .disabled(busy || submitted || confirm)
+        Button(action: advanceEntry) {
+          Text(submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "选择止损价")
+            .font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(BinanceTheme.onTradeAction)
+            .background(inputValid ? (isLong ? BinanceTheme.positive : BinanceTheme.negative) : BinanceTheme.elevated,
+              in: RoundedRectangle(cornerRadius: 8))
+        }.buttonStyle(.plain).disabled(busy || submitted || !store.isBound || !inputValid || !strategyValid)
+          .accessibilityIdentifier("chart-ticket.submit")
+      }
+      if !store.isBound {
+        Text("请先在我的页面绑定 API").font(.system(size: 11)).foregroundStyle(WebTheme.muted)
+      } else if !inputValid {
+        Text(orderType == "market" ? "长按 K 线，用十字线选择止损价" : "拖动限价线和止损线调整委托")
+          .font(.system(size: 11)).foregroundStyle(WebTheme.muted)
+      } else if orderType == "market", !ema.fields.isEmpty {
+        Text(emaValid ? "方向初筛通过，再次点击确认开仓" : emaDirectionChanged ? "方向已变化，请重新初筛" : "方向初筛未通过或已过期")
+          .font(.system(size: 11)).foregroundStyle(emaValid ? WebTheme.success : WebTheme.brand)
+      }
+      if submitted {
+        NavigationLink("查看交易命令", destination: USDTCommandsView()).font(.system(size: 12))
+      }
+      USDTNotice(text: notice)
+    }.padding(12)
+      .background(BinanceTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+      .overlay { RoundedRectangle(cornerRadius: 14).stroke(BinanceTheme.border, lineWidth: 0.7) }
+      .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("chart-ticket")
+  }
+  private func chartMetric(_ title: String, _ value: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(title).font(.system(size: 10)).foregroundStyle(WebTheme.muted).frame(height: 20)
+      Text(value).font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
+        .accessibilityIdentifier("chart-ticket." + title)
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+struct ChartTradeInput: Equatable {
+  let symbol: String
+  let orderType: String
+  let stopLossPrice: String
+  let limitPrice: String
+  let currentPrice: String
+}
+
+/// Shared by the normal entry form and the embedded chart ticket. Monetary calculations stay Decimal.
+struct USDTEntryDraft: Equatable {
+  let symbol: String
+  let orderType: String
+  let stopLossPrice: String
+  let limitPrice: String
+  let currentPrice: String
+  let riskAmount: String
+  let includeFee: Bool
+  let strategy: JSONValue?
+  static let feeRate = Decimal(string: "0.001")!
+  var referencePrice: Decimal { Decimal(string: orderType == "limit" ? limitPrice : currentPrice) ?? 0 }
+  var stop: Decimal { Decimal(string: stopLossPrice) ?? 0 }
+  var isLong: Bool { stop < referencePrice }
+  var isValid: Bool {
+    let risk = Decimal(string: riskAmount) ?? 0
+    return referencePrice > 0 && stop > 0 && referencePrice != stop && risk > 0
+      && !referencePrice.isNaN && !stop.isNaN && !risk.isNaN
+  }
+  var positionEstimate: Decimal {
+    guard isValid else { return 0 }
+    let ratio = abs(referencePrice - stop) / referencePrice
+    return (Decimal(string: riskAmount) ?? 0) / (ratio + (includeFee ? Self.feeRate : 0))
+  }
+  var positionText: String { Self.amount(positionEstimate) }
+  var feeText: String { Self.amount(positionEstimate * Self.feeRate) }
+  static func amount(_ value: Decimal) -> String {
+    var source = value, rounded = Decimal()
+    NSDecimalRound(&rounded, &source, 2, .plain)
+    return NSDecimalNumber(decimal: rounded).stringValue
+  }
+  func matchesIntent(_ other: Self) -> Bool {
+    symbol == other.symbol && orderType == other.orderType && stopLossPrice == other.stopLossPrice
+      && limitPrice == other.limitPrice && riskAmount == other.riskAmount && includeFee == other.includeFee
+      && strategy == other.strategy && isLong == other.isLong
+  }
+  func payload(ema: JSONValue) -> [String: JSONValue] {
+    var result: [String: JSONValue] = ["symbol": .string(symbol.uppercased()),
+      "stop_loss_price": .string(stopLossPrice), "stop_loss_amount": .string(riskAmount)]
+    if orderType == "limit" { result["limit_price"] = .string(limitPrice) }
+    else { result["include_fee"] = .bool(includeFee); result["ema_check_id"] = ema["check_id"] }
+    if let strategy {
+      result["strategy_id"] = strategy["id"]; result["strategy_name"] = strategy["name"]
+      result["strategy_config"] = strategy["levels"]
+    }
+    return result
   }
 }
 

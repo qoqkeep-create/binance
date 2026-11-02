@@ -112,7 +112,9 @@ private struct MarketChartDetailView: View {
     @EnvironmentObject private var toastCenter: AppToastCenter
     @EnvironmentObject private var usdt: USDTStore
     @AppStorage("integrated.chart.orderType") private var nativeOrderType = "limit"
-    @State private var showsNativeTicket = false
+    @State private var selectedStopPrice: Double?
+    @State private var showsIntervalSettings = false
+    @AppStorage(ChartIntervalPreferences.storageKey) private var favoriteIntervals = ChartIntervalPreferences.defaultValue
     @StateObject private var viewModel: MarketChartViewModel
     let availableMarkets: [MarketSnapshot]
     let onSelectMarket: (MarketSnapshot, MarketKlineInterval) -> Void
@@ -123,7 +125,6 @@ private struct MarketChartDetailView: View {
     @State private var isFavorite = true
     @State private var isIndicatorSettingsPresented = false
     @State private var isOrderSettingsPresented = false
-    @State private var isLoadingOrderSettings = false
     @State private var orderDrawing: ChartOrderDrawingState?
     @State private var chartPriceProjection: ChartPriceProjection?
     @State private var wheelPreview: ChartWheelPreviewState?
@@ -166,27 +167,29 @@ private struct MarketChartDetailView: View {
 
             VStack(spacing: 0) {
                 fixedHeader
-
+                indicatorStrip
+                intervalStrip
                 GeometryReader { geometry in
                     ScrollView(showsIndicators: false) {
-                        chart
-                            .frame(
-                                width: geometry.size.width,
-                                height: chartContentHeight(
-                                    availableHeight: geometry.size.height
-                                )
-                            )
-                    }
-                    .accessibilityIdentifier("market-chart-detail-scroll")
+                        chart.frame(width: geometry.size.width,
+                            height: CGFloat(ChartPanelLayout.squareViewportHeightPoints(
+                                widthPoints: Double(geometry.size.width),
+                                indicatorPanelCount: viewModel.chartIndicatorPanelCount)))
+                    }.accessibilityIdentifier("market-chart-detail-scroll")
                 }
-
-                quickSwitcherBar
-                    .allowsHitTesting(
-                        orderDrawing == nil
-                    )
-                    .opacity(orderDrawing == nil ? 1 : 0.42)
-
-                tradeBar
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                USDTTradeView(chartInput: ChartTradeInput(symbol: viewModel.market.symbol,
+                    orderType: nativeOrderType,
+                    stopLossPrice: priceString(nativeOrderType == "limit" ? orderDrawing?.stopLossPrice : selectedStopPrice),
+                    limitPrice: priceString(orderDrawing?.entryPrice),
+                    currentPrice: priceString(viewModel.currentPrice)),
+                    onChartOrderTypeChange: { type in
+                        nativeOrderType = type
+                        initializeLimitDrawing()
+                    })
+                    .id(usdt.scope)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
             }
 
             if let wheelPreview {
@@ -217,13 +220,12 @@ private struct MarketChartDetailView: View {
         .navigationDestination(isPresented: $isOrderSettingsPresented) {
             USDTChartOrderSettingsView()
         }
-        .webSheet(isPresented: $showsNativeTicket) {
-            NavigationStack {
-                USDTTradeView(initialStop: orderDrawing.map { String(format: "%.12g", $0.stopLossPrice) } ?? "",
-                              initialLimit: orderDrawing?.entryPrice.map { String(format: "%.12g", $0) } ?? "")
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { showsNativeTicket = false } } }
-            }.environmentObject(usdt)
+        .sheet(isPresented: $showsIntervalSettings) {
+            ChartIntervalSettingsView(selection: viewModel.interval,
+                favorites: $favoriteIntervals, onSelect: viewModel.selectInterval)
         }
+        .onChange(of: viewModel.currentPrice, initial: true) { _, _ in initializeLimitDrawing() }
+        .onChange(of: nativeOrderType) { _, _ in initializeLimitDrawing() }
     }
 
     private var fixedHeader: some View {
@@ -236,18 +238,9 @@ private struct MarketChartDetailView: View {
                     VStack(alignment: .leading, spacing: 1) {
                       HStack(spacing: 5) {
                         Text(viewModel.market.symbol)
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 15, weight: .semibold))
+                            .lineLimit(1).minimumScaleFactor(0.6)
                             .foregroundStyle(BinanceTheme.primaryText)
-
-                        Text("永续")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(BinanceTheme.secondaryText)
-                            .padding(.horizontal, 4)
-                            .frame(height: 16)
-                            .background(
-                                BinanceTheme.elevated,
-                                in: RoundedRectangle(cornerRadius: 3)
-                            )
 
                         Image(systemName: "chevron.down")
                             .font(.system(size: 7, weight: .bold))
@@ -268,7 +261,14 @@ private struct MarketChartDetailView: View {
                 .accessibilityLabel("切换交易对 \(viewModel.market.symbol)")
                 .accessibilityIdentifier("market-chart-symbols")
 
-                Spacer()
+                Spacer(minLength: 2)
+                HStack(spacing: 0) {
+                    tradeTool(title: "指标", action: { isIndicatorSettingsPresented = true }) {
+                        indicatorSettingsIcon
+                    }.accessibilityIdentifier("market-chart-indicator-settings-shortcut")
+                    tradeTool("gauge.with.dots.needle.67percent", title: "自动杠杆", action: presentLeverageSettings)
+                    tradeTool("gearshape", title: "设置", action: { isOrderSettingsPresented = true })
+                }
 
                 Button {
                     isFavorite.toggle()
@@ -313,31 +313,30 @@ private struct MarketChartDetailView: View {
                 },
                 onPriceProjectionChange: { projection in
                     chartPriceProjection = projection
+                },
+                onCrosshairSelection: { selection in
+                    guard nativeOrderType == "market", selection.panelID == ChartPanelID.price,
+                        selection.panelValue.isFinite, selection.panelValue > 0 else { return }
+                    selectedStopPrice = selection.panelValue
                 }
             )
 
             if let projection = chartPriceProjection,
-               let drawing = orderDrawing {
+               nativeOrderType == "limit", let drawing = orderDrawing {
                 ChartOrderDrawingOverlay(
                     drawing: Binding(
                         get: { orderDrawing ?? drawing },
                         set: { orderDrawing = $0 }
                     ),
                     projection: projection,
-                    formatPrice: formatPrice
+                    formatPrice: formatPrice,
+                    showsSummary: false
                 )
                 .transition(.opacity)
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("market-chart-plot")
-    }
-
-    private func chartContentHeight(availableHeight: CGFloat) -> CGFloat {
-        CGFloat(ChartPanelLayout.scrollContentHeightPoints(
-            availableHeightPoints: Double(availableHeight),
-            indicatorPanelCount:
-                viewModel.chartIndicatorPanelCount
-        ))
     }
 
     private var indicatorSettingsIcon: some View {
@@ -353,150 +352,50 @@ private struct MarketChartDetailView: View {
             .frame(width: 18, height: 18)
     }
 
-    private var tradeBar: some View {
-        Group {
-            if let drawing = orderDrawing {
-                HStack(spacing: 9) {
-                    Button {
-                        withAnimation(.easeOut(duration: 0.16)) {
-                            orderDrawing = nil
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(BinanceTheme.primaryText)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                BinanceTheme.elevated,
-                                in: RoundedRectangle(cornerRadius: 7)
-                            )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 7)
-                                    .stroke(
-                                        BinanceTheme.border,
-                                        lineWidth: 0.8
-                                    )
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("取消划线下单")
-                    .accessibilityIdentifier(
-                        "market-chart-order-cancel"
-                    )
-
-                    Button {
-                        submitOrder(drawing)
-                    } label: {
-                        HStack(spacing: 7) {
-                            Text(drawing.side.title)
-                                .font(.system(size: 11, weight: .bold))
-                                .padding(.horizontal, 7)
-                                .frame(height: 22)
-                                .background(
-                                    Color.black.opacity(0.16),
-                                    in: Capsule()
-                                )
-
-                            Text("下单")
-                                .font(.system(size: 15, weight: .semibold))
-                        }
-                        .foregroundStyle(BinanceTheme.onTradeAction)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
-                        .background(
-                            drawing.side == .long
-                                ? ChartPalette.actionPositive
-                                : ChartPalette.actionNegative,
-                            in: RoundedRectangle(cornerRadius: 7)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("打开开仓表单并确认订单")
-                    .accessibilityIdentifier(
-                        "market-chart-order-submit"
-                    )
-                }
-            } else {
-                HStack(spacing: 8) {
-                    tradeTool(
-                        title: "指标",
-                        action: { isIndicatorSettingsPresented = true }
-                    ) {
-                        indicatorSettingsIcon
-                    }
-                    .accessibilityIdentifier(
-                        "market-chart-indicator-settings-shortcut"
-                    )
-                    .accessibilityHint("打开指标参数设置")
-                    tradeTool(
-                        "gauge.with.dots.needle.67percent",
-                        title: leverageToolTitle,
-                        action: presentLeverageSettings
-                    )
-                    tradeTool(
-                        "gearshape",
-                        title: "设置"
-                    ) {
-                        isOrderSettingsPresented = true
-                    }
-
-                    Button {
-                        beginOrderDrawing(side: .long)
-                    } label: {
-                        Text("做多")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(BinanceTheme.onTradeAction)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
-                            .background(
-                                ChartPalette.actionPositive,
-                                in: RoundedRectangle(cornerRadius: 6)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("market-chart-order-long")
-
-                    Button {
-                        beginOrderDrawing(side: .short)
-                    } label: {
-                        Text("做空")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(BinanceTheme.onTradeAction)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
-                            .background(
-                                ChartPalette.actionNegative,
-                                in: RoundedRectangle(cornerRadius: 6)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("market-chart-order-short")
-                }
-            }
-        }
-        .padding(.horizontal, 15)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(BinanceTheme.background)
+    private var indicatorStrip: some View {
+        MarketChartQuickIndicatorStrip(activeIndicators: Set(
+            MarketChartIndicatorCatalog.all.filter(viewModel.isChartIndicatorActive)),
+            onToggle: viewModel.toggleChartIndicator)
+            .frame(height: 42)
     }
 
-    private var quickSwitcherBar: some View {
-        MarketChartQuickSwitcher(
-            markets: availableMarkets,
-            selectedMarket: viewModel.market,
-            selectedInterval: viewModel.interval,
-            onSelectMarket: {
-                onSelectMarket($0, viewModel.interval)
-            },
-            onSelectInterval: viewModel.selectInterval,
-            activeIndicators: Set(
-                MarketChartIndicatorCatalog.all.filter(
-                    viewModel.isChartIndicatorActive
-                )
-            ),
-            onToggleIndicator: viewModel.toggleChartIndicator,
-            onPreviewChange: updateWheelPreview
-        )
+    private var intervalStrip: some View {
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(ChartIntervalPreferences.visible(favoriteIntervals, selected: viewModel.interval)) { interval in
+                        Button { viewModel.selectInterval(interval) } label: {
+                            Text(interval.title).font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(interval == viewModel.interval ? BinanceTheme.accentText : BinanceTheme.secondaryText)
+                                .padding(.horizontal, 10).frame(height: 38)
+                                .background(alignment: .bottom) {
+                                    if interval == viewModel.interval { Rectangle().fill(BinanceTheme.accent).frame(height: 2) }
+                                }
+                        }.buttonStyle(.plain).accessibilityIdentifier("chart-interval." + interval.rawValue)
+                    }
+                }
+            }
+            Button { showsIntervalSettings = true } label: {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 14)).frame(width: 44, height: 38)
+            }.buttonStyle(.plain).accessibilityLabel("编辑时间周期").accessibilityIdentifier("chart-interval.edit")
+        }.padding(.leading, 4).background(BinanceTheme.background)
+    }
+
+    private func priceString(_ value: Double?) -> String {
+        guard let value, value.isFinite, value > 0 else { return "" }
+        return NSDecimalNumber(string: String(format: "%.12g", locale: Locale(identifier: "en_US_POSIX"), value)).stringValue
+    }
+
+    private func initializeLimitDrawing() {
+        guard nativeOrderType == "limit", orderDrawing == nil, viewModel.currentPrice > 0 else { return }
+        guard var drawing = ChartOrderDrawingState.make(side: .long, entryOrderType: .limit,
+            referencePrice: viewModel.currentPrice) else { return }
+        if let stop = selectedStopPrice, stop != viewModel.currentPrice {
+            drawing.entryPrice = viewModel.currentPrice
+            drawing.stopLossPrice = stop
+        }
+        drawing.allowsSideChange = true
+        orderDrawing = drawing
     }
 
     private func updateWheelPreview(
@@ -545,29 +444,6 @@ private struct MarketChartDetailView: View {
             .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
-    }
-
-    private func beginOrderDrawing(side: ChartOrderSide) {
-        guard !isLoadingOrderSettings else { return }
-        isLoadingOrderSettings = true
-        Task {
-            defer { isLoadingOrderSettings = false }
-            await usdt.refresh()
-            guard usdt.isBound else { toastCenter.warning("请先在我的页面绑定 API"); return }
-            guard let risk = Decimal(string: usdt.riskAmount), risk > 0,
-                  let drawing = ChartOrderDrawingState.make(side: side,
-                    entryOrderType: nativeOrderType == "market" ? .market : .limit,
-                    referencePrice: viewModel.currentPrice,
-                    riskAmount: NSDecimalNumber(decimal: risk).doubleValue) else {
-                toastCenter.warning("价格或止损金额暂不可用"); return
-            }
-            orderDrawing = drawing
-        }
-    }
-
-    private func submitOrder(_ drawing: ChartOrderDrawingState) {
-        usdt.selectedSymbol = viewModel.market.symbol
-        showsNativeTicket = true
     }
 
     private var leverageToolTitle: String { "自动杠杆" }
@@ -626,60 +502,6 @@ where Item.ID: Hashable {
     }
 }
 
-private struct MarketChartQuickSwitcher: View {
-    let markets: [MarketSnapshot]
-    let selectedMarket: MarketSnapshot
-    let selectedInterval: MarketKlineInterval
-    let onSelectMarket: (MarketSnapshot) -> Void
-    let onSelectInterval: (MarketKlineInterval) -> Void
-    let activeIndicators: Set<String>
-    let onToggleIndicator: (String) -> Void
-    let onPreviewChange: (String, ChartWheelPreviewState?) -> Void
-
-    var body: some View {
-        HStack(spacing: 16) {
-            MarketChartQuickIndicatorStrip(
-                activeIndicators: activeIndicators,
-                onToggle: onToggleIndicator
-            )
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-
-            ChartWheelSwitcher(
-                items: markets,
-                selectedID: selectedMarket.id,
-                width: 68,
-                accessibilityLabel: "币种",
-                identifierPrefix: "market-chart-quick-symbol",
-                label: \MarketSnapshot.symbol,
-                onSelect: onSelectMarket,
-                onPreviewChange: onPreviewChange
-            )
-            .frame(width: 68, height: 52)
-
-            ChartWheelSwitcher(
-                items: MarketKlineInterval.allCases,
-                selectedID: selectedInterval.id,
-                width: 52,
-                accessibilityLabel: "时间间隔",
-                identifierPrefix: "market-chart-quick-interval",
-                label: \MarketKlineInterval.title,
-                onSelect: onSelectInterval,
-                onPreviewChange: onPreviewChange
-            )
-            .frame(width: 52, height: 52)
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 52)
-        .background(BinanceTheme.background)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(BinanceTheme.navigationBorder.opacity(0.75))
-                .frame(height: 0.5)
-        }
-    }
-}
-
 private struct MarketChartQuickIndicatorStrip: View {
     let activeIndicators: Set<String>
     let onToggle: (String) -> Void
@@ -704,7 +526,7 @@ private struct MarketChartQuickIndicatorStrip: View {
                 )
             }
             .padding(.horizontal, 2)
-            .frame(height: 52)
+            .frame(height: 42)
         }
         .accessibilityIdentifier("market-chart-quick-indicator-strip")
     }
@@ -747,7 +569,7 @@ private struct MarketChartQuickIndicatorStrip: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 6)
-                .frame(height: 44)
+                .frame(height: 40)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1467,5 +1289,83 @@ private enum MarketDisplayFormatter {
         formatter.maximumFractionDigits = maximumFractionDigits
         return formatter.string(from: NSNumber(value: value))
             ?? String(format: "%.\(maximumFractionDigits)f", value)
+    }
+}
+
+/// Favorite intervals are chronological shortcuts; selecting another supported interval never changes the favorites.
+enum ChartIntervalPreferences {
+    static let storageKey = "integrated.chart.favoriteIntervals"
+    static let defaultValue = "3m,5m,15m,1h,4h,1d"
+    static func favorites(_ value: String) -> [MarketKlineInterval] {
+        let enabled = Set(value.split(separator: ",").compactMap { MarketKlineInterval(rawValue: String($0)) })
+        if enabled.isEmpty, value != defaultValue { return favorites(defaultValue) }
+        return MarketKlineInterval.allCases.filter { enabled.contains($0) }
+    }
+    static func visible(_ value: String, selected: MarketKlineInterval) -> [MarketKlineInterval] {
+        let enabled = Set(favorites(value) + [selected])
+        return MarketKlineInterval.allCases.filter { enabled.contains($0) }
+    }
+    static func toggling(_ interval: MarketKlineInterval, in value: String) -> String {
+        var enabled = Set(favorites(value))
+        if enabled.contains(interval) {
+            guard enabled.count > 1 else { return value }
+            enabled.remove(interval)
+        } else { enabled.insert(interval) }
+        return MarketKlineInterval.allCases.filter { enabled.contains($0) }.map(\.rawValue).joined(separator: ",")
+    }
+}
+
+private struct ChartIntervalSettingsView: View {
+    let selection: MarketKlineInterval
+    @Binding var favorites: String
+    let onSelect: (MarketKlineInterval) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("时间周期").font(.system(size: 20, weight: .bold))
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                }.buttonStyle(.plain).accessibilityLabel("关闭")
+            }.padding(.horizontal, 20).padding(.top, 12)
+            Text("点击周期切换图表；星标周期显示在快捷栏，至少保留一个。")
+                .font(.system(size: 12)).foregroundStyle(BinanceTheme.secondaryText)
+                .padding(.horizontal, 20).padding(.bottom, 12)
+            List {
+                intervalSection("分钟", intervals: [.oneMinute, .threeMinutes, .fiveMinutes, .fifteenMinutes])
+                intervalSection("小时", intervals: [.oneHour, .fourHours])
+                intervalSection("天", intervals: [.oneDay])
+            }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
+            Button("恢复默认周期") { favorites = ChartIntervalPreferences.defaultValue }
+                .buttonStyle(.plain).foregroundStyle(BinanceTheme.accentText)
+                .frame(minHeight: 44).padding(.bottom, 12)
+        }.foregroundStyle(BinanceTheme.primaryText).background(BinanceTheme.background)
+            .largeTradingSheet()
+    }
+    private func intervalSection(_ title: String, intervals: [MarketKlineInterval]) -> some View {
+        Section(title) {
+            ForEach(intervals) { interval in
+                HStack {
+                    Button {
+                        onSelect(interval); dismiss()
+                    } label: {
+                        HStack {
+                            Text(interval.title)
+                            Spacer()
+                            if interval == selection { Image(systemName: "checkmark").foregroundStyle(BinanceTheme.accentText) }
+                        }.contentShape(Rectangle()).frame(minHeight: 44)
+                    }.buttonStyle(.plain).accessibilityIdentifier("interval-settings.select." + interval.rawValue)
+                    let enabled = ChartIntervalPreferences.favorites(favorites).contains(interval)
+                    Button { favorites = ChartIntervalPreferences.toggling(interval, in: favorites) } label: {
+                        Image(systemName: enabled ? "star.fill" : "star")
+                            .foregroundStyle(enabled ? BinanceTheme.accentText : BinanceTheme.secondaryText)
+                            .frame(width: 44, height: 44)
+                    }.buttonStyle(.plain).accessibilityLabel(interval.title + (enabled ? "停用快捷周期" : "启用快捷周期"))
+                        .accessibilityIdentifier("interval-settings.favorite." + interval.rawValue)
+                }.listRowBackground(BinanceTheme.surface)
+            }
+        }
     }
 }

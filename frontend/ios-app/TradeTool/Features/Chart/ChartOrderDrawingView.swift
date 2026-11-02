@@ -41,6 +41,11 @@ struct ChartOrderDrawingState: Equatable {
     let riskAmount: Double
     var entryPrice: Double?
     var stopLossPrice: Double
+    var allowsSideChange = false
+
+    var inferredSide: ChartOrderSide {
+        allowsSideChange ? (stopLossPrice < effectiveEntryPrice ? .long : .short) : side
+    }
 
     static func make(
         side: ChartOrderSide,
@@ -122,6 +127,12 @@ struct ChartOrderDrawingState: Equatable {
             referencePrice * 0.0001,
             (range.upperBound - range.lowerBound) * 0.001
         )
+        if allowsSideChange {
+            let price = clamp(proposedPrice, range)
+            if line == .entry, entryPrice != nil { entryPrice = price }
+            if line == .stopLoss { stopLossPrice = price }
+            return
+        }
 
         switch line {
         case .entry:
@@ -183,6 +194,7 @@ struct ChartOrderDrawingOverlay: View {
     @Binding var drawing: ChartOrderDrawingState
     let projection: ChartPriceProjection
     let formatPrice: (Double) -> String
+    var showsSummary = true
 
     private let coordinateSpaceName = "chart-order-drawing-overlay"
 
@@ -207,7 +219,7 @@ struct ChartOrderDrawingOverlay: View {
                     color: BinanceTheme.negative
                 )
 
-                modeBadge
+                if showsSummary { modeBadge }
             }
             .coordinateSpace(name: coordinateSpaceName)
         }
@@ -237,7 +249,7 @@ struct ChartOrderDrawingOverlay: View {
     private var modeBadge: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 7) {
-                Text(drawing.side.title)
+                Text(drawing.inferredSide.title)
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(BinanceTheme.onColor)
                     .padding(.horizontal, 7)
@@ -369,13 +381,14 @@ struct ChartOrderDrawingOverlay: View {
             }
         )
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(kind == .entry ? "chart-order-line.entry" : "chart-order-line.stopLoss")
         .accessibilityLabel("\(title)价格线")
         .accessibilityValue(formatPrice(price))
         .accessibilityHint("上下拖动调整价格")
     }
 
     private var sideColor: Color {
-        drawing.side == .long
+        drawing.inferredSide == .long
             ? BinanceTheme.positive
             : BinanceTheme.negative
     }

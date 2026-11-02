@@ -908,42 +908,24 @@ final class ChartCalibrationUITests: XCTestCase {
         XCTAssertEqual(favorite.value as? String, "未收藏")
         favorite.tap()
         XCTAssertEqual(favorite.value as? String, "已收藏")
-        XCTAssertEqual(chart.frame.minY, header.frame.maxY, accuracy: 1)
-        XCTAssertEqual(detailScroll.frame.maxY, strip.frame.minY, accuracy: 1)
-        XCTAssertEqual(
-            chart.frame.height - detailScroll.frame.height,
-            74,
-            accuracy: 1
-        )
-        XCTAssertGreaterThan(chart.frame.height, 520)
-
-        XCTAssertTrue(app.scrollViews[
-            "market-chart-quick-indicator-strip"
-        ].exists)
-        for identifier in [
-            "market-chart-quick-symbol-wheel",
-            "market-chart-quick-interval-wheel",
-        ] {
-            XCTAssertTrue(app.collectionViews[identifier].isHittable)
-        }
-        for identifier in [
-            "market-chart-indicator-settings-shortcut",
-            "market-chart-order-long", "market-chart-order-short",
-        ] {
-            XCTAssertTrue(app.buttons[identifier].isHittable)
-        }
+        XCTAssertLessThan(header.frame.maxY, strip.frame.maxY)
+        XCTAssertLessThanOrEqual(strip.frame.maxY, app.buttons["chart-interval.1h"].frame.minY)
+        XCTAssertLessThanOrEqual(app.buttons["chart-interval.1h"].frame.maxY, chart.frame.minY + 1)
+        XCTAssertLessThanOrEqual(app.buttons["chart-ticket.submit"].frame.maxY, app.frame.maxY - 20)
+        XCTAssertTrue(app.buttons["market-chart-indicator-settings-shortcut"].isHittable)
+        XCTAssertTrue(app.buttons["自动杠杆"].isHittable)
         XCTAssertTrue(app.buttons["设置"].isHittable)
-        attachScreenshot(named: "trade-tool-chart-time-axis-and-panel-footer")
+        XCTAssertFalse(app.buttons["market-chart-order-long"].exists)
+        XCTAssertFalse(app.buttons["market-chart-order-short"].exists)
+        XCTAssertTrue(app.buttons["chart-ticket.submit"].isHittable)
+        attachScreenshot(named: "trade-tool-square-chart-and-ticket")
         detailScroll.swipeUp(velocity: .slow)
         waitForAnimations()
-        attachScreenshot(named: "trade-tool-chart-additional-panels")
-        XCTAssertTrue(app.buttons["market-chart-order-long"].isHittable)
+        XCTAssertTrue(app.buttons["chart-ticket.submit"].isHittable)
+        attachScreenshot(named: "trade-tool-compact-additional-panels")
         detailScroll.swipeDown(velocity: .slow)
-        waitForAnimations()
         setTradeToolIndicator("MA", enabled: true, in: app)
         setTradeToolIndicator("MA", enabled: false, in: app)
-        setTradeToolIndicator("Basis", enabled: true, in: app)
-        setTradeToolIndicator("Basis", enabled: false, in: app)
     }
 
     func testCaptureTradeToolPanelActivationOrder() throws {
@@ -980,12 +962,10 @@ final class ChartCalibrationUITests: XCTestCase {
         selectTradeToolInterval("4小时", in: app)
         waitForAnimations()
         try assertTradeToolPanelOrder(reordered, in: app)
-        app.descendants(matching: .any)["market-chart-quick-symbol-next"].tap()
+        app.buttons["market-chart-symbols"].tap()
+        app.buttons["pairs.select.ETHUSDC"].tap()
         waitForAnimations()
-        XCTAssertEqual(
-            app.descendants(matching: .any)["market-chart-quick-symbol-current"].label,
-            "ETHUSDC"
-        )
+        XCTAssertTrue(app.buttons["market-chart-symbols"].label.contains("ETHUSDC"))
         try assertTradeToolPanelOrder(reordered, in: app)
 
         app.terminate()
@@ -1018,135 +998,21 @@ final class ChartCalibrationUITests: XCTestCase {
         waitForAnimations()
     }
 
-    func testCaptureTradeToolQuickSwitcherFlow() {
+    func testChartIntervalShortcutsAndSettings() {
         let app = XCUIApplication(bundleIdentifier: AppID.tradeTool)
-        app.launchArguments.append("--chart-calibration-fixture")
+        app.launchArguments = ["--chart-calibration-fixture"]
         app.launch()
-        XCTAssertTrue(
-            app.wait(for: .runningForeground, timeout: 15),
-            "Trade Tool did not enter the foreground."
-        )
-        openTradeToolDetailIfNeeded(in: app)
-        waitForAnimations()
-
-        let chartPlot = app.descendants(matching: .any)[
-            "market-chart-plot"
-        ]
-        let symbolWheel = app.collectionViews[
-            "market-chart-quick-symbol-wheel"
-        ]
-        let intervalWheel = app.collectionViews[
-            "market-chart-quick-interval-wheel"
-        ]
-        let currentSymbol = app.descendants(matching: .any)[
-            "market-chart-quick-symbol-current"
-        ]
-        let currentInterval = app.descendants(matching: .any)[
-            "market-chart-quick-interval-current"
-        ]
-        XCTAssertTrue(chartPlot.waitForExistence(timeout: 15))
-        XCTAssertTrue(symbolWheel.waitForExistence(timeout: 10))
-        XCTAssertEqual(currentSymbol.label, "BTCUSDC")
-        XCTAssertEqual(currentInterval.label, "1小时")
-
-        let indicatorStrip = app.descendants(matching: .any)[
-            "market-chart-quick-indicator-strip"
-        ]
-        let bottomMA = app.buttons[
-            "market-chart-quick-indicator-MA"
-        ]
-        XCTAssertTrue(indicatorStrip.waitForExistence(timeout: 10))
-        XCTAssertTrue(intervalWheel.waitForExistence(timeout: 10))
-        XCTAssertLessThanOrEqual(
-            indicatorStrip.frame.maxX,
-            symbolWheel.frame.minX
-        )
-        XCTAssertLessThanOrEqual(
-            symbolWheel.frame.maxX,
-            intervalWheel.frame.minX
-        )
-        XCTAssertTrue(bottomMA.waitForExistence(timeout: 10))
-        XCTAssertTrue(bottomMA.isHittable)
-        let initialMAValue = bottomMA.value as? String
-        bottomMA.tap()
-        let toggledMAValue = initialMAValue == "已开启"
-            ? "已关闭"
-            : "已开启"
-        wait(seconds: 0.8)
-        XCTAssertEqual(
-            bottomMA.value as? String,
-            toggledMAValue
-        )
-        bottomMA.tap()
-        wait(seconds: 0.8)
-        XCTAssertEqual(bottomMA.value as? String, initialMAValue)
-
-        attachScreenshot(named: "trade-tool-quick-switcher-btc-1h")
-
-        let lastPanelIndicator = app.buttons[
-            "market-chart-quick-indicator-Basis"
-        ]
-        for _ in 0..<6 where !lastPanelIndicator.isHittable {
-            indicatorStrip.swipeLeft(velocity: .fast)
-            wait(seconds: 0.2)
-        }
-        XCTAssertTrue(
-            lastPanelIndicator.isHittable,
-            "Bottom indicator strip did not scroll to the final panel item."
-        )
-        attachScreenshot(named: "trade-tool-quick-indicator-panels")
-
-        let nextSymbol = app.descendants(matching: .any)[
-            "market-chart-quick-symbol-next"
-        ]
-        XCTAssertTrue(nextSymbol.waitForExistence(timeout: 10))
-        nextSymbol.tap()
-        XCTAssertTrue(currentSymbol.waitForExistence(timeout: 10))
-        wait(seconds: 1.5)
-        XCTAssertEqual(currentSymbol.label, "ETHUSDC")
-
-        let nextInterval = app.descendants(matching: .any)[
-            "market-chart-quick-interval-next"
-        ]
-        XCTAssertTrue(nextInterval.waitForExistence(timeout: 10))
-        nextInterval.tap()
-        wait(seconds: 1.5)
-        XCTAssertEqual(currentInterval.label, "4小时")
-        XCTAssertTrue(chartPlot.exists)
-        attachScreenshot(named: "trade-tool-quick-switcher-eth-4h")
-
-        intervalWheel.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)
-        ).press(
-            forDuration: 0.05,
-            thenDragTo: intervalWheel.coordinate(
-                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)
-            ),
-            withVelocity: .slow,
-            thenHoldForDuration: 0
-        )
-        attachImmediateScreenshot(
-            named: "trade-tool-quick-switcher-wheel-preview"
-        )
-        wait(seconds: 1.5)
-        XCTAssertFalse(app.descendants(matching: .any)[
-            "market-chart-wheel-preview"
-        ].exists)
-        XCTAssertEqual(currentInterval.label, "1天")
-        XCTAssertTrue(chartPlot.exists)
-        attachScreenshot(named: "trade-tool-quick-switcher-dragged-1d")
-
-        let indicatorSettingsShortcut = app.buttons[
-            "market-chart-indicator-settings-shortcut"
-        ]
-        XCTAssertTrue(
-            indicatorSettingsShortcut.waitForExistence(timeout: 10)
-        )
-        indicatorSettingsShortcut.tap()
-        XCTAssertTrue(
-            app.staticTexts["指标设置"].waitForExistence(timeout: 10)
-        )
-        attachScreenshot(named: "trade-tool-bottom-indicator-settings")
+        XCTAssertTrue(app.buttons["chart-interval.edit"].waitForExistence(timeout: 10))
+        app.buttons["chart-interval.edit"].tap()
+        app.buttons["恢复默认周期"].tap()
+        XCTAssertTrue(app.buttons["interval-settings.favorite.3m"].exists)
+        app.buttons["interval-settings.favorite.1m"].tap()
+        app.buttons["interval-settings.select.3m"].tap()
+        XCTAssertTrue(app.buttons["chart-interval.3m"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chart-interval.1m"].exists)
+        app.buttons["chart-interval.4h"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["market-chart-plot"].exists)
+        attachScreenshot(named: "chart-configurable-intervals")
     }
 
     func testCaptureTradeToolPrimaryIndicatorReferences() {
@@ -2245,17 +2111,13 @@ final class ChartCalibrationUITests: XCTestCase {
         _ title: String,
         in app: XCUIApplication
     ) {
-        let current = app.descendants(matching: .any)[
-            "market-chart-quick-interval-current"
-        ]
-        XCTAssertTrue(current.waitForExistence(timeout: 10))
-        for _ in 0..<6 where current.label != title {
-            app.descendants(matching: .any)[
-                "market-chart-quick-interval-next"
-            ].tap()
-            wait(seconds: 0.8)
-        }
-        XCTAssertEqual(current.label, title)
+        let intervals = ["1分": "1m", "3分": "3m", "5分": "5m", "15分": "15m", "1小时": "1h", "4小时": "4h", "1天": "1d"]
+        guard let key = intervals[title] else { XCTFail("Unknown interval " + title); return }
+        app.buttons["chart-interval.edit"].tap()
+        let button = app.buttons["interval-settings.select." + key]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.tap()
+        XCTAssertTrue(app.buttons["chart-interval." + key].waitForExistence(timeout: 5))
     }
 
     private func resetToOneHour(
@@ -3002,6 +2864,52 @@ final class WebParityUITests: XCTestCase {
     switcher.tap()
     XCTAssertTrue(ada.waitForExistence(timeout: 5))
     XCTAssertEqual(ada.value as? String, "未自选")
+  }
+
+  func testChartCrosshairLimitLinesAndSharedEntryConfirmation() {
+    launch("market", ["--fixture-entry-ready"])
+    app.buttons["搜索币种、币对或合约"].tap()
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    let ticket = app.buttons["chart-ticket.submit"]
+    XCTAssertTrue(ticket.waitForExistence(timeout: 10))
+    let modes = app.segmentedControls["chart-ticket.order-type"]
+    modes.buttons["市价"].tap()
+    let chart = app.descendants(matching: .any)["market-chart-plot"]
+    let side = chart.frame.width - 62
+    let base = app.coordinate(withNormalizedOffset: .zero)
+    let lower = base.withOffset(CGVector(dx: chart.frame.minX + side * 0.6, dy: chart.frame.minY + 30 + side * 0.85))
+    let upper = base.withOffset(CGVector(dx: chart.frame.minX + side * 0.6, dy: chart.frame.minY + 30 + side * 0.15))
+    lower.press(forDuration: 0.6)
+    XCTAssertTrue(NSPredicate(format: "label == %@", "开多").evaluate(with: ticket))
+    XCTAssertNotEqual(app.staticTexts["chart-ticket.仓位"].label, "--")
+    capture("chart-market-long-crosshair")
+    upper.press(forDuration: 0.6)
+    XCTAssertEqual(ticket.label, "开空")
+    capture("chart-market-short-crosshair")
+    app.buttons["chart-ticket.risk-settings"].tap()
+    XCTAssertTrue(app.sliders["stop-loss.percentage"].waitForExistence(timeout: 5))
+    app.buttons["关闭"].firstMatch.tap()
+    modes.buttons["限价"].tap()
+    let stopLine = app.descendants(matching: .any)["chart-order-line.stopLoss"].firstMatch
+    let entryLine = app.descendants(matching: .any)["chart-order-line.entry"].firstMatch
+    XCTAssertTrue(stopLine.waitForExistence(timeout: 5))
+    XCTAssertTrue(entryLine.exists)
+    let linePoint = stopLine.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5))
+    linePoint.press(forDuration: 0.1, thenDragTo: upper)
+    XCTAssertEqual(ticket.label, "开空")
+    capture("chart-limit-short-lines")
+    ticket.tap()
+    XCTAssertTrue(app.staticTexts["委托确认"].waitForExistence(timeout: 5))
+    app.buttons["取消"].tap()
+    XCTAssertTrue(ticket.exists)
+    modes.buttons["市价"].tap()
+    lower.press(forDuration: 0.6)
+    ticket.tap()
+    XCTAssertTrue(app.staticTexts["方向初筛通过，再次点击确认开仓"].waitForExistence(timeout: 5))
+    ticket.tap()
+    XCTAssertTrue(app.staticTexts["开仓确认"].waitForExistence(timeout: 5))
+    capture("chart-shared-market-confirmation")
+    app.buttons["取消"].tap()
   }
 
   func testNativeWatchlistDragAndMoveToTop() {

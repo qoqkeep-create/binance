@@ -14,6 +14,15 @@
 
 2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
 
+## 图表下单与周期回归（2026-11-02）
+
+图表复用标准 USDT 开仓流程，行为见 [页面](ios-web-parity.md#k-线下单区域2026-11-02)，确认与估算边界见 [交易安全](trading-safety.md#图表与标准开仓共用流程2026-11-02)。新增 `ChartOrderTicketTests` 五项覆盖 Decimal 金额／费用、无效和相等止损、方向变化、确认快照／原命令字段、限价线交叉、不同屏宽／比例下的正方形价格绘图区及快捷周期偏好。
+
+`ChartOrderTicketTests`、`ChartEngineCoreTests`、`MarketFastPathTests` 共 **162 项通过（41.147 秒）**。后端 `manage.py test market_stream --noinput` 共 **73 项通过（最终隔离源码 8.681 秒，5 项独立 Redis 条件跳过）**；新增 3m 聚合和不调度不受支持统计的回归先失败再修复。首轮全量暴露旧任务数断言仍为六个，更新为七个后通过。隔离 SQLite／LocMem 与交易所替身不能代表 MySQL 并发或出口长稳。
+
+专用 `Chart Order Review` 模拟器验证布局、周期编辑、主图十字线、限价线拖动与共用止损／开仓确认，测试只取消确认。首轮发现校准 fixture 缺少 AppContainer 环境导致崩溃，以及父容器无障碍标识覆盖子按钮；已补齐 fixture 并将容器设为独立分组。第二轮修正布局断言的浮点误差，并为确认流程单独指定资金已就绪 fixture；一轮补测在启动前因专用模拟器关闭导致 runner 超时，保留失败证据。最终从仅含本任务的源码快照验证：三项 UI 全部通过（121.981 秒），generic iOS Release 未签名构建通过；截图复核后将确认框的费用合计按已有 Decimal 金额工具保留两位，随后仅补构建。Release 及最终 UI 证据保存在忽略目录 `.integration-runtime/ChartTicket/`；不作为 TestFlight 或手机验收。
+
+
 ## K 线协调与出口保护回归
 
 构建 13／14 速度排查新增 `HistoryFastPathTests.test_cold_first_page_does_not_materialize_unused_history`，在实际 `load_history` 冷读路径填入 3001 根并检查只物化所需 1500 根，同时核对返回窗口和非 stale 状态；修复前断言为 `3000 != 1500`。2026-11-01 使用下文临时 Redis 配置执行 `manage.py test market_stream --noinput`，58 项全部通过。这一步仅本地后端窗口减量，未部署；随后新增持久诊断，见下节。隔离源码副本上的 4 轮首帧 UI 对照和 36 个进入样本见 [行情排查](market-data.md#构建-1314-速度回退排查2026-11-01)，不能用它替代手机 TestFlight 13／14 的验收。

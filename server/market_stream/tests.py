@@ -3,6 +3,24 @@ from market_stream.core import aggregate_complete, normalize_kline, number, rest
 
 
 class MarketCoreTests(SimpleTestCase):
+    def test_three_minute_bucket_is_aligned_and_complete(self):
+        rows = [self.minute(i * 60000) for i in range(3, 6)]
+        result = aggregate_complete(rows[::-1], "3m")
+        self.assertEqual(result["openTime"], 180000)
+        self.assertEqual(result["closeTime"], 359999)
+        self.assertEqual(result["volume"], "0.3")
+        self.assertIsNone(aggregate_complete(rows[1:], "3m"))
+
+    def test_three_minute_statistics_do_not_schedule_unsupported_public_requests(self):
+        from market_stream.trading_data import attach, load_series
+        from unittest.mock import patch
+        result = {"symbol": "BTCUSDT", "interval": "3m", "items": [self.minute(0)]}
+        with patch("market_stream.repair.schedule") as schedule, patch("market_stream.trading_data.public_request") as request:
+            self.assertEqual(attach(result, {"openInterest"}), result)
+            load_series(result, "openInterest")
+            schedule.assert_not_called()
+            request.assert_not_called()
+
     def minute(self, time):
         return {"symbol": "BTCUSDT", "interval": "1m", "openTime": time,
                 "closeTime": time + 59999, "eventTime": time + 60000,
@@ -232,8 +250,8 @@ class BackgroundRepairTests(TestCase):
         from market_stream.models import MarketHistoryTask
         repair.seed(["BTCUSDT", "ETHUSDT"])
         repair.seed(["BTCUSDT"])
-        self.assertEqual(set(MarketHistoryTask.objects.values_list("interval", flat=True)), {"1m", "5m", "15m", "1h", "4h", "1d"})
-        self.assertEqual(MarketHistoryTask.objects.count(), 6)
+        self.assertEqual(set(MarketHistoryTask.objects.values_list("interval", flat=True)), {"1m", "3m", "5m", "15m", "1h", "4h", "1d"})
+        self.assertEqual(MarketHistoryTask.objects.count(), 7)
 
     @patch("market_stream.trading_data.public_request", side_effect=AssertionError("statistics must not block HTTP"))
     def test_statistics_are_cached_or_queued_without_network(self, request):

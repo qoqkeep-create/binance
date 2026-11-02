@@ -1206,3 +1206,76 @@ private actor RetainedRiskFixtureAPI: APIClient {
         return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
     }
 }
+
+final class ChartOrderTicketTests: XCTestCase {
+    func draft(stop: String = "99", entry: String = "100", type: String = "market", fee: Bool = false) -> USDTEntryDraft {
+        USDTEntryDraft(symbol: "BTCUSDT", orderType: type, stopLossPrice: stop,
+            limitPrice: type == "limit" ? entry : "", currentPrice: entry, riskAmount: "10",
+            includeFee: fee, strategy: nil)
+    }
+    func testSharedDecimalSizingAndAutomaticDirection() {
+        let long = draft()
+        XCTAssertTrue(long.isLong)
+        XCTAssertEqual(long.positionEstimate, 1000)
+        XCTAssertEqual(long.feeText, "1")
+        let short = draft(stop: "101")
+        XCTAssertFalse(short.isLong)
+        XCTAssertEqual(short.positionEstimate, long.positionEstimate)
+        XCTAssertEqual(draft(fee: true).positionEstimate, Decimal(10) / Decimal(string: "0.011")!)
+        for stop in ["100", "0", "-1", "NaN", "invalid"] {
+            XCTAssertFalse(draft(stop: stop).isValid)
+            XCTAssertEqual(draft(stop: stop).positionEstimate, 0)
+        }
+    }
+    func testFrozenIntentAndOriginalCommandPayload() {
+        let market = draft()
+        let payload = market.payload(ema: .object(["check_id": .string("screening")]))
+        XCTAssertEqual(payload["stop_loss_price"], .string("99"))
+        XCTAssertEqual(payload["ema_check_id"], .string("screening"))
+        XCTAssertNil(payload["limit_price"])
+        XCTAssertFalse(market.matchesIntent(draft(stop: "98")))
+        XCTAssertFalse(market.matchesIntent(draft(stop: "99", entry: "98")))
+        XCTAssertTrue(market.matchesIntent(draft(entry: "100.01")))
+        let limit = draft(stop: "99", entry: "101", type: "limit")
+        XCTAssertEqual(limit.payload(ema: .null)["limit_price"], .string("101"))
+        XCTAssertNil(limit.payload(ema: .null)["ema_check_id"])
+        XCTAssertEqual(payload["symbol"], .string("BTCUSDT"), "Editing another draft must not change the frozen request")
+    }
+    func testLimitDrawingCanCrossAndInferBothDirections() throws {
+        var drawing = try XCTUnwrap(ChartOrderDrawingState.make(side: .long, entryOrderType: .limit, referencePrice: 100))
+        drawing.allowsSideChange = true
+        drawing.move(.entry, to: 100, within: 90...110)
+        drawing.move(.stopLoss, to: 105, within: 90...110)
+        XCTAssertEqual(drawing.inferredSide, .short)
+        drawing.move(.stopLoss, to: 95, within: 90...110)
+        XCTAssertEqual(drawing.inferredSide, .long)
+        drawing.move(.entry, to: 94, within: 90...110)
+        XCTAssertEqual(drawing.inferredSide, .short)
+    }
+    func testSquarePlotAndCompactPanelsAtAllScales() throws {
+        for width in [320.0, 390, 440, 820] {
+            for count in [0, 1, 2, 5] {
+                for scale in [1.0, 2, 3] {
+                    let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: width,
+                        heightPoints: ChartPanelLayout.squareViewportHeightPoints(widthPoints: width, indicatorPanelCount: count),
+                        displayScale: scale))
+                    let layout = try XCTUnwrap(ChartPanelLayout.make(viewport: viewport,
+                        indicatorPanelIDs: Array(["volume", "macd", "rsi", "obv", "atr"].prefix(count))))
+                    let plot = try XCTUnwrap(layout.pricePanel?.plot)
+                    XCTAssertEqual(plot.height, plot.width, accuracy: 0.001)
+                    for panel in layout.indicatorPanels { XCTAssertEqual(panel.frame.height, Float(72 * scale)) }
+                    XCTAssertEqual(layout.indicatorPanels.last?.frame.bottom ?? layout.timeAxisBottom, Float(viewport.heightPixels), accuracy: 0.001)
+                }
+            }
+        }
+    }
+    func testIntervalFavoritesKeepAtLeastOneAndRetainCurrentSelection() {
+        XCTAssertEqual(ChartIntervalPreferences.favorites(ChartIntervalPreferences.defaultValue).map(\.rawValue), ["3m", "5m", "15m", "1h", "4h", "1d"])
+        XCTAssertEqual(ChartIntervalPreferences.toggling(.oneHour, in: "1h"), "1h")
+        XCTAssertEqual(ChartIntervalPreferences.toggling(.oneMinute, in: "1h"), "1m,1h")
+        XCTAssertEqual(ChartIntervalPreferences.visible("1h", selected: .threeMinutes).map(\.rawValue), ["3m", "1h"])
+        XCTAssertEqual(ChartIntervalPreferences.favorites("bad,1h,1h"), [.oneHour])
+        XCTAssertFalse(ChartIntervalPreferences.favorites("").isEmpty)
+        XCTAssertEqual(MarketKlineInterval.threeMinutes.duration, 180)
+    }
+}

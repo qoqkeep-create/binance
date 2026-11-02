@@ -24,7 +24,7 @@ def series_key(result, name):
 
 def load_series(result, name):
     """Collector-only public REST request; never called in an HTTP read."""
-    if not result["items"] or result["interval"] == "1m":
+    if not result["items"] or result["interval"] in {"1m", "3m"}:
         return
     endpoint, _ = SERIES[name]
     params = {"period": result["interval"], "limit": 500,
@@ -38,7 +38,7 @@ def load_series(result, name):
 
 def attach(result, requested):
     from market_stream import repair
-    if not requested or result["interval"] == "1m" or not result["items"]:
+    if not requested or result["interval"] in {"1m", "3m"} or not result["items"]:
         return result
     by_time = {}
     pending = False

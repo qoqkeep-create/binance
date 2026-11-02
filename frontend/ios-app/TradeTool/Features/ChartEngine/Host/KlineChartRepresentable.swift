@@ -9,6 +9,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
     let onTimelineViewportChange: (ChartTimelineViewport) -> Void
     let onPriceViewportChange: (ChartPriceViewport) -> Void
     var onFirstFramePresented: (TimeInterval) -> Void = { _ in }
+    var onCrosshairSelection: (ChartCrosshairSelection) -> Void = { _ in }
 
     func makeUIView(
         context: Context
@@ -22,6 +23,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
     ) {
         view.setAppearance(colorScheme == .light ? .light : .dark)
         view.observeFirstPresentation(onFirstFramePresented)
+        view.onCrosshairSelection = onCrosshairSelection
         view.configureTimelineInteraction(
             viewport: timelineViewport,
             totalSlotCount: totalSlotCount,

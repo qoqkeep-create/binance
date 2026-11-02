@@ -99,6 +99,9 @@ private enum ChartCalibrationLaunchConfiguration {
 }
 
 private struct ChartCalibrationFixtureView: View {
+    @StateObject private var container = AppContainer(
+        baseURL: URL(string: "http://127.0.0.1:1/")!, bundleIdentifier: "com.riskon.chart-fixture")
+    @StateObject private var store = USDTStore(api: WebParityFixtureAPI())
     @StateObject private var toastCenter = AppToastCenter()
     @StateObject private var dashboard = DashboardViewModel(apiClient: ChartCalibrationFixtureAPIClient())
 
@@ -144,8 +147,9 @@ private struct ChartCalibrationFixtureView: View {
             )
         }
         .environmentObject(toastCenter)
+        .environmentObject(container)
         .environmentObject(dashboard)
-        .environmentObject(USDTStore(api: apiClient))
+        .environmentObject(store)
     }
 }
 
@@ -259,6 +263,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         all[
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if request.path == "/v1/trade/capital/precheck",
+        ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
+        value = .object(["status": .string("ready")])
+      }
       if request.path == "/v1/trade/capital/wallet/precheck" {
         let body = try JSONDecoder().decode([String: JSONValue].self, from: request.body ?? Data("{}".utf8))
         let action = body["action"]?.text ?? "to_spot"
