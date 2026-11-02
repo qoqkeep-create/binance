@@ -1,4 +1,5 @@
 import Metal
+import SwiftUI
 import UIKit
 import XCTest
 @testable import TradeTool
@@ -7456,6 +7457,64 @@ final class ChartPositionContextTests: XCTestCase {
         let loss = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 97)
         XCTAssertEqual(loss[0].detail, "-6.000 U")
         XCTAssertEqual(loss[1].detail, "-10.000 U")
+    }
+
+    @MainActor
+    func testPositionLabelColorsFollowProfitWithoutResizingFrames() throws {
+        let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
+            "market_stop_price": .string("60"), "stop_loss_amount": .string("10")])
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
+            plotLeft: 4, plotTop: 0, plotRight: 332, plotBottom: 300))
+        var widths: [Int] = []
+        for quote in [Decimal(105), Decimal(99), Decimal(1_000_000)] {
+            let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: quote)
+            let renderer = ImageRenderer(content: ChartPositionLinesOverlay(lines: lines, projection: projection)
+                .frame(width: 360, height: 320).environment(\.colorScheme, .light))
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.cgImage)
+            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            try pixels.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+                    bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            }
+            func colors(at centerY: Int, text: Bool = false) throws -> (width: Int, green: Int, red: Int) {
+                var xs: [Int] = []
+                var green = 0
+                var red = 0
+                // Text samples avoid the border and dashed line; border samples avoid text.
+                let rows = text ? Array((centerY * 2 - 10)..<(centerY * 2 - 2))
+                    + Array((centerY * 2 + 2)..<(centerY * 2 + 10))
+                    : Array((centerY * 2 - 24)..<(centerY * 2 - 16))
+                for y in rows where y >= 0 && y < image.height {
+                    for x in (text ? 40 : 0)..<min(text ? 220 : image.width, image.width) {
+                        let offset = (y * image.width + x) * 4
+                        let r = Int(pixels[offset]), g = Int(pixels[offset + 1]), b = Int(pixels[offset + 2])
+                        if max(r, g, b) - min(r, g, b) > 70 {
+                            xs.append(x)
+                            if g > r + 60 && g > b + 30 { green += 1 }
+                            if r > g + 90 && r > b + 90 { red += 1 }
+                        }
+                    }
+                }
+                return (try XCTUnwrap(xs.max()) - XCTUnwrap(xs.min()), green, red)
+            }
+            let entry = try colors(at: 150)
+            let stop = try colors(at: 210)
+            let entryText = try colors(at: 150, text: true)
+            widths.append(entry.width)
+            XCTAssertEqual(entry.width, stop.width, "Entry and stop labels share one fixed width")
+            if quote > 100 {
+                XCTAssertGreaterThan(entry.green, 0); XCTAssertEqual(entry.red, 0)
+                XCTAssertGreaterThan(entryText.green, 0); XCTAssertEqual(entryText.red, 0)
+            } else {
+                XCTAssertGreaterThan(entry.red, 0); XCTAssertEqual(entry.green, 0)
+                XCTAssertGreaterThan(entryText.red, 0); XCTAssertEqual(entryText.green, 0)
+            }
+            XCTAssertGreaterThan(stop.red, 0)
+        }
+        XCTAssertEqual(Set(widths).count, 1, "Profit sign and digit count must not resize either label")
     }
 
     @MainActor

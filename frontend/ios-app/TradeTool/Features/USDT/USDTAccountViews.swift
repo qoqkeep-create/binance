@@ -57,7 +57,10 @@ struct USDTProfileView: View {
             }
             Spacer(minLength: 4)
             Button { modeConfirm = true } label: {
-              Text(lead ? "切换合约模式" : "切换带单模式").font(.system(size: 12, weight: .medium))
+              HStack(spacing: 4) {
+                Image(systemName: "arrow.left.arrow.right").accessibilityHidden(true)
+                Text(lead ? "合约" : "带单")
+              }.font(.system(size: 12, weight: .medium))
               .foregroundStyle(WebTheme.color(0x405A73, 0xBDD2E6))
               .padding(.horizontal, 12).frame(height: 36)
               .background(WebTheme.color(0xE8EEF4, 0x2C3D4F),
@@ -69,6 +72,7 @@ struct USDTProfileView: View {
               .contentShape(RoundedRectangle(cornerRadius: 8))
             }.buttonStyle(.plain)
               .fixedSize(horizontal: true, vertical: false)
+              .accessibilityLabel(lead ? "切换合约模式" : "切换带单模式")
               .accessibilityIdentifier("profile.switchMode")
           }.padding(.bottom, 20)
           Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 16)

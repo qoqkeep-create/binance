@@ -198,6 +198,7 @@ struct ChartPositionLine: Identifiable, Equatable {
     let price: Decimal
     let title: String
     var detail: String = ""
+    var profit: Decimal? = nil
 
     static func positions(in rows: [JSONValue], symbol: String) -> [JSONValue] {
         rows.filter { row in
@@ -215,15 +216,17 @@ struct ChartPositionLine: Identifiable, Equatable {
         return matching.enumerated().flatMap { index, row -> [Self] in
             let prefix = row.value("id", fallback: String(index)) + "." + row.value("side")
             let side = matching.count > 1 ? (row.value("side") == "0" ? "多 · " : "空 · ") : ""
+            let profit = currentPrice.flatMap {
+                PositionLiveValuation(row: row, quote: PositionMarketQuote(price: $0, eventTime: 0))?.profit
+            }
             func valid(_ key: String) -> Decimal? {
                 guard let value = row[key]?.decimal, !value.isNaN, value > 0 else { return nil }
                 return value
             }
             func detail(_ kind: Kind) -> String {
                 if kind == .entry {
-                    guard let currentPrice,
-                      let valuation = PositionLiveValuation(row: row, quote: PositionMarketQuote(price: currentPrice, eventTime: 0)) else { return "-" }
-                    return (valuation.profit > 0 ? "+" : "") + DisplayNumber.text(valuation.profit) + " U"
+                    guard let profit else { return "-" }
+                    return (profit > 0 ? "+" : "") + DisplayNumber.text(profit) + " U"
                 }
                 if kind == .stopLoss {
                     return row["stop_loss_amount"]?.decimal.map { "-" + DisplayNumber.text(abs($0)) + " U" } ?? "-"
@@ -233,7 +236,8 @@ struct ChartPositionLine: Identifiable, Equatable {
             var result: [Self] = []
             func append(_ kind: Kind, _ price: Decimal?, _ title: String) {
                 if let price { result.append(Self(id: prefix + "." + kind.rawValue,
-                    kind: kind, price: price, title: side + title, detail: detail(kind))) }
+                    kind: kind, price: price, title: side + title, detail: detail(kind),
+                    profit: kind == .entry ? profit : nil)) }
             }
             append(.entry, valid("open_price"), "开仓")
             append(.stopLoss, row["market_stop_set"]?.flag == true
@@ -252,6 +256,7 @@ struct ChartPositionLinesOverlay: View {
 
     var body: some View {
         GeometryReader { _ in
+            let label = ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: 120)
             ZStack(alignment: .topLeading) {
                 ForEach(lines) { line in
                     let price = NSDecimalNumber(decimal: line.price).doubleValue
@@ -260,10 +265,9 @@ struct ChartPositionLinesOverlay: View {
                         Path { path in
                             path.move(to: CGPoint(x: projection.plotLeft, y: y))
                             path.addLine(to: CGPoint(x: projection.plotRight, y: y))
-                        }.stroke(color(line.kind), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-                        let label = ChartPriceLineLabelLayout(projection: projection, texts: lines.map { $0.title + " " + $0.detail })
+                        }.stroke(color(line), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                         ChartPriceLineLabel(title: line.title, price: line.detail,
-                            color: color(line.kind), width: label.width)
+                            color: color(line), width: label.width)
                             .position(x: label.centerX, y: y)
                             .accessibilityIdentifier("position-line." + line.id)
                             .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))
@@ -273,9 +277,12 @@ struct ChartPositionLinesOverlay: View {
         }.clipped().allowsHitTesting(false)
     }
 
-    private func color(_ kind: ChartPositionLine.Kind) -> Color {
-        switch kind {
-        case .entry: WebTheme.brand
+    private func color(_ line: ChartPositionLine) -> Color {
+        switch line.kind {
+        case .entry:
+            if let profit = line.profit, profit > 0 { WebTheme.success }
+            else if let profit = line.profit, profit < 0 { WebTheme.danger }
+            else { WebTheme.brand }
         case .stopLoss: WebTheme.danger
         case .takeProfit: WebTheme.success
         }
@@ -286,10 +293,10 @@ struct ChartPriceLineLabelLayout {
     let width: Double
     let centerX: Double
 
-    init(projection: ChartPriceProjection, texts: [String], draggable: Bool = false) {
+    init(projection: ChartPriceProjection, texts: [String], draggable: Bool = false, fixedWidth: Double? = nil) {
         let plotWidth = max(1, projection.plotRight - projection.plotLeft)
         let longest = texts.map { ($0 as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 10, weight: .medium)]).width }.max() ?? 0
-        width = min(ceil(longest) + 14 + (draggable ? 16 : 0), max(1, plotWidth - 12))
+        width = min(fixedWidth ?? ceil(longest) + 14 + (draggable ? 16 : 0), max(1, plotWidth - 12))
         centerX = projection.plotLeft + 6 + width / 2
     }
 }

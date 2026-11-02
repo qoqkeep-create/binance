@@ -3675,11 +3675,13 @@ extension WebParityUITests {
     let switchMode = app.buttons["profile.switchMode"]
     XCTAssertTrue(switchMode.waitForExistence(timeout: 10))
     XCTAssertEqual(switchMode.label, "切换带单模式")
+    capture("mode-switch-to-lead")
     switchMode.tap()
     XCTAssertTrue(app.buttons["确认切换"].waitForExistence(timeout: 5))
     app.buttons["确认切换"].tap()
     XCTAssertTrue(app.staticTexts["带单组合可用余额 (USDT)"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["profile.switchMode"].label, "切换合约模式")
+    capture("mode-switch-to-contract")
     launch("transfers", ["--fixture-collection-configured"])
     XCTAssertTrue(app.staticTexts["历史记录"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["collection.addAccount"].exists)
