@@ -2961,6 +2961,49 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.buttons["2600"].exists)
   }
 
+  func testPairNamesOpenChartsWithoutChangingWatchlist() {
+    launch("market")
+    app.buttons["搜索币种、币对或合约"].tap()
+    let ada = app.buttons["pairs.favorite.ADAUSDT"]
+    XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertEqual(ada.value as? String, "未自选")
+    app.buttons["pairs.select.ADAUSDT"].tap()
+
+    let switcher = app.buttons["market-chart-symbols"]
+    XCTAssertTrue(switcher.waitForExistence(timeout: 5))
+    XCTAssertTrue(switcher.label.contains("ADAUSDT"))
+    switcher.tap()
+    XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertEqual(ada.value as? String, "未自选")
+    ada.tap()
+    XCTAssertEqual(ada.value as? String, "已自选")
+    XCTAssertTrue(app.buttons["pairs.select.BTCUSDT"].exists)
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    XCTAssertTrue(switcher.waitForExistence(timeout: 5))
+    XCTAssertTrue(switcher.label.contains("BTCUSDT"))
+    switcher.tap()
+    XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertEqual(ada.value as? String, "已自选")
+    XCTAssertEqual(app.buttons["pairs.favorite.BTCUSDT"].value as? String, "已自选")
+    ada.tap()
+    app.buttons["取消"].tap()
+    XCTAssertEqual(ada.value as? String, "已自选")
+    ada.tap()
+    app.buttons["删除自选"].tap()
+    XCTAssertEqual(ada.value as? String, "未自选")
+    capture("chart-shared-pair-sheet")
+    app.buttons["pairs.close"].tap()
+    app.buttons["market-chart-back"].tap()
+    app.buttons["编辑行情列表"].tap()
+    app.buttons["watchlist.add"].tap()
+    app.buttons["pairs.select.ADAUSDT"].tap()
+    XCTAssertTrue(switcher.waitForExistence(timeout: 5))
+    XCTAssertTrue(switcher.label.contains("ADAUSDT"))
+    switcher.tap()
+    XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertEqual(ada.value as? String, "未自选")
+  }
+
   func testNativeWatchlistDragAndMoveToTop() {
     launch("market")
     app.buttons["编辑行情列表"].tap()

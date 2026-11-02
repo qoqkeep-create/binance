@@ -49,6 +49,10 @@ PYTHON_DOTENV_DISABLED=1 DB_ENGINE=sqlite USE_REDIS_CACHE=False RUN_SCHEDULER_IN
 
 UI 用 DEBUG 无网络业务替身：原生排序手柄实际长按拖动并核对顺序、移到顶部；三个交易对入口、自选添加／取消删除／确认删除、过滤和开仓选币；开仓／我的共用止损滑杆与固定按钮、默认头像和紧凑绑定按钮；协议／隐私 X 关闭返回注册表单。首轮纠正搜索可访问名称与父容器覆盖关闭标识，系统删除确认改为显式“取消／删除”警告框。图表退订／恢复的补查复现了并发发送订阅乱序，已按连接串行发送；扩展 `AppearanceTests`／`MarketFastPathTests`／自选与风险回归共 31 项通过（19.332 秒），覆盖旧连接失效及真实 loopback 的最终订阅。最终四个 UI 流程分别通过；共享流程 30.172 秒，原生拖动最终 12.013 秒，其余见 `.integration-runtime/PairPicker/` 的结果包。已查看截图。generic iOS Release 未签名构建最终通过，迁移漂移检查通过；生产目录及只读 HTTP／WSS 验收见 [变更](changes.md)；本地结果不表示 TestFlight／手机完成。
 
+### 交易对名称与自选操作分离（2026-11-02）
+
+追加 `WebParityUITests.testPairNamesOpenChartsWithoutChangingWatchlist`，覆盖行情搜索／编辑添加入口点名称打开图表、图表顶部下拉复用完整列表、未自选币种查看后仍未自选、按钮添加／取消删除／确认删除及切币后状态保留。DEBUG 行情替身补齐实际图表导航和本地合成 K 线；图表校准替身提供共用目录及环境对象。本轮属于简单交互调整，遵守用户偏好只编译，不启动模拟器运行回归；实际编译和交付范围见 [变更记录](changes.md)。
+
 ## Python
 
 使用 Python 3.11，按锁定依赖创建本地环境：

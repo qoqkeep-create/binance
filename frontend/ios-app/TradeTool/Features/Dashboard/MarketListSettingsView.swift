@@ -2,8 +2,10 @@ import SwiftUI
 
 struct MarketListSettingsView: View {
     @ObservedObject var viewModel: DashboardViewModel
+    let onSelectMarket: (String) -> Void
     @State private var pendingDeletion: String?
     @State private var showingPairs = false
+    @State private var pendingChartSymbol: String?
 
     private var markets: [MarketSnapshot] { viewModel.markets(onlyVisible: true) }
 
@@ -60,8 +62,14 @@ struct MarketListSettingsView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .interactivePopGestureEnabled()
-            .sheet(isPresented: $showingPairs) {
-                MarketSearchView(dashboardViewModel: viewModel)
+            .sheet(isPresented: $showingPairs, onDismiss: {
+                guard let symbol = pendingChartSymbol else { return }
+                pendingChartSymbol = nil
+                onSelectMarket(symbol)
+            }) {
+                MarketSearchView(dashboardViewModel: viewModel) { symbol in
+                    pendingChartSymbol = symbol
+                }
             }
             .alert("删除自选", isPresented: Binding(
                 get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }

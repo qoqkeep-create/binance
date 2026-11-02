@@ -49,6 +49,7 @@ struct DashboardView: View {
     @Binding var selectedMarket: MarketSnapshot?
 
     @State private var sortSelection: MarketSortSelection?
+    @State private var pendingChartSymbol: String?
 
     private var markets: [MarketSnapshot] {
         let visibleMarkets = viewModel.markets(onlyVisible: true)
@@ -136,13 +137,19 @@ struct DashboardView: View {
         .onChange(of: scenePhase) { _, phase in
             realtimeClient.setLatencyMonitoring(isVisible && phase == .active)
         }
-        .sheet(isPresented: $isShowingMarketSearch) {
-            MarketSearchView(
-                dashboardViewModel: viewModel
-            )
+        .sheet(isPresented: $isShowingMarketSearch, onDismiss: {
+            guard let symbol = pendingChartSymbol else { return }
+            pendingChartSymbol = nil
+            selectedMarket = viewModel.marketSnapshot(forSymbol: symbol)
+        }) {
+            MarketSearchView(dashboardViewModel: viewModel) { symbol in
+                pendingChartSymbol = symbol
+            }
         }
         .navigationDestination(isPresented: $isShowingMarketSettings) {
-            MarketListSettingsView(viewModel: viewModel)
+            MarketListSettingsView(viewModel: viewModel) { symbol in
+                selectedMarket = viewModel.marketSnapshot(forSymbol: symbol)
+            }
         }
     }
 

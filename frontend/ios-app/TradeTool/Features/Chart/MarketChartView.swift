@@ -24,8 +24,11 @@ private enum MarketChartIndicatorCatalog {
 }
 
 struct MarketChartView: View {
+    @EnvironmentObject private var dashboard: DashboardViewModel
     @State private var selectedMarket: MarketSnapshot
     @State private var selectedInterval: MarketKlineInterval
+    @State private var showsSymbols = false
+    @State private var pendingSymbol: String?
 
     private let availableMarkets: [MarketSnapshot]
     private let apiClient: any APIClient
@@ -60,10 +63,20 @@ struct MarketChartView: View {
             initialInterval: selectedInterval,
             onSelectMarket: selectMarket,
             onIntervalChange: { selectedInterval = $0 },
+            onShowSymbols: { showsSymbols = true },
             onClose: onClose,
             onStop: onStop
         )
         .id(selectedMarket.symbol)
+        .sheet(isPresented: $showsSymbols, onDismiss: {
+            guard let symbol = pendingSymbol else { return }
+            pendingSymbol = nil
+            selectMarket(dashboard.marketSnapshot(forSymbol: symbol), interval: selectedInterval)
+        }) {
+            MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: selectedMarket.symbol) { symbol in
+                pendingSymbol = symbol
+            }
+        }
     }
 
     private var switcherMarkets: [MarketSnapshot] {
@@ -104,6 +117,7 @@ private struct MarketChartDetailView: View {
     let availableMarkets: [MarketSnapshot]
     let onSelectMarket: (MarketSnapshot, MarketKlineInterval) -> Void
     let onIntervalChange: (MarketKlineInterval) -> Void
+    let onShowSymbols: () -> Void
     let onClose: (() -> Void)?
     let onStop: (() -> Void)?
     @State private var isFavorite = true
@@ -125,12 +139,14 @@ private struct MarketChartDetailView: View {
             MarketKlineInterval
         ) -> Void,
         onIntervalChange: @escaping (MarketKlineInterval) -> Void,
+        onShowSymbols: @escaping () -> Void,
         onClose: (() -> Void)?,
         onStop: (() -> Void)?
     ) {
         self.availableMarkets = availableMarkets
         self.onSelectMarket = onSelectMarket
         self.onIntervalChange = onIntervalChange
+        self.onShowSymbols = onShowSymbols
         self.onClose = onClose
         self.onStop = onStop
         _viewModel = StateObject(wrappedValue: MarketChartViewModel(
@@ -216,8 +232,9 @@ private struct MarketChartDetailView: View {
                 BinanceBackButton(action: onClose)
                     .accessibilityIdentifier("market-chart-back")
 
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 5) {
+                Button(action: onShowSymbols) {
+                    VStack(alignment: .leading, spacing: 1) {
+                      HStack(spacing: 5) {
                         Text(viewModel.market.symbol)
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(BinanceTheme.primaryText)
@@ -235,7 +252,7 @@ private struct MarketChartDetailView: View {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 7, weight: .bold))
                             .foregroundStyle(BinanceTheme.secondaryText)
-                    }
+                      }
 
                     HStack(spacing: 4) {
                         Text(formatPrice(viewModel.currentPrice))
@@ -245,7 +262,11 @@ private struct MarketChartDetailView: View {
                     }
                     .font(.system(size: 10, weight: .medium))
                     .monospacedDigit()
+                    }.frame(minHeight: 44).contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("切换交易对 \(viewModel.market.symbol)")
+                .accessibilityIdentifier("market-chart-symbols")
 
                 Spacer()
 

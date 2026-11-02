@@ -100,6 +100,7 @@ private enum ChartCalibrationLaunchConfiguration {
 
 private struct ChartCalibrationFixtureView: View {
     @StateObject private var toastCenter = AppToastCenter()
+    @StateObject private var dashboard = DashboardViewModel(apiClient: ChartCalibrationFixtureAPIClient())
 
     private let apiClient = ChartCalibrationFixtureAPIClient()
     private let realtimeClient = RealtimeClient(
@@ -143,6 +144,7 @@ private struct ChartCalibrationFixtureView: View {
             )
         }
         .environmentObject(toastCenter)
+        .environmentObject(dashboard)
         .environmentObject(USDTStore(api: apiClient))
     }
 }
@@ -151,6 +153,11 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     func send<Response: Decodable>(
         _ request: APIRequest<Response>
     ) async throws -> Response {
+        if Response.self == MarketSymbolCatalogResponse.self {
+            return MarketSymbolCatalogResponse(
+                quoteAsset: "USDC", symbols: ["BTCUSDC", "ETHUSDC", "SOLUSDC"]
+            ) as! Response
+        }
         if Response.self == MarketKlineHistoryResponse.self {
             let symbol = request.queryItems.first {
                 $0.name == "symbol"
@@ -680,6 +687,11 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
                 .settings
               ])
           }
+        }
+        .navigationDestination(item: $fixtureSelectedMarket) { market in
+          MarketChartView(market: market, availableMarkets: dashboard.markets(onlyVisible: true),
+            apiClient: ChartCalibrationFixtureAPIClient(), realtimeClient: container.realtimeClient,
+            onStop: { dashboard.restoreRealtimeSubscriptions() })
         }
       }
       .floatingPositionsOverlay()

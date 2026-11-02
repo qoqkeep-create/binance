@@ -1007,6 +1007,17 @@ final class DashboardViewModel: ObservableObject {
         lastUpdated = .now
     }
 
+    func marketSnapshot(forSymbol symbol: String) -> MarketSnapshot {
+        if let market = markets.first(where: { $0.symbol == symbol }) {
+            return market
+        }
+        return MarketSnapshot(
+            symbol: symbol, quoteAsset: resolvedQuoteAsset(for: symbol),
+            price: 0, changePercent24h: 0, updatedAt: .now,
+            isVisible: containsInWatchlist(symbol)
+        )
+    }
+
     func marketSnapshot(for signal: StrategySignal) -> MarketSnapshot {
         if var market = markets.first(where: {
             $0.symbol.caseInsensitiveCompare(signal.symbol) == .orderedSame

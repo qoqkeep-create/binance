@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Shared by market search, watchlist editing and trade symbol selection.
+/// Shared by market search, watchlist editing, charts and trade symbol selection.
 struct MarketSearchView: View {
     @ObservedObject var dashboardViewModel: DashboardViewModel
     var selectedSymbol: String? = nil
-    var onSelect: ((String) -> Void)? = nil
+    let onSelect: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var pendingDeletion: String?
@@ -82,12 +82,8 @@ struct MarketSearchView: View {
         let isFavorite = dashboardViewModel.containsInWatchlist(symbol)
         return HStack(spacing: 12) {
             Button {
-                if let onSelect {
-                    onSelect(symbol)
-                    dismiss()
-                } else {
-                    toggleFavorite(symbol)
-                }
+                onSelect(symbol)
+                dismiss()
             } label: {
                 HStack(spacing: 8) {
                     Text(symbol).font(.system(size: 16, weight: isFavorite ? .bold : .regular))
@@ -100,10 +96,13 @@ struct MarketSearchView: View {
                 }.frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("pairs.select.\(symbol)")
             Button { toggleFavorite(symbol) } label: {
-                Image(systemName: isFavorite ? "trash" : "plus")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(isFavorite ? BinanceTheme.secondaryText : BinanceTheme.accentText)
-                    .frame(width: 44, height: 48).contentShape(Rectangle())
+                VStack(spacing: 3) {
+                    Image(systemName: isFavorite ? "trash" : "plus")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(isFavorite ? BinanceTheme.secondaryText : BinanceTheme.accentText)
+                    Text("自选").font(.system(size: 9))
+                        .foregroundStyle(BinanceTheme.secondaryText)
+                }.frame(width: 44, height: 48).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel(isFavorite ? "删除自选 \(symbol)" : "添加自选 \(symbol)")
                 .accessibilityIdentifier("pairs.favorite.\(symbol)")
                 .accessibilityValue(isFavorite ? "已自选" : "未自选")
