@@ -245,6 +245,44 @@ class RedisMarketProtocolTests(SimpleTestCase):
         cls.process.wait(timeout=5)
         super().tearDownClass()
 
+    def test_private_batch_uses_one_roundtrip_and_preserves_order_and_account_scope(self):
+        from market_stream.websocket import matches
+        client = bus.connection()
+        subscriber = client.pubsub()
+        subscriber.subscribe(bus.BUS_CHANNEL)
+        self.assertEqual(subscriber.get_message(timeout=2)["type"], "subscribe")
+        try:
+            entries = [
+                ("trading.order", "private-test-order", {"status": "NEW"}, 101, "ordinary"),
+                ("trading.order", "private-test-order", {"status": "FILLED"}, 101, "ordinary"),
+                ("trading.order", "private-test-lead", {"status": "NEW"}, 101, "lead"),
+                ("trading.order", "private-test-other", {"status": "NEW"}, 102, "ordinary"),
+            ]
+            with patch.object(client, "pipeline", wraps=client.pipeline) as pipeline:
+                bus.publish_private_batch(iter(entries))
+            self.assertEqual(pipeline.call_count, 1)
+            delivered = [json.loads(subscriber.get_message(timeout=2)["data"]) for _ in entries]
+            self.assertEqual([row["key"] for row in delivered], [entry[1] for entry in entries])
+            self.assertEqual(delivered[1]["sequence"], delivered[0]["sequence"] + 1)
+            subscriptions = {"trading.order": {"symbols": set(), "intervals": set()}}
+            visible = [row for row in delivered if matches(row, subscriptions, "101", "ordinary")]
+            self.assertEqual([row["data"]["status"] for row in visible], ["NEW", "FILLED"])
+            self.assertEqual([row["_mode"] for row in delivered], ["ordinary", "ordinary", "lead", "ordinary"])
+        finally:
+            subscriber.close()
+
+    def test_private_batch_requires_scope_and_empty_batch_does_not_connect(self):
+        with patch.object(bus, "connection") as connect:
+            bus.publish_private_batch([])
+            for entry in [
+                ("trading.order", "key", {}, None, "ordinary"),
+                ("trading.order", "key", {}, 101, "invalid"),
+                ("market.ticker", "key", {}, 101, "ordinary"),
+            ]:
+                with self.subTest(entry=entry), self.assertRaises(ValueError):
+                    bus.publish_private_batch([entry])
+            connect.assert_not_called()
+
     def test_sequence_delivery_remains_ordered_when_a_producer_pauses_after_redis(self):
         client = bus.connection()
         subscriber = client.pubsub()
@@ -397,9 +435,10 @@ class RedisMarketProtocolTests(SimpleTestCase):
                 await asyncio.to_thread(bus.publish_batch, "market.history", [("BTCUSDT:1m", {
                     "symbol": "BTCUSDT", "interval": "1m", "kind": "history", "beforeOpenTime": None})])
                 self.assertEqual((await next_message())["channel"], "market.history")
-                for user, mode in [("other", "ordinary"), ("qa", "lead"), ("qa", "ordinary")]:
-                    payload = await asyncio.to_thread(bus.event, "trading.order", "test-order", {}, user_id=user, mode=mode)
-                    await asyncio.to_thread(bus.publish, payload)
+                await asyncio.to_thread(bus.publish_private_batch, [
+                    ("trading.order", "test-order", {}, user, mode)
+                    for user, mode in [("other", "ordinary"), ("qa", "lead"), ("qa", "ordinary")]
+                ])
                 self.assertEqual((await next_message())["channel"], "trading.order")
                 self.assertTrue(sent.empty())
                 self.assertEqual((await command("unsubscribe", subscriptions))["type"], "ack")

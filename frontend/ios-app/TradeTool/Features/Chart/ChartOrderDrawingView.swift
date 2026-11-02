@@ -190,6 +190,92 @@ struct ChartOrderDrawingState: Equatable {
     }
 }
 
+struct ChartPositionLine: Identifiable, Equatable {
+    enum Kind: String { case entry, stopLoss, takeProfit }
+    let id: String
+    let kind: Kind
+    let price: Decimal
+    let title: String
+
+    static func positions(in rows: [JSONValue], symbol: String) -> [JSONValue] {
+        rows.filter { row in
+            guard row.value("symbol", fallback: "").uppercased() == symbol.uppercased() else { return false }
+            if let status = row["status"], status.text != "0" { return false }
+            if let size = row["exchange_size"] ?? row["size"] {
+                guard let amount = size.decimal, !amount.isNaN, amount != 0 else { return false }
+            }
+            return true
+        }
+    }
+
+    static func lines(in rows: [JSONValue], symbol: String) -> [Self] {
+        let matching = positions(in: rows, symbol: symbol)
+        return matching.enumerated().flatMap { index, row -> [Self] in
+            let prefix = row.value("id", fallback: String(index)) + "." + row.value("side")
+            let side = matching.count > 1 ? (row.value("side") == "0" ? "多 · " : "空 · ") : ""
+            func valid(_ key: String) -> Decimal? {
+                guard let value = row[key]?.decimal, !value.isNaN, value > 0 else { return nil }
+                return value
+            }
+            var result: [Self] = []
+            func append(_ kind: Kind, _ price: Decimal?, _ title: String) {
+                if let price { result.append(Self(id: prefix + "." + kind.rawValue,
+                    kind: kind, price: price, title: side + title)) }
+            }
+            append(.entry, valid("open_price"), "开仓")
+            append(.stopLoss, row["market_stop_set"]?.flag == true
+                ? valid("market_stop_price") ?? valid("stop_loss_price") : valid("stop_loss_price"), "止损")
+            if row["manual_take_profit_set"]?.flag == true {
+                append(.takeProfit, valid("manual_take_profit_price"), "止盈")
+            }
+            return result
+        }
+    }
+}
+
+struct ChartPositionLinesOverlay: View {
+    let lines: [ChartPositionLine]
+    let projection: ChartPriceProjection
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                ForEach(lines) { line in
+                    let price = NSDecimalNumber(decimal: line.price).doubleValue
+                    if let y = projection.screenY(for: price),
+                       y >= projection.plotTop, y <= projection.plotBottom {
+                        Path { path in
+                            path.move(to: CGPoint(x: projection.plotLeft, y: y))
+                            path.addLine(to: CGPoint(x: projection.plotRight, y: y))
+                        }.stroke(color(line.kind), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                        Text(line.title).font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(color(line.kind)).padding(.horizontal, 5).frame(height: 18)
+                            .background(BinanceTheme.background.opacity(0.92), in: RoundedRectangle(cornerRadius: 3))
+                            .position(x: projection.plotLeft + 36, y: y)
+                        let axisWidth = max(1, geometry.size.width - projection.plotRight - 4)
+                        Text(DisplayNumber.text(line.price)).font(.system(size: 10, weight: .medium))
+                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
+                            .foregroundStyle(Color.black).padding(.horizontal, 2)
+                            .frame(width: axisWidth, height: 16)
+                            .background(color(line.kind), in: RoundedRectangle(cornerRadius: 2))
+                            .position(x: projection.plotRight + axisWidth / 2, y: y)
+                            .accessibilityIdentifier("position-line." + line.id)
+                            .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))
+                    }
+                }
+            }
+        }.clipped().allowsHitTesting(false)
+    }
+
+    private func color(_ kind: ChartPositionLine.Kind) -> Color {
+        switch kind {
+        case .entry: WebTheme.brand
+        case .stopLoss: WebTheme.danger
+        case .takeProfit: WebTheme.success
+        }
+    }
+}
+
 struct ChartOrderDrawingOverlay: View {
     @Binding var drawing: ChartOrderDrawingState
     let projection: ChartPriceProjection

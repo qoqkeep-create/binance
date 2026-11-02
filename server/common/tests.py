@@ -2053,6 +2053,10 @@ class BinanceResponseNormalizationTests(TestCase):
         self.assertEqual(rows[0]["instId"], "BTC-USDT-SWAP")
         self.assertEqual(rows[0]["maxLever"], "50")
         self.assertEqual(rows[0]["notionalCap"], "250000")
+        self.assertEqual(rows[0]["brackets"], [
+            {"initialLeverage": "50", "notionalCap": "250000", "notionalFloor": "0"},
+            {"initialLeverage": "25", "notionalCap": "1000000", "notionalFloor": "0"},
+        ])
 
     def test_get_bills_normalizes_income_rows_with_missing_symbol(self):
         payload = [

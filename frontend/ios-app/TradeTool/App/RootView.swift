@@ -56,14 +56,13 @@ private struct MainAppView: View {
                             isShowingMarketSearch: $isShowingMarketSearch,
                             isShowingMarketSettings: $isShowingMarketSettings,
                             selectedMarket: $selectedMarket)
-                    case .positions: USDTPositionsView()
-                    case .trade: USDTTradeView()
+                    case .positions: USDTPositionsView(onOpenChart: openChart)
                     case .signals: USDTSignalsView(openChart: openChart)
                     case .settings: USDTProfileView()
                     case .reference: EmptyView()
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                BottomNavigationBar(selection: $selectedTab, tabs: [.markets, .positions, .trade] + (store.mode == "ordinary" ? [.signals] : []) + [.settings])
+                BottomNavigationBar(selection: $selectedTab)
             }
             .interactivePopGestureEnabled()
             .navigationDestination(item: $selectedMarket) { market in
@@ -71,7 +70,11 @@ private struct MainAppView: View {
                     availableMarkets: container.dashboardViewModel.markets(onlyVisible: true),
                     apiClient: container.apiClient, realtimeClient: container.realtimeClient,
                     initialInterval: selectedInterval,
-                    onStop: { container.dashboardViewModel.restoreRealtimeSubscriptions() })
+                    onStop: { container.dashboardViewModel.restoreRealtimeSubscriptions() },
+                    onShowPositions: {
+                        selectedMarket = nil
+                        selectedTab = .positions
+                    })
             }
         }
         .environmentObject(container.dashboardViewModel)

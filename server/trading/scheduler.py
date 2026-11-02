@@ -10,6 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from django.conf import settings
 from django.db import close_old_connections
 
 from common.errors import safe_error_summary
@@ -414,31 +415,33 @@ def start_scheduler():
         coalesce=True,
     )
 
-    # 每2秒后台预热公开 K 线缓存（置顶币种常驻 + 最近请求过的组合续热，按周期分级刷新）
-    _scheduler.add_job(
-        _warm_market_klines_job,
-        trigger=IntervalTrigger(seconds=2),
-        id='warm_market_klines',
-        name='预热公开K线缓存',
-        replace_existing=True,
-        next_run_time=now + timedelta(seconds=2),
-        jitter=1,
-        max_instances=1,
-        coalesce=True,
-    )
+    # The native collector owns warming; legacy-only setups retain their job.
+    if not settings.MARKET_STREAM_ENABLED:
+        _scheduler.add_job(
+            _warm_market_klines_job,
+            trigger=IntervalTrigger(seconds=2),
+            id='warm_market_klines',
+            name='预热公开K线缓存',
+            replace_existing=True,
+            next_run_time=now + timedelta(seconds=2),
+            jitter=1,
+            max_instances=1,
+            coalesce=True,
+        )
 
     # 每15秒检查一次公开快照的 CDN 副本是否过期并按周期节奏补热（每轮限量）
-    _scheduler.add_job(
-        _prewarm_market_snapshots_job,
-        trigger=IntervalTrigger(seconds=15),
-        id='prewarm_market_snapshots',
-        name='公开快照CDN预热',
-        replace_existing=True,
-        next_run_time=now + timedelta(seconds=58),
-        jitter=5,
-        max_instances=1,
-        coalesce=True,
-    )
+    if settings.MARKET_SNAPSHOT_PREWARM_ENABLED:
+        _scheduler.add_job(
+            _prewarm_market_snapshots_job,
+            trigger=IntervalTrigger(seconds=15),
+            id='prewarm_market_snapshots',
+            name='公开快照CDN预热',
+            replace_existing=True,
+            next_run_time=now + timedelta(seconds=58),
+            jitter=5,
+            max_instances=1,
+            coalesce=True,
+        )
 
     # 每10分钟清理一次超过保留期的 TradingView 消息（数据库仅保留最近3天）
     _scheduler.add_job(

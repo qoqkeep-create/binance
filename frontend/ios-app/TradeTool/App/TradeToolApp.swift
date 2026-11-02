@@ -370,6 +370,30 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         ])
       }
       if request.path == "/v1/position/list",
+        ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
+        value = .array([])
+      }
+      if request.path == "/v1/position/list",
+        ProcessInfo.processInfo.arguments.contains("--fixture-chart-position") {
+        value = .array(value.rows.map { row in
+          var fields = row.fields
+          fields["exchange_size"] = .string("0.1")
+          fields["open_price"] = .string("64400")
+          fields["market_stop_set"] = .bool(true)
+          fields["market_stop_price"] = .string("64100")
+          fields["manual_take_profit_set"] = .bool(true)
+          fields["manual_take_profit_price"] = .string("64750")
+          fields["manual_take_profit_order_type"] = .string("limit")
+          return .object(fields)
+        })
+      }
+      if request.path == "/v1/trade/leverage-brackets" {
+        value = .object(["symbol": .string("BTCUSDT"), "brackets": .array([
+          .object(["leverage": .number(50), "max_notional": .string("250000")]),
+          .object(["leverage": .number(25), "max_notional": .string("1000000")]),
+        ])])
+      }
+      if request.path == "/v1/position/list",
         ProcessInfo.processInfo.arguments.contains("--fixture-multiple"),
         let first = value.rows.first
       {
@@ -721,7 +745,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       MarketSnapshot(symbol: "SOLUSDT", quoteAsset: "USDT", price: 150, changePercent24h: 3, updatedAt: .now),
       MarketSnapshot(symbol: "ADAUSDT", quoteAsset: "USDT", price: 0.4, changePercent24h: 0, updatedAt: .now, isVisible: false)
     ], apiClient: WebParityFixtureAPI())
-    @State private var tab: AppTab = .trade
+    @State private var tab: AppTab = .markets
     @State private var fixtureMarketSearch = false
     @State private var fixtureMarketSettings = false
     @State private var fixtureSelectedMarket: MarketSnapshot?
@@ -737,18 +761,16 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       NavigationStack {
         VStack(spacing: 0) {
           content.frame(maxWidth: .infinity, maxHeight: .infinity)
-          if ["market", "trade", "positions", "signals", "profile"].contains(page) {
+          if ["market", "positions", "signals", "profile"].contains(page) {
             BottomNavigationBar(
-              selection: $tab,
-              tabs: [.markets, .positions, .trade] + (store.mode == "lead" ? [] : [.signals]) + [
-                .settings
-              ])
+              selection: $tab)
           }
         }
         .navigationDestination(item: $fixtureSelectedMarket) { market in
           MarketChartView(market: market, availableMarkets: dashboard.markets(onlyVisible: true),
             apiClient: ChartCalibrationFixtureAPIClient(), realtimeClient: container.realtimeClient,
-            onStop: { dashboard.restoreRealtimeSubscriptions() })
+            onStop: { dashboard.restoreRealtimeSubscriptions() },
+            onShowPositions: { fixtureSelectedMarket = nil; tab = .positions })
         }
       }
       .floatingPositionsOverlay()
@@ -772,7 +794,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         }
         tab =
           page == "market" ? .markets : page == "positions"
-          ? .positions : page == "signals" ? .signals : page == "profile" ? .settings : .trade
+          ? .positions : page == "signals" ? .signals : page == "profile" ? .settings : .markets
       }
     }
     @ViewBuilder private var content: some View {
@@ -791,13 +813,16 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       case "collect": USDTCollectAccountView()
       case "capital": USDTCapitalView()
       case "reminder": USDTCapitalReminderView()
+      case "trade": USDTTradeView()
       default:
         switch tab {
         case .markets:
           DashboardView(viewModel: dashboard, apiClient: WebParityFixtureAPI(),
             realtimeClient: container.realtimeClient, isShowingMarketSearch: $fixtureMarketSearch,
             isShowingMarketSettings: $fixtureMarketSettings, selectedMarket: $fixtureSelectedMarket)
-        case .positions: USDTPositionsView()
+        case .positions: USDTPositionsView(onOpenChart: { symbol, _ in
+          fixtureSelectedMarket = dashboard.marketSnapshot(forSymbol: symbol)
+        })
         case .signals: USDTSignalsView(openChart: { _, _ in })
         case .settings: USDTProfileView()
         default: USDTTradeView()

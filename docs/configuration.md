@@ -23,11 +23,11 @@
 | `BINANCE_QUOTE_ASSET` | 整合环境默认 USDT，影响行情发现和订阅 |
 | `MARKET_WS_URL` / `ACCOUNT_WS_URL` | `/market` 公共流和 `/private` 用户流，省略前缀可能握手后无数据 |
 | `MARKET_WS_PROXY` | 本机开发显式代理；服务器直接连接 |
-| `MARKET_WS_ATTEMPTS_PER_MINUTE` | 公共行情建连滚动 60 秒预算，默认且最多 30，可下调；自设保守值，不是币安官方额度 |
-| `MARKET_WS_CONNECT_SPACING_SECONDS` | 公共行情相邻建连间隔，默认且最少 1 秒，可增大 |
-| `MARKET_STREAM_ENABLED` / `ACCOUNT_STREAM_ENABLED` | 对应独立采集和账户流开关 |
+| `MARKET_WS_ATTEMPTS_PER_MINUTE` | 建连滚动 60 秒预算，默认且最多 30，可下调；已发布版本用于公共行情，2026-11-02 本地扩为公共＋私有共用；自设保守值，不是币安官方额度 |
+| `MARKET_WS_CONNECT_SPACING_SECONDS` | 相邻建连间隔，默认且最少 1 秒，可增大；本地公共／私有流共用 |
+| `MARKET_STREAM_ENABLED` / `ACCOUNT_STREAM_ENABLED` | 对应独立采集和账户流开关；本地原生采集开启时 scheduler 不再注册旧 Web K 线预热，关闭原生采集可保留旧预热 |
 | `RUN_SCHEDULER_IN_WEB` | 设为 false，调度仅由独立 scheduler 运行 |
-| `MARKET_SNAPSHOT_PREWARM_ENABLED` | 整合环境关闭旧 Web CDN 预热 |
+| `MARKET_SNAPSHOT_PREWARM_ENABLED` | 整合环境关闭旧 Web CDN 预热；本地关闭时不再注册空转调度任务 |
 | `LEAD_TRADING_ENABLED` | 当前部署 false，带单新增风险保持关闭；存量保护边界见带单文档 |
 | `AUTH_REFRESH_COOKIE_NAME` / `AUTH_REFRESH_COOKIE_PATH` | 整合会话 cookie 名称及 `/integrated/` 作用域 |
 | `AUTH_REFRESH_COOKIE_SECURE` / `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` | 服务器 HTTPS 为 true，本地 HTTP 按开发环境配置 |
@@ -36,9 +36,11 @@
 
 Binance REST 请求预算由 `common/binance_rate_limit.py` 与 settings 管理；增加 worker 或缩短轮询不扩大交易所配额。保持保护 / 交易请求的预算优先级。
 
-本轮新增上表两个公共连接守卫参数，缺省即启用，无新增必填凭证；后续客户端诊断另有 `market_stream.0003_chartloadreport` 迁移，见下文。`collector.py` 仍为历史任务 1 路、统计 6 路，启动和每 5 分钟按容量预热；收线缓冲上限 10,000。`service.HOT_WINDOW_SIZE` 定义窗口，本地已统一上限 1500 根，与 HTTP 单页相同；47.80.22.243（首尔服务器）已随 `7daa362` 同步为 1500，发布状态见 [构建 13／14 排查](market-data.md#构建-1314-速度回退排查2026-11-01)。`history_cache.py` 仍限 64 窗、每窗压缩后最多 256 KiB、TTL 300 秒，不改共享 Redis 的 80 MB / noeviction。冷读增加 300 ms 锁竞争预算和 10 秒 owner lease；上游冷却、轮换及共享预算失败处理见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。同出口其他应用不共享 Redis／key prefix 时仍会消耗总额度，应核对实际出口并预留配额。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN，v2 主题及 API / market 配套发布边界不变。
+2026-11-01 新增上表两个公共连接守卫参数，缺省即启用，无新增必填凭证；后续客户端诊断另有 `market_stream.0003_chartloadreport` 迁移，见下文。`collector.py` 仍为历史任务 1 路、统计 6 路，启动和每 5 分钟按容量预热；收线缓冲上限 10,000。`service.HOT_WINDOW_SIZE` 定义窗口，本地已统一上限 1500 根，与 HTTP 单页相同；47.80.22.243（首尔服务器）已随 `7daa362` 同步为 1500，发布状态见 [构建 13／14 排查](market-data.md#构建-1314-速度回退排查2026-11-01)。`history_cache.py` 仍限 64 窗、每窗压缩后最多 256 KiB、TTL 300 秒，不改共享 Redis 的 80 MB / noeviction。冷读增加 300 ms 锁竞争预算和 10 秒 owner lease；上游冷却、轮换及共享预算失败处理见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。同出口其他应用不共享 Redis／key prefix 时仍会消耗总额度，应核对实际出口并预留配额。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN，v2 主题及 API / market 配套发布边界不变。
 
 ## 可选能力
+
+2026-11-02 的后端主链修改复用以上开关及建连参数，没有新增必填配置；设置名称和 Redis 准入键保持兼容。共享预算限制的是建连尝试，并非同时在线连接总量；部署须配套更新 market／worker 代码，仍需盘点同出口其他进程。账户 lease 续租在等待准入期间继续；Redis 不可用时暂缓新增连接，已有健康连接按原生命周期运行，独立交易维护保持原职责。仅本地状态及验证见 [行情实施进度](market-data.md#websocket-优先与多用户容量评估2026-11-02部分已实现)。
 
 SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALERT_*` / `OPS_ALERT_*` 按真实服务地址配置。当前仓库不再包含旧 webhook 容器；保留业务接口不代表外部服务已接通。整合环境尚未配置的能力见 [已知事项](known-issues.md)。
 
@@ -52,7 +54,13 @@ SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*
 
 ## 图表诊断固定边界
 
-本轮不新增 env 或外部日志服务。`market_stream/diagnostics.py` 限制正文 24 KiB、每用户 180 次／小时、约 5000 条全局容量；`prune_reports` 由行情每小时维护调用，单轮最多 500 条、七天过期且容量达到 4500 时提前淘汰。客户端每次加载最多 64 事件／8 请求／每请求 3 个网络 metrics，40 秒超时，异步上报每次 5 秒、最多两次。详细协议、挂起／缓存及丢失边界见 [行情](market-data.md#客户端加载诊断本地实现尚未分发)，发布与只读查询见 [运维](operations.md#图表加载诊断)。
+本轮不新增 env 或外部日志服务。`market_stream/diagnostics.py` 限制正文 24 KiB、每用户 180 次／小时、约 5000 条全局容量；`prune_reports` 由行情每小时维护调用，单轮最多 500 条、七天过期且容量达到 4500 时提前淘汰。客户端每次加载最多 64 事件／8 请求／每请求 3 个网络 metrics，40 秒超时，异步上报每次 5 秒、最多两次。详细协议、挂起／缓存及丢失边界见 [行情](market-data.md#客户端加载诊断)，发布与只读查询见 [运维](operations.md#图表加载诊断)。
+
+## HTTPS 传输配置
+
+2026-11-01 在 47.80.22.243（首尔服务器）按实际 iPhone 的单目的地址对照结果，已将宿主 `net.ipv4.tcp_congestion_control` 设为 `bbr`。模板为 [模块加载](../deploy/integrated/network-modules.conf)与 [sysctl](../deploy/integrated/network-sysctl.conf)，分别安装到 `/etc/modules-load.d/tradetools-integrated-network.conf` 和 `/etc/sysctl.d/99-tradetools-integrated-network.conf`。这是宿主网络命名空间的默认算法，不是 Django env 或 Binance 限频配置；既有连接不作为新算法已生效的验证依据。
+
+当前 `fq_codel` 未改变，四个正在运行的 Python 容器默认值仍为 CUBIC；新连接已实测 BBR，持久文件哈希与本地模板相同。未重启宿主，不能声称已验证重启恢复；新主机、容器重建及后续网络配置变更应再次核对实际命名空间和连接。应用、回退与验证范围见 [运维](operations.md#https-传输拥塞控制2026-11-01)。
 
 ## MySQL 容器内存
 

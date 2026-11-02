@@ -149,6 +149,60 @@ final class USDTStore: ObservableObject {
     }
 }
 
+/// Read-only chart context. Responses cannot cross an account or view lifetime.
+@MainActor
+final class USDTChartPositionsModel: ObservableObject {
+    @Published private(set) var rows: [JSONValue] = []
+    @Published private(set) var ready = false
+    @Published private(set) var error = ""
+    private var owner = ""
+    private var requestID = UUID()
+    private var loading = false
+    private var monitorID = UUID()
+
+    func reset() {
+        requestID = UUID(); loading = false
+        owner = ""; rows = []; ready = false; error = ""
+    }
+
+    func positions(for symbol: String, scope: String) -> [JSONValue] {
+        guard owner == scope else { return [] }
+        return ChartPositionLine.positions(in: rows, symbol: symbol)
+    }
+
+    func isReady(scope: String) -> Bool { owner == scope && ready }
+
+    func refresh(_ store: USDTStore) async {
+        let scope = store.scope
+        if owner != scope { reset(); owner = scope }
+        guard !loading else { return }
+        guard store.isBound else { rows = []; ready = true; error = ""; return }
+        let id = UUID(); requestID = id; loading = true
+        defer { if requestID == id { loading = false } }
+        do {
+            let result = try await store.get("/v1/position/list")
+            guard requestID == id, scope == store.scope, !Task.isCancelled else { return }
+            rows = result.rows; ready = true; error = ""
+        } catch is CancellationError { }
+        catch {
+            guard requestID == id, scope == store.scope, !Task.isCancelled else { return }
+            self.error = "持仓状态暂时无法确认，请稍后重试"
+            ready = false
+        }
+    }
+
+    func monitor(_ store: USDTStore) async {
+        let scope = store.scope
+        let id = UUID(); monitorID = id
+        reset(); owner = scope
+        defer { if monitorID == id { reset() } }
+        while !Task.isCancelled && scope == store.scope {
+            await refresh(store)
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+        }
+    }
+}
+
 @MainActor
 final class USDTPageModel: ObservableObject {
     @Published var value: JSONValue = .null

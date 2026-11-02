@@ -242,7 +242,7 @@ else:
 
 MARKET_QUOTE_ASSET = os.getenv("BINANCE_QUOTE_ASSET", "USDT").upper()
 MARKET_WS_URL = os.getenv("MARKET_WS_URL", os.getenv("BINANCE_MARKET_WS_URL", "wss://fstream.binance.com/market"))
-# Conservative public-stream reconnect budget, shared by all market workers.
+# Conservative stream reconnect budget, shared by market and account workers.
 MARKET_WS_ATTEMPTS_PER_MINUTE = int(os.getenv("MARKET_WS_ATTEMPTS_PER_MINUTE", "30"))
 MARKET_WS_CONNECT_SPACING_SECONDS = float(os.getenv("MARKET_WS_CONNECT_SPACING_SECONDS", "1"))
 MARKET_REDIS_URL = os.getenv("MARKET_REDIS_URL", os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))

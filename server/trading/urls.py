@@ -1,6 +1,7 @@
 from django.urls import path
 
 from trading.capital_wallet_views import CapitalWalletView
+from trading.leverage_views import LeverageBracketsView
 
 from trading.views import (
     SymbolInfoView,
@@ -26,6 +27,7 @@ from trading.views import (
 urlpatterns = [
     path("symbols", SymbolListView.as_view()),
     path("symbol/info", SymbolInfoView.as_view()),
+    path("leverage-brackets", LeverageBracketsView.as_view()),
     path("market/klines", MarketKlinesView.as_view()),
     path("market/klines-public/<str:symbol>/<str:interval>", PublicMarketKlinesView.as_view()),
     path("market/prices", MarketPricesView.as_view()),

@@ -40,35 +40,31 @@ def connection():
     return redis.Redis.from_url(settings.MARKET_REDIS_URL, socket_connect_timeout=3, socket_timeout=3)
 
 
-def event(channel, key, data, *, user_id=None, mode=None):
-    client = connection()
-    sequence_key = f"integrated:sequence:{channel}:{key}"
-    with client.pipeline() as pipe:
-        pipe.incr(sequence_key)
-        pipe.expire(sequence_key, 86400)
-        sequence, _ = pipe.execute()
-    payload = {"version": 1, "type": "event", "channel": channel, "event": "upsert",
-               "key": key, "sequence": sequence, "timestamp": int(time.time() * 1000), "data": data}
-    if user_id is not None:
-        payload["_user"] = str(user_id)
-        payload["_mode"] = mode or "ordinary"
-    return payload
-
-
-def publish(payload):
-    connection().publish(delivery_topic(payload), json.dumps(payload, separators=(",", ":")))
-
-
 def publish_batch(channel, entries):
-    """Allocate and publish atomically, including across producer processes."""
+    _publish_batch([(channel, key, data, None, None) for key, data in entries])
+
+
+def publish_private_batch(entries):
+    """Publish ordered (channel, key, data, user_id, mode) entries in one trip."""
+    entries = list(entries)
+    if any(channel in MARKET_CHANNELS or user_id is None or mode not in {"ordinary", "lead"}
+           for channel, _, _, user_id, mode in entries):
+        raise ValueError("Private events require an account scope and private channel")
+    _publish_batch(entries)
+
+
+def _publish_batch(entries):
+    """Allocate sequence and publish atomically, including across producers."""
     if not entries:
         return
     client = connection()
     now = int(time.time() * 1000)
     with client.pipeline() as pipe:
-        for key, data in entries:
+        for channel, key, data, user_id, mode in entries:
             payload = {"version": 1, "type": "event", "channel": channel, "event": "upsert",
                        "key": key, "timestamp": now, "data": data}
+            if user_id is not None:
+                payload.update(_user=str(user_id), _mode=mode)
             prefix = json.dumps(payload, separators=(",", ":"))[:-1] + ',"sequence":'
             pipe.eval(PUBLISH_SEQUENCED, 1, f"integrated:sequence:{channel}:{key}",
                       delivery_topic(payload), prefix)

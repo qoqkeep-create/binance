@@ -1,11 +1,26 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from trading import scheduler
 
 
 class SchedulerConnectionTests(SimpleTestCase):
+    def test_only_enabled_market_warmups_are_scheduled_without_removing_protection(self):
+        for native, cdn in ((True, False), (False, False), (True, True)):
+            with self.subTest(native=native, cdn=cdn), \
+                 override_settings(MARKET_STREAM_ENABLED=native, MARKET_SNAPSHOT_PREWARM_ENABLED=cdn), \
+                 patch.object(scheduler, "_scheduler", None), \
+                 patch.object(scheduler, "ThreadPoolExecutor"), \
+                 patch.object(scheduler, "_scheduler_heartbeat_job"), \
+                 patch.object(scheduler, "BackgroundScheduler", return_value=Mock()) as factory:
+                scheduler.start_scheduler()
+                jobs = {call.kwargs["id"] for call in factory.return_value.add_job.call_args_list}
+                self.assertEqual("warm_market_klines" in jobs, not native)
+                self.assertEqual("prewarm_market_snapshots" in jobs, cdn)
+                self.assertTrue({"sync_limit_orders", "reconcile_order_protection", "reconcile_external_positions",
+                                 "lead_sync_limit_orders", "lead_order_protection", "lead_external_positions"} <= jobs)
+
     JOBS = (
         ("_sync_limit_orders_job", "trading.services.sync_all_pending_limit_orders"),
         ("_run_strategy_engine_job", "trading.services.run_strategy_engine"),

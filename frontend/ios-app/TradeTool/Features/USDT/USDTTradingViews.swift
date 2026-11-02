@@ -2,6 +2,7 @@ import SwiftUI
 
 struct USDTTradeView: View {
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: USDTStore
   @State private var orderType = "market"
   @State private var stop = ""
@@ -19,9 +20,24 @@ struct USDTTradeView: View {
   var initialLimit: String = ""
   var chartInput: ChartTradeInput? = nil
   var onChartOrderTypeChange: ((String) -> Void)? = nil
+  var chartHasPosition = false
+  var chartPositionsReady = true
+  var chartPositionsError = ""
+  var onShowPositions: (() -> Void)? = nil
+  @StateObject private var positions = USDTChartPositionsModel()
+  @State private var showsPositions = false
   @State private var confirmationDraft: USDTEntryDraft?
   @State private var confirmationScope = ""
   private var symbol: String { chartInput?.symbol ?? store.selectedSymbol }
+  private var hasPosition: Bool {
+    chartInput != nil ? chartHasPosition : !positions.positions(for: symbol, scope: store.scope).isEmpty
+  }
+  private var positionsReady: Bool {
+    chartInput != nil ? chartPositionsReady : positions.isReady(scope: store.scope)
+  }
+  private var entryDisabled: Bool {
+    !hasPosition && (busy || submitted || !store.isBound || !inputValid || !strategyValid || !positionsReady)
+  }
 
   @EnvironmentObject private var container: AppContainer
   @EnvironmentObject private var dashboard: DashboardViewModel
@@ -130,15 +146,16 @@ struct USDTTradeView: View {
           if orderType == "market", !ema.fields.isEmpty { emaCard }
           Button(entryButtonText, action: advanceEntry).buttonStyle(
             WebButtonStyle(
-              kind: !inputValid || !strategyValid
+              kind: hasPosition ? .primary : !inputValid || !strategyValid
                 ? .inactive
                 : orderType == "market" && !emaValid ? .primary : isLong ? .success : .danger)
-          ).disabled(busy || submitted || !store.isBound || !inputValid || !strategyValid)
+          ).disabled(entryDisabled)
           if submitted {
             NavigationLink("查看交易命令", destination: USDTCommandsView()).font(.system(size: 14))
               .foregroundStyle(WebTheme.brand)
           }
           USDTNotice(text: notice)
+          USDTNotice(text: positions.error)
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).scrollDismissesKeyboard(.interactively)
     }.usdtPage("开仓")
@@ -153,6 +170,17 @@ struct USDTTradeView: View {
         orderType = input.orderType
         stop = input.stopLossPrice
         limit = input.limitPrice
+      }
+      .task(id: "\(store.scope):\(store.isBound):\(scenePhase)") {
+        guard chartInput == nil, scenePhase == .active else { return }
+        await positions.monitor(store)
+      }
+      .onChange(of: store.liveRevision) { _, _ in
+        guard chartInput == nil, scenePhase == .active else { return }
+        Task { await positions.refresh(store) }
+      }
+      .onChange(of: hasPosition) { _, holding in
+        if holding { confirm = false; confirmationDraft = nil }
       }
       .onChange(of: store.scope) { _, _ in
         confirmationDraft = nil; confirm = false; submitted = false
@@ -184,8 +212,7 @@ struct USDTTradeView: View {
         strategyID = id ?? ""
         strategyEnabled = id != nil
       }
-      .webSheet(isPresented: $showChart) {
-        NavigationStack {
+      .navigationDestination(isPresented: $showChart) {
           MarketChartView(
             market: container.dashboardViewModel.markets(onlyVisible: false).first {
               $0.symbol == symbol
@@ -195,10 +222,10 @@ struct USDTTradeView: View {
                 updatedAt: .now),
             availableMarkets: container.dashboardViewModel.markets(onlyVisible: false),
             apiClient: container.apiClient, realtimeClient: container.realtimeClient,
-            initialInterval: .oneHour, onClose: { showChart = false },
+            initialInterval: .oneHour,
             onStop: { dashboard.restoreRealtimeSubscriptions() })
-        }
       }
+      .navigationDestination(isPresented: $showsPositions) { USDTPositionsView() }
       .sheet(isPresented: $showSymbols) {
         MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: symbol) { symbol in
           store.selectedSymbol = symbol
@@ -291,6 +318,8 @@ struct USDTTradeView: View {
       && ema.value("symbol") == symbol
   }
   private var entryButtonText: String {
+    if hasPosition { return "正在持仓中" }
+    if store.isBound && !positionsReady { return "正在确认持仓…" }
     if submitted { return "请求已提交，请查看命令记录" }
     if busy { return orderType == "market" && !emaValid ? "检测中..." : "提交中..." }
     if !inputValid { return orderType == "market" ? "输入止损价开仓" : "输入止损价/限价开仓" }
@@ -378,7 +407,11 @@ struct USDTTradeView: View {
     if !submitted { requestIdentity = UUID().uuidString }
   }
   private func advanceEntry() {
-    guard !busy, !submitted, store.isBound, inputValid, strategyValid else { return }
+    if hasPosition {
+      if let onShowPositions { onShowPositions() } else { showsPositions = true }
+      return
+    }
+    guard !busy, !submitted, store.isBound, inputValid, strategyValid, positionsReady else { return }
     if orderType == "market" && !emaValid { checkEMA(); return }
     let draft = currentDraft
     let scope = store.scope
@@ -387,7 +420,7 @@ struct USDTTradeView: View {
       defer { busy = false }
       do {
         try await store.preflight()
-        guard scope == store.scope, draft.matchesIntent(currentDraft) else { return }
+        guard scope == store.scope, draft.matchesIntent(currentDraft), !hasPosition, positionsReady else { return }
         confirmationDraft = draft
         confirmationScope = scope
         confirm = true
@@ -409,6 +442,7 @@ struct USDTTradeView: View {
     }
   }
   private func submit(_ draft: USDTEntryDraft) {
+    guard !hasPosition, positionsReady else { confirm = false; return }
     let scope = store.scope
     let key = requestIdentity
     let payload = draft.payload(ema: ema)
@@ -476,12 +510,13 @@ struct USDTTradeView: View {
         }.pickerStyle(.segmented).frame(width: 112).accessibilityIdentifier("chart-ticket.order-type")
           .disabled(busy || submitted || confirm)
         Button(action: advanceEntry) {
-          Text(submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "选择止损价")
+          Text(hasPosition ? "正在持仓中" : store.isBound && !positionsReady ? "正在确认持仓…"
+            : submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "选择止损价")
             .font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(inputValid ? BinanceTheme.onTradeAction : BinanceTheme.secondaryText)
-            .background(inputValid ? chartActionColor : BinanceTheme.elevated,
+            .foregroundStyle(hasPosition || inputValid ? BinanceTheme.onTradeAction : BinanceTheme.secondaryText)
+            .background(hasPosition ? WebTheme.brand : inputValid ? chartActionColor : BinanceTheme.elevated,
               in: RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain).disabled(busy || submitted || !store.isBound || !inputValid || !strategyValid)
+        }.buttonStyle(.plain).disabled(entryDisabled)
           .accessibilityIdentifier("chart-ticket.submit")
       }
       if !store.isBound {
@@ -494,6 +529,7 @@ struct USDTTradeView: View {
         NavigationLink("查看交易命令", destination: USDTCommandsView()).font(.system(size: 12))
       }
       USDTNotice(text: notice)
+      USDTNotice(text: chartPositionsError)
     }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
       .frame(maxWidth: .infinity)
       .background(BinanceTheme.surface.ignoresSafeArea(edges: [.horizontal, .bottom]))
@@ -599,8 +635,13 @@ struct USDTEntryDraft: Equatable {
 }
 
 struct USDTPositionsView: View {
+  var onOpenChart: ((String, String) -> Void)? = nil
   @EnvironmentObject private var store: USDTStore
+  @EnvironmentObject private var dashboard: DashboardViewModel
+  @Environment(\.scenePhase) private var scenePhase
   @StateObject private var model = USDTPageModel()
+  @StateObject private var trendAdvice = PositionTrendAdviceModel()
+  @StateObject private var liveQuotes = PositionLiveQuotes()
   @State private var segment = "positions"
   @State private var filter = "all"
   @State private var notice = ""
@@ -614,10 +655,17 @@ struct USDTPositionsView: View {
   @State private var closingAll = false
   @State private var closeQueue: [WebCloseTarget] = []
   private var closeQueueKey: String { "integrated.close-queue.\(store.scope)" }
-  private var totalPnl: Decimal {
-    model.items.reduce(Decimal.zero) { $0 + ($1["pnl"]?.decimal ?? 0) }
+  private var totalPnl: Decimal? {
+    let profits = model.items.compactMap { liveValuation($0)?.profit }
+    return profits.count == model.items.count ? profits.reduce(Decimal.zero, +) : nil
   }
-  private var totalPnlText: String { DisplayNumber.text(totalPnl, signed: true) }
+  private var totalPnlText: String { totalPnl.map { DisplayNumber.text($0, signed: true) } ?? "--" }
+  private var totalPnlColor: Color { totalPnl.map { $0 >= 0 ? WebTheme.success : WebTheme.danger } ?? WebTheme.muted }
+  private var trendSymbols: [String] {
+    guard store.isBound, segment == "positions", scenePhase == .active, !chart else { return [] }
+    return Array(Set(model.items.map { $0.value("symbol", fallback: "").uppercased() }
+      .filter { !$0.isEmpty })).sorted()
+  }
   var body: some View {
     VStack(spacing: 0) {
       WebTabs(
@@ -703,6 +751,25 @@ struct USDTPositionsView: View {
         }
       }
     }.usdtPage("持仓")
+      .task(id: "quotes:\(store.scope):\(trendSymbols.joined(separator: ","))") {
+        let symbols = trendSymbols
+        let session = liveQuotes.begin(symbols: symbols)
+        dashboard.trackPositionTickerSymbols(symbols)
+        defer {
+          if liveQuotes.end(session) { dashboard.trackPositionTickerSymbols([]) }
+        }
+        guard !symbols.isEmpty else { return }
+        for await event in container.realtimeClient.events(bufferingPolicy: .bufferingNewest(256)) {
+          guard !Task.isCancelled else { break }
+          if container.realtimeClient.state == .connected { liveQuotes.receive(event, session: session) }
+        }
+      }
+      .onReceive(container.realtimeClient.$state) { state in
+        if state != .connected { liveQuotes.clear() }
+      }
+      .task(id: "\(store.scope):\(segment):\(trendSymbols.joined(separator: ","))") {
+        await trendAdvice.monitor(symbols: trendSymbols, api: container.apiClient)
+      }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
       .task(id: store.scope) {
         if let data = UserDefaults.standard.data(forKey: closeQueueKey),
@@ -727,7 +794,7 @@ struct USDTPositionsView: View {
         WebModal(title: "全部平仓") {
           (Text("当前共 \(model.items.count) 笔持仓，预估总盈亏 ")
             + Text(totalPnlText + " USDT").foregroundColor(
-              totalPnl >= 0 ? WebTheme.success : WebTheme.danger) + Text("，确认全部平仓？"))
+              totalPnlColor) + Text("，确认全部平仓？"))
             .foregroundStyle(WebTheme.secondary).font(.system(size: 16))
           HStack(spacing: 12) {
             Button("取消") { closeAllConfirm = false }.buttonStyle(
@@ -745,15 +812,14 @@ struct USDTPositionsView: View {
           Task { await reload() }
         }.presentationBackground(.clear)
       }
-      .webSheet(isPresented: $chart) {
-        NavigationStack {
+      .navigationDestination(isPresented: $chart) {
           MarketChartView(
             market: MarketSnapshot(
               symbol: selected.value("symbol"), quoteAsset: "USDT",
               price: Double(selected.value("current_price")) ?? 0, changePercent24h: 0,
               updatedAt: .now), apiClient: container.apiClient,
-            realtimeClient: container.realtimeClient, onClose: { chart = false })
-        }
+            realtimeClient: container.realtimeClient,
+            onStop: { dashboard.restoreRealtimeSubscriptions() })
       }
   }
   private var closeAllBar: some View {
@@ -783,7 +849,7 @@ struct USDTPositionsView: View {
         closingAll ? "平仓中..." : !closeQueue.isEmpty ? "继续核对平仓结果" : "全部平仓(" + totalPnlText + ")"
       ) {
         if skipCloseAllConfirm || !closeQueue.isEmpty { closeAll() } else { closeAllConfirm = true }
-      }.buttonStyle(WebButtonStyle(kind: totalPnl >= 0 ? .success : .danger, height: 44)).disabled(
+      }.buttonStyle(WebButtonStyle(kind: totalPnl.map { $0 >= 0 ? .success : .danger } ?? .secondary, height: 44)).disabled(
         closingAll)
     }.padding(.top, 6)
   }
@@ -853,7 +919,8 @@ struct USDTPositionsView: View {
       ], append: append, snapshotFirst: segment == "history" && !append)
   }
   private func positionCard(_ row: JSONValue) -> some View {
-    USDTCard(radius: 14, padding: 14, spacing: 14) {
+    let valuation = liveValuation(row)
+    return USDTCard(radius: 14, padding: 14, spacing: 14) {
       HStack(spacing: 8) {
         Text(row.value("side") == "0" ? "多" : "空").font(.system(size: 12, weight: .medium))
           .foregroundStyle(.white).frame(width: 20, height: 20)
@@ -873,12 +940,12 @@ struct USDTPositionsView: View {
         HStack(spacing: 16) {
           inline("开仓额度：", DisplayNumber.text(row.value("position_amount")))
           inline(
-            "持仓盈亏：", DisplayNumber.text(row.value("pnl")),
-            color: (row["pnl"]?.decimal ?? 0) >= 0 ? WebTheme.success : WebTheme.danger)
+            "持仓盈亏：", valuation.map { DisplayNumber.text($0.profit) } ?? "--",
+            color: valuation.map { $0.profit >= 0 ? WebTheme.success : WebTheme.danger } ?? WebTheme.muted)
         }
         HStack(spacing: 16) {
           inline("开仓价格：", DisplayNumber.text(row.value("open_price")))
-          inline("当前价格：", DisplayNumber.text(row.value("current_price")))
+          inline("当前价格：", valuation.map { DisplayNumber.text($0.price) } ?? "--")
         }
         inline(
           "市价止损：", row["market_stop_set"]?.flag == true ? DisplayNumber.text(row.value("market_stop_price")) : "未设置")
@@ -927,7 +994,10 @@ struct USDTPositionsView: View {
       Rectangle().fill(WebTheme.border).frame(height: 1)
       HStack(spacing: 8) {
         Button {
-          selected = row
+          if let onOpenChart { onOpenChart(row.value("symbol"), "1h"); return }
+          var snapshot = row.fields
+          if let valuation { snapshot["current_price"] = .string(NSDecimalNumber(decimal: valuation.price).stringValue) }
+          selected = .object(snapshot)
           chart = true
         } label: {
           WebLabel("K线", "chart-candlestick")
@@ -943,6 +1013,13 @@ struct USDTPositionsView: View {
         }
         Button("立即平仓") { show("close", row) }.buttonStyle(WebButtonStyle(height: 38, fontSize: 14))
       }
+      if trendAdvice.isCountertrend(symbol: row.value("symbol"), side: row.value("side")) {
+        Text(PositionTrendAdviceModel.message)
+          .font(.system(size: 12)).foregroundStyle(WebTheme.brand)
+          .lineLimit(1).minimumScaleFactor(0.8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityIdentifier("position.countertrendAdvice")
+      }
     }
   }
   private func inline(_ title: String, _ value: String, color: Color? = nil) -> some View {
@@ -950,6 +1027,9 @@ struct USDTPositionsView: View {
       + Text(value).fontWeight(.medium).foregroundColor(color ?? WebTheme.text)).font(
         .system(size: 14)
       ).frame(maxWidth: .infinity, alignment: .leading)
+  }
+  private func liveValuation(_ row: JSONValue) -> PositionLiveValuation? {
+    PositionLiveValuation(row: row, quote: liveQuotes.quotes[row.value("symbol").uppercased()])
   }
   private func show(_ name: String, _ row: JSONValue) {
     operation = WebPositionOperation(position: row, action: name)

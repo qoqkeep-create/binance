@@ -39,16 +39,18 @@ def fact_rows(event):
 
 
 def reduce_pending(binding_id):
-    changed = False
-    for item in AccountInbox.objects.filter(binding_id_snapshot=binding_id, processed=False).order_by("id")[:100]:
+    """Persist facts and hints; return whether order maintenance is necessary."""
+    reconcile = False
+    item_ids = AccountInbox.objects.filter(binding_id_snapshot=binding_id, processed=False).order_by("id").values_list("id", flat=True)[:100]
+    for item_id in item_ids:
         with transaction.atomic():
-            item = AccountInbox.objects.select_for_update().get(pk=item.pk)
+            item = AccountInbox.objects.select_for_update().get(pk=item_id)
             if item.processed:
                 continue
             binding = ApiBinding.objects.filter(pk=binding_id, user_id=item.user_id, status=1).first()
             if binding and item.created_at >= binding.created_at and item.trading_mode == binding.trading_mode:
                 if item.payload.get("e") == "RECONCILE":
-                    changed = True
+                    reconcile = True
                 for kind, identity, payload, channel in fact_rows(item.payload):
                     fact, created = AccountFact.objects.select_for_update().get_or_create(
                         user_id=item.user_id, binding_id_snapshot=binding_id, trading_mode=item.trading_mode,
@@ -61,10 +63,12 @@ def reduce_pending(binding_id):
                     AccountOutbox.objects.create(user_id=item.user_id, trading_mode=item.trading_mode,
                         channel=channel, event_key=f"{binding_id}:{kind}:{identity}",
                         payload={"eventTime": item.event_time, "symbol": payload.get("s"), "fact": payload})
-                    changed = True
+                    # Balance-only updates still reach clients without reloading
+                    # orders / protection or invalidating their shared caches.
+                    reconcile = reconcile or kind != "account"
             item.processed = True
             item.save(update_fields=["processed"])
-    return changed
+    return reconcile
 
 
 def reconcile_changed_account(binding_id):

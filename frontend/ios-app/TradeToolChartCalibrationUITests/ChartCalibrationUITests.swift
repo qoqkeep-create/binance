@@ -2734,14 +2734,13 @@ final class IntegratedNativeUITests: XCTestCase {
         let loaded = expectation(for: NSPredicate(format: "label == %@", "K线图"), evaluatedWith: chart)
         wait(for: [loaded], timeout: 30)
         capture(app, "integrated-ios-chart")
+        let submit = app.buttons["chart-ticket.submit"].firstMatch
+        XCTAssertTrue(submit.exists)
+        XCTAssertFalse(submit.isEnabled, "Unbound account must not place an order")
         app.buttons["返回"].firstMatch.tap()
         app.buttons["持仓"].firstMatch.tap()
         XCTAssertTrue(app.buttons["限价委托"].waitForExistence(timeout: 10))
-        app.buttons["开仓"].firstMatch.tap()
-        let submit = app.buttons["输入止损价开仓"].firstMatch
-        XCTAssertTrue(submit.waitForExistence(timeout: 10))
-        XCTAssertFalse(submit.isEnabled, "Unbound account must not place an order")
-        capture(app, "integrated-ios-open")
+        XCTAssertFalse(app.buttons["开仓"].exists)
         app.buttons["信号"].firstMatch.tap()
         XCTAssertTrue(app.buttons["内部信号规则"].waitForExistence(timeout: 10))
         app.buttons["我的"].firstMatch.tap()
@@ -2817,10 +2816,6 @@ final class WebParityUITests: XCTestCase {
     app.buttons["pairs.select.ETHUSDT"].tap()
     XCTAssertTrue(app.buttons["trade.symbol"].label.contains("ETHUSDT"))
     XCTAssertTrue(app.buttons["2600"].waitForExistence(timeout: 3))
-    app.buttons["我的"].firstMatch.tap()
-    app.buttons["开仓"].firstMatch.tap()
-    XCTAssertTrue(app.buttons["trade.symbol"].label.contains("ETHUSDT"))
-    XCTAssertTrue(app.buttons["2600"].exists)
   }
 
   func testPairNamesOpenChartsWithoutChangingWatchlist() {
@@ -2864,6 +2859,34 @@ final class WebParityUITests: XCTestCase {
     switcher.tap()
     XCTAssertTrue(ada.waitForExistence(timeout: 5))
     XCTAssertEqual(ada.value as? String, "未自选")
+  }
+
+  func testChartHoldingContextUsesStandardNavigationAndReadOnlyLeverageCards() {
+    launch("market", ["--fixture-chart-position"])
+    app.buttons["搜索币种、币对或合约"].tap()
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    let ticket = app.buttons["chart-ticket.submit"]
+    XCTAssertTrue(ticket.waitForExistence(timeout: 10))
+    let holding = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "正在持仓中"), object: ticket)
+    XCTAssertEqual(XCTWaiter.wait(for: [holding], timeout: 5), .completed)
+    XCTAssertTrue(ticket.isEnabled)
+    XCTAssertEqual(app.sheets.count, 0)
+    XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.entry"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.stopLoss"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.takeProfit"].exists)
+    app.buttons["market-chart-leverage"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["chart-leverage.bracket.50"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.descendants(matching: .any)["chart-leverage.bracket.25"].exists)
+    app.buttons["关闭自动杠杆"].tap()
+    app.buttons["market-chart-settings"].tap()
+    XCTAssertFalse(app.staticTexts["图表开仓类型"].exists)
+    XCTAssertEqual(app.pickers.count, 0)
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    ticket.tap()
+    XCTAssertTrue(app.scrollViews["positions.list"].waitForExistence(timeout: 5))
+    app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "K线")).firstMatch.tap()
+    XCTAssertTrue(app.buttons["market-chart-symbols"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.sheets.count, 0)
   }
 
   func testChartCrosshairLimitLinesAndSharedEntryConfirmation() {

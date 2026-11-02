@@ -3446,12 +3446,6 @@ class StrategyLogView(APIView):
         )
 
 
-def _ts_to_iso(ts_ms: int) -> str:
-    """毫秒时间戳转ISO格式字符串"""
-    dt = datetime.fromtimestamp(ts_ms / 1000, tz=dt_timezone.utc)
-    return dt.isoformat()
-
-
 def _get_ct_val_map(rows: list) -> dict[str, Decimal]:
     """获取所有涉及交易对的合约面值 (ctVal)"""
     inst_ids = set()

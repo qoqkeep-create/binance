@@ -110,6 +110,10 @@
 		A17000000000000000000001 /* FloatingPositionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000002 /* FloatingPositionsView.swift */; };
 		A17000000000000000000005 /* FloatingPositionsPiP.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000006 /* FloatingPositionsPiP.swift */; };
 		A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17000000000000000000004 /* FloatingPositionsTests.swift */; };
+		A18000000000000000000001 /* PositionTrendAdvice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18000000000000000000002 /* PositionTrendAdvice.swift */; };
+		A18000000000000000000003 /* PositionTrendAdviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18000000000000000000004 /* PositionTrendAdviceTests.swift */; };
+		A19000000000000000000001 /* PositionLiveValuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* PositionLiveValuation.swift */; };
+		A19000000000000000000003 /* PositionLiveValuationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000004 /* PositionLiveValuationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -240,6 +244,10 @@
 		A17000000000000000000002 /* FloatingPositionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsView.swift; sourceTree = "<group>"; };
 		A17000000000000000000006 /* FloatingPositionsPiP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsPiP.swift; sourceTree = "<group>"; };
 		A17000000000000000000004 /* FloatingPositionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPositionsTests.swift; sourceTree = "<group>"; };
+		A18000000000000000000002 /* PositionTrendAdvice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionTrendAdvice.swift; sourceTree = "<group>"; };
+		A18000000000000000000004 /* PositionTrendAdviceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionTrendAdviceTests.swift; sourceTree = "<group>"; };
+		A19000000000000000000002 /* PositionLiveValuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveValuation.swift; sourceTree = "<group>"; };
+		A19000000000000000000004 /* PositionLiveValuationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveValuationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -581,6 +589,8 @@
 			children = (
 				120000000000000000000005 /* ServerSwitchingTests.swift */,
 				A17000000000000000000004 /* FloatingPositionsTests.swift */,
+				A18000000000000000000004 /* PositionTrendAdviceTests.swift */,
+				A19000000000000000000004 /* PositionLiveValuationTests.swift */,
 				D15A00000000000000000004 /* DisplayNumberTests.swift */,
 				0B0000000000000000000002 /* ChartEngineCoreTests.swift */,
 				0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */,
@@ -607,6 +617,8 @@
 				7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */,
 				DD7B56A4F1642013DF78DC36 /* USDTSession.swift */,
 				18C443B8F02115C83974CD29 /* USDTStore.swift */,
+				A18000000000000000000002 /* PositionTrendAdvice.swift */,
+				A19000000000000000000002 /* PositionLiveValuation.swift */,
 				A17000000000000000000002 /* FloatingPositionsView.swift */,
 				A17000000000000000000006 /* FloatingPositionsPiP.swift */,
 				9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */,
@@ -759,6 +771,8 @@
 				20EBABF2268F5C781A0B85C5 /* USDTRecordsViews.swift in Sources */,
 				4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */,
 				059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */,
+				A18000000000000000000001 /* PositionTrendAdvice.swift in Sources */,
+				A19000000000000000000001 /* PositionLiveValuation.swift in Sources */,
 				A17000000000000000000001 /* FloatingPositionsView.swift in Sources */,
 				A17000000000000000000005 /* FloatingPositionsPiP.swift in Sources */,
 				F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */,
@@ -852,6 +866,8 @@
 			files = (
 				130000000000000000000005 /* ServerSwitchingTests.swift in Sources */,
 				A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */,
+				A18000000000000000000003 /* PositionTrendAdviceTests.swift in Sources */,
+				A19000000000000000000003 /* PositionLiveValuationTests.swift in Sources */,
 				D15A00000000000000000003 /* DisplayNumberTests.swift in Sources */,
 				0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */,
 				0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */,

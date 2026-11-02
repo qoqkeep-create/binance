@@ -569,12 +569,6 @@ def _environment_label() -> str:
     return "Binance Futures 实盘"
 
 
-def _step_digits(step: Decimal) -> int:
-    normalized = step.normalize()
-    exponent = normalized.as_tuple().exponent
-    return abs(exponent) if exponent < 0 else 0
-
-
 def quantize_up(value: Decimal, step: Decimal) -> Decimal:
     if step <= 0:
         return value
@@ -1984,6 +1978,12 @@ class BinanceFuturesClient:
                     "maxLever": initial_leverage,
                     "lever": initial_leverage,
                     "notionalCap": str((brackets[0] or {}).get("notionalCap") or "0") if brackets else "0",
+                    "brackets": [
+                        {"initialLeverage": str(item.get("initialLeverage") or "0"),
+                         "notionalCap": str(item.get("notionalCap") or "0"),
+                         "notionalFloor": str(item.get("notionalFloor") or "0")}
+                        for item in brackets if isinstance(item, dict)
+                    ],
                 }
             )
         return _ok(result)

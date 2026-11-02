@@ -1,4 +1,4 @@
-"""Shared public-market connection guard; separate from account/order budgets."""
+"""Shared Binance market/account stream admission; separate from REST budgets."""
 import logging
 import math
 import random
@@ -44,7 +44,7 @@ return tostring(deadline)
 def reserve_connection(*, now=None):
     """Zero admits one attempt; positive seconds mean wait and retry admission.
 
-    Shared Redis failure stops public reconnections rather than multiplying a
+    Shared Redis failure stops new stream connections rather than multiplying a
     per-process fallback allowance. Healthy existing streams stay connected.
     """
     now = time.time() if now is None else now
@@ -59,7 +59,7 @@ def reserve_connection(*, now=None):
                 cache.make_key(STATE + ":attempts"), cache.make_key(STATE + ":next"), cache.make_key(STATE + ":cooldown"),
                 now, limit, spacing, uuid.uuid4().hex) / 1000
         except Exception as exc:
-            log.warning("Market connection budget unavailable (%s); deferred", type(exc).__name__)
+            log.warning("Binance stream connection budget unavailable (%s); deferred", type(exc).__name__)
             return 5
     with LOCAL_LOCK:
         state = cache.get(STATE, {"attempts": [], "next": 0, "cooldown": 0})

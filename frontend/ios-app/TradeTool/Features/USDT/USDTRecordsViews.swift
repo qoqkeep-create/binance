@@ -29,6 +29,7 @@ struct USDTSignalsView: View {
             Text(
               model.loading
                 ? "加载中..."
+                : store.mode != "ordinary" ? "带单模式暂不支持信号"
                 : model.error.isEmpty ? "暂无内部信号" : model.error
             ).font(.system(size: 14)).foregroundStyle(WebTheme.muted).frame(maxWidth: .infinity)
               .padding(.top, 64)
@@ -104,6 +105,7 @@ struct USDTSignalsView: View {
       .contentShape(Rectangle())
   }
   private func load() async {
+    guard store.mode == "ordinary" else { model.reset(); return }
     await model.load(
       store, path: "/v1/trade/tradingview/signals", query: [.init(name: "source", value: "internal")])
   }

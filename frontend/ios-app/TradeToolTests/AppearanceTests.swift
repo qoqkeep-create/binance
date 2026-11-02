@@ -8,7 +8,7 @@ import XCTest
 
 final class AppearanceTests: XCTestCase {
     @MainActor
-    func testSelectedTradeTickerKeepsReceivingWhenFavoritesAndSearchSubscriptionsChange() async throws {
+    func testPositionAndSelectedTradeTickersSurviveFavoritesAndSearchSubscriptionChanges() async throws {
         let ready = expectation(description: "Loopback ready")
         let peer = try LatencySocketPeer(ready: ready, pings: [])
         peer.start()
@@ -23,6 +23,7 @@ final class AppearanceTests: XCTestCase {
         let model = DashboardViewModel(markets: markets, realtimeClient: client)
         model.startRealtime(userID: "test")
         defer { model.stopRealtime(); client.disconnect() }
+        model.trackPositionTickerSymbols(["HOLDUSDT"])
         model.trackTradeTickerSymbol("SELECTEDUSDT")
         let received = expectation(description: "Selected quote over real WSS")
         let observation = model.$realtimeTickerRevision.dropFirst().filter { _ in
@@ -32,7 +33,7 @@ final class AppearanceTests: XCTestCase {
         client.connect()
         await fulfillment(of: [received], timeout: 5)
         XCTAssertEqual(peer.tickerSymbols.count, 200)
-        XCTAssertEqual(peer.tickerSymbols.first, "SELECTEDUSDT")
+        XCTAssertEqual(Array(peer.tickerSymbols.prefix(2)), ["HOLDUSDT", "SELECTEDUSDT"])
         model.trackSearchTickerSymbols((0..<210).map { "SEARCH\($0)USDT" })
         model.stopTrackingSearchTickers()
         model.hideMarkets(Set(markets.map(\.symbol)))
@@ -46,7 +47,7 @@ final class AppearanceTests: XCTestCase {
         defer { nextObservation.cancel() }
         model.trackTradeTickerSymbol("NEXTUSDT")
         await fulfillment(of: [next], timeout: 5)
-        XCTAssertEqual(peer.tickerSymbols, ["NEXTUSDT"])
+        XCTAssertEqual(peer.tickerSymbols, ["HOLDUSDT", "NEXTUSDT"])
     }
 
     @MainActor

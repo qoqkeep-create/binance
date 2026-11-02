@@ -35,6 +35,7 @@ struct MarketChartView: View {
     private let realtimeClient: RealtimeClient
     private let onClose: (() -> Void)?
     private let onStop: (() -> Void)?
+    private let onShowPositions: (() -> Void)?
 
     init(
         market: MarketSnapshot,
@@ -43,7 +44,8 @@ struct MarketChartView: View {
         realtimeClient: RealtimeClient,
         initialInterval: MarketKlineInterval = .oneHour,
         onClose: (() -> Void)? = nil,
-        onStop: (() -> Void)? = nil
+        onStop: (() -> Void)? = nil,
+        onShowPositions: (() -> Void)? = nil
     ) {
         _selectedMarket = State(initialValue: market)
         _selectedInterval = State(initialValue: initialInterval)
@@ -52,6 +54,7 @@ struct MarketChartView: View {
         self.realtimeClient = realtimeClient
         self.onClose = onClose
         self.onStop = onStop
+        self.onShowPositions = onShowPositions
     }
 
     var body: some View {
@@ -65,7 +68,8 @@ struct MarketChartView: View {
             onIntervalChange: { selectedInterval = $0 },
             onShowSymbols: { showsSymbols = true },
             onClose: onClose,
-            onStop: onStop
+            onStop: onStop,
+            onShowPositions: onShowPositions
         )
         .id(selectedMarket.symbol)
         .sheet(isPresented: $showsSymbols, onDismiss: {
@@ -111,7 +115,10 @@ struct MarketChartView: View {
 private struct MarketChartDetailView: View {
     @EnvironmentObject private var toastCenter: AppToastCenter
     @EnvironmentObject private var usdt: USDTStore
-    @AppStorage("integrated.chart.orderType") private var nativeOrderType = "limit"
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var nativeOrderType = "market"
+    @StateObject private var positions = USDTChartPositionsModel()
+    @State private var showsLeverage = false
     @State private var selectedStopPrice: Double?
     @State private var showsIntervalSettings = false
     @AppStorage(ChartIntervalPreferences.storageKey) private var favoriteIntervals = ChartIntervalPreferences.defaultValue
@@ -122,6 +129,7 @@ private struct MarketChartDetailView: View {
     let onShowSymbols: () -> Void
     let onClose: (() -> Void)?
     let onStop: (() -> Void)?
+    let onShowPositions: (() -> Void)?
     @EnvironmentObject private var dashboard: DashboardViewModel
     private var isFavorite: Bool { dashboard.containsInWatchlist(viewModel.market.symbol) }
     @State private var isIndicatorSettingsPresented = false
@@ -143,7 +151,8 @@ private struct MarketChartDetailView: View {
         onIntervalChange: @escaping (MarketKlineInterval) -> Void,
         onShowSymbols: @escaping () -> Void,
         onClose: (() -> Void)?,
-        onStop: (() -> Void)?
+        onStop: (() -> Void)?,
+        onShowPositions: (() -> Void)?
     ) {
         self.availableMarkets = availableMarkets
         self.onSelectMarket = onSelectMarket
@@ -151,6 +160,7 @@ private struct MarketChartDetailView: View {
         self.onShowSymbols = onShowSymbols
         self.onClose = onClose
         self.onStop = onStop
+        self.onShowPositions = onShowPositions
         _viewModel = StateObject(wrappedValue: MarketChartViewModel(
             market: market,
             apiClient: apiClient,
@@ -188,7 +198,10 @@ private struct MarketChartDetailView: View {
                     onChartOrderTypeChange: { type in
                         nativeOrderType = type
                         initializeLimitDrawing()
-                    })
+                    }, chartHasPosition: !heldPositions.isEmpty,
+                    chartPositionsReady: positions.isReady(scope: usdt.scope),
+                    chartPositionsError: positions.error,
+                    onShowPositions: onShowPositions)
                     .id(usdt.scope)
             }
 
@@ -202,6 +215,14 @@ private struct MarketChartDetailView: View {
         .interactivePopGestureEnabled()
         .task {
             viewModel.start()
+        }
+        .task(id: "\(usdt.scope):\(usdt.isBound):\(scenePhase)") {
+            guard scenePhase == .active else { positions.reset(); return }
+            await positions.monitor(usdt)
+        }
+        .onChange(of: usdt.liveRevision) { _, _ in
+            guard scenePhase == .active else { return }
+            Task { await positions.refresh(usdt) }
         }
         .onDisappear {
             selectedStopPrice = nil
@@ -224,6 +245,9 @@ private struct MarketChartDetailView: View {
         .sheet(isPresented: $showsIntervalSettings) {
             ChartIntervalSettingsView(selection: viewModel.interval,
                 favorites: $favoriteIntervals, onSelect: viewModel.selectInterval)
+        }
+        .sheet(isPresented: $showsLeverage) {
+            USDTLeverageBracketsView(symbol: viewModel.market.symbol)
         }
         .onChange(of: viewModel.currentPrice, initial: true) { _, _ in initializeLimitDrawing() }
         .onChange(of: nativeOrderType) { _, _ in initializeLimitDrawing() }
@@ -267,8 +291,10 @@ private struct MarketChartDetailView: View {
                     tradeTool(title: "指标", action: { isIndicatorSettingsPresented = true }) {
                         indicatorSettingsIcon
                     }.accessibilityIdentifier("market-chart-indicator-settings-shortcut")
-                    tradeTool("gauge.with.dots.needle.67percent", title: "自动杠杆", action: presentLeverageSettings)
+                    tradeTool("gauge.with.dots.needle.67percent", title: "自动杠杆", action: { showsLeverage = true })
+                        .accessibilityIdentifier("market-chart-leverage")
                     tradeTool("gearshape", title: "设置", action: { isOrderSettingsPresented = true })
+                        .accessibilityIdentifier("market-chart-settings")
                 }
 
                 Button {
@@ -328,7 +354,12 @@ private struct MarketChartDetailView: View {
                 onCrosshairDismiss: { selectedStopPrice = nil }
             )
 
-            if let projection = chartPriceProjection,
+            if let projection = chartPriceProjection, !heldPositions.isEmpty {
+                ChartPositionLinesOverlay(lines: ChartPositionLine.lines(in: heldPositions,
+                    symbol: viewModel.market.symbol), projection: projection)
+            }
+
+            if let projection = chartPriceProjection, heldPositions.isEmpty,
                nativeOrderType == "limit", let drawing = orderDrawing {
                 ChartOrderDrawingOverlay(
                     drawing: Binding(
@@ -456,10 +487,8 @@ private struct MarketChartDetailView: View {
         .buttonStyle(.plain)
     }
 
-    private var leverageToolTitle: String { "自动杠杆" }
-
-    private func presentLeverageSettings() {
-        toastCenter.warning("杠杆由服务端按原 USDT 风控规则自动设置")
+    private var heldPositions: [JSONValue] {
+        positions.positions(for: viewModel.market.symbol, scope: usdt.scope)
     }
 
     private var latestPriceColor: Color {

@@ -962,32 +962,6 @@ def _close_fully_offset_order(
     return True
 
 
-def _place_stop_loss_verified(
-    client: BinanceFuturesClient,
-    inst_id: str,
-    close_side: str,
-    size: Decimal,
-    stop_loss_price: Decimal,
-    pos_side: Optional[str],
-    order: Optional[Order] = None,
-    retry_context: Optional[dict[str, Any]] = None,
-    retry_label: str = "",
-) -> str:
-    size_text = format(size, "f")
-    price_text = format(stop_loss_price, "f")
-    algo_client = BinanceAlgoClient(client, log=logger)
-    return algo_client.create_stop_loss(
-        inst_id=inst_id,
-        side=close_side,
-        size=size_text,
-        stop_loss_price=price_text,
-        pos_side=pos_side,
-        client_algo_id=_build_algo_client_id(order, "sl") if order else None,
-        visibility_mode=ALGO_VISIBILITY_ALLOW_DELAYED,
-        action=retry_label or "rebuild_stop_loss",
-    )
-
-
 def _place_stop_market_verified(
     client: BinanceFuturesClient,
     inst_id: str,
@@ -1360,15 +1334,6 @@ def _take_profit_algo_matches(row: dict[str, Any], *, trigger_price: Decimal, si
     size_ok = abs(algo_size - size) <= POSITION_SIZE_TOLERANCE
     price_ok = algo_trigger > 0 and abs(algo_trigger - trigger_price) <= POSITION_SIZE_TOLERANCE
     return size_ok and price_ok
-
-
-def _strategy_level_reached(snapshot: OrderStrategySnapshot, level_idx: int, trigger_rr: Decimal) -> bool:
-    return OrderStrategyLog.objects.filter(
-        snapshot=snapshot,
-        result=OrderStrategyLog.RESULT_SUCCESS,
-        behavior_desc__startswith=f"L{level_idx} 达到",
-        trigger_r=trigger_rr,
-    ).exists()
 
 
 def _build_take_profit_targets(order: Order, snapshot: OrderStrategySnapshot) -> list[dict[str, Any]]:

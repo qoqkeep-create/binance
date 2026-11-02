@@ -7179,3 +7179,100 @@ private final class ContinuousScaleTestPan: UIPanGestureRecognizer {
         CGPoint(x: velocityX, y: 0)
     }
 }
+
+final class ChartPositionContextTests: XCTestCase {
+    private func row(_ changes: [String: JSONValue] = [:]) -> JSONValue {
+        .object(["id": .number(101), "symbol": .string("BTCUSDT"), "side": .number(0),
+            "exchange_size": .string("0.1"), "open_price": .string("68000.12345678"),
+            "stop_loss_price": .string("67000"), "market_stop_set": .bool(true),
+            "market_stop_price": .string("67100"), "manual_take_profit_set": .bool(false)]
+            .merging(changes, uniquingKeysWith: { _, new in new }))
+    }
+
+    func testLinesUseCurrentSymbolAndActualMarketStopPrice() {
+        let rows = [row(), row(["symbol": .string("ETHUSDT")]), row(["exchange_size": .string("0")]),
+            row(["status": .number(1)])]
+        let lines = ChartPositionLine.lines(in: rows, symbol: "btcusdt")
+        XCTAssertEqual(lines.map(\.kind), [.entry, .stopLoss])
+        XCTAssertEqual(lines.map(\.price), [Decimal(string: "68000.12345678")!, Decimal(67100)])
+    }
+
+    func testTakeProfitRequiresAnExistingOrderAndSupportsBothOrderTypes() {
+        for type in ["limit", "market"] {
+            let pending = row(["manual_take_profit_price": .string("70000"),
+                "manual_take_profit_order_type": .string(type)])
+            XCTAssertEqual(ChartPositionLine.lines(in: [pending], symbol: "BTCUSDT").count, 2)
+            let placed = row(["manual_take_profit_set": .bool(true),
+                "manual_take_profit_price": .string("70000"), "manual_take_profit_order_type": .string(type)])
+            XCTAssertEqual(ChartPositionLine.lines(in: [placed], symbol: "BTCUSDT").last?.kind, .takeProfit)
+        }
+    }
+
+    func testInvalidProtectionPricesAreNotDrawnAndStopFallsBack() {
+        let invalid = row(["market_stop_price": .string("NaN"), "open_price": .string("-1"),
+            "manual_take_profit_set": .bool(true), "manual_take_profit_price": .string("Infinity")])
+        let lines = ChartPositionLine.lines(in: [invalid], symbol: "BTCUSDT")
+        XCTAssertEqual(lines.map(\.kind), [.stopLoss])
+        XCTAssertEqual(lines.first?.price, Decimal(67000))
+    }
+
+    func testHedgedPositionsHaveDistinctLabelsAndIdentifiers() {
+        let lines = ChartPositionLine.lines(in: [row(), row(["id": .number(102), "side": .number(1)])], symbol: "BTCUSDT")
+        XCTAssertEqual(Set(lines.map(\.id)).count, 4)
+        XCTAssertEqual(lines.map(\.title), ["多 · 开仓", "多 · 止损", "空 · 开仓", "空 · 止损"])
+    }
+
+    @MainActor
+    func testSnapshotResetRejectsResponseFromPriorViewLifetime() async throws {
+        let api = ChartPositionsSuspendedAPI()
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: "chart-position-test")
+        store.binding = .object(["id": .number(1)])
+        let model = USDTChartPositionsModel()
+        let task = Task { await model.refresh(store) }
+        try await api.waitForRequest()
+        model.reset()
+        await api.complete(.array([row()]))
+        await task.value
+        XCTAssertFalse(model.isReady(scope: store.scope))
+        XCTAssertTrue(model.positions(for: "BTCUSDT", scope: store.scope).isEmpty)
+    }
+
+    @MainActor
+    func testAccountChangeHidesPriorPositionsAndRejectsDelayedReply() async throws {
+        let api = ChartPositionsSuspendedAPI()
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: "chart-position-test")
+        store.binding = .object(["id": .number(1)])
+        let model = USDTChartPositionsModel()
+        let oldScope = store.scope
+        let task = Task { await model.refresh(store) }
+        try await api.waitForRequest()
+        store.invalidate()
+        await api.complete(.array([row()]))
+        await task.value
+        XCTAssertNotEqual(oldScope, store.scope)
+        XCTAssertFalse(model.isReady(scope: store.scope))
+        XCTAssertTrue(model.positions(for: "BTCUSDT", scope: store.scope).isEmpty)
+        await model.refresh(store)
+        XCTAssertTrue(model.isReady(scope: store.scope))
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+}
+
+private actor ChartPositionsSuspendedAPI: APIClient {
+    private var pending: CheckedContinuation<JSONValue, Never>?
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        guard request.path == "/v1/position/list" else { throw APIError.invalidResponse }
+        let result = await withCheckedContinuation { pending = $0 }
+        return result as! Response
+    }
+    func waitForRequest() async throws {
+        for _ in 0..<1000 {
+            if pending != nil { return }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        throw APIError.invalidResponse
+    }
+    func complete(_ value: JSONValue) { pending?.resume(returning: value); pending = nil }
+}

@@ -22,8 +22,27 @@
 
 专用 `Chart Order Review` 模拟器验证布局、周期编辑、主图十字线、限价线拖动与共用止损／开仓确认，测试只取消确认。首轮发现校准 fixture 缺少 AppContainer 环境导致崩溃，以及父容器无障碍标识覆盖子按钮；已补齐 fixture 并将容器设为独立分组。第二轮修正布局断言的浮点误差，并为确认流程单独指定资金已就绪 fixture；一轮补测在启动前因专用模拟器关闭导致 runner 超时，保留失败证据。最终从仅含本任务的源码快照验证：三项 UI 全部通过（121.981 秒），generic iOS Release 未签名构建通过；截图复核后将确认框的费用合计按已有 Decimal 金额工具保留两位，随后仅补构建。Release 及最终 UI 证据保存在忽略目录 `.integration-runtime/ChartTicket/`；不作为 TestFlight 或手机验收。
 
-
 2026-11-02 后续底栏样式调整仅作编译验证：两行信息、含手续费开关、方向按钮同 K 线色、铺满底部安全区、选币系统档位及周期短下划线已接入。原 USDT 计算和提交函数未修改；从当前 Git 基线提取本任务三份源文件的隔离快照，generic iOS Release 未签名构建通过，证据位于 `.integration-runtime/ChartTicketPolish/release-build.log`。按用户“简单调整不启动模拟器测试”的偏好，本轮未启动模拟器或重跑单测／UI；iOS 26 大尺寸交易对面板、不同屏宽排布及实机手势仍需新包验收。
+
+## 图表持仓上下文与杠杆回归（2026-11-02）
+
+行为与接口见 [页面](ios-web-parity.md#k-线下单区域2026-11-02)、[行情](market-data.md#图表持仓线与杠杆档位2026-11-02本地) 及 [交易安全](trading-safety.md#图表与标准开仓共用流程2026-11-02)。新增 `ChartPositionContextTests` 六项，覆盖币种／零数量／关闭过滤、市价止损择源、已挂市价与限价止盈、非法价格、多空标识、页面重置及账户切换拒绝晚到响应。使用 host Swift Package 编译实际 JSONValue、USDTStore、持仓模型和价格线数据模型，只有网络／事件依赖使用替身；复用六个测试方法全部通过（0.012 秒）。
+
+`trading.test_leverage_brackets`、原适配器首档兼容测试与 `trading.test_lead_mode` 共 **30 项通过（6.976 秒）**。SQLite／LocMem 与交易所替身覆盖全部档位精度、只读调用、缓存命中、用户／模式／绑定隔离、读取中重新绑定、无绑定、失败／空数据、非法参数和 POST 拒绝，不执行真实交易所写入。
+
+generic iOS Release 未签名构建、`TradeTool` 单测目标及 `TradeTool Chart Calibration` UI 目标的 generic iOS Simulator `build-for-testing` 均通过。新增 UI 用例覆盖持仓按钮／三条价格线、标准图表导航、杠杆卡片和空设置页；本轮仅编译，没有启动模拟器或执行 iOS XCTest／UI，也没有截图、实机或 TestFlight 验收。证据在忽略目录 `.integration-runtime/ChartPositions/`。本轮未提交、推送或部署；新杠杆接口需配套发布后才可在线使用。
+
+## 持仓逆势建议与底栏回归（2026-11-02）
+
+活动持仓建议与四项底栏规则见 [页面说明](ios-web-parity.md#持仓逆势建议与四项底栏2026-11-02)。新增 `PositionTrendAdviceTests` 八项，覆盖多空方向的双条件、均线相等／交错、三个高周期真实指标计算、数据不足／过期／近期缺口、未收盘线反转、账户切换后旧响应拒绝、取消清理及失败后移除旧建议。既有底栏断言同步四项；登录 UI 检查的未绑定下单禁用断言改至 K 线下单区，独立开仓表单 fixture 继续用于共用组件检查。
+
+本轮通过 host Swift 检查器执行上述八项逻辑：复用测试方法、生产 EMA／Supertrend 计算器及完整建议模型；仅 API 协议／请求外壳为本地替身，Supertrend 绘图插件未纳入 host 编译。八项全部通过。最终 generic iOS Release 未签名构建，以及 `TradeTool Chart Calibration` 的 generic iOS Simulator `build-for-testing` 均通过，后者只编译单测与 UI 工程，没有启动模拟器或执行 XCTest／UI 用例。证据位于忽略目录 `.integration-runtime/PositionAdvice/`。未执行真实交易、后端部署、TestFlight 上传或实机验收；本轮未执行提交与推送。
+
+## 持仓市价与浮盈实时回归（2026-11-02）
+
+`PositionLiveValuationTests` 新增十项：逐条 ticker 同步市价／盈亏且忽略接口旧 `pnl`、减仓剩余量和加仓后均价、空仓方向、杠杆不重复相乘、小币价 Decimal 精度、零／未知数量、旧协议数量回退、乱序／非法／非持仓币种过滤、账户代际／旧任务清理、断线／重连清理及延迟／未来包过滤。`AppearanceTests` 原真实回环 WebSocket 订阅用例同步加入持仓币种优先级，覆盖自选／搜索／恢复订阅后保留持仓与所选开仓币种；本轮只编译该用例，没有执行。
+
+本轮使用 host Swift 检查器复用上述十项测试方法，编译真实 `PositionLiveValuation`／`PositionLiveQuotes`、从生产文件提取的 JSONValue／事件模型及 JSON 扩展，十项全部通过。generic iOS Release 未签名构建、generic iOS Simulator `build-for-testing` 均通过；没有启动模拟器或执行 iOS XCTest／UI。证据保存在忽略目录 `.integration-runtime/PositionRealtime/`。官方限流与展示范围核对结果归并至 [行情说明](market-data.md#持仓市价与浮盈推送限流边界2026-11-02)；手机网络下的刷新、断线恢复及新包实机仍待验收。本轮未执行提交、推送、后端部署或 TestFlight 上传，也未发起真实交易。
 
 ## K 线协调与出口保护回归
 
@@ -63,6 +82,24 @@ UI 用 DEBUG 无网络业务替身：原生排序手柄实际长按拖动并核�
 ### 交易对名称与自选操作分离（2026-11-02）
 
 追加 `WebParityUITests.testPairNamesOpenChartsWithoutChangingWatchlist`，覆盖行情搜索／编辑添加入口点名称打开图表、图表顶部下拉复用完整列表、未自选币种查看后仍未自选、按钮添加／取消删除／确认删除及切币后状态保留。DEBUG 行情替身补齐实际图表导航和本地合成 K 线；图表校准替身提供共用目录及环境对象。本轮属于简单交互调整，遵守用户偏好只编译，不启动模拟器运行回归；实际编译和交付范围见 [变更记录](changes.md)。
+
+## 后端主链瘦身回归（2026-11-02）
+
+实现、扫描范围和未实施项见 [架构](architecture.md#后端扫描与主链瘦身2026-11-02本地) 与 [行情实施进度](market-data.md#websocket-优先与多用户容量评估2026-11-02部分已实现)。新增 `mobile.test_stream_lifecycle`／`mobile.test_event_delivery` 共 13 项，覆盖建连准入等待、短断退避、握手冷却与日志脱敏、轮换、保活、租约丢失取消、纯余额通知、风险事件继续对账、陈旧事实、批量投递、失败待重试及每轮 100 条上限。先复现失败后，连同原生命令与共享守卫的 45 项定向回归通过。
+
+`mobile market_stream trading.test_scheduler_connections` 的独立 Redis 组合最终 **119 项通过（9.921 秒）**，包括新增私有批次只用一次 pipeline、序号顺序、账户／模式筛选与真实 ASGI 投递；初轮发现协议 fixture 仍调用已合并的旧发布入口及新 fixture 缺筛选字段，修正后通过。随后新增 scheduler 注册回归先复现重复任务，`trading.test_scheduler_connections trading.test_public_market_klines trading.test_snapshot_prewarm` **25 项通过（0.041 秒）**，覆盖原生／旧预热切换、CDN 显式开关和普通／带单保护任务保留。
+
+最终固定源码快照的全量回归 **Ran 1005 tests／310.659 秒，OK，6 项专用集成条件跳过**；发现计数为 1022，部分专用集成类在 setUpClass 时整体跳过，执行数按 runner 的 Ran 口径记录。证据与冻结源码清单位于忽略目录 `.integration-runtime/BackendSlim/`。`server/.env` 未复制，测试使用 SQLite／LocMem、临时独立 Redis 和交易所替身，额外阻止外部 DNS／socket，仅允许回环连接。初次全量为 1004 项、6 项条件跳过；增加预热调度修改后以上述最终结果为准。快照保留当时工作区已有的其他任务改动，不能把全部差异归为本次瘦身。
+
+复现主要回归的命令：
+
+```bash
+PYTHON_DOTENV_DISABLED=1 DB_ENGINE=sqlite USE_REDIS_CACHE=False RUN_SCHEDULER_IN_WEB=false \
+  MARKET_TEST_REDIS_BINARY=/absolute/path/to/isolated/redis-server \
+  server/.venv/bin/python server/manage.py test mobile market_stream trading.test_scheduler_connections --noinput
+```
+
+系统检查和 `makemigrations --check --dry-run` 通过，无 migration 漂移。以上不替代 MySQL 行锁、跨进程账户 lease、网络故障长稳或用户容量压测；本轮没有实盘操作、提交、推送、部署及客户端构建。
 
 ## Python
 
@@ -200,6 +237,8 @@ iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pendin
 
 ## 图表加载诊断回归
 
+2026-11-01 后续取得实际 iPhone `1.0.1 (15)` 的三轮九次 BTC1h 报告，确认 URLSession／图表／Metal 呈现／鉴权上报／生产落库链路实际贯通。前六次首帧 2.00～6.94 秒，蜂窝、无 VPN 的连接实测 TCP 重传及缩窗；单目的地址 BBR 对照后，三次为 503.60／433.48／453.03 ms，内核确认连接为 BBR，用户体感一致。随后固化宿主配置，撤销临时路由／采样，新建 HTTPS 连接确认 BBR 且健康 200。当前三次达到约 1 秒目标，不作为其他网络长期保证；这轮没有改动产品代码或为配置／文档重复运行既有单测，配置应用检查及真实链路证据与以下本地替身测试分开，见 [真机排查](market-data.md#构建-15-真机传输排查2026-11-01)。
+
 2026-11-01 本地 `market_stream` 67 项通过，包含五项独立临时 Redis 回归及九项诊断入口测试：鉴权、合法网络字段、未知字段拒绝、实际 24 KiB 正文限制、非有限数值、用户节流、容量／重复报告幂等、用户隔离、retention 和 K 线关联响应头。migration 漂移检查通过，仅新增诊断表。
 
 专用模拟器 `A9B09AF9-195A-4F50-B706-7F07A0EB4CD4` 上 `ChartEngineCoreTests` 136、`MarketFastPathTests` 21、`ChartLoadDiagnosticsTests` 4，共 161 项通过（33.188 秒）。覆盖旧 epoch 首帧拒绝、周期替换和结束一次、取消、固定诊断字段／事件上限、HTTP 追踪头及解码边界、诊断 401 不全局登出、Metal 有效首帧 observer 可重入且只触发一次。日志保存在忽略目录 `.integration-runtime/KlineDiagnostics/`。
@@ -207,6 +246,7 @@ iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pendin
 在独立 SQLite 数据库与回环 HTTP API 中迁移新表，种入 1500 根合成 BTC1h，禁止外部交易所请求，以真实 URLSession、图表 pipeline、Metal 模拟器完成回调、异步 POST 和 Django 入库串通验证。三次进入均保存 displayed、首尾时间、网络 metrics 和完整图表阶段；模拟器完成属于 GPU 代理，不是物理手机呈现或公网性能。初次配置用不在已知列表的回环端口，App 回落到了既有远端选择，因此那一轮 UI 虽通过但没有本地记录，不计入隔离贯通；随后通过构建设置显式指定回环 API，并核对实际数据库三条记录。
 
 最后补充网络／本地缓存来源字段及隐私清单后，九项后端诊断与五项 iOS 定向回归再次通过，隔离 UI 再次完成三次加载并入库；数据库确认缓存来源标记存在，原始网络读取在前一轮已验证。只读 trace 查询通过，最终 generic iOS Release 无签名编译通过并确认成品清单包含新增声明。两轮隔离验证均不作为手机／公网性能数据；没有上传 TestFlight 或执行真实交易。
+
 
 ## 账户与资金双页签回归（2026-11-02）
 

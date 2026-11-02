@@ -48,7 +48,19 @@
 
 鸿蒙工程位于 `frontend/harmony-app/`，业务核心与鸿蒙平台适配分离，共用后端的认证、持久化交易命令和资金状态机。首次真实编译与未签名 HAP 打包已通过，调试签名、Mate 80 安装与全量页面对照尚未完成；当前覆盖及身份协议限制见 [鸿蒙客户端](harmony-client.md)。
 
+## 后端扫描与主链瘦身（2026-11-02，本地）
+
+本轮以当时工作区扫描 294 个 Python 文件，其中运行代码 148 个文件、约 28,672 行；覆盖应用注册、URL、调度任务、交易所请求入口、测试与辅助函数引用。账户事件、连接恢复、投递及行情预热做调用链审阅；其余模块做结构和引用扫描。已退役的研究／计划空包与历史 migrations 仍承担兼容职责，保留规则见 [功能退役](research.md)。
+
+按“主链收益大、范围小”落实四项：私有流复用共享建连守卫并增加退避／错峰；纯余额事件仅更新事实和通知；公私事件共用 Lua 有序发布、Outbox 投递状态批量更新；原生采集开启时不注册旧 Web K 线预热，未启用的 CDN 预热也不注册。无需新依赖、表结构或 HTTP 协议；关键保护、策略、结算及资金路径继续原职责。连接实现和剩余容量边界统一见 [行情实施进度](market-data.md#websocket-优先与多用户容量评估2026-11-02部分已实现)。
+
+清理只删除经源码／测试／路由引用检查确认无调用的 `_step_digits`、`_ts_to_iso`、`_place_stop_loss_verified`、`_strategy_level_reached`，以及已由批量发布完整替代的 `bus.event`／`bus.publish` 两步入口；已有实际止损与止盈实现保留。
+
+后续最有价值的方向是账户读取快照及统一补差、事件与 scheduler 的重复读取协调、客户端浮窗和资料的局部刷新。`trading/views.py`、`positions/views.py`、`common/binance.py` 仍偏大，后续可按纯序列化／查询／适配边界逐段提取，需以各段调用者和回归为依据。本轮没有拆交易状态机、删除兼容接口或历史数据，也未给出支持人数；仅本地验证，范围见 [开发](development.md#后端主链瘦身回归2026-11-02)。
+
 ## Python 与 Java 的性能判断（2026-11-01）
+
+公共行情已经由后端共享，私有账户流按有效绑定维持连接。2026-11-02 的评估及部分主链修改统一维护在 [WebSocket 优先与多用户容量评估](market-data.md#websocket-优先与多用户容量评估2026-11-02部分已实现)。账户读取快照及统一容量验证仍待实施，尚未给出压测人数。
 
 当前运行的是 CPython 3.11，API 为单 Uvicorn worker，market／worker／scheduler 独立进程。CPU 密集的纯 Python 聚合、JSON 构建与压缩受 GIL 和解释执行成本影响；同进程增加线程不等于多核执行 Python 计算，但线程／async 适合并发等待网络和数据库，见 [Python 3.11 threading](https://docs.python.org/3.11/library/threading.html)。Java 通常更适合持续 CPU 计算及多核并行；原 USDC 已使用按 pair 的虚拟线程消费。虚拟线程本身主要改善等待型并发的吞吐，不会使一次计算自动更快，见 [Oracle 虚拟线程](https://docs.oracle.com/en/java/javase/21/core/virtual-threads.html)。这些是运行机制判断，不是本项目同条件基准。
 

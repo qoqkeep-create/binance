@@ -27,11 +27,12 @@ def bindings_to_process():
 def publish_outbox():
     close_old_connections()
     with transaction.atomic():
-        for row in AccountOutbox.objects.select_for_update().filter(published_at__isnull=True).order_by("id")[:100]:
-            payload = bus.event(row.channel, row.event_key, row.payload, user_id=row.user_id, mode=row.trading_mode)
-            bus.publish(payload)
-            row.published_at = timezone.now()
-            row.save(update_fields=["published_at"])
+        rows = list(AccountOutbox.objects.select_for_update().filter(published_at__isnull=True).order_by("id")[:100])
+        if rows:
+            bus.publish_private_batch([
+                (row.channel, row.event_key, row.payload, row.user_id, row.trading_mode) for row in rows
+            ])
+            AccountOutbox.objects.filter(pk__in=[row.pk for row in rows]).update(published_at=timezone.now())
 
 
 async def run():

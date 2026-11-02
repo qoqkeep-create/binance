@@ -138,6 +138,37 @@ systemctl start tradetools-integrated-cert-renew.service
 
 普通 renew 成功只表示本轮命令完成；未到续期时间可能跳过签发。2026-10-31 已在 47.80.22.243（首尔服务器）执行 `certbot renew --dry-run --run-deploy-hooks --cert-name trade-tool-seoul-ip`：ACME staging 模拟续期及 deploy hook 检查 / reload 均成功；没有将 staging 证书替换为线上证书。以后改动 webroot 或站点时需复验该流程。
 
+## HTTPS 传输拥塞控制（2026-11-01）
+
+47.80.22.243（首尔服务器）原宿主默认 CUBIC，在实际手机链路出现重传、缩窗和发送排队。先用一个带 10 分钟自动撤销的目的地址路由指标做 BBR 对照，保持网关与全局默认不变；内核确认手机新连接为 BBR，构建 15 三次 BTC1h 首帧为 503.60／433.48／453.03 ms，用户反馈零点几秒。详情及未覆盖范围见 [行情排查](market-data.md#构建-15-真机传输排查2026-11-01)。
+
+随后固化宿主默认 BBR，不改变既有 `fq_codel`。持久配置与当前交付模板对应：
+
+| 源文件 | 安装位置 |
+| --- | --- |
+| [network-modules.conf](../deploy/integrated/network-modules.conf) | `/etc/modules-load.d/tradetools-integrated-network.conf` |
+| [network-sysctl.conf](../deploy/integrated/network-sysctl.conf) | `/etc/sysctl.d/99-tradetools-integrated-network.conf` |
+
+取得包含这两个模板的源码后，以 root 从源码根目录执行；先确认目标文件是否存在并备份，保留其他网络设置。宿主配置独立于容器 release，不由当前 `release.sh` 自动安装。
+
+```bash
+modprobe tcp_bbr
+install -m 644 deploy/integrated/network-modules.conf /etc/modules-load.d/tradetools-integrated-network.conf
+install -m 644 deploy/integrated/network-sysctl.conf /etc/sysctl.d/99-tradetools-integrated-network.conf
+sysctl -p /etc/sysctl.d/99-tradetools-integrated-network.conf
+sysctl -n net.ipv4.tcp_congestion_control
+```
+
+本次安装前两个目标文件均不存在，宿主值为 CUBIC；备份清单和应用结果保存在 `/opt/trade-tools-integrated/backups/chart-transport-probe-20261101/host-network/`。本次仅加载指定 sysctl 文件，没有运行 `sysctl --system`、切换 qdisc、升级内核或重建容器。四个正在运行的 Python 容器网络命名空间默认值复核仍为 CUBIC；宿主默认不是所有既有 socket 的算法，也不能替代容器重建后的核对。
+
+临时目的路由、其回滚状态文件、定时器和 TCP 采样已撤销；Nginx 恢复前原文与 SHA-256 `2752682e40e3ce8d9a599321820ea48e9ad01dbe5b31418fb2589f91045b6e53` 一致，检查及平滑 reload 通过。撤销后独立新建 HTTPS keep-alive 连接，内核明确为 BBR、健康接口 200；六个整合容器 healthy。无绑定 QA 的鉴权 WSS ready、订阅 ack、BTC ticker／1m K 线及应用 ping-pong 也通过。`current` 和镜像仍为 `integrated-20261101-git-7daa36228c9f`，这次是宿主传输配置应用，不能写成新应用版本部署或新客户端分发。文件已配置开机加载，但没有为测试重启宿主，重启恢复与其他网络长稳仍待验收。
+
+取舍与影响范围：宿主默认算法作用于该网络命名空间的新 TCP 连接，范围不限于 K 线或 443 端口；容器和既有连接要分别核对。BBR 不直接改变开平仓、订单维护或资金计算规则，但传输延迟与吞吐仍可能随链路改变，不能承诺所有网络都更快；共享瓶颈下各连接的带宽分配也可能变化。本次三次手机对照支持保留配置，不代表多用户并发或长期稳定性已验收。
+
+当前使用内核自带实现，没有更换自定义内核。保留 `fq_codel` 时，Linux 6.8 BBR 可依赖每 TCP socket 的内部 pacing 定时器，可能增加资源消耗，具体 CPU 增量本次未测量；依据见 [Linux 6.8 实现说明](https://github.com/torvalds/linux/blob/v6.8/net/ipv4/tcp_bbr.c)。后续性能异常需要结合首帧阶段耗时、重传、连接数及 CPU 判断，不能仅凭启用 BBR 推断故障原因。
+
+本次状态的回退方式：先核对上述清单和文件哈希；将运行默认恢复为 `sysctl -w net.ipv4.tcp_congestion_control=cubic`，再删除本次新增的这两个指定文件。若未来已有其他原配置，应恢复其备份。无需反向迁移数据库或重启交易容器；已存在的 BBR socket 不会据此全部切换，回退验证应重新建立连接。不要为了卸载模块强制中断现有业务连接。
+
 ## 健康与资源检查
 
 ```bash
@@ -172,6 +203,8 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 ## GitHub 源码交付
 
+2026-11-02 用户明确授权提交并推送当前整合工作区全部改动，包含其他会话内容；本批以 `f155c95` 为基线，通过既有独立 Git 元数据交付 `codex/integrated-ios`。范围和各任务已有验证见 [跨会话源码交付](changes.md#2026-11-02跨会话全部改动源码交付)。本次不执行新部署或手动 TestFlight 上传；源码交付不能替代 **47.80.22.243（首尔服务器）** 的运行版本核验，上方最后实际发布记录继续作为部署依据。
+
 2026-11-01 本次用户授权整批提交并推送，收录工作区的界面／延迟、连续纵轴和行情协调／出口保护等全部安全改动，基线为 `fab71ee`；范围与既有验证见 [本次交付记录](changes.md#2026-11-01整批源码提交与-github-交付)。本次不执行服务器部署或手动 TestFlight 上传，源码交付与运行版本分别记录；上方 47.80.22.243（首尔服务器）的最后发布记录继续有效。
 
 整合版仓库为 `https://github.com/qoqkeep-create/binance.git`，分支 `codex/integrated-ios`。有两种本地工作副本，操作前先核对 Git 元数据和 origin，不能仅凭相同目录名判断：
@@ -205,4 +238,8 @@ python manage.py chart_load_reports --build <构建号> --limit 10
 python manage.py chart_load_reports --trace-id <追踪UUID> --limit 1
 ```
 
-命令限最多 50 条，输出服务端接收时间及固定公共诊断 payload，不输出账户标识。诊断表仍按登录用户关联，不能将其当匿名数据公开；访问仅限既有受控运维。保存边界和保留策略见 [行情协议](market-data.md#客户端加载诊断本地实现尚未分发)。旧 TestFlight 14 不会上报；47.80.22.243（首尔服务器）已验证接收与落库，手机端仍须等待 Jenkins／Apple 新包分发和安装，尚无本轮手机端贯通结果。
+命令限最多 50 条，输出服务端接收时间及固定公共诊断 payload，不输出账户标识。诊断表仍按登录用户关联，不能将其当匿名数据公开；访问仅限既有受控运维。保存边界和保留策略见 [行情协议](market-data.md#客户端加载诊断)。旧 TestFlight 14 不会上报；2026-11-01 已在 47.80.22.243（首尔服务器）收到实际 iPhone 构建 15 的三轮九次 BTC1h 报告，确认手机上报／落库贯通。前六次首帧 2.00～6.94 秒、主要耗时在传输；BBR 对照后三次为 0.504／0.433／0.453 秒，阶段表与证据限制见 [真机排查](market-data.md#构建-15-真机传输排查2026-11-01)。
+
+同日真机排查临时配置仅记录 BTC1h 的合法 trace、端口、连接数字 ID、代理计时和 TCP 数字指标，不记录认证、手机号／IP、完整 URL 或完整 UA。配置在安装前保存站点原文与 SHA-256，`nginx -t` 后平滑 reload，并设置 30 分钟自动恢复；TCP 采样也有时间和条数上限。受限证据位于 `/opt/trade-tools-integrated/backups/chart-transport-probe-20261101/`，本机副本位于忽略目录 `.integration-runtime/KlineDiagnostics/Phone15/`。这些临时操作不改变应用 release／镜像或迁移版本。
+
+采样及自动回退定时器已停止，Nginx 原文哈希已恢复；后续单目的地址 BBR 对照和持久配置的结果统一见 [HTTPS 传输拥塞控制](#https-传输拥塞控制2026-11-01)。回滚所需的手机网络地址只短暂存在于受限操作状态文件，该文件在删除临时路由后已删除，不进入诊断日志或源码。

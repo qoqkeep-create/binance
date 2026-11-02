@@ -311,14 +311,67 @@ struct USDTStrategyEditor: View {
 }
 
 struct USDTChartOrderSettingsView: View {
-  @AppStorage("integrated.chart.orderType") private var orderType = "limit"
   var body: some View {
-    WebForm {
-      WebSelect(
-        title: "图表开仓类型", selection: $orderType, options: [("limit", "限价"), ("market", "市价")])
-      NavigationLink("止损金额", destination: USDTStopLossView())
-      NavigationLink("止盈策略", destination: USDTStrategiesView())
-    }.usdtPage("下单设置")
+    WebTheme.page.ignoresSafeArea().usdtPage("设置")
+  }
+}
+
+struct USDTLeverageBracketsView: View {
+  let symbol: String
+  @EnvironmentObject private var store: USDTStore
+  @Environment(\.dismiss) private var dismiss
+  @StateObject private var model = USDTPageModel()
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("自动杠杆").font(.system(size: 20, weight: .semibold))
+          Text(symbol).font(.system(size: 13)).foregroundStyle(WebTheme.muted)
+        }
+        Spacer()
+        Button { dismiss() } label: {
+          Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel("关闭自动杠杆")
+      }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+          Text("各档位展示最高杠杆和可开金额上限。实际开仓仍按余额、止损金额及交易所规则校验。")
+            .font(.system(size: 13)).foregroundStyle(WebTheme.muted)
+          if !store.isBound {
+            USDTNotice(text: "请先绑定 Binance API 后查看当前账户的杠杆档位")
+          } else if model.loading && model.value.fields.isEmpty {
+            ProgressView("正在读取杠杆档位").frame(maxWidth: .infinity).padding(.vertical, 32)
+          } else if !model.error.isEmpty || (model.value["brackets"]?.rows ?? []).isEmpty {
+            USDTEmptyState(title: "暂无杠杆档位", error: model.error) { Task { await load() } }
+          } else {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+              ForEach(Array((model.value["brackets"]?.rows ?? []).enumerated()), id: \.offset) { _, row in
+                USDTCard(radius: 12, padding: 14, spacing: 12) {
+                  Text(row.value("leverage") + "×").font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(WebTheme.brand)
+                  VStack(alignment: .leading, spacing: 5) {
+                    Text("可开金额上限").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+                    Text(DisplayNumber.text(row.value("max_notional")) + " USDT")
+                      .font(.system(size: 15, weight: .medium)).monospacedDigit()
+                      .lineLimit(1).minimumScaleFactor(0.65)
+                  }
+                }.accessibilityElement(children: .combine)
+                  .accessibilityIdentifier("chart-leverage.bracket." + row.value("leverage"))
+              }
+            }
+          }
+        }.padding(16)
+      }.scrollIndicators(.hidden)
+    }.foregroundStyle(WebTheme.text).background(WebTheme.page.ignoresSafeArea())
+      .largeTradingSheet().accessibilityIdentifier("chart-leverage")
+      .task(id: "\(store.scope):\(store.isBound):\(symbol)") { await load() }
+  }
+
+  private func load() async {
+    guard store.isBound else { model.reset(); return }
+    await model.load(store, path: "/v1/trade/leverage-brackets", query: [.init(name: "symbol", value: symbol)])
   }
 }
 

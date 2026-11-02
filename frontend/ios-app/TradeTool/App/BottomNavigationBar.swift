@@ -3,7 +3,6 @@ import SwiftUI
 enum AppTab: Hashable, CaseIterable, Identifiable {
   case markets
   case positions
-  case trade
   case signals
   case reference
   case settings
@@ -13,7 +12,7 @@ enum AppTab: Hashable, CaseIterable, Identifiable {
   static func availableTabs(
     canViewReferenceNotifications: Bool
   ) -> [AppTab] {
-    return [.markets, .positions, .trade, .signals, .settings]
+    return [.markets, .positions, .signals, .settings]
   }
 
   var title: String {
@@ -26,8 +25,6 @@ enum AppTab: Hashable, CaseIterable, Identifiable {
       return "信号"
     case .reference:
       return "参考"
-    case .trade:
-      return "开仓"
     case .settings:
       return "我的"
     }
@@ -36,15 +33,13 @@ enum AppTab: Hashable, CaseIterable, Identifiable {
   var icon: String {
     switch self {
     case .markets:
-      return "chart.xyaxis.line"
+      return "chart.bar.fill"
     case .positions:
       return "briefcase"
     case .signals:
       return "bell"
     case .reference:
       return "bookmark"
-    case .trade:
-      return "plus.circle"
     case .settings:
       return "person.crop.circle"
     }
@@ -53,15 +48,13 @@ enum AppTab: Hashable, CaseIterable, Identifiable {
   var selectedIcon: String {
     switch self {
     case .markets:
-      return "chart.xyaxis.line"
+      return "chart.bar.fill"
     case .positions:
       return "briefcase.fill"
     case .signals:
       return "bell.fill"
     case .reference:
       return "bookmark.fill"
-    case .trade:
-      return "plus.circle.fill"
     case .settings:
       return "person.crop.circle.fill"
     }
@@ -74,7 +67,7 @@ struct BottomNavigationBar: View {
 
   init(
     selection: Binding<AppTab>,
-    tabs: [AppTab] = AppTab.allCases
+    tabs: [AppTab] = AppTab.availableTabs(canViewReferenceNotifications: false)
   ) {
     _selection = selection
     self.tabs = tabs
@@ -174,7 +167,7 @@ private struct WebNavigationIcon: View {
   private static let paths: [AppTab: String] = [
     .positions:
       "M976.896 883.712q0 19.456-6.656 36.352t-18.944 29.696-28.672 19.968-35.84 7.168l-743.424 0q-19.456 0-36.864-7.168t-30.72-19.968-20.992-29.696-7.68-36.352l0-510.976q0-38.912 27.136-66.048t66.048-27.136l743.424 0q38.912 0 66.048 27.136t27.136 66.048l0 139.264-232.448 0q-38.912 0-66.048 26.624t-27.136 65.536q1.024 26.624 11.264 47.104 8.192 17.408 27.136 31.744t54.784 14.336l232.448 0 0 186.368zM837.632 232.448l-464.896 0q55.296-28.672 104.448-55.296 43.008-22.528 84.992-45.056t65.536-34.816q35.84-19.456 64-17.92t47.616 9.728q22.528 11.264 38.912 29.696zM698.368 604.16q0-19.456 13.312-32.768t32.768-13.312 32.768 13.312 13.312 32.768-13.312 33.28-32.768 13.824-32.768-13.824-13.312-33.28z",
-    .trade:
+    .markets:
       "M281.6 414.208H81.92c-22.528 0-40.96 18.432-40.96 40.96V921.6c0 22.528 18.432 40.96 40.96 40.96h199.68c22.528 0 40.96-18.432 40.96-40.96V455.168c0-22.528-18.432-40.96-40.96-40.96zM610.304 61.44H413.696c-22.528 0-40.96 18.432-40.96 40.96v819.2c0 22.528 18.432 40.96 40.96 40.96h196.096c22.528 0 40.96-18.432 40.96-40.96V102.4c0.512-22.528-17.92-40.96-40.448-40.96zM942.08 616.448h-199.68c-22.528 0-40.96 18.432-40.96 40.96V921.6c0 22.528 18.432 40.96 40.96 40.96h199.68c22.528 0 40.96-18.432 40.96-40.96v-264.192c0-22.528-18.432-40.96-40.96-40.96z",
     .signals: "M576 64 192 608h236.8L384 960l448-544H595.2L576 64z",
     .settings:
