@@ -189,7 +189,6 @@ private struct MarketChartDetailView: View {
                         initializeLimitDrawing()
                     })
                     .id(usdt.scope)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
             }
 
             if let wheelPreview {
@@ -365,12 +364,15 @@ private struct MarketChartDetailView: View {
                 HStack(spacing: 2) {
                     ForEach(ChartIntervalPreferences.visible(favoriteIntervals, selected: viewModel.interval)) { interval in
                         Button { viewModel.selectInterval(interval) } label: {
-                            Text(interval.title).font(.system(size: 12, weight: .medium))
+                            Text(interval.title).font(.system(size: 12,
+                                weight: interval == viewModel.interval ? .semibold : .medium))
                                 .foregroundStyle(interval == viewModel.interval ? BinanceTheme.accentText : BinanceTheme.secondaryText)
-                                .padding(.horizontal, 10).frame(height: 38)
-                                .background(alignment: .bottom) {
-                                    if interval == viewModel.interval { Rectangle().fill(BinanceTheme.accent).frame(height: 2) }
+                                .overlay(alignment: .bottom) {
+                                    if interval == viewModel.interval {
+                                        Rectangle().fill(BinanceTheme.accent).frame(height: 2).offset(y: 5)
+                                    }
                                 }
+                                .padding(.horizontal, 10).frame(height: 38).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("chart-interval." + interval.rawValue)
                     }
                 }

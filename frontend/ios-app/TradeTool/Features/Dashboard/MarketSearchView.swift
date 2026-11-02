@@ -9,6 +9,12 @@ struct MarketSearchView: View {
     @State private var query = ""
     @State private var pendingDeletion: String?
 
+    private var pairSheetDetents: Set<PresentationDetent> {
+        // iOS 26 insets partial-height system sheets. The large detent attaches to the screen edges.
+        if #available(iOS 26.0, *) { return [.large] }
+        return [.fraction(0.85)]
+    }
+
     private var symbols: [String] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "").uppercased()
@@ -63,7 +69,7 @@ struct MarketSearchView: View {
             }
         }.foregroundStyle(BinanceTheme.primaryText)
             .background(BinanceTheme.background)
-            .largeTradingSheet()
+            .largeTradingSheet(detents: pairSheetDetents)
             .task { await dashboardViewModel.loadSymbolCatalog() }
             .alert("删除自选", isPresented: Binding(
                 get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
@@ -118,10 +124,10 @@ struct MarketSearchView: View {
     }
 }
 
-/// A system sheet, shared with the legal documents for the same presentation height.
+/// Shared native presentation styling for trading panels and legal documents.
 extension View {
-    func largeTradingSheet() -> some View {
-        presentationDetents([.fraction(0.85)])
+    func largeTradingSheet(detents: Set<PresentationDetent> = [.fraction(0.85)]) -> some View {
+        presentationDetents(detents)
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(24)
             .presentationBackground(BinanceTheme.background)

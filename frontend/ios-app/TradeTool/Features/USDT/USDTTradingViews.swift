@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct USDTTradeView: View {
+  @Environment(\.colorScheme) private var colorScheme
   @EnvironmentObject private var store: USDTStore
   @State private var orderType = "market"
   @State private var stop = ""
@@ -428,22 +429,34 @@ struct USDTTradeView: View {
 
   private var chartTicket: some View {
     VStack(spacing: 10) {
-      HStack(alignment: .top, spacing: 8) {
-        chartMetric("止损价", stop.isEmpty ? "--" : stop)
-        chartMetric("仓位", inputValid ? estimatedPosition + " U" : "--")
-        VStack(alignment: .leading, spacing: 4) {
-          HStack(spacing: 2) {
-            Text("止损金额").font(.system(size: 10)).foregroundStyle(WebTheme.muted)
-            Button { showStopLoss = true } label: {
-              Image(systemName: "gearshape").font(.system(size: 10)).frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
-              .accessibilityIdentifier("chart-ticket.risk-settings")
-          }.frame(height: 20)
-          Text(risk.isEmpty ? "--" : risk + " U").font(.system(size: 13, weight: .semibold))
-            .lineLimit(1).minimumScaleFactor(0.6)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-        chartMetric("手续费", inputValid ? estimatedFee + " U" : "--")
+      Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+        GridRow(alignment: .top) {
+          chartMetric("开仓价", orderType == "market" ? "市价" : (limit.isEmpty ? "--" : limit))
+          chartMetric("止损价", (stop.isEmpty ? "--" : stop))
+          chartMetric("仓位", inputValid ? estimatedPosition + " U" : "--")
+        }
+        GridRow(alignment: .top) {
+          VStack(alignment: .leading, spacing: 4) {
+            chartMetricLabel("止损金额")
+            HStack(spacing: 0) {
+              chartMetricValue("止损金额", (risk.isEmpty ? "--" : risk + " U"))
+              Button { showStopLoss = true } label: {
+                Image(systemName: "gearshape").font(.system(size: 12))
+                  .frame(width: 44, height: 44).contentShape(Rectangle())
+              }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
+                .accessibilityIdentifier("chart-ticket.risk-settings")
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading)
+          VStack(alignment: .leading, spacing: 4) {
+            chartMetricLabel("手续费")
+            HStack(spacing: 8) {
+              chartMetricValue("手续费", inputValid ? estimatedFee + " U" : "--")
+              Toggle("含手续费", isOn: $includeFee).toggleStyle(WebSwitchStyle()).fixedSize()
+                .frame(minHeight: 44).disabled(busy || submitted || confirm)
+                .accessibilityIdentifier("chart-ticket.include-fee")
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading).gridCellColumns(2)
+        }
       }.monospacedDigit()
       HStack(spacing: 12) {
         Picker("委托类型", selection: Binding(get: { orderType }, set: { value in
@@ -451,13 +464,13 @@ struct USDTTradeView: View {
         })) {
           Text("市价").tag("market")
           Text("限价").tag("limit")
-        }.pickerStyle(.segmented).frame(width: 136).accessibilityIdentifier("chart-ticket.order-type")
+        }.pickerStyle(.segmented).frame(width: 112).accessibilityIdentifier("chart-ticket.order-type")
           .disabled(busy || submitted || confirm)
         Button(action: advanceEntry) {
           Text(submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "选择止损价")
             .font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(BinanceTheme.onTradeAction)
-            .background(inputValid ? (isLong ? BinanceTheme.positive : BinanceTheme.negative) : BinanceTheme.elevated,
+            .foregroundStyle(inputValid ? BinanceTheme.onTradeAction : BinanceTheme.secondaryText)
+            .background(inputValid ? chartActionColor : BinanceTheme.elevated,
               in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).disabled(busy || submitted || !store.isBound || !inputValid || !strategyValid)
           .accessibilityIdentifier("chart-ticket.submit")
@@ -475,19 +488,33 @@ struct USDTTradeView: View {
         NavigationLink("查看交易命令", destination: USDTCommandsView()).font(.system(size: 12))
       }
       USDTNotice(text: notice)
-    }.padding(12)
-      .background(BinanceTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-      .overlay { RoundedRectangle(cornerRadius: 14).stroke(BinanceTheme.border, lineWidth: 0.7) }
-      .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+    }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+      .frame(maxWidth: .infinity)
+      .background(BinanceTheme.surface.ignoresSafeArea(edges: [.horizontal, .bottom]))
+      .overlay(alignment: .top) {
+        Rectangle().fill(BinanceTheme.border).frame(height: 0.5).ignoresSafeArea(edges: .horizontal)
+      }
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("chart-ticket")
   }
   private func chartMetric(_ title: String, _ value: String) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(title).font(.system(size: 10)).foregroundStyle(WebTheme.muted).frame(height: 20)
-      Text(value).font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
-        .accessibilityIdentifier("chart-ticket." + title)
+      chartMetricLabel(title)
+      chartMetricValue(title, value)
     }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+  private func chartMetricLabel(_ title: String) -> some View {
+    Text(title).font(.system(size: 11)).foregroundStyle(WebTheme.muted)
+  }
+  private func chartMetricValue(_ title: String, _ value: String) -> some View {
+    Text(value).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
+      .accessibilityIdentifier("chart-ticket." + title)
+  }
+  private var chartActionColor: Color {
+    let color = (isLong ? ChartColor.positive : ChartColor.negative)
+      .resolved(for: colorScheme == .dark ? .dark : .light)
+    return Color(.sRGB, red: Double(color.red), green: Double(color.green),
+      blue: Double(color.blue), opacity: Double(color.alpha))
   }
 }
 
