@@ -695,6 +695,7 @@ struct WebIcon: View {
     "log-out": "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17 21 12 16 7 M21 12L9 12",
     "chart-candlestick":
       "M9 5v4 M8.0 9.0H10.0Q11.0 9.0 11.0 10.0V14.0Q11.0 15.0 10.0 15.0H8.0Q7.0 15.0 7.0 14.0V10.0Q7.0 9.0 8.0 9.0Z M9 15v2 M17 3v2 M16.0 5.0H18.0Q19.0 5.0 19.0 6.0V12.0Q19.0 13.0 18.0 13.0H16.0Q15.0 13.0 15.0 12.0V6.0Q15.0 5.0 16.0 5.0Z M17 13v3 M3 3v16a2 2 0 0 0 2 2h16",
+    "candlesticks": "M7 3v4 M5 7h4v9H5Z M7 16v5 M17 3v3 M15 6h4v6h-4Z M17 12v7",
     "sun":
       "M8.0 12.0a4.0 4.0 0 1 0 8.0 0a4.0 4.0 0 1 0 -8.0 0 M12 2v2 M12 20v2 M4.93 4.93 l1.41 1.41 M17.66 17.66 l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66 l-1.41 1.41 M19.07 4.93 l-1.41 1.41",
     "moon": "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z",
@@ -888,9 +889,9 @@ extension View {
   func webModalDismissDisabled(_ disabled: Bool) -> some View {
     preference(key: WebModalBlockedKey.self, value: disabled)
   }
-  func webModal<Item: Identifiable, Content: View>(item: Binding<Item?>,
+  func webModal<Item: Identifiable, Content: View>(item: Binding<Item?>, motion: WebModalMotion? = nil,
       @ViewBuilder content: @escaping (Item) -> Content) -> some View {
-    modifier(WebItemModalPresenter(item: item, builder: content))
+    modifier(WebItemModalPresenter(item: item, preferredMotion: motion, builder: content))
   }
 }
 private struct WebModalPresenter<Modal: View>: ViewModifier {
@@ -1011,10 +1012,12 @@ extension View {
 
 private struct WebItemModalPresenter<Item: Identifiable, Modal: View>: ViewModifier {
   @Binding var item: Item?
+  let preferredMotion: WebModalMotion?
   let builder: (Item) -> Modal
   @State private var previous: Item?
   func body(content: Content) -> some View {
-    content.webModal(isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } })) {
+    content.webModal(isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } }),
+      motion: preferredMotion) {
       if let selected = item ?? previous { builder(selected) }
     }.onChange(of: item?.id, initial: true) { _, _ in
       if let item { previous = item }

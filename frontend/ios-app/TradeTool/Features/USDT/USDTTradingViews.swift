@@ -509,16 +509,21 @@ struct USDTTradeView: View {
         GridRow(alignment: .top) {
           VStack(alignment: .leading, spacing: 5) {
             chartMetricLabel("止损金额").frame(height: 24, alignment: .leading)
-            Button { showStopLoss = true } label: {
-              HStack(spacing: 4) {
-                chartMetricValue("止损金额", hasPosition ? heldAmount("stop_loss_amount", unit: " U") : showsChartRiskAmount ? DisplayNumber.text(risk) + " U" : "-")
-                  .underline(showsChartRiskAmount && !hasPosition)
-                if showsChartRiskAmount && !hasPosition {
-                  Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                }
-              }.frame(minHeight: 28, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(hasPosition).accessibilityLabel("调整止损金额")
-              .accessibilityIdentifier("chart-ticket.risk-settings")
+            if hasPosition {
+              chartMetricValue("止损金额", heldAmount("stop_loss_amount", unit: " U"))
+                .foregroundStyle(WebTheme.text).frame(minHeight: 28, alignment: .leading)
+            } else {
+              Button { showStopLoss = true } label: {
+                HStack(spacing: 4) {
+                  chartMetricValue("止损金额", showsChartRiskAmount ? DisplayNumber.text(risk) + " U" : "-")
+                    .underline(showsChartRiskAmount)
+                  if showsChartRiskAmount {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                  }
+                }.frame(minHeight: 28, alignment: .leading).contentShape(Rectangle())
+              }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
+                .accessibilityIdentifier("chart-ticket.risk-settings")
+            }
           }.frame(maxWidth: .infinity, alignment: .leading)
           VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 4) {
@@ -560,8 +565,8 @@ struct USDTTradeView: View {
             .font(.system(size: 16, weight: .semibold))
           if hasPosition { Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)) }
           }.frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(hasPosition || inputValid ? BinanceTheme.onTradeAction : BinanceTheme.secondaryText)
-            .background(hasPosition ? WebTheme.brand : inputValid ? chartActionColor : BinanceTheme.elevated,
+            .foregroundStyle(hasPosition ? BinanceTheme.onAccent : inputValid ? BinanceTheme.onTradeAction : BinanceTheme.secondaryText)
+            .background(hasPosition ? BinanceTheme.accent : inputValid ? chartActionColor : BinanceTheme.elevated,
               in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).disabled(entryDisabled)
           .accessibilityIdentifier("chart-ticket.submit")
@@ -876,7 +881,7 @@ struct USDTPositionsView: View {
           }
         }
       }
-      .webModal(item: $operation) { operation in
+      .webModal(item: $operation, motion: .fade) { operation in
         USDTPositionControls(position: operation.position, action: operation.action) {
           notice = $0
           Task { await reload() }
@@ -1005,6 +1010,15 @@ struct USDTPositionsView: View {
         ).padding(.horizontal, 6).padding(.vertical, 2).background(
           WebTheme.brand.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
         Spacer(minLength: 0)
+        Button {
+          openChart(row, valuation: valuation)
+        } label: {
+          WebIcon("candlesticks", size: 20).foregroundStyle(WebTheme.text)
+            .frame(width: 32, height: 32)
+            .background(WebTheme.secondaryButton, in: RoundedRectangle(cornerRadius: 8))
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel("K线图")
+          .accessibilityIdentifier("position.chart.\(row.value("id"))")
       }
       VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 16) {
@@ -1063,25 +1077,18 @@ struct USDTPositionsView: View {
       }
       Rectangle().fill(WebTheme.border).frame(height: 1)
       HStack(spacing: 8) {
-        Button {
-          if let onOpenChart { onOpenChart(row.value("symbol"), "1h"); return }
-          var snapshot = row.fields
-          if let valuation { snapshot["current_price"] = .string(NSDecimalNumber(decimal: valuation.price).stringValue) }
-          selected = .object(snapshot)
-          chart = true
-        } label: {
-          WebLabel("K线", "chart-candlestick")
-        }.buttonStyle(WebButtonStyle(kind: .secondary, height: 38, fontSize: 14, fullWidth: false))
         if row.value("position_origin") != "exchange_external" {
           Button(
             row.value("strategy_status") == "1"
               ? "自动止盈中" : row["can_bind_strategy"]?.flag == true ? "添加自动止盈" : "手动止盈"
-          ) { show("strategy", row) }.buttonStyle(
+          ) { show("strategy", row) }.lineLimit(1).minimumScaleFactor(0.8).buttonStyle(
             WebPositionStrategyStyle(running: row.value("strategy_status") == "1")
           ).disabled(row.value("strategy_status") != "1" && row["can_bind_strategy"]?.flag != true)
-          Button("设置保本损") { show("breakEven", row) }.buttonStyle(WebPositiveActionStyle())
+          Button("设置保本损") { show("breakEven", row) }.lineLimit(1).minimumScaleFactor(0.8)
+            .buttonStyle(WebPositiveActionStyle())
         }
-        Button("立即平仓") { show("close", row) }.buttonStyle(WebButtonStyle(height: 38, fontSize: 14))
+        Button("立即平仓") { show("close", row) }.lineLimit(1).minimumScaleFactor(0.8)
+          .buttonStyle(WebButtonStyle(height: 38, fontSize: 14))
       }
       if trendAdvice.isCountertrend(symbol: row.value("symbol"), side: row.value("side")) {
         Text(PositionTrendAdviceModel.message)
@@ -1100,6 +1107,15 @@ struct USDTPositionsView: View {
   }
   private func liveValuation(_ row: JSONValue) -> PositionLiveValuation? {
     PositionLiveValuation(row: row, quote: liveQuotes.quotes[row.value("symbol").uppercased()])
+  }
+  private func openChart(_ row: JSONValue, valuation: PositionLiveValuation?) {
+    if let onOpenChart { onOpenChart(row.value("symbol"), "1h"); return }
+    var snapshot = row.fields
+    if let valuation {
+      snapshot["current_price"] = .string(NSDecimalNumber(decimal: valuation.price).stringValue)
+    }
+    selected = .object(snapshot)
+    chart = true
   }
   private func show(_ name: String, _ row: JSONValue) {
     operation = WebPositionOperation(position: row, action: name)

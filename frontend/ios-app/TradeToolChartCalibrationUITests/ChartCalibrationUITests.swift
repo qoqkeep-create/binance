@@ -2877,6 +2877,11 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(app.staticTexts["chart-ticket.开仓价"].label, "64400.00")
     XCTAssertEqual(app.staticTexts["chart-ticket.止损价"].label, "64100.00")
     XCTAssertEqual(app.staticTexts["chart-ticket.手续费"].label, "0.5 USDT")
+    let heldRisk = app.staticTexts["chart-ticket.止损金额"]
+    XCTAssertEqual(heldRisk.label, "10.000 U")
+    XCTAssertFalse(app.buttons["chart-ticket.risk-settings"].exists)
+    heldRisk.tap()
+    XCTAssertFalse(app.buttons["stop-loss.submit"].exists)
     capture("chart-held-data")
     XCTAssertEqual(app.sheets.count, 0)
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.entry"].exists)
@@ -2909,9 +2914,16 @@ final class WebParityUITests: XCTestCase {
     app.buttons["返回"].firstMatch.tap()
     ticket.tap()
     XCTAssertTrue(app.scrollViews["positions.list"].waitForExistence(timeout: 5))
-    app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "K线")).firstMatch.tap()
+    app.buttons["position.chart.101"].tap()
     XCTAssertTrue(app.buttons["market-chart-symbols"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.sheets.count, 0)
+    launch("positions", ["--fixture-chart-position", "--fixture-dark"])
+    app.buttons["position.chart.101"].tap()
+    XCTAssertTrue(ticket.waitForExistence(timeout: 10))
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == %@", "正在持仓中"), object: ticket)], timeout: 5), .completed)
+    XCTAssertFalse(app.buttons["chart-ticket.risk-settings"].exists)
+    capture("chart-held-data-dark")
   }
 
   func testChartCrosshairLimitLinesAndSharedEntryConfirmation() {
@@ -2926,7 +2938,8 @@ final class WebParityUITests: XCTestCase {
     let side = chart.frame.width - 62
     let base = app.coordinate(withNormalizedOffset: .zero)
     let lower = base.withOffset(CGVector(dx: chart.frame.minX + side * 0.6, dy: chart.frame.minY + 30 + side * 0.85))
-    let upper = base.withOffset(CGVector(dx: chart.frame.minX + side * 0.6, dy: chart.frame.minY + 30 + side * 0.15))
+    // The fixture quote sits above its candle history, near the top of the expanded price range.
+    let upper = base.withOffset(CGVector(dx: chart.frame.minX + side * 0.6, dy: chart.frame.minY + 30 + side * 0.02))
     lower.press(forDuration: 0.6)
     XCTAssertTrue(NSPredicate(format: "label == %@", "开多").evaluate(with: ticket))
     XCTAssertNotEqual(app.staticTexts["chart-ticket.预估仓位"].label, "-")
@@ -3423,6 +3436,20 @@ final class WebParityUITests: XCTestCase {
     launch("positions")
     let strategy = app.buttons["自动止盈中"]
     XCTAssertTrue(strategy.waitForExistence(timeout: 10))
+    let chart = app.buttons["position.chart.101"]
+    let breakEven = app.buttons["设置保本损"]
+    let close = app.buttons["立即平仓"]
+    XCTAssertTrue(chart.isHittable)
+    XCTAssertLessThan(chart.frame.maxY, strategy.frame.minY)
+    XCTAssertGreaterThan(chart.frame.minX, strategy.frame.maxX)
+    XCTAssertEqual(strategy.frame.width, breakEven.frame.width, accuracy: 1)
+    XCTAssertEqual(strategy.frame.width, close.frame.width, accuracy: 1)
+    XCTAssertEqual(strategy.frame.minY, breakEven.frame.minY, accuracy: 1)
+    XCTAssertEqual(strategy.frame.minY, close.frame.minY, accuracy: 1)
+    XCTAssertFalse(app.buttons["K线"].exists)
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "绑定策略")).firstMatch.exists)
+    XCTAssertFalse(app.staticTexts["30-20-50"].exists)
+    capture("position-card-actions")
     strategy.tap()
     XCTAssertTrue(app.staticTexts["策略和执行日志"].waitForExistence(timeout: 5))
     capture("strategy-execution")
@@ -3441,6 +3468,12 @@ final class WebParityUITests: XCTestCase {
     app.buttons["历史仓位"].tap()
     XCTAssertTrue(app.staticTexts["平仓盈亏"].waitForExistence(timeout: 5))
     capture("position-history")
+    launch("positions", ["--fixture-dark"])
+    XCTAssertTrue(strategy.waitForExistence(timeout: 10))
+    capture("position-card-actions-dark")
+    strategy.tap()
+    XCTAssertTrue(app.staticTexts["策略和执行日志"].waitForExistence(timeout: 5))
+    capture("strategy-execution-dark")
     launch("trade")
     let picker = app.buttons["trade.strategy"]
     XCTAssertTrue(picker.waitForExistence(timeout: 10))
