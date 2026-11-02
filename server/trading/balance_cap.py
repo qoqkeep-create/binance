@@ -196,7 +196,7 @@ def _pending_sweep(user: User):
 
 
 def _recent_completed_sweep(user: User):
-    latest = _sweeps_for_current_binding(user).order_by("-updated_at", "-id").first()
+    latest = _sweeps_for_current_binding(user).filter(operation="").order_by("-updated_at", "-id").first()
     if not latest or latest.status != CapitalSweep.STATUS_COMPLETED:
         return None
     if latest.updated_at < timezone.now() - timedelta(seconds=COMPLETED_SWEEP_GUARD_SECONDS):
@@ -283,6 +283,7 @@ def _sweep_state(sweep: CapitalSweep) -> dict:
     destination_network = str(getattr(sweep, "master_destination_network", "") or "").strip().upper()
     return {
         "status": "collection_pending",
+        "operation": sweep.operation,
         "reason": sweep.status,
         "target": format(sweep.target_balance, "f"),
         "transfer_amount": format(sweep.amount, "f"),
@@ -328,6 +329,7 @@ def _completed_sweep_state(user: User, sweep: CapitalSweep) -> dict:
     return {
         "status": "ready",
         "reason": "normalization_completed",
+        "operation": sweep.operation,
         "base_target": format(maximum, "f"),
         "minimum_open_balance": format(minimum, "f"),
         "maximum_futures_balance": format(maximum, "f"),
@@ -1229,7 +1231,7 @@ def _continue_transfer_step(
 
 def _continue_pending_sweep(
     user: User, client: BinanceFuturesClient, sweep: CapitalSweep, purpose: str,
-    *, allow_submit: bool = True,
+    *, allow_submit: bool = True, before_submit=None,
 ) -> dict:
     steps = [
         {
@@ -1282,6 +1284,12 @@ def _continue_pending_sweep(
         },
     ]
     for step in steps:
+        if (before_submit and allow_submit and sweep.status == step["status"]
+                and getattr(sweep, step["amount_field"]) >= DUST_AMOUNT
+                and not getattr(sweep, step["attempted_field"])):
+            paused = before_submit(sweep)
+            if paused is not None:
+                return paused
         paused = _continue_transfer_step(sweep, **step, allow_submit=allow_submit)
         if paused is not None:
             if sweep.status == CapitalSweep.STATUS_FAILED:
@@ -1291,12 +1299,16 @@ def _continue_pending_sweep(
     if sweep.amount < DUST_AMOUNT:
         _finish_sweep(sweep, CapitalSweep.STATUS_COMPLETED)
         completed = _completed_sweep_state(user, sweep)
-        if allow_submit and sweep.target_balance < refill_trigger_threshold(user):
+        if allow_submit and not sweep.operation and sweep.target_balance < refill_trigger_threshold(user):
             shortfall = capital_shortfall_reminder_preview(user, client)
             return {**completed, **shortfall, "reason": "normalization_completed"}
         return completed
 
     if not sweep.master_attempted_at:
+        if before_submit and allow_submit:
+            paused = before_submit(sweep)
+            if paused is not None:
+                return paused
         if not allow_submit:
             return _sweep_state(sweep)
         # A confirmed inbound transfer can precede visibility in the Spot wallet.
@@ -1337,6 +1349,8 @@ def _create_capital_sweep(
     *,
     account_type: str,
     api_key_fingerprint: str,
+    operation: str = "",
+    request_id=None,
 ) -> CapitalSweep:
     status = CapitalSweep.STATUS_FUNDING_REFILL_PENDING
     try:
@@ -1347,6 +1361,8 @@ def _create_capital_sweep(
             return CapitalSweep.objects.create(
                 user=user,
                 api_key_fingerprint=api_key_fingerprint,
+                operation=operation,
+                request_id=request_id,
                 active_slot=1,
                 amount=_decimal(plan["collection_total"]),
                 target_balance=_decimal(plan["target_balance"]),
@@ -1396,6 +1412,8 @@ def refresh_capital_precheck(user: User, client: BinanceFuturesClient, *, purpos
     """Manual panel refresh: settle submitted receipts, never submit a transfer."""
     with _capital_activity_lock(user, client):
         sweep = _pending_sweep(user)
+        if sweep and sweep.operation:
+            return capital_precheck(user, client, purpose=purpose)
         if sweep and _current_step_submitted(sweep):
             _continue_pending_sweep(user, client, sweep, purpose, allow_submit=False)
         before = capital_precheck(user, client, purpose=purpose)
@@ -1432,6 +1450,9 @@ def normalize_capital(
                 return capital_precheck(user, client, purpose=purpose)
         elif expected_status == "collection_pending":
             sweep = _pending_sweep(user)
+        pending = sweep or _pending_sweep(user)
+        if pending and pending.operation:
+            raise ValueError("请在划转 / 转账面板核对该笔资金操作")
         # Receipt queries don't depend on present-day balances or positions.
         # They cannot submit the next step, even when the receipt is confirmed.
         if sweep and _current_step_submitted(sweep):

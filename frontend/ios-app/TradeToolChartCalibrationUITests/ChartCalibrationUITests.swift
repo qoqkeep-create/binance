@@ -3442,7 +3442,7 @@ final class WebParityUITests: XCTestCase {
   }
   func testSecondaryCapitalPanels() {
     for (page, text) in [
-      ("capital", "调整账户资金"), ("reminder", "补资提醒"),
+      ("capital", "归集资金"), ("reminder", "补资提醒"),
     ] {
       launch(page)
       XCTAssertTrue(
@@ -3482,8 +3482,8 @@ final class WebParityUITests: XCTestCase {
   }
   func testCapitalAndBatchPreview() {
     launch("capital", ["--fixture-capital-refill"])
-    XCTAssertTrue(app.buttons["确认调整"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["确认调整"].isEnabled)
+    XCTAssertTrue(app.buttons["capital.submit"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
     capture("capital-refill-only")
     launch("positions", ["--fixture-multiple"])
     let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "全部平仓(")).firstMatch
@@ -3618,5 +3618,81 @@ final class WebParityUITests: XCTestCase {
     app.buttons["auth.legal.close"].tap()
     XCTAssertTrue(app.buttons["auth.sheet.close"].isHittable)
     app.buttons["auth.sheet.close"].tap()
+  }
+}
+
+
+extension WebParityUITests {
+  func testCapitalWalletSheetTabsAndDirections() {
+    for options in [[], ["--fixture-dark"]] {
+      launch("profile", options)
+      let open = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "归集余额")).firstMatch
+      XCTAssertTrue(open.waitForExistence(timeout: 10))
+      open.tap()
+      XCTAssertTrue(app.buttons["capital.close"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["合约超出保留额"].exists)
+      XCTAssertTrue(app.staticTexts["资金账户可划转"].exists)
+      XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
+      XCTAssertTrue(app.descendants(matching: .any)["capital.total"].firstMatch.isHittable)
+      capture(options.isEmpty ? "capital-wallet-light" : "capital-wallet-dark")
+      app.segmentedControls["capital.tabs"].buttons["转账"].tap()
+      XCTAssertTrue(app.staticTexts["现货可用余额"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["本次转出金额"].exists)
+      XCTAssertTrue(app.staticTexts["0x1234••••••BEEF"].exists)
+      XCTAssertFalse(app.staticTexts["0x123456789012345678901234567890123456BEEF"].exists)
+      capture(options.isEmpty ? "capital-transfer-light" : "capital-transfer-dark")
+      app.buttons["capital.close"].tap()
+      XCTAssertTrue(open.waitForExistence(timeout: 5))
+    }
+    launch("capital", ["--fixture-capital-refill"])
+    let direction = app.buttons["capital.direction"]
+    XCTAssertTrue(direction.waitForExistence(timeout: 10))
+    direction.tap()
+    app.buttons["资金 → 合约"].tap()
+    XCTAssertTrue(app.staticTexts["本次转入合约"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
+    capture("capital-funding-refill")
+    direction.tap()
+    app.buttons["现货 → 合约"].tap()
+    XCTAssertTrue(app.staticTexts["现货账户可用"].waitForExistence(timeout: 5))
+  }
+
+  func testCapitalCollectionAccountAndModeEntry() {
+    launch("profile", ["--fixture-lead-disabled"])
+    let switchMode = app.buttons["profile.switchMode"]
+    XCTAssertTrue(switchMode.waitForExistence(timeout: 10))
+    XCTAssertEqual(switchMode.label, "切换带单模式")
+    switchMode.tap()
+    XCTAssertTrue(app.buttons["确认切换"].waitForExistence(timeout: 5))
+    app.buttons["确认切换"].tap()
+    XCTAssertTrue(app.staticTexts["带单组合可用余额 (USDT)"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["profile.switchMode"].label, "切换合约模式")
+    launch("transfers", ["--fixture-collection-configured"])
+    XCTAssertTrue(app.buttons["collection.addAccount"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["BSC · USDT"].exists)
+    XCTAssertTrue(app.staticTexts["0x1234••••••BEEF"].exists)
+    capture("collection-account-with-history")
+    app.buttons["collection.addAccount"].tap()
+    XCTAssertTrue(app.staticTexts["资金归集账号"].waitForExistence(timeout: 5))
+    capture("collection-existing-account-editor")
+  }
+
+  func testCapitalWalletBlockedAndEmptyStates() {
+    launch("capital", ["--fixture-capital-blocked"])
+    XCTAssertTrue(app.staticTexts["capital.notice"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["capital.submit"].isEnabled)
+    capture("capital-wallet-blocked")
+    launch("capital", ["--fixture-capital-empty"])
+    XCTAssertTrue(app.staticTexts["当前方向暂无可划转金额"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["capital.submit"].isEnabled)
+    capture("capital-wallet-empty")
+    launch("capital", ["--fixture-capital-legacy"])
+    let legacy = app.buttons["capital.submit"]
+    XCTAssertTrue(legacy.waitForExistence(timeout: 10))
+    XCTAssertTrue(legacy.isEnabled)
+    XCTAssertEqual(legacy.label, "核对之前的归集")
+    legacy.tap()
+    XCTAssertTrue(app.staticTexts["调整账户资金"].waitForExistence(timeout: 5))
+    capture("capital-legacy-recovery")
   }
 }

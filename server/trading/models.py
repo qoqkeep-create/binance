@@ -148,6 +148,8 @@ class CapitalSweep(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="capital_sweeps")
     api_key_fingerprint = models.CharField(max_length=64, blank=True, null=True, db_index=True)
+    operation = models.CharField(max_length=24, blank=True, default="", db_default="")
+    request_id = models.UUIDField(null=True, blank=True, db_index=True)
     asset = models.CharField(max_length=16, default="USDT")
     amount = models.DecimalField(max_digits=24, decimal_places=8)
     target_balance = models.DecimalField(max_digits=24, decimal_places=8)

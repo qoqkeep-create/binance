@@ -115,7 +115,7 @@ struct USDTRecordsView: View {
     case strategyLog(String)
     var title: String {
       switch self {
-      case .transfers: "转账历史"
+      case .transfers: "资金归集"
       case .operations: "日志"
       case .strategyLog: "策略执行记录"
       }
@@ -137,10 +137,13 @@ struct USDTRecordsView: View {
   let kind: Kind
   @State private var cursor = ""
   @State private var notice = ""
+  @State private var collectAccount: JSONValue = .null
+  @State private var editingAccount = false
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 12) {
         if kind.transfers {
+          collectionHeader
           transferSummary
           HStack {
             Text("历史记录").font(.system(size: 14, weight: .semibold))
@@ -184,7 +187,36 @@ struct USDTRecordsView: View {
       }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
     }.scrollIndicators(.hidden).usdtPage(kind.title, refresh: { Task { await refresh() } }).task(
       id: store.scope
-    ) { await load(reset: true) }.refreshable { await refresh() }
+    ) {
+      collectAccount = .null
+      if kind.transfers {
+        async let account: Void = loadCollectionAccount()
+        await load(reset: true)
+        _ = await account
+      } else { await load(reset: true) }
+    }.refreshable { await refresh() }
+      .webModal(isPresented: $editingAccount) { USDTCollectAccountView() }
+      .onChange(of: editingAccount) { _, shown in
+        if !shown { Task { await loadCollectionAccount() } }
+      }
+  }
+  private var collectionHeader: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Text("收款账号").font(.system(size: 15, weight: .semibold))
+        Spacer()
+        Button { editingAccount = true } label: {
+          Label(collectAccount.value("capital_collect_address", fallback: "").isEmpty ? "添加账号" : "管理账号", systemImage: "plus")
+            .font(.system(size: 14, weight: .medium)).frame(minHeight: 44)
+        }.disabled(!store.isBound).accessibilityIdentifier("collection.addAccount")
+      }
+      USDTCollectionAccountCard(data: collectAccount)
+    }.padding(.bottom, 8)
+  }
+  private func loadCollectionAccount() async {
+    do { collectAccount = try await store.get("/v1/account/capital-collect-account") }
+    catch is CancellationError { }
+    catch { notice = error.localizedDescription }
   }
   private var transferSummary: some View {
     VStack(spacing: 0) {
@@ -287,6 +319,7 @@ struct USDTRecordsView: View {
   }
   private func refresh() async {
     if kind.transfers {
+      await loadCollectionAccount()
       do { _ = try await store.send("/v1/account/transfer-history/sync") } catch {
         notice = error.localizedDescription
       }

@@ -9,10 +9,8 @@ struct USDTProfileView: View {
   @State private var more = false
   @State private var binding = false
   @State private var stopLoss = false
-  @State private var collect = false
   @State private var normalize = false
   @State private var modeConfirm = false
-  @State private var version: JSONValue = .null
   @State private var collectAccount: JSONValue = .null
   @Environment(\.colorScheme) private var scheme
   private var lead: Bool { store.mode == "lead" }
@@ -33,13 +31,16 @@ struct USDTProfileView: View {
               .accessibilityLabel("头像").accessibilityIdentifier("profile.avatar")
             if store.isBound {
               VStack(alignment: .leading, spacing: 0) {
-                Text(store.binding.value("alias", fallback: store.profile.value("display_name")))
-                  .font(.system(size: 16, weight: .bold)).lineLimit(1).frame(height: 24).padding(.bottom, 4)
-                Text(collectAccount.value("account_type") == "master" ? "主账户"
-                  : collectAccount.value("account_type") == "sub" ? "子账户" : "账户类型同步中")
-                  .font(.system(size: 12, weight: .semibold)).foregroundStyle(WebTheme.brand)
-                  .padding(.horizontal, 6).frame(height: 18)
-                  .background(WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                HStack(spacing: 6) {
+                  Text(store.binding.value("alias", fallback: store.profile.value("display_name")))
+                    .font(.system(size: 16, weight: .bold)).lineLimit(1).layoutPriority(1)
+                  Text(collectAccount.value("account_type") == "master" ? "主账户"
+                    : collectAccount.value("account_type") == "sub" ? "子账户" : "同步中")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(WebTheme.brand)
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(WebTheme.brand.opacity(0.1), in: Capsule()).fixedSize()
+                    .accessibilityIdentifier("profile.accountType")
+                }.frame(minHeight: 24).padding(.bottom, 4)
                 Button("解除 API 绑定") { binding = true }.font(.system(size: 12)).underline()
                   .foregroundStyle(WebTheme.danger).frame(height: 32)
               }
@@ -55,14 +56,13 @@ struct USDTProfileView: View {
               }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
             }
           }.padding(.bottom, 20)
-          if lead || version["lead_trading_enabled"]?.flag == true || version["lead_trading_bound"]?.flag == true {
-            HStack {
-              Spacer()
-              Button(lead ? "切换合约模式" : "切换带单模式") { modeConfirm = true }
-                .font(.system(size: 12, weight: .medium)).padding(10)
-                .background(WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-            }.padding(.bottom, 16)
-          }
+          HStack {
+            Spacer()
+            Button(lead ? "切换合约模式" : "切换带单模式") { modeConfirm = true }
+              .font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(minHeight: 44)
+              .background(WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+              .accessibilityIdentifier("profile.switchMode")
+          }.padding(.bottom, 16)
           Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 16)
           HStack(spacing: 8) {
             Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)").font(.system(size: 14, weight: .medium))
@@ -99,7 +99,7 @@ struct USDTProfileView: View {
                 } label: {
                   WebLabel("归集余额", "wallet.bifold")
                 }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12, fullWidth: false)).disabled(
-                  !canCollect)
+                  !store.isBound)
               }.frame(height: 80)
             }
           }
@@ -122,21 +122,10 @@ struct USDTProfileView: View {
           }
           separator
           if !lead {
-            Button {
-              collect = true
-            } label: {
-              menuRow(
-                "资金归集账号", "paperplane",
-                value: collectAccount.value("account_type") == "sub"
-                  ? "所属主账户"
-                  : collectAccount.value("capital_collect_address", fallback: "").isEmpty
-                    ? "未配置" : "已配置")
-            }
-            separator
             NavigationLink {
               USDTRecordsView(kind: .transfers)
             } label: {
-              menuRow("转账历史", "clock.arrow.circlepath")
+              menuRow("资金归集", "paperplane")
             }
             separator
           }
@@ -197,19 +186,11 @@ struct USDTProfileView: View {
     }.scrollIndicators(.hidden).usdtPage("我的")
       .task(id: store.scope) {
         await store.refresh()
-        version = (try? await store.get("/v1/account/version")) ?? .null
         collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
       }.refreshable { await store.refresh() }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
       .sheet(isPresented: $stopLoss) { USDTStopLossView() }
-      .webModal(isPresented: $collect) {
-        USDTCollectAccountView().onDisappear {
-          Task {
-            collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
-          }
-        }
-      }
-      .webModal(isPresented: $normalize) { USDTCapitalView() }
+      .sheet(isPresented: $normalize) { USDTCapitalView() }
       .webModal(isPresented: $logout) {
         WebModal(title: "确认退出登录") {
           Text("确认要退出登录吗？").foregroundStyle(WebTheme.secondary)
@@ -275,23 +256,6 @@ struct USDTProfileView: View {
     ["balance", "spot_balance", "funding_balance"].reduce(Decimal.zero) {
       $0 + (store.account[$1]?.decimal ?? 0)
     }
-  }
-  private var usableTotal: Decimal {
-    (store.account["balance"]?.decimal ?? 0)
-      + ["spot_balance", "funding_balance"].reduce(Decimal.zero) { sum, key in
-        let amount = store.account[key]?.decimal ?? 0
-        return sum + (amount >= 1 ? amount : 0)
-      }
-  }
-  private var balancesKnown: Bool {
-    store.isBound
-      && ["balance", "spot_balance", "funding_balance"].allSatisfy {
-        store.account[$0]?.decimal != nil
-      } && (Decimal(string: store.riskAmount) ?? 0) > 0
-  }
-  private var canCollect: Bool {
-    balancesKnown
-      && usableTotal - (Decimal(string: store.riskAmount) ?? 0) * 5 >= Decimal(string: "0.01")!
   }
   private func menuRow(
     _ title: String, _ icon: String, value: String = "", amount: Bool = false, small: Bool = false,
@@ -581,7 +545,254 @@ struct USDTStopLossView: View {
   }
 }
 
+/// Explicit wallet operations use the same native presentation as the pair picker.
 struct USDTCapitalView: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: USDTStore
+  @State private var tab = "划转"
+  @State private var direction = "to_spot"
+  @State private var preview: JSONValue = .null
+  @State private var busy = false
+  @State private var notice = ""
+  @State private var requestID = UUID().uuidString
+  @State private var legacy = false
+  @State private var editor = false
+  @State private var submitted = false
+  private var action: String { tab == "转账" ? "transfer" : direction }
+  private var pending: Bool { preview.value("status") == "collection_pending" }
+  private var completed: Bool { preview.value("reason") == "normalization_completed" }
+  private var legacyPending: Bool { pending && preview.value("operation", fallback: "").isEmpty }
+  private var canSubmit: Bool {
+    !busy && (pending || preview.value("status") == "normalization_required")
+      && preview.value("operation") == action
+  }
+  private var requestStorageKey: String { "capital.request.\(store.scope).\(action)" }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        Text("归集资金").font(.system(size: 20, weight: .bold))
+        Spacer()
+        Button { dismiss() } label: {
+          Image(systemName: "xmark").font(.system(size: 18, weight: .medium))
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).disabled(busy).accessibilityLabel("关闭")
+          .accessibilityIdentifier("capital.close")
+      }.padding(.horizontal, 20).padding(.top, 12)
+      Picker("资金操作", selection: $tab) {
+        Text("划转").tag("划转")
+        Text("转账").tag("转账")
+      }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.vertical, 12)
+        .disabled(busy || pending || submitted).accessibilityIdentifier("capital.tabs")
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+          if tab == "划转" {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("划转方向").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+              Picker("划转方向", selection: $direction) {
+                Text("合约、资金 → 现货").tag("to_spot")
+                Text("资金 → 合约").tag("funding_to_futures")
+                Text("现货 → 合约").tag("spot_to_futures")
+              }.pickerStyle(.menu).tint(WebTheme.text).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .padding(.horizontal, 12).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
+                .disabled(busy || pending || submitted).accessibilityIdentifier("capital.direction")
+            }
+            walletCard
+            VStack(alignment: .leading, spacing: 10) {
+              Text(direction == "to_spot" ? "本次划转明细" : "补入合约")
+                .font(.system(size: 15, weight: .semibold))
+              VStack(spacing: 16) {
+                if direction == "to_spot" {
+                  moneyRow("合约超出保留额", key: "futures_collect")
+                  moneyRow("资金账户可划转", key: "funding_collect")
+                } else {
+                  moneyRow(direction == "funding_to_futures" ? "资金账户可用" : "现货账户可用",
+                    key: direction == "funding_to_futures" ? "funding_available" : "spot_available")
+                  moneyRow("距合约保留上限", value: gap)
+                }
+              }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+            }
+            Text(direction == "to_spot"
+              ? "合约余额超过止损额的 5 倍时无法开启新一轮交易。确认后，超额部分与资金账户可划转金额一起转入现货。"
+              : "按合约距 5 倍止损额的差额补入，最多使用所选账户的可用余额。")
+              .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
+          } else {
+            VStack(alignment: .leading, spacing: 12) {
+              Text("转出账户").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+              VStack(spacing: 18) {
+                HStack { Label("现货账户", systemImage: "wallet.bifold").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
+                moneyRow("现货可用余额", key: "spot_available")
+                Divider().overlay(WebTheme.border)
+                moneyRow("本次转出金额", key: "operation_amount", emphasis: true)
+              }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+            }
+            VStack(alignment: .leading, spacing: 12) {
+              HStack {
+                Text("收款账号").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Button("设置") { editor = true }.font(.system(size: 14, weight: .medium))
+                  .frame(minWidth: 44, minHeight: 44).disabled(busy || pending || submitted)
+              }
+              USDTCollectionAccountCard(data: .object([
+                "account_type": preview["account_type"] ?? .null,
+                "capital_collect_address": preview["destination_address"] ?? .null,
+                "capital_collect_network": preview["destination_network"] ?? .null,
+              ]))
+            }
+            Text("转出金额按现货可用余额计算。子账户转至所属主账户；主账户按已设置的链和地址转出，以交易所最终回执为准。")
+              .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
+          }
+          if busy { HStack(spacing: 8) { ProgressView(); Text(submitted ? "正在提交，请稍候…" : "正在读取资金状态…") }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary) }
+          if completed { Label("本次操作已完成", systemImage: "checkmark.circle.fill").foregroundStyle(WebTheme.success).font(.system(size: 15, weight: .semibold)).accessibilityIdentifier("capital.completed") }
+          if !notice.isEmpty { Text(notice).font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5).accessibilityIdentifier("capital.notice") }
+          if !busy && preview.value("status") == "ready" && !completed {
+            Text(tab == "转账" ? "暂无可转出的现货资金" : "当前方向暂无可划转金额")
+              .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
+          }
+        }.padding(20)
+      }.scrollIndicators(.hidden)
+    }.foregroundStyle(WebTheme.text).background(WebTheme.page)
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        VStack(spacing: 12) {
+          moneyRow(legacyPending ? "原归集转出金额" : tab == "转账" ? "本次转出金额" : direction == "to_spot" ? "合计划转到现货" : "本次转入合约",
+            key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true).accessibilityIdentifier("capital.total")
+          Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == "转账" ? "转账" : "确定划转") {
+            if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
+          }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || (!completed && !legacyPending && !canSubmit))
+            .accessibilityIdentifier("capital.submit")
+          if !busy && !pending && !completed {
+            Button("刷新金额") { Task { await load() } }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary).frame(minHeight: 44)
+              .accessibilityIdentifier("capital.refresh")
+          }
+        }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8).background(WebTheme.page)
+      }
+      .largeTradingSheet().interactiveDismissDisabled(busy)
+      .task(id: action) { await load() }
+      .onChange(of: store.scope) { _, _ in dismiss() }
+      .webModal(isPresented: $editor) { USDTCollectAccountView() }
+      .onChange(of: editor) { _, shown in if !shown { Task { await load() } } }
+      .webModal(isPresented: $legacy) { USDTLegacyCapitalView() }
+      .onChange(of: legacy) { _, shown in if !shown { Task { await load() } } }
+  }
+  private var gap: String {
+    guard let maximum = preview["maximum_futures_balance"]?.decimal,
+      let futures = preview["futures_balance"]?.decimal else { return "--" }
+    return NSDecimalNumber(decimal: max(0, maximum - futures)).stringValue
+  }
+  private var walletCard: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack { Label("合约账户", systemImage: "chart.line.uptrend.xyaxis").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
+      Text(formatted(preview.value("futures_balance"))).font(.system(size: 32, weight: .bold)).monospacedDigit()
+        .lineLimit(1).minimumScaleFactor(0.6)
+      Divider().overlay(WebTheme.border)
+      moneyRow("保留上限 · 止损额 × 5", key: "maximum_futures_balance")
+    }.padding(20).background(WebTheme.brand.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+      .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.brand.opacity(0.2), lineWidth: 1) }
+  }
+  private func moneyRow(_ label: String, key: String, emphasis: Bool = false) -> some View {
+    moneyRow(label, value: preview.value(key), emphasis: emphasis)
+  }
+  private func moneyRow(_ label: String, value: String, emphasis: Bool = false) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
+      Text(label).font(.system(size: 13)).foregroundStyle(WebTheme.secondary).fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+      Text(formatted(value) + " USDT").font(.system(size: emphasis ? 20 : 14, weight: emphasis ? .bold : .medium))
+        .monospacedDigit().multilineTextAlignment(.trailing).foregroundStyle(emphasis ? WebTheme.text : WebTheme.secondary)
+    }.accessibilityElement(children: .combine)
+  }
+  private func formatted(_ value: String) -> String {
+    guard let amount = Decimal(string: value) else { return "--" }
+    return amount.formatted(.number.precision(.fractionLength(2)))
+  }
+  private func apply(_ result: JSONValue) {
+    preview = .object(preview.fields.merging(result.fields) { _, new in new })
+    if result.value("status") == "collection_pending" {
+      let operation = result.value("operation", fallback: "")
+      if operation == "transfer" { tab = "转账" }
+      else if ["to_spot", "funding_to_futures", "spot_to_futures"].contains(operation) {
+        direction = operation
+        tab = "划转"
+      }
+    }
+    notice = result.value("message", fallback: result.value("collection_error", fallback: ""))
+    if result["plan_changed"]?.flag == true { notice = "余额或收款设置已变化，请核对最新金额后再次确认。" }
+  }
+  private func load() async {
+    guard !busy else { return }
+    let scope = store.scope
+    let requestedAction = action
+    busy = true
+    preview = .null
+    notice = ""
+    defer { if scope == store.scope { busy = false } }
+    do {
+      let result = try await store.send("/v1/trade/capital/wallet/precheck", ["action": .string(requestedAction)])
+      guard !Task.isCancelled, scope == store.scope, requestedAction == action else { return }
+      apply(result)
+      requestID = UserDefaults.standard.string(forKey: requestStorageKey) ?? UUID().uuidString
+    } catch is CancellationError { } catch {
+      if scope == store.scope { notice = error.localizedDescription }
+    }
+  }
+  private func execute() async {
+    guard canSubmit else { return }
+    let scope = store.scope
+    let storageKey = requestStorageKey
+    busy = true
+    submitted = true
+    UserDefaults.standard.set(requestID, forKey: storageKey)
+    defer { if scope == store.scope { busy = false } }
+    var payload: [String: JSONValue] = ["action": .string(action), "request_id": .string(requestID),
+      "expected_plan": preview["plan_token"] ?? .string("")]
+    if pending { payload["collection_id"] = preview["collection_id"] }
+    do {
+      let result = try await store.send("/v1/trade/capital/wallet/execute", payload)
+      guard scope == store.scope else { return }
+      apply(result)
+      if result.value("status") != "collection_pending" {
+        submitted = false
+        UserDefaults.standard.removeObject(forKey: storageKey)
+        requestID = UUID().uuidString
+      }
+      await store.refresh()
+    } catch {
+      if scope == store.scope { notice = error.localizedDescription + "。请核对原操作结果后重试。" }
+    }
+  }
+}
+
+struct USDTCollectionAccountCard: View {
+  let data: JSONValue
+  private var address: String { data.value("capital_collect_address", fallback: "") }
+  static func masked(_ address: String) -> String {
+    guard address.count > 12 else { return address.isEmpty ? "未设置收款账号" : String(address.prefix(2)) + "••••" + String(address.suffix(2)) }
+    return String(address.prefix(6)) + "••••••" + String(address.suffix(4))
+  }
+  var body: some View {
+    HStack(alignment: .top, spacing: 12) {
+      Image(systemName: "building.columns").font(.system(size: 20)).foregroundStyle(WebTheme.brand)
+        .frame(width: 40, height: 40).background(WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+      VStack(alignment: .leading, spacing: 8) {
+        if data == .null || data.fields.isEmpty {
+          Text("正在读取收款账号…").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+        } else if data.value("account_type") == "sub" {
+          Text("所属主账户").font(.system(size: 15, weight: .semibold))
+          Text("币安站内 · 自动识别所属账号").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+        } else {
+          Text(address.isEmpty ? "收款账号" : data.value("capital_collect_network", fallback: "--") + " · USDT")
+            .font(.system(size: 15, weight: .semibold))
+          Text(Self.masked(address)).font(.system(size: 14, design: .monospaced)).foregroundStyle(WebTheme.secondary)
+            .textSelection(.disabled).lineLimit(1).minimumScaleFactor(0.7)
+        }
+      }.frame(maxWidth: .infinity, alignment: .leading)
+    }.padding(16).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+      .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+      .accessibilityElement(children: .combine).accessibilityIdentifier("collection.account")
+  }
+}
+
+struct USDTLegacyCapitalView: View {
   @Environment(\.webDismiss) private var dismiss
   @EnvironmentObject private var store: USDTStore
   @State private var notice = ""

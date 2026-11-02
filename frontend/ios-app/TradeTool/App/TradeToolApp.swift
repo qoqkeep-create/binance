@@ -250,7 +250,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       guard
         request.method == .get
-          || ["/v1/trade/capital/precheck", "/v1/trade/ema-check"].contains(request.path)
+          || ["/v1/trade/capital/precheck", "/v1/trade/capital/wallet/precheck", "/v1/trade/ema-check"].contains(request.path)
       else {
         throw APIError.business(code: "VISUAL_FIXTURE", message: "视觉校准模式不执行写操作")
       }
@@ -259,6 +259,47 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         all[
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if request.path == "/v1/trade/capital/wallet/precheck" {
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: request.body ?? Data("{}".utf8))
+        let action = body["action"]?.text ?? "to_spot"
+        let refill = ProcessInfo.processInfo.arguments.contains("--fixture-capital-refill")
+        let emptyWallet = ProcessInfo.processInfo.arguments.contains("--fixture-capital-empty")
+        let amount = emptyWallet ? "0" : action == "to_spot" ? (refill ? "40" : "70") : action == "transfer" ? "80" : (refill ? "40" : "0")
+        value = .object([
+          "operation": .string(action), "status": .string(amount == "0" ? "ready" : "normalization_required"),
+          "plan_token": .string("visual-wallet-read-only"), "futures_balance": .string(refill ? "10" : "100"),
+          "maximum_futures_balance": .string("50"), "spot_available": .string("80"),
+          "funding_available": .string(refill ? "40" : "20"), "operation_amount": .string(amount),
+          "futures_collect": .string(emptyWallet || refill ? "0" : "50"), "funding_collect": .string(emptyWallet ? "0" : refill ? "40" : "20"),
+          "account_type": .string("master"), "destination_address": .string("0x123456789012345678901234567890123456BEEF"),
+          "destination_network": .string("BSC"),
+        ])
+        if ProcessInfo.processInfo.arguments.contains("--fixture-capital-legacy") {
+          var fields = value.fields
+          fields["status"] = .string("collection_pending")
+          fields["operation"] = .string("")
+          fields["collection_id"] = .number(1)
+          fields["transfer_amount"] = .string("50")
+          fields["message"] = .string("存在之前的归集，请先核对原流水")
+          value = .object(fields)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--fixture-capital-blocked") {
+          var fields = value.fields
+          fields["status"] = .string("blocked")
+          fields["message"] = .string("交易所当前有持仓，持仓期间不能划转或转出资金")
+          value = .object(fields)
+        }
+      }
+      if request.path == "/v1/account/capital-collect-account",
+        ProcessInfo.processInfo.arguments.contains("--fixture-collection-configured") {
+        value = .object(["account_type": .string("master"),
+          "capital_collect_address": .string("0x123456789012345678901234567890123456BEEF"),
+          "capital_collect_network": .string("BSC")])
+      }
+      if request.path == "/v1/account/version",
+        ProcessInfo.processInfo.arguments.contains("--fixture-lead-disabled") {
+        value = .object(["lead_trading_enabled": .bool(false), "lead_trading_bound": .bool(false)])
+      }
       if request.path == "/v1/position/history",
         ProcessInfo.processInfo.arguments.contains("--fixture-history-supplement-slow") {
         if request.queryItems.contains(where: { $0.name == "snapshot" && $0.value == "local" }) {

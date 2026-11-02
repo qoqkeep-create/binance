@@ -1,5 +1,7 @@
 from django.urls import path
 
+from trading.capital_wallet_views import CapitalWalletView
+
 from trading.views import (
     SymbolInfoView,
     SymbolListView,
@@ -28,6 +30,8 @@ urlpatterns = [
     path("market/klines-public/<str:symbol>/<str:interval>", PublicMarketKlinesView.as_view()),
     path("market/prices", MarketPricesView.as_view()),
     path("ema-check", TradeEmaCheckView.as_view()),
+    path("capital/wallet/precheck", CapitalWalletView.as_view()),
+    path("capital/wallet/execute", CapitalWalletView.as_view(execute=True)),
     path("capital/precheck", CapitalPrecheckView.as_view()),
     path("capital/normalize", CapitalNormalizeView.as_view()),
     path("capital/remind", CapitalReminderView.as_view()),

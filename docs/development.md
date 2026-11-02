@@ -196,3 +196,9 @@ iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pendin
 在独立 SQLite 数据库与回环 HTTP API 中迁移新表，种入 1500 根合成 BTC1h，禁止外部交易所请求，以真实 URLSession、图表 pipeline、Metal 模拟器完成回调、异步 POST 和 Django 入库串通验证。三次进入均保存 displayed、首尾时间、网络 metrics 和完整图表阶段；模拟器完成属于 GPU 代理，不是物理手机呈现或公网性能。初次配置用不在已知列表的回环端口，App 回落到了既有远端选择，因此那一轮 UI 虽通过但没有本地记录，不计入隔离贯通；随后通过构建设置显式指定回环 API，并核对实际数据库三条记录。
 
 最后补充网络／本地缓存来源字段及隐私清单后，九项后端诊断与五项 iOS 定向回归再次通过，隔离 UI 再次完成三次加载并入库；数据库确认缓存来源标记存在，原始网络读取在前一轮已验证。只读 trace 查询通过，最终 generic iOS Release 无签名编译通过并确认成品清单包含新增声明。两轮隔离验证均不作为手机／公网性能数据；没有上传 TestFlight 或执行真实交易。
+
+## 账户与资金双页签回归（2026-11-02）
+
+`trading.test_capital_wallet`、`trading.test_balance_cap`、`trading.test_lead_mode` 组合 128 项通过（33.806 秒），使用 SQLite / LocMem 和交易所替身。覆盖合约超额加资金钱包只转现货、两个独立补入方向、独立现货转出、原 UUID 终态重试、余额变化重新核对、超时只查回执、逐步骤持仓检查、旧链隔离、Key 隔离及带单路径拒绝。执行命令与前文的隔离环境变量相同；migration 漂移和 `git diff --check` 通过。
+
+DEBUG 无网络 `WebParityUITests` 新增 `testCapitalWalletSheetTabsAndDirections`、`testCapitalCollectionAccountAndModeEntry`、`testCapitalWalletBlockedAndEmptyStates`：三项通过（合计 179.423 秒），已打开浅深色、转账和账号历史截图检查。资金提交接口在视觉替身中始终拒绝，未确认真实划转；原生大面板的方向菜单、模式确认、脱敏地址和原账号编辑窗口已覆盖。首屏合计改为固定底栏后，该页签 / 方向流程再次通过（126.091 秒），确认金额始终在按钮上方可见并重新检查截图。旧归集核对入口移至主按钮后，空态 / 阻断 / 旧链恢复组合再次通过（28.488 秒）。证据位于忽略目录 `.integration-runtime/CapitalUI/`；generic iOS Release 未签名构建通过，手机 / TestFlight 和真实资金动作未验收。
