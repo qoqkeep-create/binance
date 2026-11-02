@@ -797,123 +797,62 @@ final class ChartCrosshairOverlayBuilder {
             hit.selection.panelValue,
             reference: hit.selection.panelValue
         )
-        let height = (panel.isPricePanel ? 34 : 18) * scale
-        let top = min(
-            panel.plot.bottom - height,
-            max(
-                panel.plot.top,
-                hit.selection.fingerY - height / 2
-            )
-        )
+        let height = (panel.isPricePanel ? 32 : 18) * scale
+        let top = min(panel.plot.bottom - height, max(panel.plot.top,
+            hit.selection.fingerY - height / 2))
+        let left = data.panelLayout.plotRight + 2 * scale
+        let right = data.widthPixels - scale
+        bars.append(ChartBarInstance(
+            left: left, top: top, right: right, bottom: top + height,
+            color: .crosshairAxisLabelBackground, cornerRadius: 4 * scale
+        ))
+        // Match the regular ticks and current-price marker's trailing text anchor.
+        let textAnchor = data.widthPixels - 4 * scale
+        let rowHeight = panel.isPricePanel ? height / 2 : height
+        glyphs.append(contentsOf: axisLabelGlyphs(
+            priceText, data: data, left: left, right: right,
+            anchor: textAnchor, centerY: top + rowHeight / 2,
+            height: rowHeight
+        ))
         if panel.isPricePanel {
-            let labelWidth = min(
-                data.widthPixels,
-                70.5 * scale
-            )
-            let left = data.widthPixels - labelWidth
-            let dividerX = left + 16.5 * scale
-            let cornerRadius = 5 * scale
-            bars.append(ChartBarInstance(
-                left: left,
-                top: top,
-                right: data.widthPixels,
-                bottom: top + height,
-                color: .crosshairAxisLabelBackground,
-                cornerRadius: cornerRadius
-            ))
-            let plusCenterX = left + 8.25 * scale
-            let plusCenterY = top + height / 2
-            let plusRadius = 5 * scale
-            bars.append(ChartBarInstance(
-                left: plusCenterX - plusRadius,
-                top: plusCenterY - plusRadius,
-                right: plusCenterX + plusRadius,
-                bottom: plusCenterY + plusRadius,
-                color: .crosshairAxisLabelText,
-                cornerRadius: plusRadius
-            ))
-            let plusHalfLength = 2.7 * scale
-            let plusHalfWidth = max(0.5, 0.65 * scale)
-            bars.append(ChartBarInstance(
-                left: plusCenterX - plusHalfLength,
-                top: plusCenterY - plusHalfWidth,
-                right: plusCenterX + plusHalfLength,
-                bottom: plusCenterY + plusHalfWidth,
-                color: .crosshairAxisLabelBackground,
-                cornerRadius: plusHalfWidth
-            ))
-            bars.append(ChartBarInstance(
-                left: plusCenterX - plusHalfWidth,
-                top: plusCenterY - plusHalfLength,
-                right: plusCenterX + plusHalfWidth,
-                bottom: plusCenterY + plusHalfLength,
-                color: .crosshairAxisLabelBackground,
-                cornerRadius: plusHalfWidth
-            ))
-            bars.append(ChartBarInstance(
-                left: dividerX,
-                top: top,
-                right: dividerX + max(1, scale * 0.65),
-                bottom: top + height,
-                color: .crosshairAxisLabelText
-            ))
-            let valueCenterX = (
-                dividerX + data.widthPixels
-            ) / 2
-            glyphs.append(contentsOf: alignedText(
-                priceText,
-                atlas: data.glyphAtlas,
-                x: valueCenterX,
-                baselineY: top + 13.5 * scale,
-                alignment: .center,
-                color: .crosshairAxisLabelText
-            ).instances.filter {
-                $0.left >= dividerX
-                    && $0.right <= data.widthPixels
-                    && $0.top >= top
-                    && $0.bottom <= top + height
-            })
             let rateText = axisPriceChangeRate.map {
                 DisplayNumber.text($0 * 100, signed: true) + "%"
             } ?? "--"
-            glyphs.append(contentsOf: alignedText(
-                rateText,
-                atlas: data.glyphAtlas,
-                x: valueCenterX,
-                baselineY: top + 27.5 * scale,
-                alignment: .center,
-                color: .crosshairAxisLabelText
-            ).instances.filter {
-                $0.left >= dividerX
-                    && $0.right <= data.widthPixels
-                    && $0.top >= top
-                    && $0.bottom <= top + height
-            })
-            return
+            glyphs.append(contentsOf: axisLabelGlyphs(
+                rateText, data: data, left: left, right: right,
+                anchor: textAnchor, centerY: top + rowHeight * 1.5,
+                height: rowHeight
+            ))
         }
+    }
 
-        let left = data.panelLayout.plotRight + scale
-        bars.append(ChartBarInstance(
-            left: left,
-            top: top,
-            right: data.widthPixels,
-            bottom: top + height,
-            color: .crosshairAxisLabelBackground,
-            cornerRadius: 4 * scale
-        ))
-        glyphs.append(contentsOf: alignedText(
-            priceText,
-            atlas: data.glyphAtlas,
-            x: (left + data.widthPixels) / 2,
-            baselineY: top + 12.5 * scale,
-            alignment: .center,
-            color: .crosshairAxisLabelText
-        ).instances.filter {
-            $0.left >= left
-                && $0.right <= data.widthPixels
-                && $0.top >= top
-                && $0.bottom <= top + height
-        })
+    private func axisLabelGlyphs(
+        _ text: String, data: ChartCrosshairDataSnapshot,
+        left: Float, right: Float, anchor: Float, centerY: Float, height: Float
+    ) -> [ChartGlyphInstance] {
+        let measured = alignedText(text, atlas: data.glyphAtlas, x: anchor,
+            baselineY: 0, alignment: .trailing, color: .crosshairAxisLabelText)
+        guard let minX = measured.instances.map(\.left).min(),
+              let maxX = measured.instances.map(\.right).max(),
+              let minY = measured.instances.map(\.top).min(),
+              let maxY = measured.instances.map(\.bottom).max() else { return [] }
+        // Scale the entire row, preserving all digits and the axis alignment.
+        let factor = min(1,
+            (anchor - left) / max(1, anchor - minX),
+            (right - anchor) / max(1, maxX - anchor),
+            height / max(1, maxY - minY))
+        let glyphCenterY = (minY + maxY) / 2
+        return measured.instances.map { glyph in
+            ChartGlyphInstance(
+                left: anchor + (glyph.left - anchor) * factor,
+                top: centerY + (glyph.top - glyphCenterY) * factor,
+                right: anchor + (glyph.right - anchor) * factor,
+                bottom: centerY + (glyph.bottom - glyphCenterY) * factor,
+                uvLeft: glyph.uvLeft, uvTop: glyph.uvTop,
+                uvRight: glyph.uvRight, uvBottom: glyph.uvBottom,
+                color: glyph.color
+            )
+        }
     }
 
     private func appendTimeLabels(
@@ -944,30 +883,27 @@ final class ChartCrosshairOverlayBuilder {
                 hit.selection.snappedX
             )
         )
-        let top = data.panelLayout.timeAxisTop
-        let bottom = data.panelLayout.timeAxisBottom
+        let axisTop = data.panelLayout.timeAxisTop
+        let axisBottom = data.panelLayout.timeAxisBottom
+        let centerY = (axisTop + axisBottom) / 2
+        let height = min(20 * scale, axisBottom - axisTop)
+        let top = centerY - height / 2
+        let bottom = centerY + height / 2
         bars.append(ChartBarInstance(
-            left: 0,
-            top: top,
-            right: data.widthPixels,
-            bottom: bottom,
+            left: 0, top: axisTop, right: data.widthPixels, bottom: axisBottom,
             color: .chartBackground
         ))
         bars.append(ChartBarInstance(
-            left: centerX - halfWidth,
-            top: top,
-            right: centerX + halfWidth,
-            bottom: bottom,
-            color: .crosshairAxisLabelBackground,
-            cornerRadius: 4 * scale
+            left: centerX - halfWidth, top: top,
+            right: centerX + halfWidth, bottom: bottom,
+            color: .crosshairAxisLabelBackground, cornerRadius: 4 * scale
         ))
+        let glyphTop = measured.instances.map(\.top).min() ?? -Float(measured.ascent)
+        let glyphBottom = measured.instances.map(\.bottom).max() ?? Float(measured.descent)
         glyphs.append(contentsOf: alignedText(
-            text,
-            atlas: data.glyphAtlas,
-            x: centerX,
-            baselineY: bottom - 6 * scale,
-            alignment: .center,
-            color: .crosshairAxisLabelText
+            text, atlas: data.glyphAtlas, x: centerX,
+            baselineY: centerY - (glyphTop + glyphBottom) / 2,
+            alignment: .center, color: .crosshairAxisLabelText
         ).instances)
     }
 

@@ -4,10 +4,12 @@ import SwiftUI
 struct MarketSearchView: View {
     @ObservedObject var dashboardViewModel: DashboardViewModel
     var selectedSymbol: String? = nil
+    var focusesSearchOnPresent = false
     let onSelect: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var pendingDeletion: String?
+    @FocusState private var searchFocused: Bool
 
     private var symbols: [String] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -32,6 +34,7 @@ struct MarketSearchView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(BinanceTheme.secondaryText)
                 TextField("搜索交易对", text: $query)
                     .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                    .focused($searchFocused)
                     .keyboardType(.asciiCapable).accessibilityIdentifier("pairs.search")
             }.padding(12).background(BinanceTheme.elevated, in: RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal, 20).padding(.bottom, 12)
@@ -64,6 +67,9 @@ struct MarketSearchView: View {
         }.foregroundStyle(BinanceTheme.primaryText)
             .background(BinanceTheme.background)
             .largeTradingSheet()
+            .task {
+                if focusesSearchOnPresent { searchFocused = true }
+            }
             .task { await dashboardViewModel.loadSymbolCatalog() }
             .alert("删除自选", isPresented: Binding(
                 get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }

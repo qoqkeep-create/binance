@@ -45,10 +45,12 @@ private struct MainAppView: View {
     @State private var isShowingMarketSettings = false
     @State private var selectedMarket: MarketSnapshot?
     @State private var selectedInterval: MarketKlineInterval = .oneHour
+    @State private var hasVisitedPositions = false
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Group {
+                ZStack {
+                  Group {
                     switch selectedTab {
                     case .markets:
                         DashboardView(viewModel: container.dashboardViewModel,
@@ -56,11 +58,17 @@ private struct MainAppView: View {
                             isShowingMarketSearch: $isShowingMarketSearch,
                             isShowingMarketSettings: $isShowingMarketSettings,
                             selectedMarket: $selectedMarket)
-                    case .positions: USDTPositionsView(onOpenChart: openChart)
+                    case .positions: Color.clear
                     case .signals: USDTSignalsView(openChart: openChart)
                     case .settings: USDTProfileView()
                     case .reference: EmptyView()
                     }
+                  }
+                  if hasVisitedPositions || selectedTab == .positions {
+                    USDTPositionsView(isVisible: selectedTab == .positions && selectedMarket == nil,
+                        onOpenChart: openChart)
+                        .rootPageVisibility(isVisible: selectedTab == .positions)
+                  }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 BottomNavigationBar(selection: $selectedTab)
             }
@@ -95,6 +103,9 @@ private struct MainAppView: View {
         .onChange(of: store.mode) { _, _ in
             if selectedTab == .signals { selectedTab = .markets }
             container.realtimeClient.reconnect()
+        }
+        .onChange(of: selectedTab, initial: true) { _, tab in
+            if tab == .positions { hasVisitedPositions = true }
         }
         .task(id: store.scope) {
             for await event in container.realtimeClient.events(bufferingPolicy: .bufferingNewest(64)) {

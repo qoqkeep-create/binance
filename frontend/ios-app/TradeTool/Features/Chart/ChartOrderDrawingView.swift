@@ -238,7 +238,7 @@ struct ChartPositionLinesOverlay: View {
     let projection: ChartPriceProjection
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             ZStack(alignment: .topLeading) {
                 ForEach(lines) { line in
                     let price = NSDecimalNumber(decimal: line.price).doubleValue
@@ -247,18 +247,11 @@ struct ChartPositionLinesOverlay: View {
                         Path { path in
                             path.move(to: CGPoint(x: projection.plotLeft, y: y))
                             path.addLine(to: CGPoint(x: projection.plotRight, y: y))
-                        }.stroke(color(line.kind), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                        Text(line.title).font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(color(line.kind)).padding(.horizontal, 5).frame(height: 18)
-                            .background(BinanceTheme.background.opacity(0.92), in: RoundedRectangle(cornerRadius: 3))
-                            .position(x: projection.plotLeft + 36, y: y)
-                        let axisWidth = max(1, geometry.size.width - projection.plotRight - 4)
-                        Text(DisplayNumber.text(line.price)).font(.system(size: 10, weight: .medium))
-                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
-                            .foregroundStyle(Color.black).padding(.horizontal, 2)
-                            .frame(width: axisWidth, height: 16)
-                            .background(color(line.kind), in: RoundedRectangle(cornerRadius: 2))
-                            .position(x: projection.plotRight + axisWidth / 2, y: y)
+                        }.stroke(color(line.kind), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
+                        let label = ChartPriceLineLabelLayout(projection: projection)
+                        ChartPriceLineLabel(title: line.title, price: DisplayNumber.text(line.price),
+                            color: color(line.kind), width: label.width)
+                            .position(x: label.centerX, y: y)
                             .accessibilityIdentifier("position-line." + line.id)
                             .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))
                     }
@@ -276,6 +269,40 @@ struct ChartPositionLinesOverlay: View {
     }
 }
 
+private struct ChartPriceLineLabelLayout {
+    let width: Double
+    let centerX: Double
+
+    init(projection: ChartPriceProjection) {
+        let plotWidth = max(1, projection.plotRight - projection.plotLeft)
+        let leading = min(83, plotWidth * 0.25)
+        width = min(180, max(1, plotWidth - leading - 8))
+        centerX = projection.plotLeft + leading + width / 2
+    }
+}
+
+private struct ChartPriceLineLabel: View {
+    let title: String
+    let price: String
+    let color: Color
+    let width: Double
+    var draggable = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if draggable {
+                Image(systemName: "line.3.horizontal").font(.system(size: 9, weight: .medium))
+            }
+            Text(title).layoutPriority(1)
+            Text(price).monospacedDigit()
+        }.font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.6)
+            .foregroundStyle(color).padding(.horizontal, 7).frame(width: width, height: 24)
+            .background(BinanceTheme.background.opacity(0.98), in: RoundedRectangle(cornerRadius: 4))
+            .overlay { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.8), lineWidth: 0.5) }
+            .accessibilityElement(children: .ignore).accessibilityLabel(title).accessibilityValue(price)
+    }
+}
+
 struct ChartOrderDrawingOverlay: View {
     @Binding var drawing: ChartOrderDrawingState
     let projection: ChartPriceProjection
@@ -285,7 +312,7 @@ struct ChartOrderDrawingOverlay: View {
     private let coordinateSpaceName = "chart-order-drawing-overlay"
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             ZStack(alignment: .topLeading) {
                 riskArea
 
@@ -294,8 +321,7 @@ struct ChartOrderDrawingOverlay: View {
                         kind: .entry,
                         title: drawing.entryLineTitle,
                         price: entryPrice,
-                        color: BinanceTheme.accentText,
-                        canvasWidth: geometry.size.width
+                        color: BinanceTheme.accentText
                     )
                 }
 
@@ -303,8 +329,7 @@ struct ChartOrderDrawingOverlay: View {
                     kind: .stopLoss,
                     title: "止损价",
                     price: drawing.stopLossPrice,
-                    color: BinanceTheme.negative,
-                    canvasWidth: geometry.size.width
+                    color: BinanceTheme.negative
                 )
 
                 if showsSummary { modeBadge }
@@ -387,13 +412,10 @@ struct ChartOrderDrawingOverlay: View {
         kind: ChartOrderLineKind,
         title: String,
         price: Double,
-        color: Color,
-        canvasWidth: CGFloat
+        color: Color
     ) -> some View {
-        let width = Double(canvasWidth) - projection.plotLeft
         let plotWidth = projection.plotRight - projection.plotLeft
-        let titleWidth = 78.0
-        let axisWidth = max(24, Double(canvasWidth) - projection.plotRight - 4)
+        let label = ChartPriceLineLabelLayout(projection: projection)
         let y = projectedY(price) ?? projection.plotTop
         return ZStack {
             Path { path in
@@ -403,34 +425,19 @@ struct ChartOrderDrawingOverlay: View {
             .stroke(
                 color.opacity(0.95),
                 style: StrokeStyle(
-                    lineWidth: 1,
+                    lineWidth: 0.5,
                     dash: kind == .entry ? [5, 3] : [3, 3]
                 )
             )
 
-            HStack(spacing: 5) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 9, weight: .bold))
-                Text(title).font(.system(size: 10, weight: .bold))
-            }
-            .foregroundStyle(color)
-            .frame(width: titleWidth, height: 24)
-            .background(BinanceTheme.background.opacity(0.96), in: RoundedRectangle(cornerRadius: 4))
-            .overlay { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.75), lineWidth: 0.7) }
-            .position(x: titleWidth * 1.5 + 5, y: 18)
-
-            Text(formatPrice(price))
-                .font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                .lineLimit(1).minimumScaleFactor(0.5)
-                .foregroundStyle(BinanceTheme.onColor)
-                .padding(.horizontal, 3).frame(width: axisWidth, height: 21)
-                .background(color, in: RoundedRectangle(cornerRadius: 3))
-                .position(x: plotWidth + 2 + axisWidth / 2, y: 18)
+            ChartPriceLineLabel(title: title, price: formatPrice(price), color: color,
+                width: label.width, draggable: true)
+                .position(x: label.centerX - projection.plotLeft, y: 18)
         }
-        .frame(width: width, height: 36)
+        .frame(width: plotWidth, height: 36).clipped()
         .contentShape(Rectangle())
         .position(
-            x: projection.plotLeft + width / 2,
+            x: projection.plotLeft + plotWidth / 2,
             y: y
         )
         .highPriorityGesture(

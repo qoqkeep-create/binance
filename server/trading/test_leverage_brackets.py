@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from django.core.cache import cache
 from django.test import TestCase
-from rest_framework.test import APIRequestFactory, force_authenticate
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from common.binance import BinanceApiError
 from trading.leverage_views import LeverageBracketsView
@@ -34,6 +34,14 @@ class LeverageBracketsTests(TestCase):
             {"symbol": symbol}, HTTP_X_TRADING_MODE=mode)
         force_authenticate(request, user=self.user)
         return LeverageBracketsView.as_view()(request)
+
+    def test_public_route_requires_authentication_and_rejects_writes(self):
+        client = APIClient()
+        url = "/v1/trade/leverage-brackets"
+        self.assertEqual(client.get(url, {"symbol": "BTCUSDT"}).status_code, 401)
+        client.force_authenticate(user=self.user)
+        self.assertEqual(client.post(url, {"symbol": "BTCUSDT"}).status_code, 405)
+        self.client.get_leverage_bracket.assert_not_called()
 
     @patch("trading.leverage_views.get_user_trading_account", return_value=None)
     def test_unbound_account_never_reads_exchange(self, account):

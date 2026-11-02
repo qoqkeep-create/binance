@@ -353,6 +353,146 @@ final class PositionHistoryLoadingTests: XCTestCase {
     }
 }
 
+@MainActor
+final class PositionPageReuseTests: XCTestCase {
+    private func query(_ page: Int = 1) -> [URLQueryItem] {
+        [.init(name: "filter", value: "all"), .init(name: "page", value: String(page))]
+    }
+
+    func testReturningToLoadedPositionsDoesNotReadAgain() async {
+        let api = PositionPageReuseFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        for _ in 0..<3 {
+            await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        }
+        let reads = await api.readCount("/positions")
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(model.items.first?.value("read"), "1")
+        XCTAssertFalse(model.loading)
+    }
+
+    func testReturningFromAnotherSegmentRestoresRowsAndPagination() async {
+        let api = PositionPageReuseFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        model.page = 2
+        await model.load(store, path: "/positions", query: query(2), append: true)
+        model.page = 1
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        XCTAssertEqual(model.page, 2, "Reappearing must retain the last loaded page")
+        model.page = 1
+        await model.load(store, path: "/limits", query: query(), reuseIfLoaded: true)
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        let reads = await api.readCount("/positions")
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(model.items.map { $0.value("page") }, ["1", "2"])
+        XCTAssertEqual(model.page, 2)
+        XCTAssertFalse(model.hasNext)
+    }
+
+    func testTradingRevisionAndExplicitRefreshUpdateCachedPage() async {
+        let api = PositionPageReuseFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        store.liveRevision += 1
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        XCTAssertEqual(model.items.first?.value("read"), "2")
+        await model.load(store, path: "/positions", query: query())
+        XCTAssertEqual(model.items.first?.value("read"), "3")
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        let reads = await api.readCount("/positions")
+        XCTAssertEqual(reads, 3)
+    }
+
+    func testFailedRefreshKeepsVisibleRowsAndRetriesOnReturn() async {
+        let api = PositionPageReuseFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        await api.failNextRead()
+        await model.load(store, path: "/positions", query: query())
+        XCTAssertEqual(model.items.first?.value("read"), "1")
+        XCTAssertFalse(model.error.isEmpty)
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        XCTAssertEqual(model.items.first?.value("read"), "3")
+        XCTAssertTrue(model.error.isEmpty)
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        let reads = await api.readCount("/positions")
+        XCTAssertEqual(reads, 3)
+    }
+
+    func testResetAndAccountGenerationNeverReuseAnOldSnapshot() async {
+        let api = PositionPageReuseFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        model.reset()
+        XCTAssertTrue(model.items.isEmpty)
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        store.invalidate()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        XCTAssertEqual(model.items.first?.value("read"), "3")
+        let reads = await api.readCount("/positions")
+        XCTAssertEqual(reads, 3)
+    }
+
+    func testRestoringCachedSegmentRejectsAnotherSegmentsLateResponse() async {
+        let started = expectation(description: "Another segment read started")
+        let api = PositionPageReuseFixtureAPI(onSlowRead: { started.fulfill() })
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        let slow = Task { await model.load(store, path: "/slow", query: query(), reuseIfLoaded: true) }
+        await fulfillment(of: [started], timeout: 2)
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        XCTAssertFalse(model.loading)
+        XCTAssertEqual(model.items.first?.value("symbol"), "/positions")
+        await api.finishSlowRead()
+        await slow.value
+        XCTAssertEqual(model.items.first?.value("symbol"), "/positions")
+        let reads = await api.readCount("/positions")
+        XCTAssertEqual(reads, 1)
+    }
+}
+
+private actor PositionPageReuseFixtureAPI: APIClient {
+    private var counts: [String: Int] = [:]
+    private var failNext = false
+    private var slow: CheckedContinuation<JSONValue, Error>?
+    private let onSlowRead: @Sendable () -> Void
+
+    init(onSlowRead: @escaping @Sendable () -> Void = {}) { self.onSlowRead = onSlowRead }
+    func readCount(_ path: String) -> Int { counts[path, default: 0] }
+    func failNextRead() { failNext = true }
+    func finishSlowRead() {
+        slow?.resume(returning: .array([.object(["symbol": .string("/slow")])]))
+        slow = nil
+    }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        counts[request.path, default: 0] += 1
+        if failNext { failNext = false; throw URLError(.notConnectedToInternet) }
+        let result: JSONValue
+        if request.path == "/slow" {
+            result = try await withCheckedThrowingContinuation {
+                slow = $0
+                onSlowRead()
+            }
+        } else {
+            let page = request.queryItems.first { $0.name == "page" }?.value ?? "1"
+            result = .object([
+                "items": .array([.object(["symbol": .string(request.path), "page": .string(page),
+                    "read": .number(Double(counts[request.path, default: 0]))])]),
+                "pagination": .object(["has_next": .bool(page == "1")]),
+            ])
+        }
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+    }
+}
+
 private actor HistorySnapshotFixtureAPI: APIClient {
     let refreshRequired: JSONValue
     let gated: Bool

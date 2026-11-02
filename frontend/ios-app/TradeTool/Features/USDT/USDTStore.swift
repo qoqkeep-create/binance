@@ -214,10 +214,20 @@ final class USDTPageModel: ObservableObject {
     private var loadingScope = ""
     private var loadID = UUID()
     private var requestInFlight = false
+    private struct PageSnapshot {
+        let value: JSONValue
+        let page: Int
+        let hasNext: Bool
+        var liveRevision: Int?
+    }
+    private var cachedPages: [String: PageSnapshot] = [:]
+    private var cacheScope = ""
 
     func reset() {
         loadID = UUID()
         loadingScope = ""
+        cacheScope = ""
+        cachedPages = [:]
         requestInFlight = false
         value = .null
         error = ""
@@ -228,12 +238,37 @@ final class USDTPageModel: ObservableObject {
     }
 
     func load(_ store: USDTStore, path: String, query: [URLQueryItem] = [], append: Bool = false,
-              snapshotFirst: Bool = false) async {
+              snapshotFirst: Bool = false, reuseIfLoaded: Bool = false) async {
         let scope = store.scope
         let context = scope + path + query.filter { !["page", "cursor"].contains($0.name) }.description
         guard !requestInFlight || loadingScope != context else { return }
+        if cacheScope != scope { cachedPages = [:]; cacheScope = scope }
+        if reuseIfLoaded, let cached = cachedPages[context] {
+            if loadingScope != context {
+                // A cache hit also supersedes an in-flight read of another tab.
+                loadID = UUID()
+                requestInFlight = false
+                loading = false
+                refreshing = false
+                value = cached.value
+                page = cached.page
+                hasNext = cached.hasNext
+                error = ""
+                loadingScope = context
+            }
+            if cached.liveRevision == store.liveRevision, error.isEmpty { page = cached.page; return }
+        }
         if loadingScope != context { value = .null; error = ""; hasNext = false }
         loadingScope = context
+        let revision = store.liveRevision
+        let shouldCache = reuseIfLoaded || cachedPages[context] != nil
+        let requestedPage = Int(query.first { $0.name == "page" }?.value ?? "1") ?? 1
+        func savePage(verified: Bool = true) {
+            guard shouldCache else { return }
+            page = requestedPage
+            cachedPages[context] = PageSnapshot(value: value, page: page, hasNext: hasNext,
+                liveRevision: verified ? revision : nil)
+        }
         let requestID = UUID()
         loadID = requestID
         requestInFlight = true
@@ -249,14 +284,22 @@ final class USDTPageModel: ObservableObject {
                 guard scope == store.scope, loadID == requestID, !Task.isCancelled else { return }
                 apply(snapshot, previousItems: append ? previousItems : nil)
                 loading = false
-                guard snapshot["exchange_refresh_required"]?.flag == true else { return }
+                let needsRefresh = snapshot["exchange_refresh_required"]?.flag == true
+                savePage(verified: !needsRefresh)
+                guard needsRefresh else { return }
                 refreshing = true
             }
             let next = try await store.get(path, query: query)
             guard scope == store.scope, loadID == requestID, !Task.isCancelled else { return }
             apply(next, previousItems: append ? previousItems : nil)
+            savePage()
         } catch is CancellationError { }
-        catch { if scope == store.scope, loadID == requestID, !Task.isCancelled { self.error = error.localizedDescription } }
+        catch {
+            if scope == store.scope, loadID == requestID, !Task.isCancelled {
+                self.error = error.localizedDescription
+                cachedPages[context]?.liveRevision = nil
+            }
+        }
     }
 
     private func apply(_ next: JSONValue, previousItems: [JSONValue]?) {

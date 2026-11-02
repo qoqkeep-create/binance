@@ -2783,6 +2783,7 @@ final class WebParityUITests: XCTestCase {
     app.buttons["搜索币种、币对或合约"].tap()
     let ada = app.buttons["pairs.favorite.ADAUSDT"]
     XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3), "Market search starts ready for typing")
     XCTAssertEqual(ada.value as? String, "未自选")
     XCTAssertEqual(app.buttons["pairs.favorite.BTCUSDT"].value as? String, "已自选")
     ada.tap()
@@ -2802,6 +2803,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertFalse(app.buttons["watchlist.delete.ADAUSDT"].exists)
     app.buttons["watchlist.add"].tap()
     XCTAssertTrue(ada.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.keyboards.firstMatch.exists, "Watchlist picker should not focus search automatically")
     XCTAssertEqual(ada.value as? String, "未自选")
     let search = app.textFields["pairs.search"]
     search.tap(); search.typeText("ADA")
@@ -2812,6 +2814,7 @@ final class WebParityUITests: XCTestCase {
     launch("trade")
     app.buttons["trade.symbol"].tap()
     XCTAssertTrue(app.buttons["pairs.select.ETHUSDT"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.keyboards.firstMatch.exists, "Trade picker should keep the keyboard closed")
     capture("shared-pair-sheet-trade")
     app.buttons["pairs.select.ETHUSDT"].tap()
     XCTAssertTrue(app.buttons["trade.symbol"].label.contains("ETHUSDT"))
@@ -2875,9 +2878,17 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.stopLoss"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.takeProfit"].exists)
     app.buttons["market-chart-leverage"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["chart-leverage.bracket.50"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.descendants(matching: .any)["chart-leverage.bracket.25"].exists)
-    app.buttons["关闭自动杠杆"].tap()
+    let firstBracket = app.descendants(matching: .any)["chart-leverage.bracket.50"]
+    let secondBracket = app.descendants(matching: .any)["chart-leverage.bracket.25"]
+    XCTAssertTrue(firstBracket.waitForExistence(timeout: 5))
+    XCTAssertTrue(secondBracket.exists)
+    XCTAssertEqual(firstBracket.frame.minX, secondBracket.frame.minX, accuracy: 1)
+    XCTAssertEqual(firstBracket.frame.width, secondBracket.frame.width, accuracy: 1)
+    XCTAssertGreaterThanOrEqual(secondBracket.frame.minY, firstBracket.frame.maxY)
+    let confirmLeverage = app.buttons["chart-leverage.confirm"]
+    XCTAssertTrue(confirmLeverage.isHittable)
+    XCTAssertEqual(firstBracket.frame.width, confirmLeverage.frame.width, accuracy: 1)
+    confirmLeverage.tap()
     app.buttons["market-chart-settings"].tap()
     XCTAssertFalse(app.staticTexts["图表开仓类型"].exists)
     XCTAssertEqual(app.pickers.count, 0)

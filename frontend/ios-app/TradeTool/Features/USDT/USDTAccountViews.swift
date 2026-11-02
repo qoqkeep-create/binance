@@ -56,8 +56,19 @@ struct USDTProfileView: View {
               }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
             }
             Spacer(minLength: 4)
-            Button(lead ? "切换合约模式" : "切换带单模式") { modeConfirm = true }
-              .buttonStyle(WebButtonStyle(kind: .secondary, height: 36, fontSize: 12, fullWidth: false))
+            Button { modeConfirm = true } label: {
+              Text(lead ? "切换合约模式" : "切换带单模式").font(.system(size: 12, weight: .medium))
+              .foregroundStyle(lead ? WebTheme.color(0x7A5700, 0xFCD535) : WebTheme.color(0x126995, 0x75CAFA))
+              .padding(.horizontal, 12).frame(height: 36)
+              .background(lead ? WebTheme.color(0xFFF0B4, 0x4B4020) : WebTheme.color(0xDBEFFB, 0x173D58),
+                in: RoundedRectangle(cornerRadius: 8))
+              .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                  .stroke((lead ? Color(red: 0.78, green: 0.60, blue: 0.04)
+                    : Color(red: 0.20, green: 0.62, blue: 0.85)).opacity(0.3), lineWidth: 0.5)
+              }
+              .contentShape(RoundedRectangle(cornerRadius: 8))
+            }.buttonStyle(.plain)
               .fixedSize(horizontal: true, vertical: false)
               .accessibilityIdentifier("profile.switchMode")
           }.padding(.bottom, 20)
@@ -632,14 +643,30 @@ struct USDTCapitalView: View {
               Spacer()
               refreshButton
             }
-            Picker("划转方向", selection: $direction) {
-              Text("合约、资金 → 现货").tag("to_spot")
-              Text("资金 → 合约").tag("funding_to_futures")
-              Text("现货 → 合约").tag("spot_to_futures")
-            }.pickerStyle(.menu).tint(WebTheme.text).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-              .padding(.horizontal, 12).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+            Menu {
+              Picker("划转方向", selection: $direction) {
+                Text("合约、资金 → 现货").tag("to_spot")
+                Text("资金 → 合约").tag("funding_to_futures")
+                Text("现货 → 合约").tag("spot_to_futures")
+              }
+            } label: {
+              HStack(spacing: 12) {
+                Text(direction == "to_spot" ? "合约、资金 → 现货"
+                  : direction == "funding_to_futures" ? "资金 → 合约" : "现货 → 合约")
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+                  .foregroundStyle(WebTheme.muted)
+              }.font(.system(size: 15, weight: .medium)).foregroundStyle(WebTheme.text)
+                .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: 48)
+                .contentShape(RoundedRectangle(cornerRadius: 12))
+            }.buttonStyle(.plain)
+              .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
               .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
               .disabled(busy || pending || submitted).accessibilityIdentifier("capital.direction")
+              .accessibilityLabel("划转方向")
+              .accessibilityValue(direction == "to_spot" ? "合约、资金 → 现货"
+                : direction == "funding_to_futures" ? "资金 → 合约" : "现货 → 合约")
+              .transaction { $0.animation = nil }
           }
           walletCard
           VStack(alignment: .leading, spacing: 10) {

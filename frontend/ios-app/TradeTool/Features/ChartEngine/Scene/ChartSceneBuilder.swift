@@ -951,8 +951,8 @@ actor ChartSceneBuilder {
       batches: [gridBatch, timelineBatch, fixedBatch],
       timelineViewport: geometry.timelineViewport,
       horizontalPlotBounds: ChartHorizontalPlotBounds(
-        left: 0,
-        right: geometry.width
+        left: geometry.plotLeft,
+        right: geometry.plotRight
       ),
       crosshairData: crosshairData
     )
@@ -1264,9 +1264,9 @@ actor ChartSceneBuilder {
         color: .latestPriceLine
       ))
     case .offscreenLeading, .offscreenTrailing:
-      if markerLeft > 0 {
+      if markerLeft > geometry.plotLeft {
         latestPriceFixedLines.append(ChartLineSegmentInstance(
-          start: ChartPolylinePoint(x: 0, y: markerCenterY),
+          start: ChartPolylinePoint(x: geometry.plotLeft, y: markerCenterY),
           end: ChartPolylinePoint(
             x: markerLeft,
             y: markerCenterY
@@ -1278,14 +1278,14 @@ actor ChartSceneBuilder {
           color: .latestPriceLine
         ))
       }
-      if markerRight < geometry.width {
+      if markerRight < geometry.plotRight {
         latestPriceFixedLines.append(ChartLineSegmentInstance(
           start: ChartPolylinePoint(
             x: markerRight,
             y: markerCenterY
           ),
           end: ChartPolylinePoint(
-            x: geometry.width,
+            x: geometry.plotRight,
             y: markerCenterY
           ),
           width: max(1, geometry.scale * 0.7),

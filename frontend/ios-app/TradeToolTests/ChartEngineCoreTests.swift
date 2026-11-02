@@ -3405,6 +3405,26 @@ final class ChartEngineCoreTests: XCTestCase {
         }
     }
 
+    func testTimelineRenderingKeepsThePriceAxisOutsideItsClip() async throws {
+        let fixture = try await makeChartSceneFixture()
+        for width in [320.0, 390.0, 440.0] {
+            for scale in [2.0, 3.0] {
+                let viewport = try XCTUnwrap(ChartSceneViewport(
+                    widthPoints: width, heightPoints: 396, displayScale: scale))
+                let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+                let clip = try XCTUnwrap(output.renderState.staticScene.horizontalPlotBounds)
+                XCTAssertEqual(clip.left, output.panelLayout.plotLeft)
+                XCTAssertEqual(clip.right, output.panelLayout.plotRight)
+                XCTAssertLessThan(clip.right, Float(viewport.widthPixels))
+                // Static candles, live candles and indicator paths share this clip;
+                // fixed axis glyphs and current-price labels must remain untransformed.
+                XCTAssertTrue(output.renderState.staticScene.batches.contains { $0.coordinateSpace == .timeline })
+                XCTAssertTrue(output.renderState.liveTail.batches.contains { $0.coordinateSpace == .timeline })
+                XCTAssertEqual(output.renderState.staticScene.batches.last?.coordinateSpace, .fixed)
+            }
+        }
+    }
+
     func testOffscreenPriceMarkerStaysInsidePlotAcrossDisplayScales()
         async throws {
         let fixture = try await makeChartSceneFixture()
@@ -3423,6 +3443,13 @@ final class ChartEngineCoreTests: XCTestCase {
                 XCTAssertTrue(marker.returnsToLatest)
                 XCTAssertGreaterThanOrEqual(marker.left, output.panelLayout.plotLeft)
                 XCTAssertLessThanOrEqual(marker.right, output.panelLayout.plotRight)
+                let priceBatch = try XCTUnwrap(output.renderState.liveTail.batches.first {
+                    $0.coordinateSpace == .latestPrice
+                })
+                XCTAssertTrue(priceBatch.storage.lineSegments.allSatisfy {
+                    min($0.start.x, $0.end.x) >= output.panelLayout.plotLeft
+                        && max($0.start.x, $0.end.x) <= output.panelLayout.plotRight
+                }, "Offscreen price lines must not cross the price axis")
             }
         }
     }
@@ -4023,8 +4050,8 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertEqual(
             state.staticScene.horizontalPlotBounds,
             ChartHorizontalPlotBounds(
-                left: 0,
-                right: Float(viewport.widthPixels)
+                left: output.panelLayout.plotLeft,
+                right: output.panelLayout.plotRight
             )
         )
         let roundedMarkerBorder = Array(
@@ -5386,6 +5413,68 @@ final class ChartEngineCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testCrosshairLabelsFitTimeAndPriceAxesWithoutActionIcon() async throws {
+        let fixture = try await makeChartSceneFixture()
+        for width in [320.0, 390.0, 440.0] {
+            for scale in [2.0, 3.0] {
+                let viewport = try XCTUnwrap(ChartSceneViewport(
+                    widthPoints: width, heightPoints: 396, displayScale: scale))
+                let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+                let data = try XCTUnwrap(output.renderState.staticScene.crosshairData)
+                let layout = output.panelLayout
+                let pricePanel = try XCTUnwrap(layout.pricePanel)
+                for panel in [pricePanel] + layout.indicatorPanels {
+                    let hit = try XCTUnwrap(ChartCrosshairResolver.resolve(
+                        screenX: Double(layout.plotLeft + 180),
+                        screenY: Double((panel.plot.top + panel.plot.bottom) / 2),
+                        transform: .identity, data: data,
+                        liveData: output.renderState.liveTail.crosshairLiveData, clampsToPlot: false))
+                    let snapshot = ChartCrosshairOverlayBuilder().makeSnapshot(
+                        hit: hit, data: data, latestPrice: hit.selection.panelValue / 1.1)
+                    let storage = try XCTUnwrap(snapshot.batches.first?.storage)
+                    let axisBars = storage.barInstances.filter { $0.left >= layout.plotRight }
+                    XCTAssertEqual(axisBars.count, 1, "Price label must have no action icon or divider")
+                    let label = try XCTUnwrap(axisBars.first)
+                    XCTAssertEqual(label.cornerRadius, Float(4 * scale))
+                    XCTAssertEqual(label.right, Float(viewport.widthPixels) - Float(scale))
+                    let axisGlyphs = storage.glyphInstances.filter {
+                        $0.color == .crosshairAxisLabelText && $0.left >= layout.plotRight
+                            && $0.top >= label.top && $0.bottom <= label.bottom
+                    }
+                    let texts = [DisplayNumber.text(hit.selection.panelValue, grouped: true)]
+                        + (panel.isPricePanel ? [DisplayNumber.text(try XCTUnwrap(snapshot.axisPriceChangeRate) * 100, signed: true) + "%"] : [])
+                    let expectedCount = texts.reduce(0) { total, text in
+                        total + MetalTextLayouter.layout(text: text, atlas: data.glyphAtlas,
+                            originX: 0, baselineY: 0, color: .crosshairAxisLabelText).instances.count
+                    }
+                    XCTAssertEqual(axisGlyphs.count, expectedCount, "Keep every digit when fitting the axis")
+                    XCTAssertTrue(axisGlyphs.allSatisfy { $0.left >= label.left && $0.right <= label.right })
+                    let anchor = Float(viewport.widthPixels) - Float(4 * scale)
+                    let rows = Dictionary(grouping: axisGlyphs) { Int((($0.top + $0.bottom) / 2 - label.top) / Float(16 * scale)) }
+                    for row in rows.values {
+                        let right = try XCTUnwrap(row.map(\.right).max())
+                        XCTAssertLessThanOrEqual(right, label.right)
+                        XCTAssertGreaterThanOrEqual(right, anchor - Float(2 * scale), "Use the original price-axis text anchor")
+                    }
+                    let timeLabel = try XCTUnwrap(storage.barInstances.first {
+                        $0.color == .crosshairAxisLabelBackground && $0.top >= layout.timeAxisTop
+                            && $0.bottom <= layout.timeAxisBottom
+                    })
+                    XCTAssertEqual(timeLabel.bottom - timeLabel.top, Float(20 * scale), accuracy: 0.01)
+                    XCTAssertEqual(timeLabel.top + timeLabel.bottom, layout.timeAxisTop + layout.timeAxisBottom, accuracy: 0.01)
+                    let timeGlyphs = storage.glyphInstances.filter {
+                        $0.color == .crosshairAxisLabelText && $0.top >= layout.timeAxisTop && $0.bottom <= layout.timeAxisBottom
+                    }
+                    XCTAssertFalse(timeGlyphs.isEmpty)
+                    let glyphTop = try XCTUnwrap(timeGlyphs.map(\.top).min())
+                    let glyphBottom = try XCTUnwrap(timeGlyphs.map(\.bottom).max())
+                    XCTAssertEqual((glyphTop + glyphBottom) / 2, (timeLabel.top + timeLabel.bottom) / 2, accuracy: 0.01)
+                }
+            }
+        }
+    }
+
+    @MainActor
     func testTimeAxisAndPanelFootersKeepCrosshairInSync() async throws {
         let fixture = try await makeChartSceneFixture()
         let viewport = try XCTUnwrap(ChartSceneViewport(
@@ -5439,10 +5528,13 @@ final class ChartEngineCoreTests: XCTestCase {
         }
         let timeLabels = storage.barInstances.filter {
             $0.color == .crosshairAxisLabelBackground
-                && $0.top == layout.timeAxisTop
-                && $0.bottom == layout.timeAxisBottom
+                && $0.top >= layout.timeAxisTop
+                && $0.bottom <= layout.timeAxisBottom
         }
+        let timeLabel = try XCTUnwrap(timeLabels.first)
         XCTAssertEqual(timeLabels.count, 1)
+        XCTAssertLessThan(timeLabel.bottom - timeLabel.top, layout.timeAxisBottom - layout.timeAxisTop)
+        XCTAssertEqual(timeLabel.top + timeLabel.bottom, layout.timeAxisTop + layout.timeAxisBottom, accuracy: 0.01)
         for panel in layout.indicatorPanels {
             XCTAssertTrue(storage.barInstances.contains {
                 $0.color == .chartBackground

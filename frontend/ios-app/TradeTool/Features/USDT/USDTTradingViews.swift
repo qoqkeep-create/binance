@@ -460,26 +460,33 @@ struct USDTTradeView: View {
   }
 
   private var chartTicket: some View {
-    VStack(spacing: 12) {
-      Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+    VStack(spacing: 14) {
+      Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
         GridRow(alignment: .top) {
           chartMetric("开仓价", inputValid ? (orderType == "market" ? "市价" : DisplayNumber.text(limit)) : "-")
           chartMetric("止损价", inputValid ? DisplayNumber.text(stop) : "-")
           chartMetric("预估仓位", inputValid ? estimatedPosition + " U" : "-")
+        }
+        GridRow {
+          Rectangle().fill(BinanceTheme.border).frame(height: 0.5)
+            .gridCellColumns(3).gridCellUnsizedAxes(.horizontal)
         }
         GridRow(alignment: .top) {
           VStack(alignment: .leading, spacing: 5) {
             chartMetricLabel("止损金额").frame(height: 24, alignment: .leading)
             Button { showStopLoss = true } label: {
               HStack(spacing: 4) {
-                chartMetricValue("止损金额", inputValid ? DisplayNumber.text(risk) + " U" : "-").underline()
-                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                chartMetricValue("止损金额", showsChartRiskAmount ? DisplayNumber.text(risk) + " U" : "-")
+                  .underline(showsChartRiskAmount)
+                if showsChartRiskAmount {
+                  Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                }
               }.frame(minHeight: 28, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
               .accessibilityIdentifier("chart-ticket.risk-settings")
           }.frame(maxWidth: .infinity, alignment: .leading)
           VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
               chartMetricLabel("含手续费")
               Toggle("含手续费", isOn: $includeFee).labelsHidden()
                 .toggleStyle(ChartFeeSwitchStyle()).fixedSize()
@@ -494,13 +501,15 @@ struct USDTTradeView: View {
             } label: {
               Text(strategyEnabled ? store.strategies.first { $0.value("id") == strategyID }?.value("name") ?? "选择策略" : "手动止盈")
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
-                .foregroundStyle(WebTheme.text).padding(.horizontal, 8).frame(height: 28)
-                .background(WebTheme.brand.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(WebTheme.color(0x176342, 0x8AE0B5))
+                .padding(.horizontal, 8).frame(height: 28)
+                .background(WebTheme.color(0xE3F4EA, 0x234338), in: RoundedRectangle(cornerRadius: 6))
             }.buttonStyle(.plain).disabled(busy || submitted || confirm)
               .accessibilityIdentifier("chart-ticket.strategy")
           }.frame(maxWidth: .infinity, alignment: .leading)
         }
-      }.monospacedDigit()
+      }.monospacedDigit().padding(.horizontal, 10).padding(.vertical, 12)
+        .background(WebTheme.color(0xF3F5F7, 0x202731), in: RoundedRectangle(cornerRadius: 10))
       HStack(spacing: 12) {
         Picker("委托类型", selection: Binding(get: { orderType }, set: { value in
           orderType = value; onChartOrderTypeChange?(value)
@@ -530,14 +539,18 @@ struct USDTTradeView: View {
       }
       USDTNotice(text: notice)
       USDTNotice(text: chartPositionsError)
-    }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+    }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
       .frame(maxWidth: .infinity)
       .background(BinanceTheme.surface.ignoresSafeArea(edges: [.horizontal, .bottom]))
       .overlay(alignment: .top) {
-        Rectangle().fill(BinanceTheme.border).frame(height: 0.5).ignoresSafeArea(edges: .horizontal)
+        Rectangle().fill(WebTheme.color(0xCAB56C, 0x887A4F)).frame(height: 1)
+          .ignoresSafeArea(edges: .horizontal)
       }
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("chart-ticket")
+  }
+  private var showsChartRiskAmount: Bool {
+    inputValid && (Decimal(string: risk) ?? 0) > 0
   }
   private func chartMetric(_ title: String, _ value: String) -> some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -635,6 +648,7 @@ struct USDTEntryDraft: Equatable {
 }
 
 struct USDTPositionsView: View {
+  var isVisible = true
   var onOpenChart: ((String, String) -> Void)? = nil
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var dashboard: DashboardViewModel
@@ -644,6 +658,7 @@ struct USDTPositionsView: View {
   @StateObject private var liveQuotes = PositionLiveQuotes()
   @State private var segment = "positions"
   @State private var filter = "all"
+  @State private var modelScope = ""
   @State private var notice = ""
   @EnvironmentObject private var container: AppContainer
   @State private var selected: JSONValue = .null
@@ -662,7 +677,7 @@ struct USDTPositionsView: View {
   private var totalPnlText: String { totalPnl.map { DisplayNumber.text($0, signed: true) } ?? "--" }
   private var totalPnlColor: Color { totalPnl.map { $0 >= 0 ? WebTheme.success : WebTheme.danger } ?? WebTheme.muted }
   private var trendSymbols: [String] {
-    guard store.isBound, segment == "positions", scenePhase == .active, !chart else { return [] }
+    guard isVisible, store.isBound, segment == "positions", scenePhase == .active, !chart else { return [] }
     return Array(Set(model.items.map { $0.value("symbol", fallback: "").uppercased() }
       .filter { !$0.isEmpty })).sorted()
   }
@@ -780,15 +795,30 @@ struct USDTPositionsView: View {
           closeQueue = []
         }
       }
-      .task(id: "\(store.scope):\(segment):\(filter):\(store.isBound)") {
+      .task(id: "\(store.scope):\(segment):\(filter):\(store.isBound):\(isVisible):\(scenePhase)") {
+        if modelScope != store.scope { model.reset(); modelScope = store.scope; notice = "" }
+        guard store.isBound else { model.reset(); return }
+        guard isVisible, scenePhase == .active, !chart else { return }
         model.page = 1
-        await reload()
+        let scope = store.scope
+        let requestedSegment = segment
+        let requestedFilter = filter
+        // Keep an initial read alive across tab visibility changes.
+        await Task { @MainActor in
+          guard scope == store.scope, requestedSegment == segment, requestedFilter == filter else { return }
+          await reload(reuseIfLoaded: true)
+        }.value
       }
       .onChange(of: store.liveRevision) { _, _ in
-        if segment != "history" {
+        if isVisible, scenePhase == .active, !chart, segment != "history" {
           model.page = 1
           Task { await reload() }
         }
+      }
+      .onChange(of: scenePhase) { old, phase in
+        guard old != .active, phase == .active, isVisible, store.isBound else { return }
+        model.page = 1
+        Task { await reload() }
       }
       .webModal(isPresented: $closeAllConfirm) {
         WebModal(title: "全部平仓") {
@@ -902,7 +932,7 @@ struct USDTPositionsView: View {
       UserDefaults.standard.set(data, forKey: key)
     }
   }
-  private func reload(append: Bool = false) async {
+  private func reload(append: Bool = false, reuseIfLoaded: Bool = false) async {
     guard store.isBound else {
       model.reset()
       return
@@ -916,7 +946,7 @@ struct USDTPositionsView: View {
       query: [
         .init(name: "filter", value: filter), .init(name: "page", value: String(model.page)),
         .init(name: "page_size", value: "20"),
-      ], append: append, snapshotFirst: segment == "history" && !append)
+      ], append: append, snapshotFirst: segment == "history" && !append, reuseIfLoaded: reuseIfLoaded)
   }
   private func positionCard(_ row: JSONValue) -> some View {
     let valuation = liveValuation(row)

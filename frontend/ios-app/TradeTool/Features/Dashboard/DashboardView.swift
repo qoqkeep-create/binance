@@ -142,7 +142,7 @@ struct DashboardView: View {
             pendingChartSymbol = nil
             selectedMarket = viewModel.marketSnapshot(forSymbol: symbol)
         }) {
-            MarketSearchView(dashboardViewModel: viewModel) { symbol in
+            MarketSearchView(dashboardViewModel: viewModel, focusesSearchOnPresent: true) { symbol in
                 pendingChartSymbol = symbol
             }
         }
