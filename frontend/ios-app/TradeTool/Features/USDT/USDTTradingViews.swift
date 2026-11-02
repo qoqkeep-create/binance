@@ -23,6 +23,8 @@ struct USDTTradeView: View {
   var chartHasPosition = false
   var chartPositionsReady = true
   var chartPositionsError = ""
+  var chartPositionRows: [JSONValue] = []
+  @State private var heldPositionID = ""
   var onShowPositions: (() -> Void)? = nil
   @StateObject private var positions = USDTChartPositionsModel()
   @State private var showsPositions = false
@@ -226,12 +228,12 @@ struct USDTTradeView: View {
             onStop: { dashboard.restoreRealtimeSubscriptions() })
       }
       .navigationDestination(isPresented: $showsPositions) { USDTPositionsView() }
-      .sheet(isPresented: $showSymbols) {
+      .largeTradingSheet(isPresented: $showSymbols) {
         MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: symbol) { symbol in
           store.selectedSymbol = symbol
         }
       }
-      .sheet(isPresented: $showStopLoss) {
+      .largeTradingSheet(isPresented: $showStopLoss) {
         USDTStopLossView()
       }
       .webModal(isPresented: $confirm) {
@@ -288,7 +290,8 @@ struct USDTTradeView: View {
   private var currentDraft: USDTEntryDraft {
     USDTEntryDraft(symbol: symbol, orderType: orderType, stopLossPrice: stop,
       limitPrice: limit, currentPrice: currentQuote, riskAmount: risk, includeFee: includeFee,
-      strategy: strategyEnabled ? store.strategies.first { $0.value("id") == strategyID } : nil)
+      strategy: strategyEnabled ? store.strategies.first { $0.value("id") == strategyID } : nil,
+      leverage: store.selectedLeverage(for: symbol))
   }
   private var referencePrice: Decimal { currentDraft.referencePrice }
   private var isLong: Bool { currentDraft.isLong }
@@ -459,13 +462,45 @@ struct USDTTradeView: View {
     }
   }
 
+  private var heldRow: JSONValue? {
+    chartPositionRows.first { $0.value("id") == heldPositionID } ?? chartPositionRows.first
+  }
+  private func heldAmount(_ key: String, unit: String = "") -> String {
+    guard let amount = heldRow?[key]?.decimal, !amount.isNaN else { return "-" }
+    return DisplayNumber.text(amount) + unit
+  }
+  private var heldStopPrice: String {
+    guard let row = heldRow else { return "-" }
+    let price = row["market_stop_set"]?.flag == true ? row["market_stop_price"] ?? row["stop_loss_price"] : row["stop_loss_price"]
+    return price?.decimal.map { DisplayNumber.text($0) } ?? "-"
+  }
+  private var heldTakeProfit: String {
+    guard let row = heldRow else { return "-" }
+    if row["manual_take_profit_set"]?.flag == true { return heldAmount("manual_take_profit_price") }
+    if row.value("strategy_status") == "1" { return row.value("strategy_name", fallback: "策略止盈") }
+    return "手动止盈"
+  }
+  private var heldFee: String {
+    guard let row = heldRow else { return "-" }
+    if row.value("entry_fee_status") == "confirmed" {
+      return heldAmount("entry_realized_fee", unit: " " + row.value("entry_fee_asset", fallback: "USDT"))
+    }
+    return row["estimated_total_fee"]?.decimal.map { "≈" + DisplayNumber.text(abs($0) / 2) + " U" } ?? "-"
+  }
   private var chartTicket: some View {
     VStack(spacing: 14) {
+      if chartPositionRows.count > 1 {
+        Picker("持仓方向", selection: $heldPositionID) {
+          ForEach(Array(chartPositionRows.enumerated()), id: \.offset) { _, row in
+            Text(row.value("side") == "0" ? "多单" : "空单").tag(row.value("id"))
+          }
+        }.pickerStyle(.segmented)
+      }
       Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
         GridRow(alignment: .top) {
-          chartMetric("开仓价", inputValid ? (orderType == "market" ? "市价" : DisplayNumber.text(limit)) : "-")
-          chartMetric("止损价", inputValid ? DisplayNumber.text(stop) : "-")
-          chartMetric("预估仓位", inputValid ? estimatedPosition + " U" : "-")
+          chartMetric("开仓价", hasPosition ? heldAmount("open_price") : inputValid ? (orderType == "market" ? "市价" : DisplayNumber.text(limit)) : "-")
+          chartMetric("止损价", hasPosition ? heldStopPrice : inputValid ? DisplayNumber.text(stop) : "-")
+          chartMetric(hasPosition ? "仓位" : "预估仓位", hasPosition ? heldAmount("position_amount", unit: " U") : inputValid ? estimatedPosition + " U" : "-")
         }
         GridRow {
           Rectangle().fill(BinanceTheme.border).frame(height: 0.5)
@@ -476,35 +511,35 @@ struct USDTTradeView: View {
             chartMetricLabel("止损金额").frame(height: 24, alignment: .leading)
             Button { showStopLoss = true } label: {
               HStack(spacing: 4) {
-                chartMetricValue("止损金额", showsChartRiskAmount ? DisplayNumber.text(risk) + " U" : "-")
-                  .underline(showsChartRiskAmount)
-                if showsChartRiskAmount {
+                chartMetricValue("止损金额", hasPosition ? heldAmount("stop_loss_amount", unit: " U") : showsChartRiskAmount ? DisplayNumber.text(risk) + " U" : "-")
+                  .underline(showsChartRiskAmount && !hasPosition)
+                if showsChartRiskAmount && !hasPosition {
                   Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
                 }
               }.frame(minHeight: 28, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
+            }.buttonStyle(.plain).disabled(hasPosition).accessibilityLabel("调整止损金额")
               .accessibilityIdentifier("chart-ticket.risk-settings")
           }.frame(maxWidth: .infinity, alignment: .leading)
           VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 4) {
-              chartMetricLabel("含手续费")
-              Toggle("含手续费", isOn: $includeFee).labelsHidden()
+              chartMetricLabel(hasPosition ? "手续费" : "含手续费")
+              if !hasPosition { Toggle("含手续费", isOn: $includeFee).labelsHidden()
                 .toggleStyle(ChartFeeSwitchStyle()).fixedSize()
-                .disabled(busy || submitted || confirm).accessibilityIdentifier("chart-ticket.include-fee")
+                .disabled(busy || submitted || confirm).accessibilityIdentifier("chart-ticket.include-fee") }
             }.frame(height: 24, alignment: .leading)
-            chartMetricValue("手续费", inputValid ? estimatedFee + " U" : "-").frame(minHeight: 28, alignment: .leading)
+            chartMetricValue("手续费", hasPosition ? heldFee : inputValid ? estimatedFee + " U" : "-").frame(minHeight: 28, alignment: .leading)
           }.frame(maxWidth: .infinity, alignment: .leading)
           VStack(alignment: .leading, spacing: 5) {
             chartMetricLabel("止盈").frame(height: 24, alignment: .leading)
             NavigationLink {
               USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
             } label: {
-              Text(strategyEnabled ? store.strategies.first { $0.value("id") == strategyID }?.value("name") ?? "选择策略" : "手动止盈")
+              Text(hasPosition ? heldTakeProfit : strategyEnabled ? store.strategies.first { $0.value("id") == strategyID }?.value("name") ?? "选择策略" : "手动止盈")
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
                 .foregroundStyle(WebTheme.color(0x176342, 0x8AE0B5))
                 .padding(.horizontal, 8).frame(height: 28)
                 .background(WebTheme.color(0xE3F4EA, 0x234338), in: RoundedRectangle(cornerRadius: 6))
-            }.buttonStyle(.plain).disabled(busy || submitted || confirm)
+            }.buttonStyle(.plain).disabled(hasPosition || busy || submitted || confirm)
               .accessibilityIdentifier("chart-ticket.strategy")
           }.frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -517,11 +552,14 @@ struct USDTTradeView: View {
           Text("市价").tag("market")
           Text("限价").tag("limit")
         }.pickerStyle(.segmented).frame(width: 112).accessibilityIdentifier("chart-ticket.order-type")
-          .disabled(busy || submitted || confirm)
+          .disabled(hasPosition || busy || submitted || confirm)
         Button(action: advanceEntry) {
+          HStack(spacing: 6) {
           Text(hasPosition ? "正在持仓中" : store.isBound && !positionsReady ? "正在确认持仓…"
             : submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "选择止损价")
-            .font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
+            .font(.system(size: 16, weight: .semibold))
+          if hasPosition { Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)) }
+          }.frame(maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(hasPosition || inputValid ? BinanceTheme.onTradeAction : BinanceTheme.secondaryText)
             .background(hasPosition ? WebTheme.brand : inputValid ? chartActionColor : BinanceTheme.elevated,
               in: RoundedRectangle(cornerRadius: 8))
@@ -612,6 +650,7 @@ struct USDTEntryDraft: Equatable {
   let riskAmount: String
   let includeFee: Bool
   let strategy: JSONValue?
+  var leverage: Int? = nil
   static let feeRate = Decimal(string: "0.001")!
   var referencePrice: Decimal { Decimal(string: orderType == "limit" ? limitPrice : currentPrice) ?? 0 }
   var stop: Decimal { Decimal(string: stopLossPrice) ?? 0 }
@@ -632,11 +671,12 @@ struct USDTEntryDraft: Equatable {
   func matchesIntent(_ other: Self) -> Bool {
     symbol == other.symbol && orderType == other.orderType && stopLossPrice == other.stopLossPrice
       && limitPrice == other.limitPrice && riskAmount == other.riskAmount && includeFee == other.includeFee
-      && strategy == other.strategy && isLong == other.isLong
+      && strategy == other.strategy && leverage == other.leverage && isLong == other.isLong
   }
   func payload(ema: JSONValue) -> [String: JSONValue] {
     var result: [String: JSONValue] = ["symbol": .string(symbol.uppercased()),
       "stop_loss_price": .string(stopLossPrice), "stop_loss_amount": .string(riskAmount)]
+    if let leverage { result["leverage"] = .number(Double(leverage)) }
     if orderType == "limit" { result["limit_price"] = .string(limitPrice) }
     else { result["include_fee"] = .bool(includeFee); result["ema_check_id"] = ema["check_id"] }
     if let strategy {

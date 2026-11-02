@@ -2818,7 +2818,7 @@ final class WebParityUITests: XCTestCase {
     capture("shared-pair-sheet-trade")
     app.buttons["pairs.select.ETHUSDT"].tap()
     XCTAssertTrue(app.buttons["trade.symbol"].label.contains("ETHUSDT"))
-    XCTAssertTrue(app.buttons["2600"].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.buttons["2600.00"].waitForExistence(timeout: 3))
   }
 
   func testPairNamesOpenChartsWithoutChangingWatchlist() {
@@ -2864,7 +2864,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(ada.value as? String, "未自选")
   }
 
-  func testChartHoldingContextUsesStandardNavigationAndReadOnlyLeverageCards() {
+  func testChartHoldingContextUsesActualPositionDataAndSelectableLeverageCards() {
     launch("market", ["--fixture-chart-position"])
     app.buttons["搜索币种、币对或合约"].tap()
     app.buttons["pairs.select.BTCUSDT"].tap()
@@ -2873,6 +2873,11 @@ final class WebParityUITests: XCTestCase {
     let holding = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "正在持仓中"), object: ticket)
     XCTAssertEqual(XCTWaiter.wait(for: [holding], timeout: 5), .completed)
     XCTAssertTrue(ticket.isEnabled)
+    XCTAssertEqual(app.staticTexts["chart-ticket.仓位"].label, "1000.00 U")
+    XCTAssertEqual(app.staticTexts["chart-ticket.开仓价"].label, "64400.00")
+    XCTAssertEqual(app.staticTexts["chart-ticket.止损价"].label, "64100.00")
+    XCTAssertEqual(app.staticTexts["chart-ticket.手续费"].label, "0.5 USDT")
+    capture("chart-held-data")
     XCTAssertEqual(app.sheets.count, 0)
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.entry"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.stopLoss"].exists)
@@ -2886,13 +2891,22 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(firstBracket.frame.width, secondBracket.frame.width, accuracy: 1)
     XCTAssertGreaterThanOrEqual(secondBracket.frame.minY, firstBracket.frame.maxY)
     let confirmLeverage = app.buttons["chart-leverage.confirm"]
+    capture("chart-leverage-compact-before-selection")
     XCTAssertTrue(confirmLeverage.isHittable)
     XCTAssertEqual(firstBracket.frame.width, confirmLeverage.frame.width, accuracy: 1)
+    XCTAssertEqual(firstBracket.value as? String, "已选中")
+    secondBracket.tap()
+    XCTAssertEqual(secondBracket.value as? String, "已选中")
+    capture("chart-leverage-compact-selection")
+    confirmLeverage.tap()
+    app.buttons["market-chart-leverage"].tap()
+    XCTAssertTrue(secondBracket.waitForExistence(timeout: 5))
+    XCTAssertEqual(secondBracket.value as? String, "已选中")
     confirmLeverage.tap()
     app.buttons["market-chart-settings"].tap()
     XCTAssertFalse(app.staticTexts["图表开仓类型"].exists)
     XCTAssertEqual(app.pickers.count, 0)
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    app.buttons["返回"].firstMatch.tap()
     ticket.tap()
     XCTAssertTrue(app.scrollViews["positions.list"].waitForExistence(timeout: 5))
     app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "K线")).firstMatch.tap()
@@ -3587,7 +3601,10 @@ extension WebParityUITests {
       XCTAssertTrue(app.staticTexts["合约超出保留额"].exists)
       XCTAssertTrue(app.staticTexts["资金账户可划转"].exists)
       XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
-      XCTAssertTrue(app.descendants(matching: .any)["capital.total"].firstMatch.isHittable)
+      let total = app.descendants(matching: .any)["capital.total"].firstMatch
+      let totalVisible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: total)
+      XCTAssertEqual(XCTWaiter.wait(for: [totalVisible], timeout: 3), .completed,
+        "The fixed footer total must remain visible above the confirm button")
       capture(options.isEmpty ? "capital-wallet-light" : "capital-wallet-dark")
       app.buttons["capital.tab.transfer"].tap()
       XCTAssertTrue(app.staticTexts["现货可用余额"].waitForExistence(timeout: 5))

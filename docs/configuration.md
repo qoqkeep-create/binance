@@ -65,3 +65,25 @@ SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*
 ## MySQL 容器内存
 
 `compose.integrated.yaml` 将 MySQL 内存上限固定为 1 GiB、内存加 swap 总上限 2 GiB，buffer pool 仍为 128 MiB、最大连接数 100。47.80.22.243（首尔服务器）已在线应用同等限额；旧 512 MiB 导致持续回收和接口超时，现场数据及恢复验证见 [运维](operations.md#mysql-内存限额与压力恢复2026-11-01)。这些是容器资源配置，不是 env 或交易所参数；后续发布／代码回滚保持足够限额，避免恢复旧值。较长时间和更高并发的容量仍待观察。
+
+## iOS 信号和浮盈通知
+
+本轮新增可选配置，默认全部关闭；模板为 [server.env.example](../deploy/integrated/server.env.example)，消息口径及重试见 [通知](signals-and-notifications.md)。
+
+| 参数 | 用途 |
+| --- | --- |
+| `APNS_ENABLED` | 新内部信号生成 APNs 设备投递，默认 false |
+| `APNS_TEAM_ID` / `APNS_KEY_ID` | 原 Apple 团队及 APNs 签名 Key 标识 |
+| `APNS_KEY_PATH` | scheduler 内的受限 p8 路径，模板 `/run/tradetools-secrets/AuthKey.p8` |
+| `APNS_SECRET_DIRECTORY` | Compose 只读挂载来源，模板 `/opt/trade-tools-integrated/secrets` |
+| `APNS_BUNDLE_ID` | 固定为整合应用 `com.waibao2025.trade.integrated`，注册及 topic 需匹配 |
+| `POSITION_PROFIT_CALL_ENABLED` | 原 USDT 浮盈 Echobell 监控／投递，默认 false |
+| `POSITION_PROFIT_CALL_USER_ID` | 整合数据库中的接收用户，默认 0；迁移时按身份核对，不能照搬旧库主键 |
+| `POSITION_PROFIT_CALL_URL` | 沿用旧 Echobell 通道，仅存受限环境文件 |
+| `SIGNAL_ECHOBELL_ENABLED` | 内部信号独立投递同一 Echobell 通道，默认 false；与浮盈开关分开 |
+
+p8 只挂载到 scheduler，不进入镜像或 Git；部署前创建来源目录，限制目录访问并确保容器 UID 10001 可读该文件，例如通过专用所有者／组和文件 0400／0440 权限。不能用向所有用户开放私钥的方式修权限。APNs 的 Key 可属于既有团队，但 topic、描述文件和客户端签名环境必须对应整合应用。
+
+先应用 `mobile.0002` 与 `positions.0029` 两个仅新增模型的 migration，再启动新版 API／scheduler；新代码依赖新表。回滚到旧代码可以保留新增表，代码回滚不还原数据库，也不重放已尝试通知。
+
+2026-11-02 已按用户提供的 Echo 地址和原 iOS 项目的 APNs 签名材料，将这批配置准备到 47.80.22.243（首尔服务器）。环境文件保持 0600，p8 为 UID 10001／0400，来源目录 0700；APNs topic 使用整合应用标识，旧项目文件保持只读。开关在受限配置文件中已设为开启，但未重启服务，当前容器仍使用旧环境；新迁移和通知源码尚未上线，没有真实发送。备份与准确边界见 [运维](operations.md#通知配置准备2026-11-02)。

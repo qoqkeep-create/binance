@@ -3405,7 +3405,7 @@ final class ChartEngineCoreTests: XCTestCase {
         }
     }
 
-    func testTimelineRenderingKeepsThePriceAxisOutsideItsClip() async throws {
+    func testTimelineRenderingContinuesTransparentlyBehindThePriceAxis() async throws {
         let fixture = try await makeChartSceneFixture()
         for width in [320.0, 390.0, 440.0] {
             for scale in [2.0, 3.0] {
@@ -3414,8 +3414,8 @@ final class ChartEngineCoreTests: XCTestCase {
                 let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
                 let clip = try XCTUnwrap(output.renderState.staticScene.horizontalPlotBounds)
                 XCTAssertEqual(clip.left, output.panelLayout.plotLeft)
-                XCTAssertEqual(clip.right, output.panelLayout.plotRight)
-                XCTAssertLessThan(clip.right, Float(viewport.widthPixels))
+                XCTAssertEqual(clip.right, Float(viewport.widthPixels))
+                XCTAssertGreaterThan(clip.right, output.panelLayout.plotRight)
                 // Static candles, live candles and indicator paths share this clip;
                 // fixed axis glyphs and current-price labels must remain untransformed.
                 XCTAssertTrue(output.renderState.staticScene.batches.contains { $0.coordinateSpace == .timeline })
@@ -3755,7 +3755,7 @@ final class ChartEngineCoreTests: XCTestCase {
         )
     }
 
-    func testTallerPricePlotPreservesCandleProportionsAndZoom() async throws {
+    func testTallerPricePlotUsesAvailableHeightAndPreservesZoom() async throws {
         let fixture = try await makeChartSceneFixture()
         let panelCount = ChartPanelLayout.indicatorPanelIDs(
             series: fixture.frame.indicators.history.series
@@ -3791,12 +3791,8 @@ final class ChartEngineCoreTests: XCTestCase {
             let originalSpan = original.priceUpperBound - original.priceLowerBound
             let tallerSpan = taller.priceUpperBound - taller.priceLowerBound
             XCTAssertGreaterThan(tallerPlot.height, originalPlot.height)
-            XCTAssertGreaterThan(tallerSpan, originalSpan)
-            XCTAssertEqual(
-                Double(originalPlot.height) / originalSpan,
-                Double(tallerPlot.height) / tallerSpan,
-                accuracy: 0.000_001
-            )
+            XCTAssertEqual(tallerSpan, originalSpan, accuracy: 0.000_001)
+            let heightRatio = tallerPlot.height / originalPlot.height
             let originalCandles = try XCTUnwrap(
                 original.renderState.staticScene.batches.first {
                     $0.coordinateSpace == .timeline
@@ -3814,12 +3810,12 @@ final class ChartEngineCoreTests: XCTestCase {
                 XCTAssertEqual(after.halfBodyWidth, before.halfBodyWidth)
                 XCTAssertEqual(
                     after.closeY - after.openY,
-                    before.closeY - before.openY,
+                    (before.closeY - before.openY) * heightRatio,
                     accuracy: 0.002
                 )
                 XCTAssertEqual(
                     after.lowY - after.highY,
-                    before.lowY - before.highY,
+                    (before.lowY - before.highY) * heightRatio,
                     accuracy: 0.002
                 )
             }
@@ -4022,7 +4018,7 @@ final class ChartEngineCoreTests: XCTestCase {
             state.staticScene.horizontalPlotBounds,
             ChartHorizontalPlotBounds(
                 left: output.panelLayout.plotLeft,
-                right: output.panelLayout.plotRight
+                right: Float(viewport.widthPixels)
             )
         )
         let roundedMarkerBorder = Array(
@@ -7040,6 +7036,48 @@ final class ChartEngineCoreTests: XCTestCase {
         }
     }
 
+    func testMACDStrengthBarsAreSolidAndDecayBarsAreHollowForBothSigns() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let values: [Double] = [1, 3, 2, -1, -4, -2]
+        let points = fixture.frame.candles.history.candles.enumerated().map { index, candle in
+            IndicatorPoint(openTime: candle.openTime, value: values[index % values.count], validity: .valid)
+        }
+        let key = ChartIndicatorSeriesKey(instanceID: "macd-test", outputID: "histogram")
+        let series = ChartIndicatorSeriesHistory(key: key, points: points,
+            placement: .panel(ChartPanelID.macd), yAxisPolicy: .automatic, colorToken: .neutral,
+            lineWidthPoints: 1, autoscale: .included, figureStyle: .histogramFromZero(colorStrategy: .valueSign))
+        // Last closed value is -1; a provisional -0.5 must also be hollow.
+        let live = ChartIndicatorLivePoint(key: key, point: IndicatorPoint(
+            openTime: fixture.frame.candles.liveTail!.openTime, value: -0.5, validity: .valid))
+        let frame = ChartDataFrame(stream: fixture.frame.stream, epoch: fixture.frame.epoch,
+            candles: fixture.frame.candles, indicators: ChartIndicatorSnapshot(
+                history: ChartIndicatorHistorySnapshot(series: [series]), livePoints: [live], legends: []),
+            recoveryRequest: nil, readyTime: fixture.frame.readyTime)
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 396, displayScale: 3))
+        let output = try await ChartSceneBuilder().build(frame: frame, viewport: viewport)
+        let batch = try XCTUnwrap(output.renderState.staticScene.batches.first { $0.coordinateSpace == .timeline })
+        let candles = batch.storage.candleInstances
+        let histogram = batch.storage.barInstances
+        for candle in candles {
+            let bars = histogram.filter { abs(($0.left + $0.right) / 2 - candle.x) < 0.001 }
+            let timeline = try XCTUnwrap(output.renderState.staticScene.timelineViewport)
+            let slotWidth = Double(output.panelLayout.plotRight - output.panelLayout.plotLeft) / timeline.visibleSlotCount
+            let global = Int((220 + Double(candle.x - output.panelLayout.plotLeft) / slotWidth
+                - timeline.visibleSlotCount + 0.5 - timeline.trailingOffsetSlots).rounded())
+            // Identify interior coverage directly; a hollow candle has no bar covering its center.
+            let all = histogram.filter { $0.left >= candle.x - candle.halfBodyWidth - 0.01 && $0.right <= candle.x + candle.halfBodyWidth + 0.01 }
+            guard !all.isEmpty else { continue }
+            let top = all.map(\.top).min()!, bottom = all.map(\.bottom).max()!
+            let centerY = (top + bottom) / 2
+            let coversCenter = all.contains { $0.left < candle.x && $0.right > candle.x && $0.top < centerY && $0.bottom > centerY }
+            let expectedHollow = global > 0 && abs(values[global % 6]) < abs(values[(global - 1) % 6])
+            XCTAssertEqual(coversCenter, !expectedHollow)
+            XCTAssertEqual(bars.count, expectedHollow ? 2 : 1)
+        }
+        let liveBars = try XCTUnwrap(output.renderState.liveTail.batches.first { $0.coordinateSpace == .timeline }).storage.barInstances
+        XCTAssertEqual(liveBars.count, 4)
+    }
+
     private func makeChartSceneFixture()
         async throws -> (
             pipeline: ChartDataPipeline,
@@ -7407,6 +7445,26 @@ final class ChartPositionContextTests: XCTestCase {
         let lines = ChartPositionLine.lines(in: [row(), row(["id": .number(102), "side": .number(1)])], symbol: "BTCUSDT")
         XCTAssertEqual(Set(lines.map(\.id)).count, 4)
         XCTAssertEqual(lines.map(\.title), ["多 · 开仓", "多 · 止损", "空 · 开仓", "空 · 止损"])
+    }
+
+    func testPositionLabelsShowLiveProfitAndFrozenNegativeRisk() throws {
+        let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
+            "stop_loss_amount": .string("10")])
+        let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 105)
+        XCTAssertEqual(lines[0].detail, "+10.000 U")
+        XCTAssertEqual(lines[1].detail, "-10.000 U")
+        let loss = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 97)
+        XCTAssertEqual(loss[0].detail, "-6.000 U")
+        XCTAssertEqual(loss[1].detail, "-10.000 U")
+    }
+
+    @MainActor
+    func testOrderLabelWidthIsCompactEqualAndLeftAligned() throws {
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 1, upperBound: 2,
+            plotLeft: 4, plotTop: 30, plotRight: 332, plotBottom: 350))
+        let layout = ChartPriceLineLabelLayout(projection: projection, texts: ["限价建仓", "止损价"], draggable: true)
+        XCTAssertLessThan(layout.width, 90)
+        XCTAssertEqual(layout.centerX - layout.width / 2, 10)
     }
 
     @MainActor

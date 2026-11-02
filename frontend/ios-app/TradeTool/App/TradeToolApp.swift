@@ -384,13 +384,17 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           fields["manual_take_profit_set"] = .bool(true)
           fields["manual_take_profit_price"] = .string("64750")
           fields["manual_take_profit_order_type"] = .string("limit")
+          fields["entry_fee_status"] = .string("confirmed")
+          fields["entry_realized_fee"] = .string("0.5")
+          fields["entry_fee_asset"] = .string("USDT")
           return .object(fields)
         })
       }
       if request.path == "/v1/trade/leverage-brackets" {
         value = .object(["symbol": .string("BTCUSDT"), "brackets": .array([
-          .object(["leverage": .number(50), "max_notional": .string("250000")]),
-          .object(["leverage": .number(25), "max_notional": .string("1000000")]),
+          .object(["leverage": .number(50), "max_notional": .string("250000"), "max_open_amount": .string("25000")]),
+          .object(["leverage": .number(25), "max_notional": .string("1000000"), "max_open_amount": .string("12500")]),
+          .object(["leverage": .number(10), "max_notional": .string("2000000"), "max_open_amount": .string("5000")]),
         ])])
       }
       if request.path == "/v1/position/list",

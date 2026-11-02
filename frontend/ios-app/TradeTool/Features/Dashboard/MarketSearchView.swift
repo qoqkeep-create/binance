@@ -66,7 +66,7 @@ struct MarketSearchView: View {
             }
         }.foregroundStyle(BinanceTheme.primaryText)
             .background(BinanceTheme.background)
-            .largeTradingSheet()
+
             .task {
                 if focusesSearchOnPresent { searchFocused = true }
             }
@@ -124,18 +124,18 @@ struct MarketSearchView: View {
     }
 }
 
-/// Shared native presentation styling for trading panels and legal documents.
+/// Trading panels share the existing attached presenter at 80% height.
 extension View {
-    func largeTradingSheet(detents: Set<PresentationDetent> = [.fraction(0.85)]) -> some View {
-        // iOS 26 floats partial-height sheets above the bottom edge on larger iPhones.
-        // Use the attached large presentation consistently across all trading panels.
-        presentationDetents(tradingSheetDetents(detents))
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(24)
-            .presentationBackground(BinanceTheme.background)
+    func largeTradingSheet<Panel: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping () -> Panel) -> some View {
+        webModal(isPresented: isPresented, motion: .slide, onDismiss: onDismiss) {
+            WebSheet(heightFraction: 0.8, protectsBottomSafeArea: true, content: content)
+        }
     }
-    private func tradingSheetDetents(_ legacy: Set<PresentationDetent>) -> Set<PresentationDetent> {
-        if #available(iOS 26.0, *) { return [.large] }
-        return legacy
+    func largeTradingSheet<Item: Identifiable, Panel: View>(item: Binding<Item?>,
+        @ViewBuilder content: @escaping (Item) -> Panel) -> some View {
+        webModal(item: item) { selected in
+            WebSheet(heightFraction: 0.8, protectsBottomSafeArea: true) { content(selected) }
+        }
     }
 }

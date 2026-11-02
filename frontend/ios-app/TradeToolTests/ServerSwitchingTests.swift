@@ -1409,6 +1409,16 @@ final class ChartOrderTicketTests: XCTestCase {
             limitPrice: type == "limit" ? entry : "", currentPrice: entry, riskAmount: "10",
             includeFee: fee, strategy: nil)
     }
+    func testChosenLeverageIsPartOfFrozenEntryIntentAndPayload() {
+        var first = draft()
+        first.leverage = 25
+        XCTAssertEqual(first.payload(ema: .null)["leverage"], .number(25))
+        var second = first
+        second.leverage = 50
+        XCTAssertFalse(first.matchesIntent(second))
+        XCTAssertNil(draft().payload(ema: .null)["leverage"])
+    }
+
     func testSharedDecimalSizingAndAutomaticDirection() {
         let long = draft()
         XCTAssertTrue(long.isLong)

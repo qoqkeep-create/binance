@@ -137,7 +137,7 @@ struct DashboardView: View {
         .onChange(of: scenePhase) { _, phase in
             realtimeClient.setLatencyMonitoring(isVisible && phase == .active)
         }
-        .sheet(isPresented: $isShowingMarketSearch, onDismiss: {
+        .largeTradingSheet(isPresented: $isShowingMarketSearch, onDismiss: {
             guard let symbol = pendingChartSymbol else { return }
             pendingChartSymbol = nil
             selectedMarket = viewModel.marketSnapshot(forSymbol: symbol)

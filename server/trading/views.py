@@ -1040,6 +1040,7 @@ def _validate_strategy_payload(strategy_id, strategy_name, strategy_config) -> O
 
 
 class TradeOpenSerializer(serializers.Serializer):
+    leverage = serializers.IntegerField(required=False, min_value=1, max_value=1000)
     symbol = serializers.CharField(max_length=32)
     stop_loss_price = serializers.CharField(max_length=64)
     stop_loss_amount = serializers.CharField(max_length=64)
@@ -1263,6 +1264,7 @@ def _resolve_max_leverage(client: BinanceFuturesClient, inst_id: str, instrument
 
 def _safe_request_payload_for_open(data: dict, *, client_order_id: str) -> dict:
     return {
+        **({"leverage": data["leverage"]} if data.get("leverage") is not None else {}),
         "symbol": str(data.get("symbol") or ""),
         "stop_loss_price": str(data.get("stop_loss_price") or ""),
         "stop_loss_amount": str(data.get("stop_loss_amount") or ""),
@@ -1277,6 +1279,7 @@ def _safe_request_payload_for_open(data: dict, *, client_order_id: str) -> dict:
 
 def _safe_request_payload_for_limit(data: dict, *, client_order_id: str) -> dict:
     return {
+        **({"leverage": data["leverage"]} if data.get("leverage") is not None else {}),
         "symbol": str(data.get("symbol") or ""),
         "limit_price": str(data.get("limit_price") or ""),
         "stop_loss_price": str(data.get("stop_loss_price") or ""),
@@ -1934,11 +1937,17 @@ class TradeOpenView(APIView):
                             min_notional=str(instrument.get("minNotional") or "0"),
                         )
 
-                    _ensure_notional_within_cap(
-                        client, inst_id=inst_id, size=size, entry_price=entry_price, instrument=instrument
-                    )
+                    if data.get("leverage") is None:
+                        _ensure_notional_within_cap(
+                            client, inst_id=inst_id, size=size, entry_price=entry_price, instrument=instrument
+                        )
                     use_pos_side = _resolve_pos_side(client, side_code)
-                    max_leverage = _resolve_max_leverage(client, inst_id, instrument)
+                    if data.get("leverage") is not None:
+                        from trading.leverage_views import opening_leverage
+                        max_leverage = opening_leverage(client, inst_id, data['leverage'],
+                            size=size, entry_price=entry_price, instrument=instrument)
+                    else:
+                        max_leverage = _resolve_max_leverage(client, inst_id, instrument)
                     _ensure_available_margin(client, size=size, entry_price=entry_price, instrument=instrument, leverage=max_leverage)
 
                     _set_opening_leverage(
@@ -2119,6 +2128,7 @@ class TradeOpenView(APIView):
 # ============ T023-T026: 限价委托相关接口 ============
 
 class LimitOrderCreateSerializer(serializers.Serializer):
+    leverage = serializers.IntegerField(required=False, min_value=1, max_value=1000)
     symbol = serializers.CharField(max_length=32)
     limit_price = serializers.CharField(max_length=64)
     stop_loss_price = serializers.CharField(max_length=64)
@@ -2294,11 +2304,17 @@ class LimitOrderCreateView(APIView):
                     if side_code == 1 and limit_price < current_price:
                         return fail("限价需大于等于当前市价，请调整后重新输入")
 
-                    _ensure_notional_within_cap(
-                        client, inst_id=inst_id, size=size, entry_price=limit_price, instrument=instrument
-                    )
+                    if data.get("leverage") is None:
+                        _ensure_notional_within_cap(
+                            client, inst_id=inst_id, size=size, entry_price=limit_price, instrument=instrument
+                        )
                     use_pos_side = _resolve_pos_side(client, side_code)
-                    max_leverage = _resolve_max_leverage(client, inst_id, instrument)
+                    if data.get("leverage") is not None:
+                        from trading.leverage_views import opening_leverage
+                        max_leverage = opening_leverage(client, inst_id, data['leverage'],
+                            size=size, entry_price=limit_price, instrument=instrument)
+                    else:
+                        max_leverage = _resolve_max_leverage(client, inst_id, instrument)
                     _ensure_available_margin(
                         client, size=size, entry_price=limit_price, instrument=instrument, leverage=max_leverage
                     )

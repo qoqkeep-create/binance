@@ -40,6 +40,7 @@ struct RootView: View {
 private struct MainAppView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var store: USDTStore
+    @EnvironmentObject private var notifications: StrategySignalNotificationManager
     @State private var selectedTab: AppTab = .markets
     @State private var isShowingMarketSearch = false
     @State private var isShowingMarketSettings = false
@@ -91,11 +92,20 @@ private struct MainAppView: View {
         .floatingPositionsOverlay()
         .task {
             guard let userID = container.authStore.session?.user.id else { return }
+            notifications.activateSession()
             store.prepareSession(userID: userID)
             container.dashboardViewModel.startRealtime(userID: userID)
             container.realtimeClient.subscribe([.tradingAccount, .tradingPosition, .tradingOrder, .tradingFill])
             container.realtimeClient.connect()
             await store.refresh()
+        }
+        .onChange(of: notifications.navigationRequest, initial: true) { _, request in
+            guard let request else { return }
+            switch request.destination {
+            case .strategy(let signal): openChart(signal.symbol, signal.interval)
+            case .reference: selectedTab = .signals
+            }
+            notifications.consumeNavigationRequest(request.id)
         }
         .onChange(of: store.selectedSymbol, initial: true) { _, symbol in
             container.dashboardViewModel.trackTradeTickerSymbol(symbol)
@@ -114,6 +124,7 @@ private struct MainAppView: View {
             }
         }
         .onDisappear {
+            notifications.deactivateSession()
             store.stopRealtime()
             container.dashboardViewModel.stopRealtime()
             container.realtimeClient.disconnect()

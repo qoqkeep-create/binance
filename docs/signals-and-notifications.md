@@ -4,7 +4,7 @@
 
 本主题维护数据流、模块隔离和消息口径；请求字段和响应协议以两份独立 [接入](api/external-signals.md) / [推送](api/trade-notifications.md) 文档为准。
 
-投递语义核对日期：2026-09-10。
+投递语义核对日期：2026-11-02。以下 APNs／Echobell 为本地源码实现，实际配置及手机投递尚未验收。
 
 ## 三条链路不要混淆
 
@@ -31,6 +31,24 @@
 [trend.py](../server/market_analysis/trend.py) 每 60 秒扫描已收盘 K 线，周期为 15m / 1h / 4h / 1d，按交易对、周期、收盘时间避免重复信号。SuperTrend 方向翻转只静默建立对应方向的等待状态，不入库、不推送；后续已收盘 K 线满足原有 EMA 过滤、K 线方向及 EMA55 / EMA144 触碰条件时才提醒。EMA55 与 EMA144 仍分别消耗等待状态；同一根 K 线同时触发时合并为一条提醒。原生 [信号页面](../frontend/ios-app/TradeTool/Features/USDT/USDTRecordsViews.swift) 在普通模式提供入口，统一标题为“信号”，仅请求 `source=internal`，不再显示来源页签；规则说明保留。此界面调整不移除外部入站接口和转发能力。
 
 `TradingViewMessage` 为历史模型名，实际有 external / internal / tradingview 来源；旧 tradingview 数据不能自动归成 external。统一消息按 3 天保留、每 10 分钟清理，不是长期信号档案。清理后仅依赖该表的去重记录也不再永久存在，合作方应避免任意重放历史。
+
+## iOS 信号与 Echobell 独立投递（2026-11-02，本地）
+
+已复现无旧 `MARKET_ANALYSIS_ALERT_URL/TOKEN` 时扫描整轮退出的问题。现在内部扫描直接在同一事务中保存 `source=internal` 消息及 `mobile.NotificationEvent`／`NotificationDelivery`，不再经过旧 webhook。稳定事件键为 `trend:{symbol}:{interval}:{closeMs}`；入库或排队失败不推进扫描标记，下轮可重试。规则本身不变，只记录最后一根已收盘 K 线的真实触发，不补造历史信号。关闭外发仍可保存并读取信号。
+
+登录后的根界面激活原生通知管理器；设备通过 JWT 鉴权的 `POST /api/push/devices/register`／`unregister` 注册或注销，字段为 `installationId`（UUID）、`deviceToken`（十六进制）、`environment`（development／production）、`bundleIdentifier`。退出使用 `X-Push-Installation-ID` 仅停用本用户当前安装。绑定 token 的用户发生变化后，旧用户的待发消息取消。`strategy.signal` 载荷可由原生解析，点击打开同币种、同周期的标准 K 线。
+
+调度器每 10 秒独立派发通知；APNs 与 Echobell 各自领取投递记录，不在扫描或交易成功路径同步发送。APNs 使用 HTTP/2、ES256 provider token、当前应用 topic 和 production／sandbox，60 秒租约、最多 8 次退避尝试；失效 token 停用，超过一小时的事件取消。中断的最后一次尝试收敛为 exhausted；稳定 `apns-id` 不等同于苹果端严格只投一次。Echobell 每事件一次尝试，中断／不确定结果记 unknown，不盲目重拨。异常只记录类型，不保存 token、完整 URL 或原始响应。
+
+APNs 开关只对开启时新入队事件生成设备投递；Echobell 同理，不承诺开启后自动补发全部历史。设备注册成功、代码编译或前台 WSS 成功均不能代替后台系统通知验收。
+
+## 浮盈 Webhook（沿用原 USDT）
+
+已按用户要求从原 USDT Git 基线 `c299f58` 移植 `positions/profit_alerts.py` 及回归。阈值为 **1R、1.5R、2R、3R、4R、5R、6R、7R、8R**，R 固定为首次观察时的止损额；浮盈取当前交易所仓位，不从客户端显示值推算。仅监控配置用户、当前绑定代际的普通／带单有效仓位，同币种同向本地重复订单不猜测归属；读取失败不关闭现有仓位或取消已有保护。
+
+每仓位每阈值持久化去重，配置用户跨仓位与模式共用至少 60 秒间隔；真正发送前再读实时浮盈，因此已排队的阈值可能用回落后的当前浮盈播报，此行为保持原版。Echobell 返回拒绝为 failed，超时／中断为 unknown，均不自动重拨。发送使用严格限定的 Echobell HTTPS 地址，并禁止重定向；仓位扫描、通知投递均不执行开平仓、资金或保护单写操作。
+
+配置入口和受限 p8 挂载见 [配置](configuration.md#ios-信号和浮盈通知)。2026-11-02 用户随后提供旧 Echobell 地址，已写入 47.80.22.243（首尔服务器）的 0600 环境文件，浮盈接收范围按整合库当前唯一有效绑定用户配置，不直接照搬旧库主键。APNs 复用原 iOS 项目的签名材料，已核对 P-256 密钥及与当前工程相同的团队；只读挂载源已准备为 UID 10001、目录 0700／文件 0400。仅保存配置，没有重启容器、部署通知源码、应用新迁移或真实外发，当前运行进程尚未加载这批参数；上线与手机验收仍待进行，操作备份见 [运维](operations.md#通知配置准备2026-11-02)。
 
 ## 五类通知口径
 

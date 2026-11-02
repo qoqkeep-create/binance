@@ -349,3 +349,31 @@ class LeadAccountIsolationTests(APITestCase):
         limit.refresh_from_db()
         self.assertEqual(limit.status, LimitOrder.STATUS_PENDING)
         self.assertEqual(Order.objects.get(pk=ordinary.pk).status, 0)
+
+    def test_explicit_leverage_is_used_for_market_and_frozen_in_execution_intent(self):
+        from trading.models import TradeOpenRequest
+        exchange = self.mock_exchange()
+        exchange.get_leverage_bracket.return_value = {'data': [{'instId': 'BTC-USDT-SWAP',
+            'maxLever':'50','notionalCap':'100', 'brackets':[
+                {'initialLeverage':50,'notionalCap':'100'}, {'initialLeverage':25,'notionalCap':'1000000'}]}]}
+        payload = {'symbol':'BTCUSDT','stop_loss_price':'90','stop_loss_amount':'100','include_fee':False,
+            'ema_check_id':'test-ema','leverage':25,'client_request_id':'55555555-5555-4555-8555-555555555555'}
+        response=self.client.post('/v1/trade/open',payload,format='json',HTTP_X_TRADING_MODE='lead')
+        self.assertEqual(response.status_code,200,response.data)
+        self.assertEqual(Order.objects.get(trading_mode='lead').leverage,25)
+        self.assertEqual(exchange.set_leverage.call_args.kwargs['leverage'],25)
+        self.assertEqual(TradeOpenRequest.objects.get().request_payload['_execution_intent']['leverage'],25)
+        self.client.post('/v1/trade/open',payload,format='json',HTTP_X_TRADING_MODE='lead')
+        self.assertEqual(exchange.place_market_order.call_count,1)
+
+    def test_explicit_leverage_is_used_for_limit_entry(self):
+        exchange=self.mock_exchange()
+        exchange.get_order.return_value=exchange.place_limit_order.return_value
+        exchange.get_leverage_bracket.return_value={'data':[{'instId':'BTC-USDT-SWAP','brackets':[
+            {'initialLeverage':25,'notionalCap':'1000000'}]}]}
+        payload={'symbol':'BTCUSDT','limit_price':'100','stop_loss_price':'90','stop_loss_amount':'100',
+            'leverage':25,'client_request_id':'66666666-6666-4666-8666-666666666666'}
+        response=self.client.post('/v1/trade/limit-order/create',payload,format='json',HTTP_X_TRADING_MODE='lead')
+        self.assertEqual(response.status_code,200,response.data)
+        self.assertEqual(LimitOrder.objects.get(trading_mode='lead').leverage,25)
+        self.assertEqual(exchange.set_leverage.call_args.kwargs['leverage'],25)

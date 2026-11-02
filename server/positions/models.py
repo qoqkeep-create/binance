@@ -365,3 +365,30 @@ class TradeOperationLog(models.Model):
         indexes = [
             models.Index(fields=["order", "-created_at", "-id"], name="trade_op_order_time_idx"),
         ]
+
+
+class PositionProfitWatch(models.Model):
+    """Frozen R denominator; independent of stop/strategy mutations."""
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name="profit_watch")
+    risk_amount = models.DecimalField(max_digits=26, decimal_places=8)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "position_profit_watch"
+
+
+class PositionProfitAlert(models.Model):
+    """One automatic send attempt per order and R threshold, across restarts."""
+    watch = models.ForeignKey(PositionProfitWatch, on_delete=models.CASCADE, related_name="alerts")
+    threshold = models.DecimalField(max_digits=3, decimal_places=1)
+    status = models.CharField(max_length=16, default="pending", db_index=True)
+    payload = models.JSONField(default=dict)
+    observed_pnl = models.DecimalField(max_digits=30, decimal_places=8)
+    created_at = models.DateTimeField(auto_now_add=True)
+    attempted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=80, blank=True, default="")
+
+    class Meta:
+        db_table = "position_profit_alert"
+        constraints = [models.UniqueConstraint(fields=["watch", "threshold"], name="uniq_position_profit_threshold")]

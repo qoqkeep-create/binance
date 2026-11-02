@@ -45,7 +45,7 @@ struct ChartPriceViewport: Hashable, Sendable {
 
   static let minimumMagnification = 0.35
   static let maximumMagnification = 4.5
-  static let dragSensitivityPoints = 180.0
+  static let dragSensitivityPoints = 120.0
 
   let magnification: Double
 
@@ -460,13 +460,8 @@ actor ChartSceneBuilder {
           frame: frame,
           visibleRange: canvasVisibleRange
         ) + dynamicPrices
-      // Extra plot height adds price-space headroom, not taller default candles.
-      let verticalSpaceScale = max(
-        1,
-        Double(geometry.plotBottom - geometry.plotTop)
-          / (ChartPanelLayout.referencePricePlotHeightPoints
-            * Double(geometry.scale))
-      )
+      // Fit the visible prices to the available plot height, including after a zoom.
+      let verticalSpaceScale = 1.0
       guard let automaticDomain = makePriceDomain(values),
         let domain = automaticDomain.applying(
           priceViewport,
@@ -952,7 +947,7 @@ actor ChartSceneBuilder {
       timelineViewport: geometry.timelineViewport,
       horizontalPlotBounds: ChartHorizontalPlotBounds(
         left: geometry.plotLeft,
-        right: geometry.plotRight
+        right: geometry.width
       ),
       crosshairData: crosshairData
     )
@@ -1118,7 +1113,10 @@ actor ChartSceneBuilder {
           colorStrategy: colorStrategy,
           scale: geometry.scale
         ) {
-          bars.append(bar)
+          let previous = frame.indicators.history.series.first { $0.key == livePoint.key }?.points.last
+          bars.append(contentsOf: histogramBars(bar, value: livePoint.point.value,
+            previous: previous?.validity == .valid ? previous?.value : nil,
+            strategy: colorStrategy, scale: geometry.scale))
         }
       case .pairedHistogramFromZero(
         let colorStrategy,
@@ -1915,9 +1913,25 @@ actor ChartSceneBuilder {
       else {
         continue
       }
-      bars.append(bar)
+      let previous = index > 0 && points[index - 1].validity == .valid ? points[index - 1].value : nil
+      bars.append(contentsOf: histogramBars(bar, value: points[index].value,
+        previous: previous, strategy: colorStrategy, scale: scale))
     }
     return bars
+  }
+
+  private func histogramBars(_ bar: ChartBarInstance, value: Double?, previous: Double?,
+    strategy: ChartIndicatorHistogramColorStrategy, scale: Float) -> [ChartBarInstance] {
+    guard strategy == .valueSign, let value, let previous,
+      abs(value) < abs(previous) else { return [bar] }
+    let border = min(max(1, scale * 0.5), (bar.right - bar.left) / 2, (bar.bottom - bar.top) / 2)
+    guard border > 0 else { return [bar] }
+    return [
+      ChartBarInstance(left: bar.left, top: bar.top, right: bar.right, bottom: bar.top + border, color: bar.color),
+      ChartBarInstance(left: bar.left, top: bar.bottom - border, right: bar.right, bottom: bar.bottom, color: bar.color),
+      ChartBarInstance(left: bar.left, top: bar.top + border, right: bar.left + border, bottom: bar.bottom - border, color: bar.color),
+      ChartBarInstance(left: bar.right - border, top: bar.top + border, right: bar.right, bottom: bar.bottom - border, color: bar.color),
+    ]
   }
 
   private func indicatorPriceBandBars(

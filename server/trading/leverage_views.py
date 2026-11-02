@@ -35,6 +35,31 @@ def _tiers(payload, inst_id):
             for leverage in sorted(caps, reverse=True)]
 
 
+def opening_leverage(client, inst_id, requested, *, size, entry_price, instrument):
+    """Validate an explicit choice before any exchange mutation; never resize silently."""
+    tiers = _tiers(client.get_leverage_bracket(inst_id), inst_id)
+    if requested not in {row['leverage'] for row in tiers}:
+        raise BinanceApiError('所选杠杆档位已变化，请刷新后重新选择')
+    cap = max(Decimal(row['max_notional']) for row in tiers if row['leverage'] >= requested)
+    notional = Decimal(str(size)) * Decimal(str(instrument.get('ctVal') or '1')) * entry_price
+    if notional > cap:
+        raise BinanceApiError('本单金额超过所选杠杆可开上限，请调整止损金额或止损价')
+    return requested
+
+
+def available_capacity(client, tiers):
+    payload = client.get_balance('USDT', fresh=True)
+    try:
+        available = Decimal(str(payload['data'][0]['details'][0]['availEq']))
+        if not available.is_finite() or available < 0:
+            raise ValueError
+    except (KeyError, IndexError, TypeError, InvalidOperation, ValueError):
+        raise BinanceApiError('暂时无法取得可用保证金，请稍后重试') from None
+    options = [{**row, 'max_open_amount': format(min(Decimal(row['max_notional']),
+        available * row['leverage']), 'f')} for row in tiers]
+    return sorted(options, key=lambda row: (-Decimal(row['max_open_amount']), row['leverage']))[:3]
+
+
 class LeverageBracketsView(APIView):
     def get(self, request):
         symbol = str(request.query_params.get("symbol") or "").strip().upper()
@@ -45,14 +70,17 @@ class LeverageBracketsView(APIView):
         if account is None:
             return fail("请先绑定 Binance API 后查看杠杆档位")
         generation = account.binding_created_at.isoformat() if account.binding_created_at else "legacy"
-        key = f"trade:leverage-tiers:{account.user_id}:{account.cache_namespace}:{generation}:{symbol}"
+        key = f"trade:leverage-tiers:v2:{account.user_id}:{account.cache_namespace}:{generation}:{symbol}"
         cached = cache.get(key)
-        if cached is not None:
-            return ok(cached)
+
         try:
             inst_id = to_inst_id(symbol)
-            payload = account.create_futures_client().get_leverage_bracket(inst_id)
-            tiers = _tiers(payload, inst_id)
+            client = account.create_futures_client()
+            if cached is not None:
+                tiers = cached
+            else:
+                tiers = _tiers(client.get_leverage_bracket(inst_id), inst_id)
+            options = available_capacity(client, tiers)
             if not tiers:
                 return fail("暂时无法取得杠杆档位，请稍后重试")
         except BinanceApiError as exc:
@@ -60,6 +88,6 @@ class LeverageBracketsView(APIView):
         current = get_user_trading_account(request.user, active_only=True, trading_mode=mode)
         if current is None or current.binding_id != account.binding_id or current.generation != account.generation:
             return fail("账户绑定已变化，请重新读取杠杆档位", code=409, status=409)
-        data = {"symbol": to_symbol(inst_id), "brackets": tiers}
-        cache.set(key, data, timeout=300)
+        data = {"symbol": to_symbol(inst_id), "brackets": options}
+        cache.set(key, tiers, timeout=300)
         return ok(data)

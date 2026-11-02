@@ -72,7 +72,7 @@ struct MarketChartView: View {
             onShowPositions: onShowPositions
         )
         .id(selectedMarket.symbol)
-        .sheet(isPresented: $showsSymbols, onDismiss: {
+        .largeTradingSheet(isPresented: $showsSymbols, onDismiss: {
             guard let symbol = pendingSymbol else { return }
             pendingSymbol = nil
             selectMarket(dashboard.marketSnapshot(forSymbol: symbol), interval: selectedInterval)
@@ -201,6 +201,7 @@ private struct MarketChartDetailView: View {
                     }, chartHasPosition: !heldPositions.isEmpty,
                     chartPositionsReady: positions.isReady(scope: usdt.scope),
                     chartPositionsError: positions.error,
+                    chartPositionRows: heldPositions,
                     onShowPositions: onShowPositions)
                     .id(usdt.scope)
             }
@@ -242,11 +243,11 @@ private struct MarketChartDetailView: View {
         .navigationDestination(isPresented: $isOrderSettingsPresented) {
             USDTChartOrderSettingsView()
         }
-        .sheet(isPresented: $showsIntervalSettings) {
+        .largeTradingSheet(isPresented: $showsIntervalSettings) {
             ChartIntervalSettingsView(selection: viewModel.interval,
                 favorites: $favoriteIntervals, onSelect: viewModel.selectInterval)
         }
-        .sheet(isPresented: $showsLeverage) {
+        .largeTradingSheet(isPresented: $showsLeverage) {
             USDTLeverageBracketsView(symbol: viewModel.market.symbol)
         }
         .onChange(of: viewModel.currentPrice, initial: true) { _, _ in initializeLimitDrawing() }
@@ -356,7 +357,7 @@ private struct MarketChartDetailView: View {
 
             if let projection = chartPriceProjection, !heldPositions.isEmpty {
                 ChartPositionLinesOverlay(lines: ChartPositionLine.lines(in: heldPositions,
-                    symbol: viewModel.market.symbol), projection: projection)
+                    symbol: viewModel.market.symbol, currentPrice: Decimal(string: priceString(viewModel.currentPrice))), projection: projection)
             }
 
             if let projection = chartPriceProjection, heldPositions.isEmpty,
@@ -1351,7 +1352,7 @@ private struct ChartIntervalSettingsView: View {
                 .buttonStyle(.plain).foregroundStyle(BinanceTheme.accentText)
                 .frame(minHeight: 44).padding(.bottom, 12)
         }.foregroundStyle(BinanceTheme.primaryText).background(BinanceTheme.background)
-            .largeTradingSheet()
+
     }
     private func intervalSection(_ title: String, intervals: [MarketKlineInterval]) -> some View {
         Section(title) {

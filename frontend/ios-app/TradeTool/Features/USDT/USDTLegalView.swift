@@ -32,7 +32,7 @@ struct USDTLegalView: View {
         WebTheme.surface, in: RoundedRectangle(cornerRadius: 14)
       ).padding(16).padding(.bottom, 16).frame(maxWidth: 448).frame(maxWidth: .infinity)
     }.scrollIndicators(.hidden).background(BinanceTheme.background)
-      .toolbar(.hidden, for: .navigationBar).largeTradingSheet()
+      .toolbar(.hidden, for: .navigationBar)
   }
   private var sections: [(String, [String])] { document == "隐私政策" ? Self.privacy : Self.agreement }
   private static let agreement: [(String, [String])] = [

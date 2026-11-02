@@ -142,6 +142,17 @@ def _dispatch_trade_notifications_job():
 
 
 @_with_database_connections
+def _dispatch_mobile_notifications_job():
+    from mobile.push import dispatch_notifications
+    from positions.profit_alerts import scan_profit_alerts, dispatch_profit_alerts
+    for job in (dispatch_notifications, scan_profit_alerts, dispatch_profit_alerts):
+        try:
+            job()
+        except Exception as exc:
+            logger.warning('notification job failed job=%s error_type=%s', job.__name__, type(exc).__name__)
+
+
+@_with_database_connections
 def _audit_suspicious_closed_orders_job():
     """巡检异常平仓记录（本地已平仓但缺少交易所平仓锚点）"""
     try:
@@ -374,6 +385,12 @@ def start_scheduler():
         jitter=1,
         max_instances=1,
         coalesce=True,
+    )
+
+    _scheduler.add_job(
+        _dispatch_mobile_notifications_job, trigger=IntervalTrigger(seconds=10),
+        id='dispatch_mobile_notifications', name='iOS信号与浮盈通知', replace_existing=True,
+        next_run_time=now + timedelta(seconds=8), max_instances=1, coalesce=True,
     )
 
     # 每180秒巡检一次可疑平仓记录（错峰 + 抖动）

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum TradingOrderType: String, Codable, CaseIterable, Identifiable {
     case makerOnly = "MAKER_ONLY"
@@ -196,6 +197,7 @@ struct ChartPositionLine: Identifiable, Equatable {
     let kind: Kind
     let price: Decimal
     let title: String
+    var detail: String = ""
 
     static func positions(in rows: [JSONValue], symbol: String) -> [JSONValue] {
         rows.filter { row in
@@ -208,7 +210,7 @@ struct ChartPositionLine: Identifiable, Equatable {
         }
     }
 
-    static func lines(in rows: [JSONValue], symbol: String) -> [Self] {
+    static func lines(in rows: [JSONValue], symbol: String, currentPrice: Decimal? = nil) -> [Self] {
         let matching = positions(in: rows, symbol: symbol)
         return matching.enumerated().flatMap { index, row -> [Self] in
             let prefix = row.value("id", fallback: String(index)) + "." + row.value("side")
@@ -217,10 +219,21 @@ struct ChartPositionLine: Identifiable, Equatable {
                 guard let value = row[key]?.decimal, !value.isNaN, value > 0 else { return nil }
                 return value
             }
+            func detail(_ kind: Kind) -> String {
+                if kind == .entry {
+                    guard let currentPrice,
+                      let valuation = PositionLiveValuation(row: row, quote: PositionMarketQuote(price: currentPrice, eventTime: 0)) else { return "-" }
+                    return (valuation.profit > 0 ? "+" : "") + DisplayNumber.text(valuation.profit) + " U"
+                }
+                if kind == .stopLoss {
+                    return row["stop_loss_amount"]?.decimal.map { "-" + DisplayNumber.text(abs($0)) + " U" } ?? "-"
+                }
+                return row["manual_take_profit_price"]?.decimal.map { DisplayNumber.text($0) } ?? "-"
+            }
             var result: [Self] = []
             func append(_ kind: Kind, _ price: Decimal?, _ title: String) {
                 if let price { result.append(Self(id: prefix + "." + kind.rawValue,
-                    kind: kind, price: price, title: side + title)) }
+                    kind: kind, price: price, title: side + title, detail: detail(kind))) }
             }
             append(.entry, valid("open_price"), "开仓")
             append(.stopLoss, row["market_stop_set"]?.flag == true
@@ -248,8 +261,8 @@ struct ChartPositionLinesOverlay: View {
                             path.move(to: CGPoint(x: projection.plotLeft, y: y))
                             path.addLine(to: CGPoint(x: projection.plotRight, y: y))
                         }.stroke(color(line.kind), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-                        let label = ChartPriceLineLabelLayout(projection: projection)
-                        ChartPriceLineLabel(title: line.title, price: DisplayNumber.text(line.price),
+                        let label = ChartPriceLineLabelLayout(projection: projection, texts: lines.map { $0.title + " " + $0.detail })
+                        ChartPriceLineLabel(title: line.title, price: line.detail,
                             color: color(line.kind), width: label.width)
                             .position(x: label.centerX, y: y)
                             .accessibilityIdentifier("position-line." + line.id)
@@ -269,15 +282,15 @@ struct ChartPositionLinesOverlay: View {
     }
 }
 
-private struct ChartPriceLineLabelLayout {
+struct ChartPriceLineLabelLayout {
     let width: Double
     let centerX: Double
 
-    init(projection: ChartPriceProjection) {
+    init(projection: ChartPriceProjection, texts: [String], draggable: Bool = false) {
         let plotWidth = max(1, projection.plotRight - projection.plotLeft)
-        let leading = min(83, plotWidth * 0.25)
-        width = min(180, max(1, plotWidth - leading - 8))
-        centerX = projection.plotLeft + leading + width / 2
+        let longest = texts.map { ($0 as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 10, weight: .medium)]).width }.max() ?? 0
+        width = min(ceil(longest) + 14 + (draggable ? 16 : 0), max(1, plotWidth - 12))
+        centerX = projection.plotLeft + 6 + width / 2
     }
 }
 
@@ -294,7 +307,7 @@ private struct ChartPriceLineLabel: View {
                 Image(systemName: "line.3.horizontal").font(.system(size: 9, weight: .medium))
             }
             Text(title).layoutPriority(1)
-            Text(price).monospacedDigit()
+            if !price.isEmpty { Text(price).monospacedDigit() }
         }.font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.6)
             .foregroundStyle(color).padding(.horizontal, 7).frame(width: width, height: 24)
             .background(BinanceTheme.background.opacity(0.98), in: RoundedRectangle(cornerRadius: 4))
@@ -415,7 +428,7 @@ struct ChartOrderDrawingOverlay: View {
         color: Color
     ) -> some View {
         let plotWidth = projection.plotRight - projection.plotLeft
-        let label = ChartPriceLineLabelLayout(projection: projection)
+        let label = ChartPriceLineLabelLayout(projection: projection, texts: [drawing.entryLineTitle, "止损价"], draggable: true)
         let y = projectedY(price) ?? projection.plotTop
         return ZStack {
             Path { path in
@@ -430,7 +443,7 @@ struct ChartOrderDrawingOverlay: View {
                 )
             )
 
-            ChartPriceLineLabel(title: title, price: formatPrice(price), color: color,
+            ChartPriceLineLabel(title: title, price: "", color: color,
                 width: label.width, draggable: true)
                 .position(x: label.centerX - projection.plotLeft, y: 18)
         }

@@ -73,6 +73,11 @@ services:
       retries: 3
   scheduler:
     <<: *python
+    volumes:
+      - type: bind
+        source: ${APNS_SECRET_DIRECTORY:-/opt/trade-tools-integrated/secrets}
+        target: /run/tradetools-secrets
+        read_only: true
     command: [python, manage.py, run_scheduler]
     mem_limit: 192m
     healthcheck:

@@ -36,6 +36,9 @@ final class USDTStore: ObservableObject {
     @Published var profile: JSONValue = .object([:])
     @Published var binding: JSONValue = .null
     @Published var strategies: [JSONValue] = []
+    @Published private(set) var selectedLeverages: [String: Int] = [:]
+    func selectedLeverage(for symbol: String) -> Int? { selectedLeverages[symbol.uppercased()] }
+    func selectLeverage(_ leverage: Int, for symbol: String) { selectedLeverages[symbol.uppercased()] = leverage }
     @Published var selectedSymbol = "BTCUSDT"
     @Published var notice = ""
     @Published var isLoading = false
@@ -73,6 +76,7 @@ final class USDTStore: ObservableObject {
     func invalidate() {
         stopRealtime()
         revision += 1
+        selectedLeverages = [:]
         account = .object([:]); profile = .object([:]); binding = .null; strategies = []; notice = ""
     }
 

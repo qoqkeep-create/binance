@@ -58,14 +58,13 @@ struct USDTProfileView: View {
             Spacer(minLength: 4)
             Button { modeConfirm = true } label: {
               Text(lead ? "切换合约模式" : "切换带单模式").font(.system(size: 12, weight: .medium))
-              .foregroundStyle(lead ? WebTheme.color(0x7A5700, 0xFCD535) : WebTheme.color(0x126995, 0x75CAFA))
+              .foregroundStyle(WebTheme.color(0x405A73, 0xBDD2E6))
               .padding(.horizontal, 12).frame(height: 36)
-              .background(lead ? WebTheme.color(0xFFF0B4, 0x4B4020) : WebTheme.color(0xDBEFFB, 0x173D58),
+              .background(WebTheme.color(0xE8EEF4, 0x2C3D4F),
                 in: RoundedRectangle(cornerRadius: 8))
               .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                  .stroke((lead ? Color(red: 0.78, green: 0.60, blue: 0.04)
-                    : Color(red: 0.20, green: 0.62, blue: 0.85)).opacity(0.3), lineWidth: 0.5)
+                  .stroke(WebTheme.color(0x9CB0C3, 0x647C94).opacity(0.5), lineWidth: 0.5)
               }
               .contentShape(RoundedRectangle(cornerRadius: 8))
             }.buttonStyle(.plain)
@@ -191,8 +190,8 @@ struct USDTProfileView: View {
         collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
       }.refreshable { await store.refresh() }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
-      .sheet(isPresented: $stopLoss) { USDTStopLossView() }
-      .sheet(isPresented: $normalize) { USDTCapitalView(initialTab: capitalTab) }
+      .largeTradingSheet(isPresented: $stopLoss) { USDTStopLossView() }
+      .largeTradingSheet(isPresented: $normalize) { USDTCapitalView(initialTab: capitalTab) }
       .webModal(isPresented: $logout) {
         WebModal(title: "确认退出登录") {
           Text("确认要退出登录吗？").foregroundStyle(WebTheme.secondary)
@@ -363,12 +362,6 @@ struct USDTBindingView: View {
   }
 }
 
-private struct StopLossPresentationDetent: CustomPresentationDetent {
-  static func height(in context: Context) -> CGFloat? {
-    context.dynamicTypeSize.isAccessibilitySize ? context.maxDetentValue : min(650, context.maxDetentValue)
-  }
-}
-
 struct USDTStopLossView: View {
   @EnvironmentObject private var store: USDTStore
   @Environment(\.dismiss) private var dismiss
@@ -474,9 +467,8 @@ struct USDTStopLossView: View {
         .padding(.horizontal, 24).padding(.vertical, 12)
         .frame(maxWidth: 448).frame(maxWidth: .infinity).background(WebTheme.surface)
     }
-    .largeTradingSheet(detents: [.custom(StopLossPresentationDetent.self)])
-    .presentationBackground(WebTheme.surface)
-    .interactiveDismissDisabled(saving)
+
+    .webModalDismissDisabled(saving)
     .task {
       do {
         let response = try await store.get("/v1/account/stop-loss")
@@ -600,7 +592,7 @@ struct USDTCapitalView: View {
       .safeAreaInset(edge: .bottom, spacing: 0) {
         if tab != .records { walletFooter }
       }
-      .largeTradingSheet().interactiveDismissDisabled(busy)
+      .webModalDismissDisabled(busy)
       .task(id: tab == .records ? "records" : action) {
         if tab != .records { await load() }
       }
@@ -631,7 +623,8 @@ struct USDTCapitalView: View {
     }.padding(4).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
       .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
       .padding(.horizontal, 20).padding(.vertical, 12)
-      .disabled(busy || pending || submitted).accessibilityIdentifier("capital.tabs")
+      .disabled(busy || pending || submitted)
+      .accessibilityElement(children: .contain).accessibilityIdentifier("capital.tabs")
   }
   private var walletContent: some View {
     ScrollView {
@@ -750,7 +743,8 @@ struct USDTCapitalView: View {
   private var walletFooter: some View {
     VStack(spacing: 12) {
       moneyRow(legacyPending ? "原归集转出金额" : tab == .transfer ? "本次转出金额" : direction == "to_spot" ? "合计划转到现货" : "本次转入合约",
-        key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true).accessibilityIdentifier("capital.total")
+        key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true)
+        .accessibilityElement(children: .combine).accessibilityIdentifier("capital.total")
       Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == .transfer ? "转账" : "确定划转") {
         if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
       }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || (!completed && !legacyPending && !canSubmit))

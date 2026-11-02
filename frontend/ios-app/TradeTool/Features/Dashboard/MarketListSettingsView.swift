@@ -62,7 +62,7 @@ struct MarketListSettingsView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .interactivePopGestureEnabled()
-            .sheet(isPresented: $showingPairs, onDismiss: {
+            .largeTradingSheet(isPresented: $showingPairs, onDismiss: {
                 guard let symbol = pendingChartSymbol else { return }
                 pendingChartSymbol = nil
                 onSelectMarket(symbol)

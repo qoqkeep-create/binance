@@ -320,3 +320,14 @@ if EMAIL_HOST:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Independent mobile notifications; key material stays in a restricted mounted file.
+APNS_ENABLED = os.getenv('APNS_ENABLED', 'False').lower() == 'true'
+APNS_TEAM_ID = os.getenv('APNS_TEAM_ID', '').strip()
+APNS_KEY_ID = os.getenv('APNS_KEY_ID', '').strip()
+APNS_KEY_PATH = os.getenv('APNS_KEY_PATH', '').strip()
+APNS_BUNDLE_ID = os.getenv('APNS_BUNDLE_ID', 'com.waibao2025.trade.integrated').strip()
+POSITION_PROFIT_CALL_ENABLED = os.getenv('POSITION_PROFIT_CALL_ENABLED', 'False').lower() == 'true'
+POSITION_PROFIT_CALL_USER_ID = int(os.getenv('POSITION_PROFIT_CALL_USER_ID', '0') or '0')
+POSITION_PROFIT_CALL_URL = os.getenv('POSITION_PROFIT_CALL_URL', '').strip()
+SIGNAL_ECHOBELL_ENABLED = os.getenv('SIGNAL_ECHOBELL_ENABLED', 'False').lower() == 'true'

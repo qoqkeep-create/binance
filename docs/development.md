@@ -14,6 +14,20 @@
 
 2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
 
+## 图表持仓杠杆与通知回归（2026-11-02）
+
+用户随后明确授权提交并推送，本节记录本地验收当时的结果；51 个文件已纳入本批源码交付，范围见 [变更记录](changes.md#2026-11-02图表持仓杠杆选择与通知源码交付)。此次交付沿用既有验证，不重复运行测试或部署后端。
+
+本轮按用户确认停止旧构建排障，调整图内短标签、实际持仓下单栏、蓝灰模式按钮、透明右轴及纵向适配、MACD 增强实心／衰减空心、前三档杠杆选择。杠杆选择进入市价／限价的冻结草稿和服务端持久化请求，提交前验证档位与可开上限，已有持仓不因面板选择而改变。界面及接口见 [原生页面](ios-web-parity.md)、[行情](market-data.md) 与 [交易安全](trading-safety.md)。
+
+完整 `TradeToolTests` 在独立 `EC99818A-F4D6-43BF-A460-3918A9385BBC` 模拟器实际运行 **267 项通过（49.115 秒，0 跳过）**，证据为 `.integration-runtime/ChartBusiness/TestsFinal.xcresult`；包含新增正负 MACD 历史／实时柱、图内标签／浮盈、纵轴随高度适配和冻结杠杆意图回归。不是只编译测试目标。
+
+后端隔离 SQLite／LocMem 与交易所替身的广泛回归 **331 项通过（154.014 秒）**；随后通知、信号及交易选档相关补验 **46 项通过（7.376 秒）**，内部信号读取／既有路由补验 **11 项通过（0.753 秒）**。最终新加旧杠杆缓存升级回归，原代码复现 `TypeError: str object is not a mapping`；缓存键升级后完整杠杆文件 **11 项通过（0.012 秒）**。证据依次为 `chart-business-backend-final.log`、`chart-business-backend-followup.log`、`chart-business-signals-read-final.log` 和 `chart-business-leverage-cache-{before,after}.log`，均在忽略目录 `.integration-runtime/`。部分用例重叠，不能相加为独立测试数；SQLite 结果不代表 MySQL 并发已验收。
+
+共用大面板沿用项目贴底 `WebSheet`，高度统一为可用容器 80%。验证中修复键盘高度重复计入底部留白、归集页签父容器覆盖子按钮标识及短动画期间读取 footer 的竞态。最终 `TradeTool Chart Calibration` 的四项真实模拟器 UI 流程 **全部通过（125.650 秒）**，覆盖行情搜索自动键盘／自选和开仓入口不聚焦、选币回调、实际持仓字段、杠杆点选保存、归集三页签／方向切换、浅深色与止损关闭。已打开最终截图核对键盘下列表、纵排卡片、归集固定底栏及持仓数据。结果为 `ChartBusiness/UIFinal.xcresult`，截图位于同目录 `UIFinalAttachments/`；前期失败包保留用于排障。最终 generic iOS Release 未签名构建通过，日志为 `chart-business-release-verified.log`。
+
+信号未入库已复现为缺旧通知出口时扫描整轮退出，修复后入库及独立通知事件不再依赖旧出口；APNs、Echobell 和原 USDT 浮盈阈值移植使用替身验证，详见 [通知](signals-and-notifications.md)。用户随后提供 Echo 地址，且找到与当前工程团队匹配的原 iOS APNs 密钥，已完成本地和 47.80.22.243（首尔服务器）的受限配置准备；没有重启服务或部署通知源码，当前进程尚未加载。迁移一致性检查无缺项。本轮未执行真实交易、资金操作或外发通知，未提交、推送或上传 TestFlight；iPhone 16 Pro Max 的键盘、弹窗与后台通知仍待新包及配套后端上线验收。
+
 ## 构建 25 反馈后的测试越界修复（2026-11-02）
 
 用户报告刚推送的客户端版本再次失败，并提供构建号 25。以 `cafc053` 为源码基线，使用 Cloud 的 `TradeTool`／Debug 测试方案在独立 `TradeTool Cloud Test Repair`（iPhone 18 Pro／本机 iOS 27.2）实际运行完整单测；**263 项中 261 项通过、2 项因测试进程数组越界崩溃失败**。不是再次把 `build-for-testing` 当成测试通过。

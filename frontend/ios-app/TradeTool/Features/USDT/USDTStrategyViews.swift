@@ -321,6 +321,8 @@ struct USDTLeverageBracketsView: View {
   @EnvironmentObject private var store: USDTStore
   @Environment(\.dismiss) private var dismiss
   @StateObject private var model = USDTPageModel()
+  @State private var selected: Int?
+  private var options: [JSONValue] { model.value["brackets"]?.rows ?? [] }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -337,7 +339,7 @@ struct USDTLeverageBracketsView: View {
       }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-          Text("自动选择适用杠杆。各档可开金额上限如下，实际开仓金额还受余额和止损额限制。")
+          Text("按可开金额显示前三档，选择后用于本币种下一次开仓。实际金额还受止损设置及成交时可用余额限制。")
             .font(.system(size: 13)).foregroundStyle(WebTheme.muted)
           if !store.isBound {
             USDTNotice(text: "请先绑定 Binance API 后查看当前账户的杠杆档位")
@@ -348,6 +350,7 @@ struct USDTLeverageBracketsView: View {
           } else {
             LazyVStack(spacing: 10) {
               ForEach(Array((model.value["brackets"]?.rows ?? []).enumerated()), id: \.offset) { _, row in
+                Button { selected = Int(row.value("leverage")) } label: {
                 USDTCard(radius: 12, padding: 16) {
                   HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -358,35 +361,43 @@ struct USDTLeverageBracketsView: View {
                     }
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: 6) {
-                      Text("可开金额上限").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
-                      Text(DisplayNumber.text(row.value("max_notional")) + " USDT")
+                      Text("可开金额").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+                      Text(DisplayNumber.text(row.value("max_open_amount", fallback: row.value("max_notional"))) + " USDT")
                         .font(.system(size: 17, weight: .semibold)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.65)
                     }
+                    Image(systemName: selected == Int(row.value("leverage")) ? "checkmark.circle.fill" : "circle")
+                      .font(.system(size: 22)).foregroundStyle(selected == Int(row.value("leverage")) ? WebTheme.brand : WebTheme.muted)
                   }
                 }.overlay {
-                  RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 0.5)
+                  RoundedRectangle(cornerRadius: 12).stroke(selected == Int(row.value("leverage")) ? WebTheme.brand : WebTheme.border, lineWidth: 1)
                 }.accessibilityElement(children: .combine)
+                }.buttonStyle(.plain).accessibilityValue(selected == Int(row.value("leverage")) ? "已选中" : "未选中")
                   .accessibilityIdentifier("chart-leverage.bracket." + row.value("leverage"))
               }
             }
           }
         }.padding(16)
       }.scrollIndicators(.hidden)
-    }.safeAreaInset(edge: .bottom, spacing: 0) {
-      Button("确定") { dismiss() }
+      Button("确定") {
+        if let selected { store.selectLeverage(selected, for: symbol) }
+        dismiss()
+      }.disabled(selected == nil)
         .buttonStyle(WebButtonStyle(height: 48, radius: 12))
         .accessibilityIdentifier("chart-leverage.confirm")
-        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
         .background(WebTheme.page)
     }.foregroundStyle(WebTheme.text).background(WebTheme.page.ignoresSafeArea())
-      .largeTradingSheet().accessibilityIdentifier("chart-leverage")
+      .accessibilityElement(children: .contain).accessibilityIdentifier("chart-leverage")
       .task(id: "\(store.scope):\(store.isBound):\(symbol)") { await load() }
   }
 
   private func load() async {
+    selected = nil
     guard store.isBound else { model.reset(); return }
     await model.load(store, path: "/v1/trade/leverage-brackets", query: [.init(name: "symbol", value: symbol)])
+    let available = options.compactMap { Int($0.value("leverage")) }
+    selected = store.selectedLeverage(for: symbol).flatMap { available.contains($0) ? $0 : nil } ?? available.first
   }
 }
 

@@ -62,3 +62,38 @@ class AccountOutbox(models.Model):
     payload = models.JSONField()
     published_at = models.DateTimeField(null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PushDevice(models.Model):
+    installation_id = models.UUIDField(unique=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    token = models.CharField(max_length=256)
+    environment = models.CharField(max_length=16)
+    bundle_id = models.CharField(max_length=128)
+    active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['token', 'environment', 'bundle_id'], name='mobile_push_device_token')]
+
+
+class NotificationEvent(models.Model):
+    event_key = models.CharField(max_length=191, unique=True)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class NotificationDelivery(models.Model):
+    event = models.ForeignKey(NotificationEvent, on_delete=models.CASCADE)
+    device = models.ForeignKey(PushDevice, null=True, on_delete=models.CASCADE)
+    user_id_snapshot = models.BigIntegerField(null=True)
+    target = models.CharField(max_length=80)
+    status = models.CharField(max_length=16, default='pending', db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    lease_until = models.DateTimeField(null=True)
+    retry_at = models.DateTimeField(null=True)
+    last_error = models.CharField(max_length=80, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['event', 'target'], name='mobile_notification_target')]

@@ -16,13 +16,10 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from statistics import mean
-from urllib import error as urlerror
-from urllib import request as urlrequest
 
 from django.conf import settings
 from django.core.cache import cache
@@ -205,14 +202,6 @@ def evaluate_trend(symbol: str, interval: str) -> list[TrendEvent]:
     return last_events
 
 
-def _alert_url_and_token() -> tuple[str, str]:
-    url = str(getattr(settings, "MARKET_ANALYSIS_ALERT_URL", "") or "").strip()
-    token = str(getattr(settings, "MARKET_ANALYSIS_ALERT_TOKEN", "") or "").strip()
-    if not url or not token:
-        raise BinanceApiError("趋势信号提醒出口未配置")
-    return url, token
-
-
 def _already_alerted(symbol: str, interval: str, time_str: str) -> bool:
     from trading.models import TradingViewMessage
 
@@ -224,32 +213,23 @@ def _already_alerted(symbol: str, interval: str, time_str: str) -> bool:
     ).exists()
 
 
-def _send_trend_alert(events: list[TrendEvent], url: str, token: str) -> None:
+def _store_trend_signal(events):
+    from django.db import transaction
+    from trading.models import TradingViewMessage
+    from mobile.push import enqueue_signal
     first = events[0]
-    sig_msg = " ".join(event.text for event in events)
-    payload = {
-        "title": SIGNAL_TITLE,
-        "symbol": first.symbol,
-        "strategy": STRATEGY_NAME,
-        "signal": "BUY" if first.direction == "long" else "SELL",
-        "price": first.price,
-        "timestamp": first.candle_close_time_ms,
-        "interval": first.interval,
-        "comment": f"{first.symbol} {first.interval} 触发信号：{sig_msg}",
-    }
-    req = urlrequest.Request(
-        url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        method="POST",
-        headers={"Content-Type": "application/json", "x-api-key": token},
-    )
-    try:
-        with urlrequest.urlopen(req, timeout=15) as response:
-            result = json.loads(response.read().decode("utf-8"))
-        if not result.get("ok"):
-            raise BinanceApiError(str(result.get("error") or "趋势信号提醒发送失败"))
-    except urlerror.HTTPError as exc:
-        raise BinanceApiError(f"趋势信号提醒出口失败（HTTP {exc.code}）") from exc
+    payload = {'title': SIGNAL_TITLE, 'symbol': first.symbol, 'strategy': STRATEGY_NAME,
+        'signal': 'BUY' if first.direction == 'long' else 'SELL', 'price': first.price,
+        'timestamp': first.candle_close_time_ms, 'interval': first.interval,
+        'time': datetime.fromtimestamp(first.candle_close_time_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+        'price_display': format(first.price, '.12g'),
+        'comment': f"{first.symbol} {first.interval} 触发信号：{' '.join(event.text for event in events)}"}
+    key = f'trend:{first.symbol}:{first.interval}:{first.candle_close_time_ms}'
+    with transaction.atomic():
+        message, _ = TradingViewMessage.objects.get_or_create(source='internal', event_id=key,
+            defaults={'raw_payload': payload, 'normalized_payload': payload})
+        enqueue_signal(message)
+    return message
 
 
 _TREND_PERIOD_SECONDS = {"15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
@@ -286,12 +266,6 @@ def _trend_mark_close(symbol: str, interval: str, close_ms: int) -> None:
 
 def scan_trend_signals() -> dict[str, int]:
     """扫描全部币种×周期，最后一根已收盘K线触发信号时推送并入库（带去重）。"""
-    try:
-        url, token = _alert_url_and_token()
-    except BinanceApiError as exc:
-        logger.warning("趋势信号扫描跳过：%s", safe_error_summary(exc))
-        return {"evaluated": 0, "alerted": 0, "failed": 0}
-
     now = datetime.now(timezone.utc)
     evaluated = alerted = failed = 0
     for symbol in PINNED_TRADING_SYMBOLS:
@@ -322,19 +296,21 @@ def scan_trend_signals() -> dict[str, int]:
                 )
                 failed += 1
                 continue
-            _trend_mark_close(symbol, interval, latest_close_ms)
             if not events:
+                _trend_mark_close(symbol, interval, latest_close_ms)
                 continue
             time_str = datetime.fromtimestamp(events[0].candle_close_time_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             try:
                 if _already_alerted(symbol, interval, time_str):
+                    _trend_mark_close(symbol, interval, latest_close_ms)
                     continue
-                _send_trend_alert(events, url, token)
+                _store_trend_signal(events)
+                _trend_mark_close(symbol, interval, latest_close_ms)
                 alerted += 1
-                logger.info("趋势信号已推送: %s", events)
+                logger.info("趋势信号已入库并排队: %s", events)
             except Exception as exc:  # noqa: BLE001
                 logger.error(
-                    "趋势信号推送失败 %s %s: %s",
+                    "趋势信号入库失败 %s %s: %s",
                     symbol,
                     interval,
                     safe_error_summary(exc),

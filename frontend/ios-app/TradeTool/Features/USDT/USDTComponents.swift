@@ -398,12 +398,12 @@ extension View {
     modifier(WebPageModifier(title: title, refresh: refresh, backAction: backAction))
   }
   func webModal<Content: View>(
-    isPresented: Binding<Bool>, motion: WebModalMotion? = nil,
+    isPresented: Binding<Bool>, motion: WebModalMotion? = nil, onDismiss: (() -> Void)? = nil,
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     // Observe selected values in the presenting body before the first presentation.
     let modal = content()
-    return modifier(WebModalPresenter(isPresented: isPresented, preferredMotion: motion, modal: modal))
+    return modifier(WebModalPresenter(isPresented: isPresented, preferredMotion: motion, modal: modal, onDismiss: onDismiss))
   }
 }
 
@@ -897,9 +897,10 @@ private struct WebModalPresenter<Modal: View>: ViewModifier {
   @Binding var isPresented: Bool
   let preferredMotion: WebModalMotion?
   let modal: Modal
+  var onDismiss: (() -> Void)?
   @State private var cover = false
   func body(content: Content) -> some View {
-    content.fullScreenCover(isPresented: $cover) {
+    content.fullScreenCover(isPresented: $cover, onDismiss: onDismiss) {
       WebModalStage(isPresented: $isPresented, preferredMotion: preferredMotion, modal: modal) {
         var transaction = Transaction(); transaction.disablesAnimations = true
         withTransaction(transaction) { cover = false }
@@ -971,16 +972,26 @@ private struct WebModalStage<Modal: View>: View {
 
 /// Large navigation/form panels use the shared fast presentation and header drag dismissal.
 struct WebSheet<Content: View>: View {
+  var heightFraction: CGFloat = 0.96
+  var protectsBottomSafeArea = false
   @ViewBuilder var content: Content
+  private var containerBottomInset: CGFloat {
+    UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+      .flatMap(\.windows).first(where: \.isKeyWindow)?.safeAreaInsets.bottom ?? 0
+  }
   var body: some View {
     GeometryReader { geometry in
       ZStack(alignment: .bottom) {
         WebModalBackdrop(opacity: 0.45)
         VStack(spacing: 0) {
           Capsule().fill(WebTheme.muted.opacity(0.5)).frame(width: 36, height: 5)
-            .padding(.vertical, 10).accessibilityHidden(true)
+            .padding(.vertical, 10).accessibilityHidden(!protectsBottomSafeArea)
+            .accessibilityLabel("表单控制柄").accessibilityAddTraits(.isButton)
           content.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }.frame(maxWidth: 720).frame(height: geometry.size.height * 0.96)
+            // Geometry's bottom inset also includes the keyboard; reserve only
+            // the window's home-indicator inset so a focused list can still scroll.
+            .padding(.bottom, protectsBottomSafeArea ? containerBottomInset : 0)
+        }.frame(maxWidth: 720).frame(height: geometry.size.height * heightFraction)
           .background(BinanceTheme.background)
           .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24))
           .webModalCard()

@@ -186,7 +186,7 @@ private struct AuthForm: View {
     .background(BinanceTheme.background.ignoresSafeArea())
     .tint(BinanceTheme.accentText)
     .webModalDismissDisabled(isSubmitting)
-    .sheet(item: $legal) { document in
+    .largeTradingSheet(item: $legal) { document in
       USDTLegalView(document: document.title)
     }
     .task {

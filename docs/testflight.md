@@ -2,6 +2,8 @@
 
 核对日期：2026-11-01。工程配置以当前源码为准，Apple 操作依据文末官方文档。已补主 App 隐私清单，并核对 Xcode Cloud 所需的共享 Scheme、Metal 准备脚本和自动构建号机制。Apple 团队已核实为 GUANGDONG ZHANG / `756Y5JKBUD`；新 App ID 已注册并启用 Push Notifications，App Store Connect 已创建 `TradeTools USDT`（App ID `6829222305`）。已保存新应用的 `iOS TestFlight` 工作流，仓库授权、分支 / 路径触发、必过单测、App Store Connect 归档和内部测试自动分发均已配置；编号从 `4` 开始自动递增；构建 `7` 已完成云端测试、归档、上传和内部自动分发。后续用户先确认手机为 13／14，现已从实际 iPhone 诊断确认正在运行 `1.0.1 (15)`；K 线真机结果见下节，准确的 Cloud commit／配置映射仍待后台核对。
 
+2026-11-02 用户确认构建 **26 已成功**，本轮停止追查此前 Cloud 构建失败。该反馈不等于下面新增图表／通知代码已上传或已在手机验收；准确 commit 映射仍以 Apple 记录为准。
+
 ## 本项目固定信息与待办
 
 | 项目 | 当前值 / 操作 |
