@@ -1206,12 +1206,12 @@ actor ChartSceneBuilder {
     case .offscreenLeading:
       markerLeft = geometry.plotLeft
       markerRight = min(
-        normalMarkerLeft,
+        geometry.plotRight,
         markerLeft + offscreenMarkerWidth
       )
     case .offscreenTrailing:
-      markerRight = normalMarkerLeft
-      markerLeft = max(0, markerRight - offscreenMarkerWidth)
+      markerRight = geometry.plotRight
+      markerLeft = max(geometry.plotLeft, markerRight - offscreenMarkerWidth)
     }
     let marker = ChartBarInstance(
       left: markerLeft,
@@ -2445,6 +2445,7 @@ actor ChartSceneBuilder {
     for row in rows.keys.sorted()
     where row >= 0 && row < maximumRows {
       var cursor = geometry.plotLeft
+      var rowGlyphs: [ChartGlyphInstance] = []
       let rowBaseline =
         baseline + Float(row) * 12 * geometry.scale
       for entry in rows[row, default: []].sorted(by: {
@@ -2478,16 +2479,14 @@ actor ChartSceneBuilder {
           + Float(labelResult.advance)
           + Float(valueResult.advance)
           + 8 * geometry.scale
-        guard
-          nextCursor <= geometry.plotRight
-            + 8 * geometry.scale
-        else {
-          break
-        }
-        glyphs.append(contentsOf: labelResult.instances)
-        glyphs.append(contentsOf: valueResult.instances)
+        rowGlyphs.append(contentsOf: labelResult.instances)
+        rowGlyphs.append(contentsOf: valueResult.instances)
         cursor = nextCursor
       }
+      glyphs.append(contentsOf: ChartGlyphRowLayout.fitting(
+        rowGlyphs, left: geometry.plotLeft,
+        right: geometry.plotRight, baseline: rowBaseline
+      ))
     }
     return glyphs
   }

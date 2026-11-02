@@ -131,3 +131,30 @@ struct ChartGlyphInstance: Equatable, Sendable {
             && (0...1).contains(uvBottom)
     }
 }
+
+enum ChartGlyphRowLayout {
+    /// Fit the complete row, including atlas padding, without dropping values.
+    static func fitting(
+        _ glyphs: [ChartGlyphInstance],
+        left: Float,
+        right: Float,
+        baseline: Float
+    ) -> [ChartGlyphInstance] {
+        guard let first = glyphs.map(\.left).min(),
+              let last = glyphs.map(\.right).max(),
+              right > left else { return [] }
+        let origin = min(left, first)
+        let scale = min(1, (right - left) / max(1, last - origin))
+        return glyphs.map { glyph in
+            ChartGlyphInstance(
+                left: left + (glyph.left - origin) * scale,
+                top: baseline + (glyph.top - baseline) * scale,
+                right: left + (glyph.right - origin) * scale,
+                bottom: baseline + (glyph.bottom - baseline) * scale,
+                uvLeft: glyph.uvLeft, uvTop: glyph.uvTop,
+                uvRight: glyph.uvRight, uvBottom: glyph.uvBottom,
+                color: glyph.color, timelineAnchorX: glyph.timelineAnchorX
+            )
+        }
+    }
+}

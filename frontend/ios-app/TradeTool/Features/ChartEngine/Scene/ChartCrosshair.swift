@@ -1201,6 +1201,7 @@ final class ChartCrosshairOverlayBuilder {
         renderedIndicatorKeys: inout [ChartIndicatorSeriesKey]
     ) {
         var cursor = data.panelLayout.plotLeft
+        var rowGlyphs: [ChartGlyphInstance] = []
         for item in values {
             let label = alignedText(
                 "\(item.label) ",
@@ -1228,15 +1229,15 @@ final class ChartCrosshairOverlayBuilder {
                 + Float(label.advance)
                 + Float(value.advance)
                 + 8 * data.displayScale
-            guard next <= data.panelLayout.plotRight
-                + 8 * data.displayScale else {
-                break
-            }
-            glyphs.append(contentsOf: label.instances)
-            glyphs.append(contentsOf: value.instances)
+            rowGlyphs.append(contentsOf: label.instances)
+            rowGlyphs.append(contentsOf: value.instances)
             renderedIndicatorKeys.append(item.key)
             cursor = next
         }
+        glyphs.append(contentsOf: ChartGlyphRowLayout.fitting(
+            rowGlyphs, left: data.panelLayout.plotLeft,
+            right: data.panelLayout.plotRight, baseline: baseline
+        ))
     }
 
     private func alignedText(

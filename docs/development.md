@@ -14,6 +14,14 @@
 
 2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
 
+## 云端构建图表断言修复（2026-11-02）
+
+用户反馈连续三次构建失败，提供的 Cloud 截图可见构建 22：Archive 成功、Test 失败。原始三项定向测试在当前 `3fb1859` 基线实际运行：图例完整性、离屏价格标记边界两项失败，底栏四项顺序已通过；截图中的五项底栏对应旧实现，云端具体构建与提交映射尚未从后台核实。首次结果保存在 `.integration-runtime/CloudBuild22/Before.xcresult`，不能以此前 `build-for-testing` 成功替代实际测试结果。
+
+先增加两项真实场景回归，修复前共复现 34 个断言失败：`testIndicatorLegendsPreserveEveryValueAcrossWidthsAndDisplayScales` 覆盖 320／390／600 pt、2 倍／3 倍屏、实时和十字线图例的全部指标、字形数量与边界；`testOffscreenPriceMarkerStaysInsidePlotAcrossDisplayScales` 覆盖两种倍率和两个历史视口。修复内容见 [行情与图表](market-data.md#图例完整性与离屏价格边界2026-11-02)，保留原失败断言，没有跳过用例或关闭 Cloud 必过测试。
+
+独立 `TradeTool Cloud Test Repair`（iPhone 18 Pro／iOS 27.2）使用 `TradeTool`、Debug-Seoul、关闭并行和覆盖率实际运行完整 `TradeToolTests`：**255 项全部通过（43.307 秒）**，含核心图表 138 项、Metal 离屏／十字线遮盖／一万次移动、行情快速路径、真实回环 WSS、持仓与账户隔离测试。证据为 `.integration-runtime/CloudBuild22/AllUnitTests.xcresult` 及对应日志；测试使用替身／回环，不执行真实交易。该结果是本地模拟器 XCTest，不代表新 Cloud 构建、TestFlight 分发或实机通过；Release 编译与源码交付状态见 [变更记录](changes.md#2026-11-02云端测试失败修复)。
+
 ## 图表下单与周期回归（2026-11-02）
 
 图表复用标准 USDT 开仓流程，行为见 [页面](ios-web-parity.md#k-线下单区域2026-11-02)，确认与估算边界见 [交易安全](trading-safety.md#图表与标准开仓共用流程2026-11-02)。新增 `ChartOrderTicketTests` 五项覆盖 Decimal 金额／费用、无效和相等止损、方向变化、确认快照／原命令字段、限价线交叉、不同屏宽／比例下的正方形价格绘图区及快捷周期偏好。

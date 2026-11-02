@@ -3338,6 +3338,96 @@ final class ChartEngineCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testIndicatorLegendsPreserveEveryValueAcrossWidthsAndDisplayScales()
+        async throws {
+        let fixture = try await makeChartSceneFixture()
+        let timeline = try XCTUnwrap(ChartTimelineViewport(
+            visibleSlotCount: 40,
+            trailingOffsetSlots: 0
+        ))
+        for scale in [2.0, 3.0] {
+            var wideLiveGlyphCount: Int?
+            var wideSelectedFooterCounts: [String: Int] = [:]
+            for width in [600.0, 390.0, 320.0] {
+                let viewport = try XCTUnwrap(ChartSceneViewport(
+                    widthPoints: width,
+                    heightPoints: 396,
+                    displayScale: scale
+                ))
+                let state = try await ChartSceneBuilder().build(
+                    frame: fixture.frame, viewport: viewport,
+                    timelineViewport: timeline
+                ).renderState
+                let data = try XCTUnwrap(state.staticScene.crosshairData)
+                let price = try XCTUnwrap(data.panelLayout.pricePanel)
+                let hit = try XCTUnwrap(ChartCrosshairResolver.resolve(
+                    screenX: try XCTUnwrap(data.baselineX(globalSlot: 200)),
+                    screenY: Double(price.plot.top + 20),
+                    transform: .identity, data: data,
+                    liveData: state.liveTail.crosshairLiveData
+                ))
+                let selected = ChartCrosshairOverlayBuilder().makeSnapshot(hit: hit, data: data)
+                XCTAssertEqual(Set(selected.renderedIndicatorKeys), Set(hit.indicatorValues.map(\.key)),
+                    "Missing indicator at \(width)pt / \(scale)x")
+                XCTAssertEqual(selected.renderedIndicatorKeys.count, hit.indicatorValues.count)
+                let liveGlyphs = state.liveTail.batches.filter {
+                    $0.interactionVisibility == .hiddenWhileCrosshairIsActive
+                }.flatMap { $0.storage.glyphInstances }
+                let selectedGlyphs = selected.batches.flatMap { $0.storage.glyphInstances }
+                for panel in data.panelLayout.indicatorPanels {
+                    for glyphs in [liveGlyphs, selectedGlyphs] {
+                        let footer = glyphs.filter {
+                            $0.top >= panel.plot.bottom && $0.bottom <= panel.frame.bottom
+                        }
+                        XCTAssertFalse(footer.isEmpty)
+                        XCTAssertTrue(footer.allSatisfy {
+                            $0.left >= data.panelLayout.plotLeft - 0.001
+                                && $0.right <= data.panelLayout.plotRight + 0.001
+                        }, "Legend exceeded plot at \(width)pt / \(scale)x")
+                    }
+                    let selectedFooterCount = selectedGlyphs.filter {
+                        $0.top >= panel.plot.bottom && $0.bottom <= panel.frame.bottom
+                    }.count
+                    if let wideCount = wideSelectedFooterCounts[panel.id] {
+                        XCTAssertEqual(selectedFooterCount, wideCount,
+                            "Narrow layout dropped selected legend glyphs")
+                    } else {
+                        wideSelectedFooterCounts[panel.id] = selectedFooterCount
+                    }
+                }
+                if let wideLiveGlyphCount {
+                    XCTAssertEqual(liveGlyphs.count, wideLiveGlyphCount,
+                        "Narrow layout dropped live legend glyphs")
+                } else {
+                    wideLiveGlyphCount = liveGlyphs.count
+                }
+            }
+        }
+    }
+
+    func testOffscreenPriceMarkerStaysInsidePlotAcrossDisplayScales()
+        async throws {
+        let fixture = try await makeChartSceneFixture()
+        for scale in [2.0, 3.0] {
+            let viewport = try XCTUnwrap(ChartSceneViewport(
+                widthPoints: 390, heightPoints: 396, displayScale: scale
+            ))
+            for offset in [40.0, 50.0] {
+                let timeline = try XCTUnwrap(ChartTimelineViewport(
+                    visibleSlotCount: 40, trailingOffsetSlots: offset
+                ))
+                let output = try await ChartSceneBuilder().build(
+                    frame: fixture.frame, viewport: viewport, timelineViewport: timeline
+                )
+                let marker = try XCTUnwrap(output.renderState.liveTail.latestPriceMarker)
+                XCTAssertTrue(marker.returnsToLatest)
+                XCTAssertGreaterThanOrEqual(marker.left, output.panelLayout.plotLeft)
+                XCTAssertLessThanOrEqual(marker.right, output.panelLayout.plotRight)
+            }
+        }
+    }
+
+    @MainActor
     func testCrosshairPriceLabelCoversLatestPriceMarkerAt2xAnd3x()
         async throws {
         let fixture = try await makeChartSceneFixture()
