@@ -1187,12 +1187,12 @@ actor ChartSceneBuilder {
       alignment: .leading,
       color: .primaryText
     )
-    let markerHalfHeight = 10 * geometry.scale
+    let markerHalfHeight = 8 * geometry.scale
     let markerTop = min(
       geometry.plotBottom - markerHalfHeight * 2,
       max(geometry.plotTop, latestY - markerHalfHeight)
     )
-    let normalMarkerLeft = geometry.plotRight + geometry.scale
+    let normalMarkerLeft = geometry.plotRight + 2 * geometry.scale
     let offscreenMarkerWidth = max(
       58 * geometry.scale,
       Float(measuredMarkerText.advance) + 10 * geometry.scale
@@ -1202,7 +1202,7 @@ actor ChartSceneBuilder {
     switch latestPriceState {
     case .visible:
       markerLeft = normalMarkerLeft
-      markerRight = geometry.width
+      markerRight = geometry.width - geometry.scale
     case .offscreenLeading:
       markerLeft = geometry.plotLeft
       markerRight = min(
@@ -1251,28 +1251,18 @@ actor ChartSceneBuilder {
       width: borderWidth,
       color: .latestPriceLine
     )
-    var latestPriceTimelineLines: [ChartLineSegmentInstance] = []
     var latestPriceFixedLines: [ChartLineSegmentInstance] = []
     switch latestPriceState {
     case .visible:
-      let lineStart = min(markerLeft, max(0, cache.latestX))
-      if markerLeft > lineStart {
-        latestPriceTimelineLines.append(ChartLineSegmentInstance(
-          start: ChartPolylinePoint(
-            x: lineStart,
-            y: markerCenterY
-          ),
-          end: ChartPolylinePoint(
-            x: markerLeft,
-            y: markerCenterY
-          ),
-          width: max(1, geometry.scale * 0.7),
-          dashLength: 4 * geometry.scale,
-          gapLength: 3 * geometry.scale,
-          dashPhase: 0,
-          color: .latestPriceLine
-        ))
-      }
+      latestPriceFixedLines.append(ChartLineSegmentInstance(
+        start: ChartPolylinePoint(x: geometry.plotLeft, y: markerCenterY),
+        end: ChartPolylinePoint(x: geometry.plotRight, y: markerCenterY),
+        width: max(1, geometry.scale * 0.7),
+        dashLength: 4 * geometry.scale,
+        gapLength: 3 * geometry.scale,
+        dashPhase: 0,
+        color: .latestPriceLine
+      ))
     case .offscreenLeading, .offscreenTrailing:
       if markerLeft > 0 {
         latestPriceFixedLines.append(ChartLineSegmentInstance(
@@ -1313,11 +1303,23 @@ actor ChartSceneBuilder {
     let labelResult = alignedText(
       markerText,
       atlas: cache.atlas,
-      x: (markerLeft + markerRight) / 2,
+      x: markerRight - 3 * geometry.scale,
       baselineY: markerBaseline,
-      alignment: .center,
+      alignment: .trailing,
       color: .primaryText
     )
+    let textAnchor = markerRight - 3 * geometry.scale
+    let textScale = min(1, (markerRight - markerLeft - 6 * geometry.scale)
+      / max(1, Float(measuredMarkerText.advance)))
+    let markerGlyphs = labelResult.instances.map { glyph in
+      ChartGlyphInstance(
+        left: textAnchor + (glyph.left - textAnchor) * textScale,
+        top: markerCenterY + (glyph.top - markerCenterY) * textScale,
+        right: textAnchor + (glyph.right - textAnchor) * textScale,
+        bottom: markerCenterY + (glyph.bottom - markerCenterY) * textScale,
+        uvLeft: glyph.uvLeft, uvTop: glyph.uvTop,
+        uvRight: glyph.uvRight, uvBottom: glyph.uvBottom, color: glyph.color)
+    }
     let displayedLegends = displayIndicatorLegends(
       frame: frame,
       cache: cache
@@ -1346,16 +1348,10 @@ actor ChartSceneBuilder {
     batches.append(ChartRenderBatch(
       lineSegments: latestPriceFixedLines + [markerFill] + markerBorder,
       barInstances: [marker],
-      glyphInstances: labelResult.instances,
+      glyphInstances: markerGlyphs,
       glyphAtlas: cache.atlas,
       coordinateSpace: .latestPrice
     ))
-    if !latestPriceTimelineLines.isEmpty {
-      batches.append(ChartRenderBatch(
-        lineSegments: latestPriceTimelineLines,
-        coordinateSpace: .latestPriceTimelineLine
-      ))
-    }
     if !legendGlyphs.isEmpty {
       batches.append(ChartRenderBatch(
         glyphInstances: legendGlyphs,

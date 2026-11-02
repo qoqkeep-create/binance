@@ -2881,8 +2881,13 @@ final class WebParityUITests: XCTestCase {
     let upper = base.withOffset(CGVector(dx: chart.frame.minX + side * 0.6, dy: chart.frame.minY + 30 + side * 0.15))
     lower.press(forDuration: 0.6)
     XCTAssertTrue(NSPredicate(format: "label == %@", "开多").evaluate(with: ticket))
-    XCTAssertNotEqual(app.staticTexts["chart-ticket.仓位"].label, "--")
+    XCTAssertNotEqual(app.staticTexts["chart-ticket.预估仓位"].label, "-")
     capture("chart-market-long-crosshair")
+    lower.tap()
+    let clearedPosition = app.staticTexts["chart-ticket.预估仓位"]
+    let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "-"), object: clearedPosition)
+    XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 3), .completed)
+    XCTAssertFalse(ticket.isEnabled)
     upper.press(forDuration: 0.6)
     XCTAssertEqual(ticket.label, "开空")
     capture("chart-market-short-crosshair")
@@ -3617,9 +3622,10 @@ extension WebParityUITests {
     XCTAssertTrue(app.staticTexts["资金归集账号"].waitForExistence(timeout: 5))
     capture("collection-new-account-editor")
     launch("profile")
-    let historyEntry = app.buttons["资金归集"]
-    XCTAssertTrue(historyEntry.waitForExistence(timeout: 10))
-    historyEntry.tap()
+    XCTAssertTrue(app.buttons["归集余额"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["资金归集"].exists)
+    app.buttons["归集余额"].tap()
+    app.buttons["capital.tab.records"].tap()
     XCTAssertTrue(app.buttons["collection.refresh"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["capital.submit"].exists)
   }

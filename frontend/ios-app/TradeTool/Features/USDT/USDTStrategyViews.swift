@@ -3,6 +3,7 @@ import SwiftUI
 struct USDTStrategiesView: View {
   var returnAfterSelection = false
   var onClose: (() -> Void)? = nil
+  var onSelection: ((JSONValue?) -> Void)? = nil
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: USDTStore
   @State private var notice = ""
@@ -12,6 +13,22 @@ struct USDTStrategiesView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 16) {
+        Button {
+          selected = .null
+          selecting = true
+        } label: {
+          HStack(spacing: 12) {
+            Image(systemName: "hand.tap").font(.system(size: 20)).foregroundStyle(WebTheme.brand)
+            VStack(alignment: .leading, spacing: 6) {
+              Text("手动止盈").font(.system(size: 18, weight: .medium)).foregroundStyle(WebTheme.text)
+              Text("自行决定止盈时机，保留止损保护").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+            }
+            Spacer(minLength: 0)
+            if store.activeStrategy == nil { Image(systemName: "checkmark").foregroundStyle(WebTheme.brand) }
+          }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+        }.buttonStyle(.plain).accessibilityIdentifier("strategy.manual")
         ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
           VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
@@ -60,7 +77,7 @@ struct USDTStrategiesView: View {
     }.scrollIndicators(.hidden).usdtPage("我的策略", backAction: onClose).task { await store.refresh() }
       .webModal(isPresented: $selecting) {
         WebModal(title: "确认选择策略") {
-          Text("确定要选择策略 \(selected.value("name")) 吗？").foregroundStyle(WebTheme.secondary)
+          Text(selected == .null ? "确定选择手动止盈吗？此设置用于后续开仓。" : "确定要选择策略 \(selected.value("name")) 吗？").foregroundStyle(WebTheme.secondary)
           HStack(spacing: 12) {
             Button("取消") { selecting = false }.buttonStyle(
               WebButtonStyle(kind: .secondary, radius: 14))
@@ -88,9 +105,11 @@ struct USDTStrategiesView: View {
   private func mutate(_ action: String) {
     Task {
       do {
-        _ = try await store.send("/v1/strategy/" + action, ["strategy_id": selected["id"] ?? .null])
+        _ = try await store.send("/v1/strategy/" + action,
+          selected == .null && action == "set-active" ? ["manual": .bool(true)] : ["strategy_id": selected["id"] ?? .null])
         await store.refresh()
         if action == "set-active" && returnAfterSelection {
+          onSelection?(selected == .null ? nil : selected)
           if let onClose { onClose() } else { dismiss() }
         }
       } catch { notice = error.localizedDescription }

@@ -35,8 +35,12 @@ enum DisplayNumber {
         index > 0 && index % 3 == 0 ? [",", character] : [character]
       }.reversed())
     }
-    let fraction = parts.count > 1 ? String(parts[1]) : ""
+    var fraction = parts.count > 1 ? String(parts[1]) : ""
     let sign = rounded < 0 ? "-" : signed && rounded > 0 ? "+" : ""
+    if abs(rounded) < 1 {
+      while fraction.last == "0" { fraction.removeLast() }
+      return sign + integer + (fraction.isEmpty ? "" : "." + fraction)
+    }
     return sign + integer + "." + fraction + String(repeating: "0", count: max(0, digits - fraction.count))
   }
 

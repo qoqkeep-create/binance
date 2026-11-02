@@ -4,6 +4,7 @@ import UIKit
 @MainActor
 final class KlineChartHostView: UIView {
     var onCrosshairSelection: ((ChartCrosshairSelection) -> Void)?
+    var onCrosshairDismiss: (() -> Void)?
     private let metalView: MTKView
     private let errorLabel = UILabel()
     private let rendererHealth = MetalRendererHealth()
@@ -55,7 +56,16 @@ final class KlineChartHostView: UIView {
     private var boundaryTranslationPoints: Double = 0
     private var lastInteractionFrameTimestamp: CFTimeInterval?
     private var pinchAnchorFraction: Double = 0.5
-    private var currentCrosshair: CrosshairSnapshot?
+    private var currentCrosshair: CrosshairSnapshot? {
+        didSet {
+            if oldValue != nil, currentCrosshair == nil {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.currentCrosshair == nil else { return }
+                    self.onCrosshairDismiss?()
+                }
+            }
+        }
+    }
     private var crosshairLocationPixels: ChartPolylinePoint?
     private var totalSlotCount = 0
     private var onTimelineViewportChange:
@@ -372,6 +382,7 @@ final class KlineChartHostView: UIView {
         onTimelineViewportChange = nil
         onPriceViewportChange = nil
         onCrosshairSelection = nil
+        onCrosshairDismiss = nil
         onFirstFramePresented = nil
         baseRenderState = nil
         pendingGuardBandRebase = nil

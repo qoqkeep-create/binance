@@ -122,7 +122,8 @@ private struct MarketChartDetailView: View {
     let onShowSymbols: () -> Void
     let onClose: (() -> Void)?
     let onStop: (() -> Void)?
-    @State private var isFavorite = true
+    @EnvironmentObject private var dashboard: DashboardViewModel
+    private var isFavorite: Bool { dashboard.containsInWatchlist(viewModel.market.symbol) }
     @State private var isIndicatorSettingsPresented = false
     @State private var isOrderSettingsPresented = false
     @State private var orderDrawing: ChartOrderDrawingState?
@@ -203,6 +204,7 @@ private struct MarketChartDetailView: View {
             viewModel.start()
         }
         .onDisappear {
+            selectedStopPrice = nil
             viewModel.stop()
             onStop?()
         }
@@ -270,7 +272,8 @@ private struct MarketChartDetailView: View {
                 }
 
                 Button {
-                    isFavorite.toggle()
+                    if isFavorite { dashboard.hideMarkets([viewModel.market.symbol]) }
+                    else { dashboard.addToWatchlist(viewModel.market.symbol) }
                 } label: {
                     Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.system(size: 18, weight: .medium))
@@ -314,10 +317,15 @@ private struct MarketChartDetailView: View {
                     chartPriceProjection = projection
                 },
                 onCrosshairSelection: { selection in
-                    guard nativeOrderType == "market", selection.panelID == ChartPanelID.price,
-                        selection.panelValue.isFinite, selection.panelValue > 0 else { return }
+                    guard nativeOrderType == "market" else { return }
+                    guard selection.panelID == ChartPanelID.price,
+                        selection.panelValue.isFinite, selection.panelValue > 0 else {
+                        selectedStopPrice = nil
+                        return
+                    }
                     selectedStopPrice = selection.panelValue
-                }
+                },
+                onCrosshairDismiss: { selectedStopPrice = nil }
             )
 
             if let projection = chartPriceProjection,

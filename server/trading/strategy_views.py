@@ -169,6 +169,9 @@ class StrategySetActiveView(APIView):
         payload = request_data_mapping(request)
         if payload is None:
             return fail("请求参数必须是对象")
+        if payload.get("manual") is True:
+            Strategy.objects.filter(user=request.user, is_active=True).update(is_active=False)
+            return ok(message="后续开仓使用手动止盈")
         strategy_id = payload.get("strategy_id")
         if not strategy_id:
             return fail("strategy_id不能为空")

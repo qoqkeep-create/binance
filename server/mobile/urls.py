@@ -19,4 +19,5 @@ urlpatterns = [
     path("market/tickers/popular", TickersView.as_view(), {"kind": "popular"}),
     path("market/tickers/search", TickersView.as_view(), {"kind": "search"}),
     path("market/watchlist/defaults", WatchlistView.as_view()),
+    path("market/watchlist", WatchlistView.as_view()),
 ]

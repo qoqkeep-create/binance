@@ -199,7 +199,7 @@ struct ChartOrderDrawingOverlay: View {
     private let coordinateSpaceName = "chart-order-drawing-overlay"
 
     var body: some View {
-        GeometryReader { _ in
+        GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 riskArea
 
@@ -208,15 +208,17 @@ struct ChartOrderDrawingOverlay: View {
                         kind: .entry,
                         title: drawing.entryLineTitle,
                         price: entryPrice,
-                        color: BinanceTheme.accentText
+                        color: BinanceTheme.accentText,
+                        canvasWidth: geometry.size.width
                     )
                 }
 
                 orderLine(
                     kind: .stopLoss,
-                    title: "止损",
+                    title: "止损价",
                     price: drawing.stopLossPrice,
-                    color: BinanceTheme.negative
+                    color: BinanceTheme.negative,
+                    canvasWidth: geometry.size.width
                 )
 
                 if showsSummary { modeBadge }
@@ -299,14 +301,18 @@ struct ChartOrderDrawingOverlay: View {
         kind: ChartOrderLineKind,
         title: String,
         price: Double,
-        color: Color
+        color: Color,
+        canvasWidth: CGFloat
     ) -> some View {
-        let width = projection.plotRight - projection.plotLeft
+        let width = Double(canvasWidth) - projection.plotLeft
+        let plotWidth = projection.plotRight - projection.plotLeft
+        let titleWidth = 78.0
+        let axisWidth = max(24, Double(canvasWidth) - projection.plotRight - 4)
         let y = projectedY(price) ?? projection.plotTop
         return ZStack {
             Path { path in
                 path.move(to: CGPoint(x: 0, y: 18))
-                path.addLine(to: CGPoint(x: width, y: 18))
+                path.addLine(to: CGPoint(x: plotWidth, y: 18))
             }
             .stroke(
                 color.opacity(0.95),
@@ -316,41 +322,29 @@ struct ChartOrderDrawingOverlay: View {
                 )
             )
 
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(color)
-                    .padding(.horizontal, 7)
-                    .frame(height: 22)
-                    .background(
-                        BinanceTheme.background.opacity(0.96),
-                        in: RoundedRectangle(cornerRadius: 4)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(color.opacity(0.75), lineWidth: 0.7)
-                    }
-
-                Spacer(minLength: 6)
-
-                HStack(spacing: 5) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 9, weight: .bold))
-                    Text(formatPrice(price))
-                        .font(.system(size: 11, weight: .semibold))
-                        .monospacedDigit()
-                }
-                .foregroundStyle(BinanceTheme.onColor)
-                .padding(.horizontal, 7)
-                .frame(height: 23)
-                .background(color, in: RoundedRectangle(cornerRadius: 4))
+            HStack(spacing: 5) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 9, weight: .bold))
+                Text(title).font(.system(size: 10, weight: .bold))
             }
-            .padding(.horizontal, 5)
+            .foregroundStyle(color)
+            .frame(width: titleWidth, height: 24)
+            .background(BinanceTheme.background.opacity(0.96), in: RoundedRectangle(cornerRadius: 4))
+            .overlay { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.75), lineWidth: 0.7) }
+            .position(x: titleWidth * 1.5 + 5, y: 18)
+
+            Text(formatPrice(price))
+                .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.5)
+                .foregroundStyle(BinanceTheme.onColor)
+                .padding(.horizontal, 3).frame(width: axisWidth, height: 21)
+                .background(color, in: RoundedRectangle(cornerRadius: 3))
+                .position(x: plotWidth + 2 + axisWidth / 2, y: 18)
         }
         .frame(width: width, height: 36)
         .contentShape(Rectangle())
         .position(
-            x: (projection.plotLeft + projection.plotRight) / 2,
+            x: projection.plotLeft + width / 2,
             y: y
         )
         .highPriorityGesture(

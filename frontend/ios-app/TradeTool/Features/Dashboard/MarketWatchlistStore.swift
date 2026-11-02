@@ -6,6 +6,7 @@ struct MarketWatchlistPreferences: Codable, Equatable {
     let visibleSymbols: Set<String>
     let pinnedSymbols: Set<String>
     let isCustomized: Bool
+    var needsSync: Bool? = nil
 }
 
 protocol MarketWatchlistStoring {

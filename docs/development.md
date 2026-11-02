@@ -227,3 +227,11 @@ generic iOS Release 未签名构建及 generic iOS Simulator 的 `build-for-test
 在本机临时 Swift Package 中直接编译实际 `DisplayNumber.swift`、`MarketSnapshot.swift` 与 `DisplayNumberTests.swift`，5 项测试通过，覆盖分档、四位有效数字 / 尾零、跨档进位、负值 / 零、大额 Decimal、无效值、行情和缩放单位。既有浮窗 / 图表参数 / 开仓估算断言按新格式更新，UI 顶栏流程增加头像间距、同行和按钮高度断言。
 
 本任务源码快照的 generic iOS Release 未签名构建、单测工程和 UI 工程 `build-for-testing` 通过；工作区并行交付的已提交图表布局纳入最终编译。证据保存在忽略目录 `.integration-runtime/ProfileNumbers/`。按用户偏好未启动模拟器、未执行 iOS 单测 / UI 测试，页面截图、TestFlight 与实机验收待核；本轮没有后端发布或真实资金操作。
+
+## 账户归集、服务器自选与图表修正（2026-11-02）
+
+`market_stream mobile.tests trading.test_strategy_loading` 共 100 项通过（9.290 秒，5 项独立 Redis 条件跳过），使用隔离 SQLite／LocMem、公共数据替身和无绑定账号。新增自选顺序／空列表／用户隔离／缓存丢失、无效目录拒绝、市值排序／倍数币种、七天刷新／失败退避／分页失败保留旧快照、手动止盈默认项隔离测试。migration 漂移检查通过。
+
+实际 `DisplayNumber.swift` 与 `MarketSnapshot.swift` 在本机临时 Swift Package 运行 5 项测试通过；将同样断言放回前版格式器可复现 8 个失败，修复后通过，涵盖用户给出的两个小数示例与尾零、零值、进位。iOS 增加服务器自选恢复与离线重试测试，更新当前价全宽线／轴内标记及 UI 入口断言。
+
+本轮 generic iOS Release 未签名构建、单测工程与 UI 工程 `build-for-testing` 通过，证据在忽略目录 `.integration-runtime/InterfaceRefinement/`。按既有用户偏好未启动模拟器、未执行 iOS XCTest／UI 测试，iPhone 16 Pro Max 底部贴边及真机触摸仍待手机新版确认；没有上传 TestFlight。线上后端与公共数据结果见 [变更](changes.md)，不能用本地测试代替生产验证。

@@ -1081,6 +1081,50 @@ private final class ChartDiagnosticURLProtocol: URLProtocol {
 
 @MainActor
 final class WatchlistInteractionTests: XCTestCase {
+    func testServerFavoritesRestoreBeforeMarketCapOrderedRemainder() async throws {
+        let client = WatchlistFixtureAPI(saved: ["SOLUSDT", "ADAUSDT"],
+            catalog: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ADAUSDT"])
+        let realtime = RealtimeClient(baseURL: URL(string: "https://example.invalid")!, tokenProvider: { nil })
+        let model = DashboardViewModel(apiClient: client, realtimeClient: realtime)
+        model.startRealtime(userID: "server-user")
+        defer { model.stopRealtime() }
+        for _ in 0..<100 {
+            if model.containsInWatchlist("ADAUSDT") { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.markets(onlyVisible: true).map(\.symbol), ["SOLUSDT", "ADAUSDT"])
+        XCTAssertEqual(model.pairPickerSymbols, ["SOLUSDT", "ADAUSDT", "BTCUSDT", "ETHUSDT"])
+        await model.loadSymbolCatalog(force: true)
+        XCTAssertEqual(model.pairPickerSymbols, ["SOLUSDT", "ADAUSDT", "BTCUSDT", "ETHUSDT"])
+    }
+
+    func testOfflineFavoriteEditSurvivesServerRestoreAndRetriesOnCatalogOpen() async throws {
+        let suite = "WatchlistSyncTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = UserDefaultsMarketWatchlistStore(service: "test", defaults: defaults)
+        preferences.save(.init(quoteAsset: "USDT", orderedSymbols: ["BTCUSDT", "ETHUSDT"],
+            visibleSymbols: ["BTCUSDT"], pinnedSymbols: [], isCustomized: true, needsSync: true), for: "user")
+        let client = WatchlistFixtureAPI(saved: ["ETHUSDT"])
+        await client.setSaveFailure(true)
+        let realtime = RealtimeClient(baseURL: URL(string: "https://example.invalid")!, tokenProvider: { nil })
+        let model = DashboardViewModel(apiClient: client, realtimeClient: realtime, watchlistStore: preferences)
+        model.startRealtime(userID: "user")
+        defer { model.stopRealtime() }
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(model.markets(onlyVisible: true).map(\.symbol), ["BTCUSDT"])
+        XCTAssertEqual(preferences.load(for: "user")?.needsSync, true)
+        await client.setSaveFailure(false)
+        await model.loadSymbolCatalog(force: true)
+        for _ in 0..<100 {
+            if preferences.load(for: "user")?.needsSync == false { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let saved = await client.saved
+        XCTAssertEqual(saved, ["BTCUSDT"])
+        XCTAssertEqual(preferences.load(for: "user")?.needsSync, false)
+    }
+
     func testFavoriteMembershipReorderAndLegacyPinsPersistAcrossRelaunch() async throws {
         let suite = "WatchlistInteractionTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1134,6 +1178,14 @@ final class WatchlistInteractionTests: XCTestCase {
 private actor WatchlistFixtureAPI: APIClient {
     private(set) var catalogCalls = 0
     private var fail = false
+    private(set) var saved: [String]?
+    private let catalog: [String]
+    private var saveFailure = false
+    init(saved: [String]? = nil, catalog: [String] = ["ADAUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT"]) {
+        self.saved = saved
+        self.catalog = catalog
+    }
+    func setSaveFailure(_ value: Bool) { saveFailure = value }
     func failCatalog() { fail = true }
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
         let value: JSONValue
@@ -1142,10 +1194,14 @@ private actor WatchlistFixtureAPI: APIClient {
             catalogCalls += 1
             if fail { throw URLError(.notConnectedToInternet) }
             value = .object(["quoteAsset": .string("USDT"), "symbols": .array(
-                ["ADAUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT"].map(JSONValue.string))])
+                catalog.map(JSONValue.string))])
         case "/api/market/watchlist/defaults":
-            value = .object(["quoteAsset": .string("USDT"), "symbols": .array([.string("BTCUSDT")]),
-                "availableSymbols": .array(["ADAUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT"].map(JSONValue.string))])
+            value = .object(["quoteAsset": .string("USDT"), "symbols": .array((saved ?? ["BTCUSDT"]).map(JSONValue.string)),
+                "availableSymbols": .array(catalog.map(JSONValue.string)), "isCustomized": .bool(saved != nil)])
+        case "/api/market/watchlist":
+            if saveFailure { throw URLError(.notConnectedToInternet) }
+            saved = try JSONDecoder().decode([String: [String]].self, from: request.body ?? Data())["symbols"]
+            value = .object([:])
         case "/api/market/tickers":
             value = .object(["quoteAsset": .string("USDT"), "tickers": .array([])])
         default: throw URLError(.unsupportedURL)

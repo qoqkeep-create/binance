@@ -4,10 +4,13 @@ import logging
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.gzip import gzip_page
+from rest_framework import serializers
 from rest_framework.views import APIView
 from common.response import fail, ok
 from market_stream.core import INTERVAL_MS, symbol_name
 from market_stream import service, trading_data
+from market_stream.catalog import catalog_response
+from market_stream.models import MarketWatchlist
 from market_stream.diagnostics import correlation
 
 log = logging.getLogger(__name__)
@@ -40,7 +43,9 @@ class SymbolsView(APIView):
         available = service.symbols(cached_only=True)
         if not available:
             return fail("交易对目录正在准备，请稍后重试", code=503, status=503)
-        return ok({"quoteAsset": settings.MARKET_QUOTE_ASSET, "symbols": available})
+        payload = catalog_response(available)
+        return ok({"quoteAsset": settings.MARKET_QUOTE_ASSET, "symbols": payload["availableSymbols"],
+                   "marketCaps": payload["marketCaps"], "marketCapsUpdatedAt": payload["marketCapsUpdatedAt"]})
 
 
 class WatchlistView(APIView):
@@ -48,9 +53,28 @@ class WatchlistView(APIView):
         available = service.symbols(cached_only=True)
         if not available:
             return fail("交易对目录正在准备，请稍后重试", code=503, status=503)
-        preferred = [f"{base}{settings.MARKET_QUOTE_ASSET}" for base in ("BTC", "ETH", "SOL", "BNB", "XRP", "DOGE")]
-        return ok({"quoteAsset": settings.MARKET_QUOTE_ASSET,
-                   "symbols": [symbol for symbol in preferred if symbol in available], "availableSymbols": available})
+        saved = MarketWatchlist.objects.filter(user=request.user, quote_asset=settings.MARKET_QUOTE_ASSET).first()
+        preferred = saved.symbols if saved is not None else [f"{base}{settings.MARKET_QUOTE_ASSET}" for base in ("BTC", "ETH", "SOL", "BNB", "XRP", "DOGE")]
+        return ok({**catalog_response(available), "quoteAsset": settings.MARKET_QUOTE_ASSET,
+                   "symbols": [symbol for symbol in preferred if symbol in available], "isCustomized": saved is not None})
+
+    def post(self, request):
+        serializer = WatchlistInput(data=request.data)
+        if not serializer.is_valid():
+            return fail("自选交易对格式不正确")
+        available = service.symbols(cached_only=True)
+        if not available:
+            return fail("交易对目录正在准备，请稍后重试", code=503, status=503)
+        symbols = list(dict.fromkeys(item.strip().upper() for item in serializer.validated_data["symbols"]))
+        if set(symbols) - set(available):
+            return fail("部分交易对不存在或已下架，请刷新目录后重试")
+        MarketWatchlist.objects.update_or_create(user=request.user, quote_asset=settings.MARKET_QUOTE_ASSET,
+                                                 defaults={"symbols": symbols})
+        return ok({"symbols": symbols})
+
+
+class WatchlistInput(serializers.Serializer):
+    symbols = serializers.ListField(child=serializers.CharField(max_length=32), max_length=2000, allow_empty=True)
 
 
 class KlinesView(APIView):

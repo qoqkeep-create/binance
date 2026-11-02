@@ -11,6 +11,24 @@ class MarketSymbol(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class MarketWatchlist(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    quote_asset = models.CharField(max_length=16)
+    symbols = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "quote_asset"], name="market_watchlist_owner_quote")]
+
+
+class MarketCapitalization(models.Model):
+    """Last complete public market-cap snapshot, independent of trading wallets."""
+    key = models.CharField(max_length=16, primary_key=True, default="coingecko")
+    coins = models.JSONField(default=dict)
+    refreshed_at = models.DateTimeField(null=True)
+    attempted_at = models.DateTimeField(null=True)
+
+
 class MarketCandle(models.Model):
     symbol = models.CharField(max_length=32)
     interval = models.CharField(max_length=4)

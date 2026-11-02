@@ -198,8 +198,8 @@ final class ChartEngineCoreTests: XCTestCase {
     }
 
     func testIntegratedTabsKeepMarketFirstAndUSDTBusinessOrder() {
-        XCTAssertEqual(AppTab.availableTabs(canViewReferenceNotifications: true), [.markets, .positions, .trade, .signals, .settings])
-        XCTAssertEqual(AppTab.trade.title, "开仓")
+        XCTAssertEqual(AppTab.availableTabs(canViewReferenceNotifications: true), [.markets, .positions, .signals, .settings])
+        XCTAssertEqual(AppTab.availableTabs(canViewReferenceNotifications: false), [.markets, .positions, .signals, .settings])
         XCTAssertEqual(AppTab.settings.title, "我的")
     }
 
@@ -3871,11 +3871,9 @@ final class ChartEngineCoreTests: XCTestCase {
                 $0.coordinateSpace == .latestPrice
             }
         )
-        let latestPriceTimelineBatch = try XCTUnwrap(
-            state.liveTail.batches.first {
-                $0.coordinateSpace == .latestPriceTimelineLine
-            }
-        )
+        XCTAssertFalse(state.liveTail.batches.contains {
+            $0.coordinateSpace == .latestPriceTimelineLine
+        })
         let fixedLiveBatch = try XCTUnwrap(
             state.liveTail.batches.first {
                 $0.coordinateSpace == .fixed
@@ -3918,39 +3916,20 @@ final class ChartEngineCoreTests: XCTestCase {
             3
         )
         XCTAssertEqual(latestPriceBatch.storage.barInstances.count, 1)
-        XCTAssertEqual(latestPriceBatch.storage.lineSegments.count, 21)
-        XCTAssertEqual(
-            latestPriceTimelineBatch.storage.lineSegments.count,
-            1
-        )
-        XCTAssertEqual(
-            latestPriceBatch.storage.barInstances.first?.color,
-            .latestPriceMarkerBackground
-        )
-        XCTAssertEqual(
-            latestPriceTimelineBatch.storage.lineSegments.first?.color,
-            .latestPriceLine
-        )
-        XCTAssertGreaterThan(
-            latestPriceTimelineBatch.storage.lineSegments.first?
-                .dashLength ?? 0,
-            0
-        )
-        let latestPriceTimelineLine = try XCTUnwrap(
-            latestPriceTimelineBatch.storage.lineSegments.first
-        )
-        let latestCandleX = try XCTUnwrap(
-            liveBatch.storage.candleInstances.first?.x
-        )
-        XCTAssertEqual(
-            latestPriceTimelineLine.start.x,
-            latestCandleX
-        )
-        XCTAssertEqual(
-            latestPriceTimelineLine.end.x,
-            output.panelLayout.plotRight + Float(viewport.displayScale),
-            accuracy: 0.001
-        )
+        XCTAssertEqual(latestPriceBatch.storage.lineSegments.count, 22)
+        XCTAssertEqual(latestPriceBatch.storage.barInstances.first?.color, .latestPriceMarkerBackground)
+        let referenceLine = try XCTUnwrap(latestPriceBatch.storage.lineSegments.first)
+        XCTAssertEqual(referenceLine.color, .latestPriceLine)
+        XCTAssertGreaterThan(referenceLine.dashLength, 0)
+        XCTAssertEqual(referenceLine.start.x, output.panelLayout.plotLeft, accuracy: 0.001)
+        XCTAssertEqual(referenceLine.end.x, output.panelLayout.plotRight, accuracy: 0.001)
+        let marker = try XCTUnwrap(state.liveTail.latestPriceMarker)
+        XCTAssertLessThanOrEqual(marker.right, Float(viewport.widthPixels))
+        XCTAssertLessThanOrEqual(marker.bottom - marker.top, 16 * Float(viewport.displayScale))
+        for glyph in latestPriceBatch.storage.glyphInstances {
+            XCTAssertGreaterThanOrEqual(glyph.left, marker.left)
+            XCTAssertLessThanOrEqual(glyph.right, marker.right)
+        }
         XCTAssertEqual(
             state.staticScene.horizontalPlotBounds,
             ChartHorizontalPlotBounds(
@@ -3959,7 +3938,7 @@ final class ChartEngineCoreTests: XCTestCase {
             )
         )
         let roundedMarkerBorder = Array(
-            latestPriceBatch.storage.lineSegments.dropFirst()
+            latestPriceBatch.storage.lineSegments.dropFirst(2)
         )
         XCTAssertEqual(roundedMarkerBorder.count, 20)
         XCTAssertTrue(roundedMarkerBorder.allSatisfy {

@@ -68,7 +68,7 @@ final class FloatingPositionsTests: XCTestCase {
     XCTAssertEqual(position.profitText, "--")
     XCTAssertNil(FloatingPosition(.object([:])))
     XCTAssertEqual(FloatingPosition(row(price: "0", profit: "-0.001"))?.priceText, "--")
-    XCTAssertEqual(FloatingPosition(row(price: "1", profit: "-0.001"))?.profitText, "-0.001000 U")
+    XCTAssertEqual(FloatingPosition(row(price: "1", profit: "-0.001"))?.profitText, "-0.001 U")
   }
 
   @MainActor

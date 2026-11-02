@@ -9,16 +9,10 @@ struct MarketSearchView: View {
     @State private var query = ""
     @State private var pendingDeletion: String?
 
-    private var pairSheetDetents: Set<PresentationDetent> {
-        // iOS 26 insets partial-height system sheets. The large detent attaches to the screen edges.
-        if #available(iOS 26.0, *) { return [.large] }
-        return [.fraction(0.85)]
-    }
-
     private var symbols: [String] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "").uppercased()
-        return dashboardViewModel.catalogSymbols.filter {
+        return dashboardViewModel.pairPickerSymbols.filter {
             normalized.isEmpty || $0.contains(normalized)
         }
     }
@@ -69,7 +63,7 @@ struct MarketSearchView: View {
             }
         }.foregroundStyle(BinanceTheme.primaryText)
             .background(BinanceTheme.background)
-            .largeTradingSheet(detents: pairSheetDetents)
+            .largeTradingSheet()
             .task { await dashboardViewModel.loadSymbolCatalog() }
             .alert("删除自选", isPresented: Binding(
                 get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
@@ -127,9 +121,15 @@ struct MarketSearchView: View {
 /// Shared native presentation styling for trading panels and legal documents.
 extension View {
     func largeTradingSheet(detents: Set<PresentationDetent> = [.fraction(0.85)]) -> some View {
-        presentationDetents(detents)
+        // iOS 26 floats partial-height sheets above the bottom edge on larger iPhones.
+        // Use the attached large presentation consistently across all trading panels.
+        presentationDetents(tradingSheetDetents(detents))
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(24)
             .presentationBackground(BinanceTheme.background)
+    }
+    private func tradingSheetDetents(_ legacy: Set<PresentationDetent>) -> Set<PresentationDetent> {
+        if #available(iOS 26.0, *) { return [.large] }
+        return legacy
     }
 }

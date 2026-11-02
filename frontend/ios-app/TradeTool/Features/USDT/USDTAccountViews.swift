@@ -120,15 +120,6 @@ struct USDTProfileView: View {
               value: "\(DisplayNumber.text(store.riskAmount)) USDT", amount: true)
           }
           separator
-          if !lead {
-            Button {
-              capitalTab = .records
-              normalize = true
-            } label: {
-              menuRow("资金归集", "paperplane")
-            }
-            separator
-          }
           NavigationLink {
             USDTStrategiesView()
           } label: {
@@ -231,15 +222,15 @@ struct USDTProfileView: View {
   private var accountBackground: LinearGradient {
     LinearGradient(
       colors: scheme == .dark
-        ? [WebTheme.brand.opacity(0.05), WebTheme.brand.opacity(0.1)]
+        ? [WebTheme.brand.opacity(0.10), WebTheme.brand.opacity(0.18)]
         : lead
           ? [
             Color(red: 240 / 255, green: 249 / 255, blue: 255 / 255),
             Color(red: 239 / 255, green: 246 / 255, blue: 255 / 255),
           ]
           : [
-            Color(red: 254 / 255, green: 252 / 255, blue: 232 / 255),
-            Color(red: 255 / 255, green: 251 / 255, blue: 235 / 255),
+            Color(red: 255 / 255, green: 243 / 255, blue: 179 / 255),
+            Color(red: 255 / 255, green: 231 / 255, blue: 144 / 255),
           ], startPoint: .topLeading, endPoint: .bottomTrailing)
   }
   private func balance(_ key: String) -> String {
@@ -461,7 +452,7 @@ struct USDTStopLossView: View {
       }.scrollIndicators(.hidden)
     }.frame(maxWidth: 448).frame(maxWidth: .infinity)
     .font(.system(size: 14)).foregroundStyle(WebTheme.text)
-    .background(WebTheme.surface)
+    .background(WebTheme.surface.ignoresSafeArea())
     .safeAreaInset(edge: .bottom, spacing: 0) {
       Button(saving ? "提交中..." : "确定") {
         cancelPending = false
@@ -472,9 +463,7 @@ struct USDTStopLossView: View {
         .padding(.horizontal, 24).padding(.vertical, 12)
         .frame(maxWidth: 448).frame(maxWidth: .infinity).background(WebTheme.surface)
     }
-    .presentationDetents([.custom(StopLossPresentationDetent.self)])
-    .presentationDragIndicator(.visible)
-    .presentationCornerRadius(24)
+    .largeTradingSheet(detents: [.custom(StopLossPresentationDetent.self)])
     .presentationBackground(WebTheme.surface)
     .interactiveDismissDisabled(saving)
     .task {
@@ -596,7 +585,7 @@ struct USDTCapitalView: View {
       } else {
         walletContent
       }
-    }.foregroundStyle(WebTheme.text).background(WebTheme.page)
+    }.foregroundStyle(WebTheme.text).background(WebTheme.page.ignoresSafeArea())
       .safeAreaInset(edge: .bottom, spacing: 0) {
         if tab != .records { walletFooter }
       }
@@ -605,7 +594,13 @@ struct USDTCapitalView: View {
         if tab != .records { await load() }
       }
       .onChange(of: store.scope) { _, _ in dismiss() }
-      .webModal(isPresented: $editor) { USDTCollectAccountView() }
+      .webModal(isPresented: $editor) {
+        USDTCollectAccountView(initialData: .object([
+          "account_type": preview["account_type"] ?? .null,
+          "capital_collect_address": preview["destination_address"] ?? .null,
+          "capital_collect_network": preview["destination_network"] ?? .null,
+        ]))
+      }
       .onChange(of: editor) { _, shown in if !shown { Task { await load() } } }
       .webModal(isPresented: $legacy) { USDTLegacyCapitalView() }
       .onChange(of: legacy) { _, shown in if !shown { Task { await load() } } }
@@ -632,7 +627,11 @@ struct USDTCapitalView: View {
       VStack(alignment: .leading, spacing: 20) {
         if tab == .move {
           VStack(alignment: .leading, spacing: 8) {
-            Text("划转方向").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+            HStack {
+              Text("划转方向").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+              Spacer()
+              refreshButton
+            }
             Picker("划转方向", selection: $direction) {
               Text("合约、资金 → 现货").tag("to_spot")
               Text("资金 → 合约").tag("funding_to_futures")
@@ -663,7 +662,11 @@ struct USDTCapitalView: View {
             .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
         } else {
           VStack(alignment: .leading, spacing: 12) {
-            Text("转出账户").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+            HStack {
+              Text("转出账户").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+              Spacer()
+              refreshButton
+            }
             VStack(spacing: 18) {
               HStack { Label("现货账户", systemImage: "wallet.bifold").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
               moneyRow("现货可用余额", key: "spot_available")
@@ -725,11 +728,14 @@ struct USDTCapitalView: View {
         if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
       }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || (!completed && !legacyPending && !canSubmit))
         .accessibilityIdentifier("capital.submit")
-      if !busy && !pending && !completed {
-        Button("刷新金额") { Task { await load() } }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary).frame(minHeight: 44)
-          .accessibilityIdentifier("capital.refresh")
-      }
     }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8).background(WebTheme.page)
+  }
+  private var refreshButton: some View {
+    Button("刷新") { Task { await load() } }
+      .font(.system(size: 12, weight: .medium)).foregroundStyle(WebTheme.secondary)
+      .frame(minWidth: 44, minHeight: 32).contentShape(Rectangle())
+      .disabled(busy || pending || submitted)
+      .accessibilityLabel("刷新金额").accessibilityIdentifier("capital.refresh")
   }
   private var gap: String {
     guard let maximum = preview["maximum_futures_balance"]?.decimal,
@@ -779,7 +785,7 @@ struct USDTCapitalView: View {
     let scope = store.scope
     let requestedAction = action
     busy = true
-    preview = .null
+    if preview.value("operation") != requestedAction { preview = .null }
     notice = ""
     defer { if scope == store.scope { busy = false } }
     do {
@@ -1134,6 +1140,15 @@ struct USDTCollectAccountView: View {
   @State private var configured = false
   @State private var busy = false
   @State private var notice = ""
+  private let hasInitialData: Bool
+  init(initialData: JSONValue = .null) {
+    hasInitialData = initialData != .null
+    let initialAddress = initialData.value("capital_collect_address", fallback: "")
+    _address = State(initialValue: initialAddress)
+    _network = State(initialValue: initialData.value("capital_collect_network", fallback: ""))
+    _accountType = State(initialValue: initialData.value("account_type", fallback: ""))
+    _configured = State(initialValue: !initialAddress.isEmpty)
+  }
   var body: some View {
     WebModal(title: "资金归集账号") {
       if accountType == "sub" {
@@ -1178,6 +1193,7 @@ struct USDTCollectAccountView: View {
       }
       USDTNotice(text: notice)
     }.task {
+      guard !hasInitialData else { return }
       do {
         let data = try await store.get("/v1/account/capital-collect-account")
         address = data.value("capital_collect_address", fallback: "")

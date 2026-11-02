@@ -364,6 +364,7 @@ struct KlineChartSceneView: View {
   var onPriceProjectionChange:
     (ChartPriceProjection?) -> Void = { _ in }
   var onCrosshairSelection: (ChartCrosshairSelection) -> Void = { _ in }
+  var onCrosshairDismiss: () -> Void = {}
 
   @Environment(\.displayScale) private var displayScale
   @StateObject private var controller =
@@ -420,7 +421,8 @@ struct KlineChartSceneView: View {
             onFirstFramePresented: { time in
               if let epoch = frame?.epoch { onFirstFramePresented(epoch, time) }
             },
-            onCrosshairSelection: onCrosshairSelection
+            onCrosshairSelection: onCrosshairSelection,
+            onCrosshairDismiss: onCrosshairDismiss
           )
           .transition(.opacity)
         } else {

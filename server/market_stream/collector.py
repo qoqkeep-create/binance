@@ -161,6 +161,11 @@ class MarketCollector:
     async def retention(self):
         while True:
             try:
+                from market_stream.catalog import refresh_market_caps
+                await asyncio.to_thread(refresh_market_caps)
+            except Exception as exc:
+                log.warning("Market capitalization refresh deferred (%s)", type(exc).__name__)
+            try:
                 await asyncio.to_thread(service.prune_history)
             except Exception as exc:
                 log.warning("Market retention deferred (%s)", type(exc).__name__)

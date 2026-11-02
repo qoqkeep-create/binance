@@ -34,6 +34,9 @@ final class DashboardViewModel: ObservableObject {
     private var activeUserID: String?
     private var activeQuoteAsset: String?
     private var watchlistIsCustomized = false
+    private var watchlistNeedsSync = false
+    private var watchlistRevision = 0
+    private var watchlistSyncTask: Task<Void, Never>?
     private var hasLoadedSignals = false
     private var nextSignalCursor: String?
     private var signalRequestRevision = 0
@@ -86,6 +89,8 @@ final class DashboardViewModel: ObservableObject {
     }
 
     func stopRealtime() {
+        watchlistSyncTask?.cancel()
+        watchlistSyncTask = nil
         defaultWatchlistTask?.cancel()
         defaultWatchlistTask = nil
         realtimeEventsTask?.cancel()
@@ -110,6 +115,8 @@ final class DashboardViewModel: ObservableObject {
         activeUserID = nil
         activeQuoteAsset = nil
         watchlistIsCustomized = false
+        watchlistNeedsSync = false
+        watchlistRevision += 1
         signalNotificationPreferences = .allEnabled
         hasLoadedSignalNotificationPreferences = false
         pendingNotificationSignal = nil
@@ -209,6 +216,13 @@ final class DashboardViewModel: ObservableObject {
         markets.contains { $0.symbol == symbol && $0.isVisible }
     }
 
+    var pairPickerSymbols: [String] {
+        let available = Set(catalogSymbols)
+        let favorites = markets.filter { $0.isVisible && available.contains($0.symbol) }.map(\.symbol)
+        let favoriteSet = Set(favorites)
+        return favorites + catalogSymbols.filter { !favoriteSet.contains($0) }
+    }
+
     func addToWatchlist(_ symbol: String) {
         guard let index = markets.firstIndex(where: { $0.symbol == symbol }),
               !markets[index].isVisible else { return }
@@ -243,6 +257,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     func loadSymbolCatalog(force: Bool = false) async {
+        scheduleWatchlistSync()
         guard !isLoadingCatalog, let apiClient else { return }
         if !force, let loaded = catalogLoadedAt, Date().timeIntervalSince(loaded) < 300 { return }
         let revision = catalogRevision
@@ -257,7 +272,7 @@ final class DashboardViewModel: ObservableObject {
                 catalogLoadFailed = true; return
             }
             activeQuoteAsset = quote
-            let symbols = Self.normalizedSymbols(response.symbols, quoteAsset: quote).sorted()
+            let symbols = Self.normalizedSymbols(response.symbols, quoteAsset: quote)
             guard !symbols.isEmpty else { catalogLoadFailed = true; return }
             catalogSymbols = symbols
             catalogLoadedAt = .now
@@ -556,6 +571,7 @@ final class DashboardViewModel: ObservableObject {
             preferences.quoteAsset
         )
         watchlistIsCustomized = preferences.isCustomized
+        watchlistNeedsSync = preferences.needsSync == true
         applyPreferences(
             preferences,
             availableSymbols: preferences.orderedSymbols
@@ -606,7 +622,7 @@ final class DashboardViewModel: ObservableObject {
             response.availableSymbols,
             quoteAsset: quoteAsset
         )
-        catalogSymbols = availableSymbols.sorted()
+        catalogSymbols = availableSymbols
         catalogLoadedAt = .now
         catalogLoadFailed = false
         let defaults = Self.normalizedSymbols(
@@ -614,12 +630,20 @@ final class DashboardViewModel: ObservableObject {
             quoteAsset: quoteAsset
         )
 
+        if response.isCustomized == true, storedPreferences?.needsSync != true {
+            watchlistIsCustomized = true
+            watchlistNeedsSync = false
+            applyDefaultSymbols(defaults, availableSymbols: availableSymbols, quoteAsset: quoteAsset)
+            return
+        }
+
         if let storedPreferences,
            Self.normalizedQuoteAsset(
                storedPreferences.quoteAsset
            ) == quoteAsset,
            storedPreferences.isCustomized {
             watchlistIsCustomized = true
+            watchlistNeedsSync = true
             applyPreferences(
                 storedPreferences,
                 availableSymbols: availableSymbols
@@ -735,15 +759,16 @@ final class DashboardViewModel: ObservableObject {
     ) {
         if let customized {
             watchlistIsCustomized = customized
+            watchlistNeedsSync = true
+            watchlistRevision += 1
         }
 
         guard let activeUserID,
-              let activeQuoteAsset,
-              let watchlistStore else {
+              let activeQuoteAsset else {
             return
         }
 
-        watchlistStore.save(
+        watchlistStore?.save(
             MarketWatchlistPreferences(
                 quoteAsset: activeQuoteAsset,
                 orderedSymbols: markets.map(\.symbol),
@@ -751,10 +776,38 @@ final class DashboardViewModel: ObservableObject {
                     markets.filter(\.isVisible).map(\.symbol)
                 ),
                 pinnedSymbols: [],
-                isCustomized: watchlistIsCustomized
+                isCustomized: watchlistIsCustomized,
+                needsSync: watchlistNeedsSync
             ),
             for: activeUserID
         )
+        scheduleWatchlistSync()
+    }
+
+    private func scheduleWatchlistSync() {
+        guard watchlistNeedsSync, watchlistSyncTask == nil,
+              let apiClient, let userID = activeUserID else { return }
+        watchlistSyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard let self, !Task.isCancelled, self.activeUserID == userID else { return }
+            defer { if self.activeUserID == userID { self.watchlistSyncTask = nil } }
+            while self.watchlistNeedsSync, !Task.isCancelled, self.activeUserID == userID {
+                let revision = self.watchlistRevision
+                let symbols = self.markets.filter(\.isVisible).map(\.symbol)
+                do {
+                    let _: EmptyResponse = try await apiClient.send(.json(path: "/api/market/watchlist", method: .post,
+                        body: ["symbols": symbols], showsErrorToast: false))
+                    guard !Task.isCancelled, self.activeUserID == userID else { return }
+                    if revision == self.watchlistRevision {
+                        self.watchlistNeedsSync = false
+                        self.persistPreferences()
+                    }
+                } catch {
+                    // The persisted dirty flag retries on the next configuration/catalog load.
+                    return
+                }
+            }
+        }
     }
 
     func restoreRealtimeSubscriptions() {
@@ -794,6 +847,7 @@ final class DashboardViewModel: ObservableObject {
         _ message: RealtimeServerMessage
     ) {
         if message.type == "ready" {
+            scheduleWatchlistSync()
             scheduleTickerSnapshotReload()
             return
         }
@@ -1131,6 +1185,7 @@ private struct DefaultMarketWatchlistResponse: Decodable {
     let quoteAsset: String
     let symbols: [String]
     let availableSymbols: [String]
+    let isCustomized: Bool?
 }
 
 private struct MarketTickersResponse: Decodable {

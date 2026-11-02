@@ -86,7 +86,7 @@ struct USDTTradeView: View {
                 WebCheckbox(checked: $strategyEnabled)
               }
               NavigationLink {
-                USDTStrategiesView(returnAfterSelection: true)
+                USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
               } label: {
                 Text(
                   strategyEnabled
@@ -180,7 +180,10 @@ struct USDTTradeView: View {
       .onChange(of: limit) { _, _ in resetDraft() }
       .onChange(of: orderType) { _, _ in resetDraft() }
       .onChange(of: strategyID) { _, _ in requestIdentity = UUID().uuidString }
-      .onChange(of: store.activeStrategy?.value("id")) { _, id in strategyID = id ?? "" }
+      .onChange(of: store.activeStrategy?.value("id")) { _, id in
+        strategyID = id ?? ""
+        strategyEnabled = id != nil
+      }
       .webSheet(isPresented: $showChart) {
         NavigationStack {
           MarketChartView(
@@ -423,34 +426,45 @@ struct USDTTradeView: View {
   }
 
   private var chartTicket: some View {
-    VStack(spacing: 10) {
-      Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+    VStack(spacing: 12) {
+      Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
         GridRow(alignment: .top) {
-          chartMetric("开仓价", orderType == "market" ? "市价" : DisplayNumber.text(limit))
-          chartMetric("止损价", DisplayNumber.text(stop))
-          chartMetric("仓位", inputValid ? estimatedPosition + " U" : "--")
+          chartMetric("开仓价", inputValid ? (orderType == "market" ? "市价" : DisplayNumber.text(limit)) : "-")
+          chartMetric("止损价", inputValid ? DisplayNumber.text(stop) : "-")
+          chartMetric("预估仓位", inputValid ? estimatedPosition + " U" : "-")
         }
         GridRow(alignment: .top) {
-          VStack(alignment: .leading, spacing: 4) {
-            chartMetricLabel("止损金额")
-            HStack(spacing: 0) {
-              chartMetricValue("止损金额", DisplayNumber.text(risk) + " U")
-              Button { showStopLoss = true } label: {
-                Image(systemName: "gearshape").font(.system(size: 12))
-                  .frame(width: 44, height: 44).contentShape(Rectangle())
-              }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
-                .accessibilityIdentifier("chart-ticket.risk-settings")
-            }
+          VStack(alignment: .leading, spacing: 5) {
+            chartMetricLabel("止损金额").frame(height: 24, alignment: .leading)
+            Button { showStopLoss = true } label: {
+              HStack(spacing: 4) {
+                chartMetricValue("止损金额", inputValid ? DisplayNumber.text(risk) + " U" : "-").underline()
+                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+              }.frame(minHeight: 28, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel("调整止损金额")
+              .accessibilityIdentifier("chart-ticket.risk-settings")
           }.frame(maxWidth: .infinity, alignment: .leading)
-          VStack(alignment: .leading, spacing: 4) {
-            chartMetricLabel("手续费")
-            HStack(spacing: 8) {
-              chartMetricValue("手续费", inputValid ? estimatedFee + " U" : "--")
-              Toggle("含手续费", isOn: $includeFee).toggleStyle(WebSwitchStyle()).fixedSize()
-                .frame(minHeight: 44).disabled(busy || submitted || confirm)
-                .accessibilityIdentifier("chart-ticket.include-fee")
-            }
-          }.frame(maxWidth: .infinity, alignment: .leading).gridCellColumns(2)
+          VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+              chartMetricLabel("含手续费")
+              Toggle("含手续费", isOn: $includeFee).labelsHidden()
+                .toggleStyle(ChartFeeSwitchStyle()).fixedSize()
+                .disabled(busy || submitted || confirm).accessibilityIdentifier("chart-ticket.include-fee")
+            }.frame(height: 24, alignment: .leading)
+            chartMetricValue("手续费", inputValid ? estimatedFee + " U" : "-").frame(minHeight: 28, alignment: .leading)
+          }.frame(maxWidth: .infinity, alignment: .leading)
+          VStack(alignment: .leading, spacing: 5) {
+            chartMetricLabel("止盈").frame(height: 24, alignment: .leading)
+            NavigationLink {
+              USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
+            } label: {
+              Text(strategyEnabled ? store.strategies.first { $0.value("id") == strategyID }?.value("name") ?? "选择策略" : "手动止盈")
+                .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
+                .foregroundStyle(WebTheme.text).padding(.horizontal, 8).frame(height: 28)
+                .background(WebTheme.brand.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
+            }.buttonStyle(.plain).disabled(busy || submitted || confirm)
+              .accessibilityIdentifier("chart-ticket.strategy")
+          }.frame(maxWidth: .infinity, alignment: .leading)
         }
       }.monospacedDigit()
       HStack(spacing: 12) {
@@ -472,9 +486,6 @@ struct USDTTradeView: View {
       }
       if !store.isBound {
         Text("请先在我的页面绑定 API").font(.system(size: 11)).foregroundStyle(WebTheme.muted)
-      } else if !inputValid {
-        Text(orderType == "market" ? "长按 K 线，用十字线选择止损价" : "拖动限价线和止损线调整委托")
-          .font(.system(size: 11)).foregroundStyle(WebTheme.muted)
       } else if orderType == "market", !ema.fields.isEmpty {
         Text(emaValid ? "方向初筛通过，再次点击确认开仓" : emaDirectionChanged ? "方向已变化，请重新初筛" : "方向初筛未通过或已过期")
           .font(.system(size: 11)).foregroundStyle(emaValid ? WebTheme.success : WebTheme.brand)
@@ -499,10 +510,10 @@ struct USDTTradeView: View {
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
   private func chartMetricLabel(_ title: String) -> some View {
-    Text(title).font(.system(size: 11)).foregroundStyle(WebTheme.muted)
+    Text(title).font(.system(size: 12)).foregroundStyle(WebTheme.muted).lineLimit(1)
   }
   private func chartMetricValue(_ title: String, _ value: String) -> some View {
-    Text(value).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
+    Text(value).font(.system(size: 16, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
       .accessibilityIdentifier("chart-ticket." + title)
   }
   private var chartActionColor: Color {
@@ -510,6 +521,27 @@ struct USDTTradeView: View {
       .resolved(for: colorScheme == .dark ? .dark : .light)
     return Color(.sRGB, red: Double(color.red), green: Double(color.green),
       blue: Double(color.blue), opacity: Double(color.alpha))
+  }
+  private func selectStrategy(_ strategy: JSONValue?) {
+    strategyEnabled = strategy != nil
+    strategyID = strategy?.value("id") ?? ""
+    resetDraft()
+  }
+}
+
+private struct ChartFeeSwitchStyle: ToggleStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    Button { configuration.isOn.toggle() } label: {
+      Capsule().fill(configuration.isOn ? WebTheme.brand : WebTheme.muted.opacity(0.3))
+        .frame(width: 30, height: 18)
+        .overlay(alignment: .leading) {
+          Circle().fill(.white).frame(width: 14, height: 14)
+            .offset(x: configuration.isOn ? 14 : 2)
+        }
+    }.buttonStyle(.plain).frame(width: 30, height: 24)
+      .animation(.easeOut(duration: 0.15), value: configuration.isOn)
+      .accessibilityLabel("含手续费").accessibilityValue(configuration.isOn ? "开启" : "关闭")
+      .accessibilityAddTraits(.isToggle)
   }
 }
 
