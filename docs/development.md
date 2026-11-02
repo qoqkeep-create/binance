@@ -230,7 +230,9 @@ generic iOS Release 未签名构建及 generic iOS Simulator 的 `build-for-test
 
 ## 账户归集、服务器自选与图表修正（2026-11-02）
 
-`market_stream mobile.tests trading.test_strategy_loading` 共 100 项通过（9.290 秒，5 项独立 Redis 条件跳过），使用隔离 SQLite／LocMem、公共数据替身和无绑定账号。新增自选顺序／空列表／用户隔离／缓存丢失、无效目录拒绝、市值排序／倍数币种、七天刷新／失败退避／分页失败保留旧快照、手动止盈默认项隔离测试。migration 漂移检查通过。
+`market_stream mobile.tests trading.test_strategy_loading` 共 100 项（95 通过、5 项独立 Redis 条件跳过，9.290 秒），使用隔离 SQLite／LocMem、公共数据替身和无绑定账号。新增自选顺序／空列表／用户隔离／缓存丢失、无效目录拒绝、市值排序／倍数币种、七天刷新／失败退避／分页失败保留旧快照、手动止盈默认项隔离测试。migration 漂移检查通过。
+
+市值接口限流补充回归先在旧实现复现一项失败、一项错误，加入 429 `Retry-After`、永久错误不重试和重试上限覆盖后，目录／移动端／策略定向 34 项通过（6.973 秒）。全部网络均为替身，等待被替换，不用真实资金操作测试重试。
 
 实际 `DisplayNumber.swift` 与 `MarketSnapshot.swift` 在本机临时 Swift Package 运行 5 项测试通过；将同样断言放回前版格式器可复现 8 个失败，修复后通过，涵盖用户给出的两个小数示例与尾零、零值、进位。iOS 增加服务器自选恢复与离线重试测试，更新当前价全宽线／轴内标记及 UI 入口断言。
 
