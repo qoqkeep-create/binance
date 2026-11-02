@@ -3596,27 +3596,10 @@ final class ChartEngineCoreTests: XCTestCase {
         let priceLines = priceReference.storage.lineSegments.filter {
             $0.dashLength > 0
         }
-        XCTAssertEqual(priceLines.count, 2)
-        XCTAssertEqual(priceLines[0].start.x, 0, accuracy: 0.001)
-        XCTAssertEqual(
-            priceLines[0].end.x,
-            marker.left,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            priceLines[1].start.x,
-            marker.right,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            priceLines[1].end.x,
-            Float(viewport.widthPixels),
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            priceLines[0].start.y,
-            priceLines[1].start.y,
-            accuracy: 0.001
+        try assertPriceReferenceCoversPlot(
+            priceLines, marker: marker,
+            plotLeft: output.panelLayout.plotLeft,
+            plotRight: output.panelLayout.plotRight
         )
         XCTAssertFalse(priceReference.storage.glyphInstances.isEmpty)
         let fixedLegend = try XCTUnwrap(
@@ -3702,26 +3685,14 @@ final class ChartEngineCoreTests: XCTestCase {
         let priceLines = priceReference.storage.lineSegments.filter {
             $0.dashLength > 0
         }
-        XCTAssertEqual(priceLines.count, 2)
-        XCTAssertEqual(priceLines[0].start.x, 0, accuracy: 0.001)
-        XCTAssertEqual(
-            priceLines[0].end.x,
-            marker.left,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            priceLines[1].start.x,
-            marker.right,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            priceLines[1].end.x,
-            Float(viewport.widthPixels),
-            accuracy: 0.001
+        try assertPriceReferenceCoversPlot(
+            priceLines, marker: marker,
+            plotLeft: output.panelLayout.plotLeft,
+            plotRight: output.panelLayout.plotRight
         )
         XCTAssertLessThanOrEqual(
             marker.right,
-            output.panelLayout.plotRight + 3.001
+            output.panelLayout.plotRight
         )
         XCTAssertTrue(liveBatch.storage.glyphInstances.isEmpty)
     }
@@ -7033,6 +7004,40 @@ final class ChartEngineCoreTests: XCTestCase {
             quoteVolume: closePrice * 10,
             closed: closed
         )
+    }
+
+    /// The marker may touch a plot edge, leaving a single visible line segment.
+    /// Together, the marker and visible segments must cover exactly the plot width.
+    private func assertPriceReferenceCoversPlot(
+        _ lines: [ChartLineSegmentInstance], marker: ChartBarInstance,
+        plotLeft: Float, plotRight: Float,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        XCTAssertFalse(lines.isEmpty, file: file, line: line)
+        XCTAssertLessThanOrEqual(lines.count, 2, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(marker.left, plotLeft, file: file, line: line)
+        XCTAssertLessThanOrEqual(marker.right, plotRight, file: file, line: line)
+        let markerY = (marker.top + marker.bottom) / 2
+        var spans = [(left: marker.left, right: marker.right)]
+        for segment in lines {
+            XCTAssertEqual(segment.start.y, markerY, accuracy: 0.001, file: file, line: line)
+            XCTAssertEqual(segment.end.y, markerY, accuracy: 0.001, file: file, line: line)
+            let left = min(segment.start.x, segment.end.x)
+            let right = max(segment.start.x, segment.end.x)
+            XCTAssertLessThan(left, right, file: file, line: line)
+            XCTAssertGreaterThanOrEqual(left, plotLeft, file: file, line: line)
+            XCTAssertLessThanOrEqual(right, plotRight, file: file, line: line)
+            spans.append((left: left, right: right))
+        }
+        spans.sort { $0.left < $1.left }
+        let first = try XCTUnwrap(spans.first, file: file, line: line)
+        let last = try XCTUnwrap(spans.last, file: file, line: line)
+        XCTAssertEqual(first.left, plotLeft, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(last.right, plotRight, accuracy: 0.001, file: file, line: line)
+        for (before, after) in zip(spans, spans.dropFirst()) {
+            XCTAssertEqual(before.right, after.left, accuracy: 0.001,
+                "Price reference must have no gaps or overlaps", file: file, line: line)
+        }
     }
 
     private func makeChartSceneFixture()

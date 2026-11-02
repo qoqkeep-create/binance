@@ -14,6 +14,16 @@
 
 2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
 
+## 构建 25 反馈后的测试越界修复（2026-11-02）
+
+用户报告刚推送的客户端版本再次失败，并提供构建号 25。以 `cafc053` 为源码基线，使用 Cloud 的 `TradeTool`／Debug 测试方案在独立 `TradeTool Cloud Test Repair`（iPhone 18 Pro／本机 iOS 27.2）实际运行完整单测；**263 项中 261 项通过、2 项因测试进程数组越界崩溃失败**。不是再次把 `build-for-testing` 当成测试通过。
+
+失败为 `testChartSceneBuilderBuffersNearLiveTailWithOffscreenMarker` 与 `testChartSceneBuilderShowsFullPriceReferenceInHistoricalViewport`。价格参考线限制到绘图区后，返回最新标记贴右边界时只有一条可见虚线；旧测试仍假定两段线、无条件读取 `priceLines[1]`，并把线端点断言为整张画布边界，导致 `Index out of range`。本次仅修改测试：改为检查虚线与标记在同一水平线上、全部位于绘图区、合起来无缺口无重叠地覆盖整个绘图区，并保留最多两段虚线约束；不恢复覆盖价格轴的旧画法，也不跳过测试或降低 Cloud 必过门槛。
+
+同一方案、设备与配置重新实际运行完整 `TradeToolTests`，**263 项全部通过（49.171 秒，0 跳过）**，包含 Metal 离屏、十字光标、指标、持仓缓存、账户隔离及回环网络测试。初次失败证据为 `.integration-runtime/CloudBuild25/Before.xcresult`，修复后为 `After.xcresult` 及对应日志／JSON 摘要。仅测试文件改变，本轮未重复 Release 归档、UI 流程、实机或交易测试，也未部署后端。
+
+GitHub 对 `cafc053` 的公开 Xcode Cloud check 已显示 Archive 成功、0 errors；本次读取时 Test 仍为 in progress，尚无失败 annotations。前一提交 `d533b19` 的 Test 与 Archive 均显示成功。公开 check 没有可确认的构建号字段，因此不能把本地两项崩溃直接写成已取得构建 25 的云端日志；本轮已修复同一源码测试链中的确定失败点，Cloud 编号映射、修复后的云端运行与 TestFlight 分发仍需核验。用户随后授权提交并推送本轮测试修复和文档至 `codex/integrated-ios`；本次源码交付沿用上述 263 项实际运行证据，不另行部署或手动上传 TestFlight。
+
 ## 十字光标标签与杠杆面板回归（2026-11-02）
 
 时间标签缩高并按字形居中，右轴标签移除加号／分隔线、统一圆角和文字右对齐位置；自动杠杆改为满宽卡片纵向排列及固定“确定”按钮。两个真实场景回归在原源码下先复现 91 个失败断言，修改后在 host Swift Package **2 项通过（0.084 秒）**，覆盖 320／390／440 pt、2 倍／3 倍屏、主图及副图的标签高度、居中、圆角、无加号控件、完整数字和轴内边界。验证器直接编译生产图表数据／场景／CoreText 字形代码，不是 GPU 像素或手机验收。

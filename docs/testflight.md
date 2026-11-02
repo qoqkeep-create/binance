@@ -123,6 +123,8 @@ open frontend/ios-app/TradeTool.xcodeproj
 
 2026-11-02 用户反馈连续三次失败，提供的构建 22 截图显示 Archive 成功、Test 失败，TestFlight 后续步骤没有执行。图例尾项被宽度裁掉及离屏当前价标记越界已在本地复现并修复，完整 255 项 iOS 单测通过；截图中的旧五项底栏在最新源码已为四项。测试门槛保持不变，需由修复提交触发的新 Cloud 运行分别确认 Test、Archive、Apple 处理与内部分发，不能直接重建旧失败提交就视为已包含修复；各构建对应提交及新云端结果待核实，见 [开发验证](development.md#云端构建图表断言修复2026-11-02)。
 
+2026-11-02 后续用户反馈构建 25。对新提交 `cafc053`，GitHub 公开 check 可确认 Archive 成功（0 errors），读取时 Test 尚未回传结束结果；前一提交 `d533b19` 的 Test／Archive 均成功。不能从公开 check 反推准确 Build Number。本地同方案完整测试复现另外两处旧图表测试数组越界，修复后 263 项全过；本次只修改测试与文档，Cloud 必过单测保持启用，用户随后授权将修复与文档提交／推送至 `codex/integrated-ios`，新 Cloud／TestFlight 结果待核验，详见 [复现与验证](development.md#构建-25-反馈后的测试越界修复2026-11-02)。不要以 Archive 成功代替 Test 或 TestFlight 分发结果。
+
 Cloud 首次启用测试时，构建 6 的图表压力测试出现 426ms P95，超过本地模拟器 150ms 阈值，归档成功但测试未通过；新推送随后自动取消该构建。现将共享云端运行器的耗时保留为报告，继续执行所有确定性的帧数 / 并发 / 错误检查，本地保留原耗时断言；不把 Cloud 模拟器计时当作实机性能结论。修正提交 `509f2da` 自动触发构建 7，测试、Archive 与 TestFlight Internal Testing 后续操作全部成功，耗时约 4 分钟。
 
 `frontend/ios-app/ci_scripts/ci_pre_xcodebuild.sh` 已位于工程旁且以 Git 可执行文件追踪，Xcode Cloud 自动识别。它检查并按需安装 Metal Toolchain，对下载失败最多尝试三次；无需在后台重复粘贴脚本。当前无 CocoaPods 或第三方 Swift Package 依赖安装步骤。自动签名和上传由 Xcode Cloud 完成，无需额外上传脚本或在仓库保存 `.p8`、`.p12` 和描述文件。
