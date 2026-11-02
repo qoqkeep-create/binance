@@ -24,12 +24,11 @@ iOS 行情搜索、编辑添加、开仓与 K 线顶部下拉四个入口共用�
 
 ## 三分钟与快捷周期（2026-11-02）
 
-`3m`（180000 ms）加入原生周期模型、服务端 `INTERVAL_MS`、补全任务和 HTTP／WSS 共享校验，保留 7 天。连续 1m 按 UTC 三分钟边界聚合，只有完整闭合分钟组成已收盘桶；仍使用原有共享缓存、缺口修复、分页和公共出口预算，无数据库迁移或额外交易路径。
+`3m`（180000 ms）加入原生周期模型、服务端 `INTERVAL_MS`、补全任务和 HTTP／WSS 共享校验，保留 7 天。连续 1m 按 UTC 三分钟边界聚合，只有完整闭合分钟组成已收盘桶；仍使用原有共享缓存、缺口修复、分页和公共出口预算，无数据库迁移或额外交易路径。 3m 沿用其他高周期的推送方式：服务端发布已收盘聚合线，客户端同时订阅所选周期与 1m／ticker，用后者持续更新当前价格；单独验证 3m 收盘事件必须跨过三分钟桶边界，不能用不足一桶的等待窗口判断断流。
 
 3m 与 1m 不安排衍生统计请求：Binance 持仓量／多空统计最短支持 5m，不能用 5m 数据冒充 3m。对应 O.I.／多空／主动买卖及基差附加统计保留空值，不显示为持续补查。原生默认快捷项与编辑规则见 [页面](ios-web-parity.md#k-线下单区域2026-11-02)。编辑采用常见的“选择周期＋星标快捷项”规则，参考 [TradingView 周期收藏说明](https://www.tradingview.com/support/solutions/43000762824-how-to-change-the-time-frame-quickly/)，仅使用原生组件，并未接入第三方图表 SDK。统计周期依据 [Binance 官方接口](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Open-Interest-Statistics)。
 
 验证和发布结果分别见 [开发](development.md#图表下单与周期回归2026-11-02) 与 [运维](operations.md)，手机 UI 和真实账户不由本地替身结果代替。
-
 
 ## 后台自动补全与首屏读取
 
