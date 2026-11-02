@@ -162,3 +162,40 @@ class SavedCatalogTests(TestCase):
         with self.assertRaises(TimeoutError):
             refresh_market_caps()
         self.assertEqual(MarketCapitalization.objects.get().coins, original)
+
+
+class MarketCapitalizationProviderTests(TestCase):
+    @patch("market_stream.catalog.time.sleep")
+    @patch("market_stream.catalog.urlopen")
+    def test_rate_limit_waits_for_provider_before_retrying(self, upstream, sleep):
+        import io
+        from urllib.error import HTTPError
+        from market_stream.catalog import _fetch_coins
+        response = io.BytesIO(b'[{"symbol":"btc","market_cap":123}]')
+        upstream.side_effect = [HTTPError("https://example.invalid", 429, "Rate limited",
+                                         {"Retry-After": "60"}, None), response]
+        self.assertEqual(_fetch_coins(["BTC"])[0]["market_cap"], 123)
+        sleep.assert_called_once_with(60)
+        self.assertEqual(upstream.call_count, 2)
+
+    @patch("market_stream.catalog.time.sleep")
+    @patch("market_stream.catalog.urlopen")
+    def test_permanent_provider_errors_are_not_retried(self, upstream, sleep):
+        from urllib.error import HTTPError
+        from market_stream.catalog import _fetch_coins
+        upstream.side_effect = HTTPError("https://example.invalid", 400, "Invalid request", {}, None)
+        with self.assertRaises(HTTPError):
+            _fetch_coins(["BTC"])
+        upstream.assert_called_once()
+        sleep.assert_not_called()
+
+    @patch("market_stream.catalog.time.sleep")
+    @patch("market_stream.catalog.urlopen")
+    def test_provider_failure_has_a_bounded_retry_budget(self, upstream, sleep):
+        from urllib.error import HTTPError
+        from market_stream.catalog import _fetch_coins
+        upstream.side_effect = HTTPError("https://example.invalid", 429, "Rate limited", {}, None)
+        with self.assertRaises(HTTPError):
+            _fetch_coins(["BTC"])
+        self.assertEqual(upstream.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)

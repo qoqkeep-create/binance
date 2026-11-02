@@ -1,10 +1,12 @@
 """Durable pair ordering. HTTP reads never wait for the public data provider."""
 import json
+import math
 import re
 import time
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -45,11 +47,31 @@ def _fetch_coins(symbols):
                        "page": 1, "sparkline": "false"})
     request = Request("https://api.coingecko.com/api/v3/coins/markets?" + query,
                       headers={"User-Agent": "BinanceTools/1.0", "Accept": "application/json"})
-    with urlopen(request, timeout=15) as response:
-        payload = json.loads(response.read(), parse_float=Decimal)
-    if not isinstance(payload, list):
-        raise ValueError("Invalid market capitalization response")
-    return payload
+    for attempt in range(3):
+        delay = 60 * (attempt + 1)
+        try:
+            with urlopen(request, timeout=15) as response:
+                payload = json.loads(response.read(), parse_float=Decimal)
+        except HTTPError as exc:
+            if exc.code not in {429, 500, 502, 503, 504} or attempt == 2:
+                raise
+            try:
+                retry_after = float((exc.headers or {}).get("Retry-After", "0"))
+            except (TypeError, ValueError):
+                retry_after = 0
+            # Longer provider cooldowns use the outer six-hour retry instead.
+            if not math.isfinite(retry_after) or retry_after > 300:
+                raise
+            delay = max(delay, retry_after)
+            exc.close()
+        except (URLError, TimeoutError):
+            if attempt == 2:
+                raise
+        else:
+            if not isinstance(payload, list):
+                raise ValueError("Invalid market capitalization response")
+            return payload
+        time.sleep(delay)
 
 
 def refresh_market_caps():
@@ -72,7 +94,8 @@ def refresh_market_caps():
     coins = {}
     for offset in range(0, len(bases), 50):
         if offset:
-            time.sleep(2.1)
+            # Keep unauthenticated public requests below five per minute.
+            time.sleep(13)
         for item in _fetch_coins(bases[offset:offset + 50]):
             if not isinstance(item, dict):
                 raise ValueError("Invalid market capitalization item")
