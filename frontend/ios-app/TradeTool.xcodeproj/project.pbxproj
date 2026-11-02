@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D15A00000000000000000001 /* DisplayNumber.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15A00000000000000000002 /* DisplayNumber.swift */; };
+		D15A00000000000000000003 /* DisplayNumberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15A00000000000000000004 /* DisplayNumberTests.swift */; };
 		D1A600000000000000000001 /* ChartLoadDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A600000000000000000011 /* ChartLoadDiagnostics.swift */; };
 		D1A600000000000000000000 /* RequestDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A600000000000000000010 /* RequestDiagnostics.swift */; };
 		010000000000000000000001 /* TradeToolApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000001 /* TradeToolApp.swift */; };
@@ -128,6 +130,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D15A00000000000000000002 /* DisplayNumber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayNumber.swift; sourceTree = "<group>"; };
+		D15A00000000000000000004 /* DisplayNumberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayNumberTests.swift; sourceTree = "<group>"; };
 		D1A600000000000000000011 /* ChartLoadDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLoadDiagnostics.swift; sourceTree = "<group>"; };
 		D1A600000000000000000010 /* RequestDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestDiagnostics.swift; sourceTree = "<group>"; };
 		020000000000000000000060 /* BrandLaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = BrandLaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -398,6 +402,7 @@
 			isa = PBXGroup;
 			children = (
 				020000000000000000000011 /* AppToastCenter.swift */,
+				D15A00000000000000000002 /* DisplayNumber.swift */,
 			);
 			path = Presentation;
 			sourceTree = "<group>";
@@ -576,6 +581,7 @@
 			children = (
 				120000000000000000000005 /* ServerSwitchingTests.swift */,
 				A17000000000000000000004 /* FloatingPositionsTests.swift */,
+				D15A00000000000000000004 /* DisplayNumberTests.swift */,
 				0B0000000000000000000002 /* ChartEngineCoreTests.swift */,
 				0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */,
 				0F0000000000000000000004 /* AppearanceTests.swift */,
@@ -785,6 +791,7 @@
 				01000000000000000000000F /* APIInterceptor.swift in Sources */,
 				01000000000000000000001A /* RealtimeClient.swift in Sources */,
 				010000000000000000000010 /* AppToastCenter.swift in Sources */,
+				D15A00000000000000000001 /* DisplayNumber.swift in Sources */,
 				010000000000000000000011 /* AppContainer.swift in Sources */,
 				010000000000000000000012 /* AuthModels.swift in Sources */,
 				010000000000000000000013 /* KeychainAuthSessionStore.swift in Sources */,
@@ -845,6 +852,7 @@
 			files = (
 				130000000000000000000005 /* ServerSwitchingTests.swift in Sources */,
 				A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */,
+				D15A00000000000000000003 /* DisplayNumberTests.swift in Sources */,
 				0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */,
 				0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */,
 				0F0000000000000000000003 /* AppearanceTests.swift in Sources */,

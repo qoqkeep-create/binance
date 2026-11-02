@@ -63,7 +63,7 @@ struct USDTTradeView: View {
               Button {
                 showChart = true
               } label: {
-                Text(currentQuote.isEmpty ? "--" : currentQuote).font(
+                Text(DisplayNumber.text(currentQuote)).font(
                   .system(size: 24, weight: .medium)
                 ).underline()
               }.buttonStyle(.plain)
@@ -112,7 +112,7 @@ struct USDTTradeView: View {
           }
           USDTCard(spacing: 12) {
             HStack(alignment: .top, spacing: 16) {
-              estimate("止损金额", risk.isEmpty ? "0" : risk)
+              estimate("止损金额", DisplayNumber.text(risk.isEmpty ? "0" : risk))
               estimate("预估仓位", estimatedPosition)
               estimate("预估手续费", estimatedFee)
             }.padding(.bottom, 0)
@@ -215,8 +215,8 @@ struct USDTTradeView: View {
           VStack(spacing: 12) {
             USDTMetric(title: "币种", value: draft.symbol)
             USDTMetric(title: "模式", value: draft.orderType == "limit" ? "限价委托" : "市价开仓")
-            USDTMetric(title: "止损价", value: draft.stopLossPrice)
-            if draft.orderType == "limit" { USDTMetric(title: "限价值", value: draft.limitPrice) }
+            USDTMetric(title: "止损价", value: DisplayNumber.text(draft.stopLossPrice))
+            if draft.orderType == "limit" { USDTMetric(title: "限价值", value: DisplayNumber.text(draft.limitPrice)) }
             USDTMetric(title: "仓位", value: draft.positionText + " U")
             HStack {
               Text("手续费").foregroundStyle(WebTheme.secondary)
@@ -228,19 +228,14 @@ struct USDTTradeView: View {
             USDTMetric(
               title: "止损额",
               value: draft.includeFee
-                ? draft.riskAmount + " U"
-                : draft.riskAmount + "+" + draft.feeText + "="
+                ? DisplayNumber.text(draft.riskAmount) + " U"
+                : DisplayNumber.text(draft.riskAmount) + "+" + draft.feeText + "="
                   + USDTEntryDraft.amount((Decimal(string: draft.riskAmount) ?? 0)
                     + draft.positionEstimate * USDTEntryDraft.feeRate) + " U")
             USDTMetric(
               title: "止损回撤",
               value: draft.referencePrice > 0
-                ? String(
-                  format: "%.2f%%",
-                  NSDecimalNumber(
-                    decimal: abs(draft.referencePrice - (Decimal(string: draft.stopLossPrice) ?? 0)) / draft.referencePrice
-                      * 100
-                  ).doubleValue) : "--")
+                ? DisplayNumber.text(abs(draft.referencePrice - draft.stop) / draft.referencePrice * 100) + "%" : "--")
           }.font(.system(size: 14)).padding(16).background(
             WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
           HStack(spacing: 12) {
@@ -431,15 +426,15 @@ struct USDTTradeView: View {
     VStack(spacing: 10) {
       Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
         GridRow(alignment: .top) {
-          chartMetric("开仓价", orderType == "market" ? "市价" : (limit.isEmpty ? "--" : limit))
-          chartMetric("止损价", (stop.isEmpty ? "--" : stop))
+          chartMetric("开仓价", orderType == "market" ? "市价" : DisplayNumber.text(limit))
+          chartMetric("止损价", DisplayNumber.text(stop))
           chartMetric("仓位", inputValid ? estimatedPosition + " U" : "--")
         }
         GridRow(alignment: .top) {
           VStack(alignment: .leading, spacing: 4) {
             chartMetricLabel("止损金额")
             HStack(spacing: 0) {
-              chartMetricValue("止损金额", (risk.isEmpty ? "--" : risk + " U"))
+              chartMetricValue("止损金额", DisplayNumber.text(risk) + " U")
               Button { showStopLoss = true } label: {
                 Image(systemName: "gearshape").font(.system(size: 12))
                   .frame(width: 44, height: 44).contentShape(Rectangle())
@@ -552,11 +547,7 @@ struct USDTEntryDraft: Equatable {
   }
   var positionText: String { Self.amount(positionEstimate) }
   var feeText: String { Self.amount(positionEstimate * Self.feeRate) }
-  static func amount(_ value: Decimal) -> String {
-    var source = value, rounded = Decimal()
-    NSDecimalRound(&rounded, &source, 2, .plain)
-    return NSDecimalNumber(decimal: rounded).stringValue
-  }
+  static func amount(_ value: Decimal) -> String { DisplayNumber.text(value) }
   func matchesIntent(_ other: Self) -> Bool {
     symbol == other.symbol && orderType == other.orderType && stopLossPrice == other.stopLossPrice
       && limitPrice == other.limitPrice && riskAmount == other.riskAmount && includeFee == other.includeFee
@@ -594,9 +585,7 @@ struct USDTPositionsView: View {
   private var totalPnl: Decimal {
     model.items.reduce(Decimal.zero) { $0 + ($1["pnl"]?.decimal ?? 0) }
   }
-  private var totalPnlText: String {
-    (totalPnl >= 0 ? "+" : "") + NSDecimalNumber(decimal: totalPnl).stringValue
-  }
+  private var totalPnlText: String { DisplayNumber.text(totalPnl, signed: true) }
   var body: some View {
     VStack(spacing: 0) {
       WebTabs(
@@ -842,7 +831,7 @@ struct USDTPositionsView: View {
         Text(row.value("symbol")).font(.system(size: 16, weight: .medium))
         if row.value("position_origin") == "exchange_external" { WebBadge(text: "手动仓") }
         Text("x\(row.value("leverage"))").font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-        Text("止损\(row.value("stop_loss_amount"))U").font(.system(size: 12)).foregroundStyle(
+        Text("止损\(DisplayNumber.text(row.value("stop_loss_amount")))U").font(.system(size: 12)).foregroundStyle(
           WebTheme.brand
         ).padding(.horizontal, 6).padding(.vertical, 2).background(
           WebTheme.brand.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
@@ -850,22 +839,22 @@ struct USDTPositionsView: View {
       }
       VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 16) {
-          inline("开仓额度：", row.value("position_amount"))
+          inline("开仓额度：", DisplayNumber.text(row.value("position_amount")))
           inline(
-            "持仓盈亏：", row.value("pnl"),
+            "持仓盈亏：", DisplayNumber.text(row.value("pnl")),
             color: (row["pnl"]?.decimal ?? 0) >= 0 ? WebTheme.success : WebTheme.danger)
         }
         HStack(spacing: 16) {
-          inline("开仓价格：", row.value("open_price"))
-          inline("当前价格：", row.value("current_price"))
+          inline("开仓价格：", DisplayNumber.text(row.value("open_price")))
+          inline("当前价格：", DisplayNumber.text(row.value("current_price")))
         }
         inline(
-          "市价止损：", row["market_stop_set"]?.flag == true ? row.value("market_stop_price") : "未设置")
+          "市价止损：", row["market_stop_set"]?.flag == true ? DisplayNumber.text(row.value("market_stop_price")) : "未设置")
         HStack {
           inline(
             "市价止盈：",
             row["manual_take_profit_set"]?.flag == true
-              ? row.value("manual_take_profit_price") : "未设置")
+              ? DisplayNumber.text(row.value("manual_take_profit_price")) : "未设置")
           Button("设置") { show("takeProfit", row) }.font(.system(size: 12)).foregroundStyle(
             WebTheme.brand
           ).padding(.horizontal, 8).padding(.vertical, 2).background(
@@ -875,15 +864,14 @@ struct USDTPositionsView: View {
           Text("手续费：").foregroundStyle(WebTheme.muted)
           Text(
             row.value("entry_fee_status") == "confirmed"
-              ? row.value("entry_realized_fee") + " "
+              ? DisplayNumber.text(row.value("entry_realized_fee")) + " "
                 + row.value("entry_fee_asset", fallback: "USDT")
               : "估-"
-                + NSDecimalNumber(decimal: abs(row["estimated_total_fee"]?.decimal ?? 0) / 2)
-                .stringValue + "U"
+                + DisplayNumber.text(abs(row["estimated_total_fee"]?.decimal ?? 0) / 2) + "U"
           ).foregroundStyle(WebTheme.danger)
           Text(
             "（估-"
-              + NSDecimalNumber(decimal: abs(row["estimated_total_fee"]?.decimal ?? 0)).stringValue
+              + DisplayNumber.text(abs(row["estimated_total_fee"]?.decimal ?? 0))
               + "U）"
           ).foregroundStyle(WebTheme.muted)
         }.font(.system(size: 14))
@@ -940,7 +928,7 @@ struct USDTPositionsView: View {
     let risk = row["stop_loss_amount"]?.decimal ?? 0
     let ratio =
       risk > 0 && pnl != nil
-      ? String(format: "%.1f:1", NSDecimalNumber(decimal: pnl! / risk).doubleValue) : "--"
+      ? DisplayNumber.text(pnl! / risk) + ":1" : "--"
     let fee: Decimal? =
       external && (row["fee"]?.decimal == nil || row["funding_fee"]?.decimal == nil)
       ? nil : (row["fee"]?.decimal ?? 0) + (row["funding_fee"]?.decimal ?? 0)
@@ -948,7 +936,7 @@ struct USDTPositionsView: View {
       HStack(spacing: 8) {
         WebDirection(long: row.value("side") == "0")
         Text(row.value("symbol")).font(.system(size: 16, weight: .medium))
-        WebBadge(text: "止损" + row.value("stop_loss_amount") + "U")
+        WebBadge(text: "止损" + DisplayNumber.text(row.value("stop_loss_amount")) + "U")
         if row.value("settlement_status") == "estimated" { WebBadge(text: "估算") }
         if row.value("settlement_status") == "pending" { WebBadge(text: "待结算") }
         if row.value("settlement_status") == "failed" { WebBadge(text: "结算待重试") }
@@ -959,14 +947,14 @@ struct USDTPositionsView: View {
         alignment: .leading, spacing: 12
       ) {
         detail(
-          "平仓盈亏", pnl.map { NSDecimalNumber(decimal: $0).stringValue + "U" } ?? "--",
+          "平仓盈亏", pnl.map { DisplayNumber.text($0) + "U" } ?? "--",
           color: pnl.map { $0 >= 0 ? WebTheme.success : WebTheme.danger })
         detail("盈亏比", ratio, color: pnl.map { $0 >= 0 ? WebTheme.success : WebTheme.danger })
-        detail("开仓价格", row.value("open_price"))
-        detail("平仓价格", row.value("close_price"))
-        detail("持仓额", row.value("position_amount") + "U")
+        detail("开仓价格", DisplayNumber.text(row.value("open_price")))
+        detail("平仓价格", DisplayNumber.text(row.value("close_price")))
+        detail("持仓额", DisplayNumber.text(row.value("position_amount")) + "U")
         detail(
-          "手续费", fee.map { NSDecimalNumber(decimal: $0).stringValue + "U" } ?? "--",
+          "手续费", fee.map { DisplayNumber.text($0) + "U" } ?? "--",
           color: fee.map { $0 <= 0 ? WebTheme.danger : WebTheme.success })
       }
       Rectangle().fill(WebTheme.border).frame(height: 1)
@@ -1004,7 +992,7 @@ struct USDTPositionsView: View {
       HStack(spacing: 8) {
         WebDirection(long: row.value("side") == "0")
         Text(row.value("symbol")).font(.system(size: 16, weight: .medium))
-        WebBadge(text: "止损" + row.value("stop_loss_amount") + "U")
+        WebBadge(text: "止损" + DisplayNumber.text(row.value("stop_loss_amount")) + "U")
         Spacer()
         WebBadge(text: row.value("status_text"))
       }
@@ -1013,13 +1001,13 @@ struct USDTPositionsView: View {
           GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading),
         ], alignment: .leading, spacing: 12
       ) {
-        detail("限价", row.value("limit_price"))
-        detail("止损价", row.value("stop_loss_price"))
-        detail("委托仓位", row.value("position_amount") + "U")
+        detail("限价", DisplayNumber.text(row.value("limit_price")))
+        detail("止损价", DisplayNumber.text(row.value("stop_loss_price")))
+        detail("委托仓位", DisplayNumber.text(row.value("position_amount")) + "U")
         detail(
           "已成交",
-          row.value("filled_amount", fallback: row.value("filled_size")) + "/"
-            + row.value("position_amount") + "U")
+          DisplayNumber.text(row.value("filled_amount", fallback: row.value("filled_size"))) + "/"
+            + DisplayNumber.text(row.value("position_amount")) + "U")
       }
       Rectangle().fill(WebTheme.border).frame(height: 1)
       HStack(spacing: 8) {
@@ -1195,7 +1183,7 @@ private struct USDTPositionControls: View {
             }
             if position["manual_take_profit_set"]?.flag == true {
               HStack {
-                Text("止盈：" + position.value("manual_take_profit_price")).font(.system(size: 14))
+                Text("止盈：" + DisplayNumber.text(position.value("manual_take_profit_price"))).font(.system(size: 14))
                   .foregroundStyle(WebTheme.success)
                 Spacer()
                 Button("取消") { cancelTakeProfit() }.font(.system(size: 12)).foregroundStyle(
@@ -1211,9 +1199,9 @@ private struct USDTPositionControls: View {
               busy || (Decimal(string: price) ?? 0) <= 0)
           } else if action == "breakEven" {
             VStack(spacing: 8) {
-              USDTMetric(title: "当前浮盈", value: position.value("pnl") + " USDT")
+              USDTMetric(title: "当前浮盈", value: DisplayNumber.text(position.value("pnl")) + " USDT")
               USDTMetric(
-                title: "预估总手续费", value: "-" + NSDecimalNumber(decimal: fee).stringValue + " USDT")
+                title: "预估总手续费", value: "-" + DisplayNumber.text(fee) + " USDT")
             }.padding(.horizontal, 16).padding(.vertical, 12).overlay {
               RoundedRectangle(cornerRadius: 14).stroke(WebTheme.border, lineWidth: 1)
             }
@@ -1232,7 +1220,7 @@ private struct USDTPositionControls: View {
               execute("break-even", extra: ["mode": .string("without_fee")])
             } label: {
               VStack(spacing: 2) {
-                Text("不含手续费保本（净盈亏 -" + NSDecimalNumber(decimal: fee).stringValue + "）").font(
+                Text("不含手续费保本（净盈亏 -" + DisplayNumber.text(fee) + "）").font(
                   .system(size: 14, weight: .semibold))
                 Text(pnl > 0 ? "止损移至开仓价，亏损约等于手续费" : "挂止盈单至开仓价，回到开仓价自动平仓，亏损约等于手续费").font(
                   .system(size: 12)
@@ -1274,7 +1262,7 @@ private struct USDTPositionControls: View {
               WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
           } else {
             (Text("预估收益 ")
-              + Text(position.value("pnl") + " USDT").foregroundColor(
+              + Text(DisplayNumber.text(position.value("pnl")) + " USDT").foregroundColor(
                 pnl >= 0 ? WebTheme.success : WebTheme.danger) + Text("，确认平仓？")).font(
                 .system(size: 16)
               ).foregroundStyle(WebTheme.secondary)

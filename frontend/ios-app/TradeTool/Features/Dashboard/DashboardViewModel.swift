@@ -1109,22 +1109,8 @@ final class DashboardViewModel: ObservableObject {
             .uppercased()
     }
 
-    private static func formattedTurnover(
-        _ quoteVolume: Double
-    ) -> String {
-        if quoteVolume >= 100_000_000 {
-            return String(
-                format: "%.2f亿",
-                quoteVolume / 100_000_000
-            )
-        }
-        if quoteVolume >= 10_000 {
-            return String(
-                format: "%.2f万",
-                quoteVolume / 10_000
-            )
-        }
-        return String(format: "%.2f", quoteVolume)
+    private static func formattedTurnover(_ quoteVolume: Double) -> String {
+        DisplayNumber.turnover(quoteVolume)
     }
 
     private static func placeholderMarket(

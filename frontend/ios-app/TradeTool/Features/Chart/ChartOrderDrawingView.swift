@@ -268,9 +268,7 @@ struct ChartOrderDrawingOverlay: View {
                     .frame(width: 0.5, height: 10)
                 Text(
                     "止损回撤 "
-                        + drawing.stopDrawdownPercent.formatted(
-                            .number.precision(.fractionLength(2))
-                        )
+                        + DisplayNumber.text(drawing.stopDrawdownPercent)
                         + "%"
                 )
             }
@@ -294,14 +292,7 @@ struct ChartOrderDrawingOverlay: View {
     }
 
     private var positionText: String {
-        guard let value = drawing.plannedPositionNotional else {
-            return "--"
-        }
-        return value.formatted(
-            .number
-                .grouping(.automatic)
-                .precision(.fractionLength(0...2))
-        )
+        drawing.plannedPositionNotional.map { DisplayNumber.text($0, grouped: true) } ?? "--"
     }
 
     private func orderLine(

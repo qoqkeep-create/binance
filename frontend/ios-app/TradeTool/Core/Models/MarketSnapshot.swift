@@ -27,25 +27,9 @@ struct MarketSnapshot: Identifiable, Codable, Hashable, Sendable {
         turnoverText.isEmpty ? name : "\(name) | \(turnoverText)"
     }
 
-    var formattedPrice: String {
-        if price >= 100 {
-            return String(format: "%.2f", price)
-        }
+    var formattedPrice: String { DisplayNumber.text(price) }
 
-        if price >= 1 {
-            return String(format: "%.3f", price)
-        }
-
-        if price >= 0.1 {
-            return String(format: "%.4f", price)
-        }
-
-        return String(format: "%.5f", price)
-    }
-
-    var formattedChange: String {
-        String(format: "%+.2f%%", changePercent24h)
-    }
+    var formattedChange: String { DisplayNumber.text(changePercent24h, signed: true) + "%" }
 
     init(
         symbol: String,

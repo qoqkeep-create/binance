@@ -580,7 +580,7 @@ enum ChartIndicatorProductCatalog {
       ],
       legendLabel:
         "SUPERTREND(\(parameters.superTrendATRPeriod),"
-        + "\(parameters.superTrendMultiplierText))",
+        + "\(DisplayNumber.text(parameters.superTrendMultiplier)))",
       legendLabelColorToken: .neutral,
       legendRow: 1,
       legendOrder: 0
@@ -632,7 +632,7 @@ enum ChartIndicatorProductCatalog {
       ],
       legendLabel:
         "BOLL:(\(parameters.bollingerPeriod), "
-        + "\(parameters.bollingerMultiplierText))",
+        + "\(DisplayNumber.text(parameters.bollingerMultiplier)))",
       legendRow: 0,
       legendOrder: 0
     ) else {
@@ -654,8 +654,8 @@ enum ChartIndicatorProductCatalog {
         "maximum": parameters.parabolicSARMaximum,
       ],
       legendLabel:
-        "SAR(\(parameters.parabolicSARStartText), "
-        + "\(parameters.parabolicSARMaximumText)):",
+        "SAR(\(DisplayNumber.text(parameters.parabolicSARStart)), "
+        + "\(DisplayNumber.text(parameters.parabolicSARMaximum))):",
       legendRow: 0,
       legendOrder: 0
     ) else {

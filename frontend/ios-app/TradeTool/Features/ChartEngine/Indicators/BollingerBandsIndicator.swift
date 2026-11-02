@@ -332,10 +332,6 @@ private struct BollingerBandsChartIndicatorCalculator:
   }
 
   private static func text(_ value: Double) -> String {
-    value.rounded() == value
-      ? String(Int(value))
-      : String(format: "%.2f", value)
-        .replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
-        .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
+    DisplayNumber.text(value)
   }
 }

@@ -128,7 +128,7 @@ struct USDTStrategyEditor: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 12) {
-        Text("说明：R是指基准止损金额，您当前的基准止损金额为\(store.riskAmount)U").font(.system(size: 14))
+        Text("说明：R是指基准止损金额，您当前的基准止损金额为\(DisplayNumber.text(store.riskAmount))U").font(.system(size: 14))
           .foregroundStyle(WebTheme.brand).frame(maxWidth: .infinity, alignment: .leading).padding(
             .horizontal, 12
           ).padding(.vertical, 8).background(
@@ -194,7 +194,7 @@ struct USDTStrategyEditor: View {
     return USDTCard(radius: 16, spacing: 12) {
       HStack(spacing: 8) {
         Text("L\(index + 1):").font(.system(size: 16, weight: .semibold))
-        Text("剩余仓位 \(NSDecimalNumber(decimal: remaining).stringValue)%").font(.system(size: 14))
+        Text("剩余仓位 \(DisplayNumber.text(remaining))%").font(.system(size: 14))
           .foregroundStyle(WebTheme.brand).padding(.horizontal, 8).padding(.vertical, 2).background(
             WebTheme.brand.opacity(0.1), in: Capsule())
         Spacer()
@@ -306,15 +306,15 @@ struct USDTChartOrderSettingsView: View {
 /// Wording shared by the Web strategy cards, picker, and execution log.
 enum WebStrategyText {
   static func level(_ value: JSONValue, index: Int) -> String {
-    var parts = ["L\(index + 1)：当 RR≥" + value.value("profitRR", fallback: "0")]
+    var parts = ["L\(index + 1)：当 RR≥" + DisplayNumber.text(value.value("profitRR", fallback: "0"))]
     if (value["reducePosition"]?.decimal ?? 0) > 0 {
-      parts.append("卖出 " + value.value("reducePosition") + "%")
+      parts.append("卖出 " + DisplayNumber.text(value.value("reducePosition")) + "%")
     }
     if value.value("stopLossType") == "absoluteRR" {
-      parts.append("止损位移动到 " + value.value("stopLossAbsoluteRR", fallback: "0") + "R 处")
+      parts.append("止损位移动到 " + DisplayNumber.text(value.value("stopLossAbsoluteRR", fallback: "0")) + "R 处")
     }
     if value.value("stopLossType") == "fixedRR" {
-      parts.append("止损位移动到浮盈- " + value.value("stopLossRR", fallback: "0") + "R 处")
+      parts.append("止损位移动到浮盈- " + DisplayNumber.text(value.value("stopLossRR", fallback: "0")) + "R 处")
     }
     return parts.joined(separator: "，")
   }

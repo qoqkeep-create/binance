@@ -14,7 +14,7 @@ final class FloatingPositionsTests: XCTestCase {
     let second = snapshot.presentation(at: now.addingTimeInterval(5), cyclingSince: now, paused: false)
     XCTAssertEqual(second.title, "ETHUSDT")
     XCTAssertEqual(second.page, "2/2")
-    XCTAssertEqual(second.profit, "-3.50 U")
+    XCTAssertEqual(second.profit, "-3.500 U")
     XCTAssertTrue(second.loss)
     XCTAssertEqual(snapshot.presentation(at: now.addingTimeInterval(10), cyclingSince: now, paused: false).title, "BTCUSDT")
   }
@@ -54,11 +54,11 @@ final class FloatingPositionsTests: XCTestCase {
   func testDecimalSnapshotPreservesSmallPriceAndSignedProfit() throws {
     let position = try XCTUnwrap(FloatingPosition(row(price: "0.000000001234", profit: "25.005")))
     XCTAssertEqual(position.priceText, "0.000000001234")
-    XCTAssertEqual(position.profitText, "+25.01 U")
+    XCTAssertEqual(position.profitText, "+25.005 U")
     XCTAssertFalse(position.isShort)
     let loss = try XCTUnwrap(FloatingPosition(row(price: "2600.5", profit: "-3.50", side: 1)))
-    XCTAssertEqual(loss.priceText, "2600.5")
-    XCTAssertEqual(loss.profitText, "-3.50 U")
+    XCTAssertEqual(loss.priceText, "2600.50")
+    XCTAssertEqual(loss.profitText, "-3.500 U")
     XCTAssertTrue(loss.isShort)
   }
 
@@ -68,7 +68,7 @@ final class FloatingPositionsTests: XCTestCase {
     XCTAssertEqual(position.profitText, "--")
     XCTAssertNil(FloatingPosition(.object([:])))
     XCTAssertEqual(FloatingPosition(row(price: "0", profit: "-0.001"))?.priceText, "--")
-    XCTAssertEqual(FloatingPosition(row(price: "1", profit: "-0.001"))?.profitText, "0.00 U")
+    XCTAssertEqual(FloatingPosition(row(price: "1", profit: "-0.001"))?.profitText, "-0.001000 U")
   }
 
   @MainActor
@@ -79,7 +79,7 @@ final class FloatingPositionsTests: XCTestCase {
     model.reset(scope: store.scope)
     await model.refresh(store)
     XCTAssertEqual(model.positions.first?.symbol, "BTCUSDT")
-    XCTAssertEqual(model.positions.first?.profitText, "+25.00 U")
+    XCTAssertEqual(model.positions.first?.profitText, "+25.000 U")
     XCTAssertNotNil(model.updatedAt)
     await model.refresh(store)
     XCTAssertTrue(model.positions.isEmpty)

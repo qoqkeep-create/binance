@@ -1261,37 +1261,7 @@ private struct IndicatorSettingsControlIcon: Shape {
 }
 
 private enum MarketDisplayFormatter {
-    static func price(_ value: Double) -> String {
-        let basis = abs(value)
-        let fractionDigits: Int
-        if basis >= 1_000 {
-            fractionDigits = 1
-        } else if basis >= 1 {
-            fractionDigits = 3
-        } else {
-            fractionDigits = 5
-        }
-        return decimal(
-            value,
-            minimumFractionDigits: fractionDigits,
-            maximumFractionDigits: fractionDigits
-        )
-    }
-
-    private static func decimal(
-        _ value: Double,
-        minimumFractionDigits: Int,
-        maximumFractionDigits: Int
-    ) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        formatter.minimumFractionDigits = minimumFractionDigits
-        formatter.maximumFractionDigits = maximumFractionDigits
-        return formatter.string(from: NSNumber(value: value))
-            ?? String(format: "%.\(maximumFractionDigits)f", value)
-    }
+    static func price(_ value: Double) -> String { DisplayNumber.text(value, grouped: true) }
 }
 
 /// Favorite intervals are chronological shortcuts; selecting another supported interval never changes the favorites.

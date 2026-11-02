@@ -219,3 +219,11 @@ DEBUG 无网络 `WebParityUITests` 新增 `testCapitalWalletSheetTabsAndDirectio
 将资金面板改为圆角矩形“划转 / 转账 / 记录”三页签，复用现有历史组件并提供嵌入模式；记录页移除账号接口、卡片与编辑入口。转账页补齐未配置账号的 ＋ 卡片，沿用原编辑弹窗；已配置账号保留脱敏卡片与管理入口。现有 UI 流程同步调整为三个页签、无账号历史页、两种账号卡片和菜单直达记录；DEBUG 未配置替身保持资金写请求拒绝。
 
 generic iOS Release 未签名构建及 generic iOS Simulator 的 `build-for-testing` 均通过，证据位于忽略目录 `.integration-runtime/CapitalTabs/`。按用户“简单调整不启动模拟器测试”的偏好，本轮未启动模拟器、未执行 XCTest / UI 测试；编译不等于交互、截图或实机验收。未执行真实资金动作，未上传 TestFlight；本轮只改客户端，不发布后端。
+
+## 账户顶栏与统一数字精度（2026-11-02）
+
+账户顶栏的绑定 API 紧跟头像，模式切换位于同一行最右侧；绑定与切换按钮均为 36 pt 高、12 pt 中等字重。新增 Foundation 层 `DisplayNumber`，行情、开仓 / 确认、持仓 / 历史、资金、策略摘要、浮窗 / 画中画及图表共用按绝对值分档的显示规则，详见 [统一数字显示](ios-web-parity.md#统一数字显示2026-11-02)。原输入与交易请求保持完整精度。
+
+在本机临时 Swift Package 中直接编译实际 `DisplayNumber.swift`、`MarketSnapshot.swift` 与 `DisplayNumberTests.swift`，5 项测试通过，覆盖分档、四位有效数字 / 尾零、跨档进位、负值 / 零、大额 Decimal、无效值、行情和缩放单位。既有浮窗 / 图表参数 / 开仓估算断言按新格式更新，UI 顶栏流程增加头像间距、同行和按钮高度断言。
+
+本任务源码快照的 generic iOS Release 未签名构建、单测工程和 UI 工程 `build-for-testing` 通过；工作区并行交付的已提交图表布局纳入最终编译。证据保存在忽略目录 `.integration-runtime/ProfileNumbers/`。按用户偏好未启动模拟器、未执行 iOS 单测 / UI 测试，页面截图、TestFlight 与实机验收待核；本轮没有后端发布或真实资金操作。

@@ -349,7 +349,6 @@ actor ChartSceneBuilder {
 
   private let atlasBuilder = MetalGlyphAtlasBuilder()
   private var atlasCache: [ChartGlyphAtlasKey: ChartGlyphAtlasSnapshot] = [:]
-  private var priceFormatters: [Int: NumberFormatter] = [:]
   private lazy var timeFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "zh_CN")
@@ -2930,35 +2929,8 @@ actor ChartSceneBuilder {
     return atlas
   }
 
-  private func formattedPrice(
-    _ value: Double,
-    reference: Double
-  ) -> String {
-    let basis = max(abs(value), abs(reference))
-    let digits: Int
-    if basis >= 1_000 {
-      digits = 1
-    } else if basis >= 1 {
-      digits = 3
-    } else {
-      digits = 5
-    }
-    let formatter: NumberFormatter
-    if let cached = priceFormatters[digits] {
-      formatter = cached
-    } else {
-      let created = NumberFormatter()
-      created.locale = Locale(identifier: "en_US_POSIX")
-      created.numberStyle = .decimal
-      created.groupingSeparator = ","
-      created.usesGroupingSeparator = true
-      created.minimumFractionDigits = digits
-      created.maximumFractionDigits = digits
-      priceFormatters[digits] = created
-      formatter = created
-    }
-    return formatter.string(from: NSNumber(value: value))
-      ?? String(format: "%.*f", digits, value)
+  private func formattedPrice(_ value: Double, reference: Double) -> String {
+    DisplayNumber.text(value, grouped: true)
   }
 
   private func formattedIndicatorLegendValue(
@@ -2973,7 +2945,7 @@ actor ChartSceneBuilder {
       if Self.longShortRatioPanelIDs.contains(panelID),
         entry.label == "L:" || entry.label == "S:"
       {
-        return String(format: "%.2f%%", value)
+        return DisplayNumber.text(value) + "%"
       }
       return formattedPrice(value, reference: value)
     case .priceOverlay:
@@ -3004,43 +2976,8 @@ actor ChartSceneBuilder {
     ChartPanelID.globalAccountRatio,
   ]
 
-  private func formattedCompactQuantity(
-    _ value: Double
-  ) -> String {
-    guard value.isFinite else {
-      return "--"
-    }
-    let magnitude = abs(value)
-    let scaled: Double
-    let suffix: String
-    if magnitude >= 1_000_000_000 {
-      scaled = value / 1_000_000_000
-      suffix = "B"
-    } else if magnitude >= 1_000_000 {
-      scaled = value / 1_000_000
-      suffix = "M"
-    } else if magnitude >= 1_000 {
-      scaled = value / 1_000
-      suffix = "K"
-    } else {
-      scaled = value
-      suffix = ""
-    }
-    let digits: Int
-    let scaledMagnitude = abs(scaled)
-    if scaledMagnitude >= 100 {
-      digits = 0
-    } else if scaledMagnitude >= 10 {
-      digits = 1
-    } else {
-      digits = 2
-    }
-    return String(
-      format: "%.*f%@",
-      digits,
-      scaled,
-      suffix
-    )
+  private func formattedCompactQuantity(_ value: Double) -> String {
+    DisplayNumber.compact(value)
   }
 
   private func formattedTime(_ openTime: Int64) -> String {

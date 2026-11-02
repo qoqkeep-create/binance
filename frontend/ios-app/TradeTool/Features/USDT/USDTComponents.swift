@@ -594,10 +594,8 @@ struct WebDirection: View {
 
 enum WebFormat {
   static func amount(_ value: String, signed: Bool = false) -> String {
-    guard var decimal = Decimal(string: value) else { return "--" }
-    var rounded = Decimal()
-    NSDecimalRound(&rounded, &decimal, 2, .plain)
-    return (signed && rounded > 0 ? "+" : "") + NSDecimalNumber(decimal: rounded).stringValue + " U"
+    let number = DisplayNumber.text(value, signed: signed)
+    return number == "--" ? number : number + " U"
   }
   static func date(_ value: String) -> Date? {
     if let timestamp = Double(value), timestamp > 0 {

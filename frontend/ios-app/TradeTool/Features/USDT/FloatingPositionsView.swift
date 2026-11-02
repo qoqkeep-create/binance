@@ -30,29 +30,16 @@ struct FloatingPosition: Identifiable, Equatable {
     profit = Self.decimal(row["pnl"])
   }
 
-  var priceText: String { Self.format(price, digits: (price ?? 1) < Decimal(string: "0.00000001")! ? 16 : 8, fixed: false) }
+  var priceText: String { price.map { DisplayNumber.text($0) } ?? "--" }
   var profitText: String {
-    guard let profit else { return "--" }
-    var value = profit
-    var rounded = Decimal()
-    NSDecimalRound(&rounded, &value, 2, .plain)
-    return (rounded > 0 ? "+" : "") + Self.format(rounded, digits: 2, fixed: true) + " U"
+    profit.map { DisplayNumber.text($0, signed: true) + " U" } ?? "--"
   }
 
   private static func decimal(_ value: JSONValue?) -> Decimal? {
     guard let number = value?.decimal, !number.isNaN else { return nil }
     return number
   }
-  private static func format(_ value: Decimal?, digits: Int, fixed: Bool) -> String {
-    guard let value else { return "--" }
-    let formatter = NumberFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.numberStyle = .decimal
-    formatter.usesGroupingSeparator = false
-    formatter.minimumFractionDigits = fixed ? digits : 0
-    formatter.maximumFractionDigits = digits
-    return formatter.string(from: NSDecimalNumber(decimal: value)) ?? "--"
-  }
+
 }
 
 /// Owns only read-only snapshots. A reset invalidates in-flight responses, including failures.

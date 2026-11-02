@@ -1247,7 +1247,7 @@ final class KlineChartHostView: UIView {
                 guard let value = entry.value, value.isFinite else {
                     return nil
                 }
-                return "\(entry.label)\(String(format: "%.6g", value))"
+                return "\(entry.label)\(DisplayNumber.text(value))"
             }
             .prefix(16)
             .joined(separator: "，") ?? ""

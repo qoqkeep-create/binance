@@ -655,7 +655,6 @@ final class ChartCrosshairOverlayBuilder {
         case trailing
     }
 
-    private var priceFormatters: [Int: NumberFormatter] = [:]
     private lazy var timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
@@ -668,16 +667,6 @@ final class ChartCrosshairOverlayBuilder {
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.timeZone = .current
         formatter.dateFormat = "MM-dd HH:mm"
-        return formatter
-    }()
-    private lazy var quantityFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
         return formatter
     }()
 
@@ -885,7 +874,7 @@ final class ChartCrosshairOverlayBuilder {
                     && $0.bottom <= top + height
             })
             let rateText = axisPriceChangeRate.map {
-                String(format: "%+.2f%%", $0 * 100)
+                DisplayNumber.text($0 * 100, signed: true) + "%"
             } ?? "--"
             glyphs.append(contentsOf: alignedText(
                 rateText,
@@ -1057,7 +1046,7 @@ final class ChartCrosshairOverlayBuilder {
         let scale = data.displayScale
         let candle = hit.candle
         let percentage = hit.priceChangeRate.map {
-            String(format: "%+.2f%%", $0 * 100)
+            DisplayNumber.text($0 * 100, signed: true) + "%"
         } ?? "--"
         let change = formattedSignedPrice(
             hit.priceChange,
@@ -1065,7 +1054,7 @@ final class ChartCrosshairOverlayBuilder {
         )
         let amplitude = ChartCrosshairDisplaySemantics
             .amplitudeRate(for: candle)
-            .map { String(format: "%.2f%%", $0 * 100) }
+            .map { DisplayNumber.text($0 * 100) + "%" }
             ?? "--"
         let directionColor: ChartColor
         if hit.priceChange > 0 {
@@ -1296,36 +1285,12 @@ final class ChartCrosshairOverlayBuilder {
         )
     }
 
-    private func formattedPrice(
-        _ value: Double,
-        reference: Double
-    ) -> String {
-        let basis = max(abs(value), abs(reference))
-        let digits = fractionDigits(basis: basis)
-        let formatter: NumberFormatter
-        if let cached = priceFormatters[digits] {
-            formatter = cached
-        } else {
-            let created = NumberFormatter()
-            created.locale = Locale(identifier: "en_US_POSIX")
-            created.numberStyle = .decimal
-            created.groupingSeparator = ","
-            created.usesGroupingSeparator = true
-            created.minimumFractionDigits = digits
-            created.maximumFractionDigits = digits
-            priceFormatters[digits] = created
-            formatter = created
-        }
-        return formatter.string(from: NSNumber(value: value))
-            ?? compactPrice(value)
+    private func formattedPrice(_ value: Double, reference: Double) -> String {
+        DisplayNumber.text(value, grouped: true)
     }
 
     private func compactPrice(_ value: Double) -> String {
-        String(
-            format: "%.*f",
-            fractionDigits(basis: abs(value)),
-            value
-        )
+        DisplayNumber.text(value)
     }
 
     private func formattedSignedPrice(
@@ -1342,62 +1307,13 @@ final class ChartCrosshairOverlayBuilder {
         )
     }
 
-    private func fractionDigits(basis: Double) -> Int {
-        if basis >= 1_000 {
-            return 1
-        }
-        if basis >= 1 {
-            return 3
-        }
-        return 5
-    }
 
     private func formattedQuantity(_ value: Double) -> String {
-        guard value.isFinite else {
-            return "--"
-        }
-        return quantityFormatter.string(
-            from: NSNumber(value: value)
-        ) ?? String(format: "%.2f", value)
+          DisplayNumber.text(value, grouped: true)
     }
 
-    private func formattedCompactQuantity(
-        _ value: Double
-    ) -> String {
-        guard value.isFinite else {
-            return "--"
-        }
-        let magnitude = abs(value)
-        let scaled: Double
-        let suffix: String
-        if magnitude >= 1_000_000_000 {
-            scaled = value / 1_000_000_000
-            suffix = "B"
-        } else if magnitude >= 1_000_000 {
-            scaled = value / 1_000_000
-            suffix = "M"
-        } else if magnitude >= 1_000 {
-            scaled = value / 1_000
-            suffix = "K"
-        } else {
-            scaled = value
-            suffix = ""
-        }
-        let digits: Int
-        let scaledMagnitude = abs(scaled)
-        if scaledMagnitude >= 100 {
-            digits = 0
-        } else if scaledMagnitude >= 10 {
-            digits = 1
-        } else {
-            digits = 2
-        }
-        return String(
-            format: "%.*f%@",
-            digits,
-            scaled,
-            suffix
-        )
+    private func formattedCompactQuantity(_ value: Double) -> String {
+        DisplayNumber.compact(value)
     }
 
     private func formattedQuoteVolume(_ value: Double) -> String {

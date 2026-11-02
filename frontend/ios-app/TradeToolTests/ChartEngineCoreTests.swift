@@ -5682,7 +5682,7 @@ final class ChartEngineCoreTests: XCTestCase {
             configurations.first {
                 $0.pluginID == "supertrend"
             }?.legendLabel,
-            "SUPERTREND(14,3.5)"
+            "SUPERTREND(14,3.500)"
         )
         XCTAssertEqual(
             configurations.first {

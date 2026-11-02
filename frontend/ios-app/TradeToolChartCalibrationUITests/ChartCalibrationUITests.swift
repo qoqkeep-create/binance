@@ -2945,7 +2945,14 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(bind.waitForExistence(timeout: 5))
     XCTAssertTrue(avatar.exists)
     XCTAssertLessThan(avatar.frame.maxX, bind.frame.minX)
-    XCTAssertLessThan(bind.frame.height, 40)
+    let mode = app.buttons["profile.switchMode"]
+    XCTAssertTrue(mode.exists)
+    XCTAssertEqual(bind.frame.minX - avatar.frame.maxX, 8, accuracy: 1)
+    XCTAssertEqual(bind.frame.midY, avatar.frame.midY, accuracy: 1)
+    XCTAssertEqual(mode.frame.midY, avatar.frame.midY, accuracy: 1)
+    XCTAssertEqual(bind.frame.height, 36, accuracy: 1)
+    XCTAssertEqual(mode.frame.height, bind.frame.height, accuracy: 1)
+    XCTAssertLessThan(bind.frame.maxX, mode.frame.minX)
     XCTAssertLessThan(bind.frame.width, 150)
     capture("profile-compact-bind-with-avatar")
     app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止损额设置")).firstMatch.tap()
@@ -3202,14 +3209,14 @@ final class WebParityUITests: XCTestCase {
     let profit = app.staticTexts["floating.position.profit"]
     XCTAssertTrue(price.waitForExistence(timeout: 10))
     XCTAssertEqual(price.label, "68000")
-    XCTAssertEqual(profit.label, "+25.00 U")
+    XCTAssertEqual(profit.label, "+25.000 U")
     capture("floating-profile")
     app.buttons["floating.positions.next"].tap()
-    XCTAssertEqual(price.label, "2600.5")
-    XCTAssertEqual(profit.label, "-3.50 U")
+    XCTAssertEqual(price.label, "2600.50")
+    XCTAssertEqual(profit.label, "-3.500 U")
     app.buttons["持仓"].firstMatch.tap()
     XCTAssertTrue(app.buttons["限价委托"].waitForExistence(timeout: 5))
-    XCTAssertEqual(price.label, "2600.5")
+    XCTAssertEqual(price.label, "2600.50")
     capture("floating-positions")
     app.buttons["我的"].firstMatch.tap()
     let strategy = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止盈止损策略")).firstMatch
@@ -3217,7 +3224,7 @@ final class WebParityUITests: XCTestCase {
     if !strategy.isHittable { app.swipeUp() }
     strategy.tap()
     XCTAssertTrue(app.staticTexts["我的策略"].waitForExistence(timeout: 5))
-    XCTAssertEqual(price.label, "2600.5")
+    XCTAssertEqual(price.label, "2600.50")
     let before = panel.frame
     let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
     let target = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: before.midX - 100, dy: before.midY + 160))
@@ -3286,7 +3293,7 @@ final class WebParityUITests: XCTestCase {
     for (options, expected, name) in [
       (["--fixture-empty"], "暂无持仓", "floating-empty"),
       (["--fixture-unbound"], "请先绑定 API", "floating-unbound"),
-      (["--fixture-dark", "--fixture-lead"], "+25.00 U", "floating-lead-dark"),
+      (["--fixture-dark", "--fixture-lead"], "+25.000 U", "floating-lead-dark"),
     ] {
       launch("profile", options + ["--fixture-inline-floating"])
       let toggle = app.buttons["profile.floatingPositions"]

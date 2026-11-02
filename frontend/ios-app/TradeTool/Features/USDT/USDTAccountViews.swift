@@ -19,7 +19,7 @@ struct USDTProfileView: View {
     ScrollView {
       VStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 0) {
-          HStack(alignment: .center, spacing: 12) {
+          HStack(alignment: .center, spacing: 8) {
             AsyncImage(url: store.isBound ? URL(string: store.profile.value("avatar_url", fallback: "")) : nil) { phase in
               if let image = phase.image {
                 image.resizable().scaledToFill()
@@ -46,24 +46,21 @@ struct USDTProfileView: View {
                   .foregroundStyle(WebTheme.danger).frame(height: 32)
               }
             }
-            Spacer(minLength: 0)
             if !store.isBound {
               Button { binding = true } label: {
                 WebLabel("请先绑定 API", "link")
-                  .font(.system(size: 12, weight: .semibold)).foregroundStyle(WebTheme.danger)
-                  .padding(.horizontal, 12).frame(height: 34)
+                  .font(.system(size: 12, weight: .medium)).foregroundStyle(WebTheme.danger)
+                  .padding(.horizontal, 12).frame(height: 36).lineLimit(1)
                   .background(WebTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                   .contentShape(RoundedRectangle(cornerRadius: 8))
               }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
             }
-          }.padding(.bottom, 20)
-          HStack {
-            Spacer()
+            Spacer(minLength: 4)
             Button(lead ? "切换合约模式" : "切换带单模式") { modeConfirm = true }
-              .font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(minHeight: 44)
-              .background(WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+              .buttonStyle(WebButtonStyle(kind: .secondary, height: 36, fontSize: 12, fullWidth: false))
+              .fixedSize(horizontal: true, vertical: false)
               .accessibilityIdentifier("profile.switchMode")
-          }.padding(.bottom, 16)
+          }.padding(.bottom, 20)
           Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 16)
           HStack(spacing: 8) {
             Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)").font(.system(size: 14, weight: .medium))
@@ -120,7 +117,7 @@ struct USDTProfileView: View {
           } label: {
             menuRow(
               "止损额设置", "chart.line.uptrend.xyaxis",
-              value: "\(store.riskAmount.isEmpty ? "--" : store.riskAmount) USDT", amount: true)
+              value: "\(DisplayNumber.text(store.riskAmount)) USDT", amount: true)
           }
           separator
           if !lead {
@@ -247,7 +244,7 @@ struct USDTProfileView: View {
   }
   private func balance(_ key: String) -> String {
     guard let amount = store.account[key]?.decimal else { return "--" }
-    return String(format: "%.2f", NSDecimalNumber(decimal: amount).doubleValue)
+    return DisplayNumber.text(amount)
   }
   private func wallet(_ title: String, _ key: String) -> some View {
     HStack(spacing: 8) {
@@ -401,7 +398,7 @@ struct USDTStopLossView: View {
             HStack {
               Text("单笔止损占账户总资产百分比").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
               Spacer()
-              Text("\(percentage)%").font(.system(size: 24, weight: .bold)).foregroundStyle(
+              Text("\(DisplayNumber.text(Decimal(percentage)))%").font(.system(size: 24, weight: .bold)).foregroundStyle(
                 WebTheme.brand)
               Text(percentage <= 4 ? "低风险" : percentage <= 10 ? "中风险" : "高风险").font(.system(size: 14))
                 .foregroundStyle(
@@ -411,7 +408,7 @@ struct USDTStopLossView: View {
             VStack(alignment: .leading, spacing: 4) {
               (Text("单笔止损额：").font(.system(size: 14))
                 + Text(
-                  " (\(money(balance))*\(percentage)%=\(money(balance * Decimal(percentage) / 100)) USDT 向上取整)"
+                  " (\(money(balance))*\(DisplayNumber.text(Decimal(percentage)))%=\(money(balance * Decimal(percentage) / 100)) USDT 向上取整)"
                 ).font(.system(size: 12))).foregroundStyle(WebTheme.secondary)
               HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(money(target)) USDT").font(.system(size: 24, weight: .bold))
@@ -440,7 +437,7 @@ struct USDTStopLossView: View {
           if let pending = value["pending_amount"], pending != .null {
             HStack {
               TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                Text("您已调整止损金额\(value.value("pending_from_amount")) → \(pending.text)，\(countdownText(at: timeline.date))后生效")
+                Text("您已调整止损金额\(DisplayNumber.text(value.value("pending_from_amount"))) → \(DisplayNumber.text(pending.text))，\(countdownText(at: timeline.date))后生效")
                   .font(.system(size: 14))
               }
               Spacer()
@@ -501,7 +498,7 @@ struct USDTStopLossView: View {
         Text(
           cancelPending
             ? "确认取消调整止损金额？"
-            : "您将调整止损金额由\(value.value("current_amount"))调整到\(NSDecimalNumber(decimal: target).stringValue)，确认后立即生效，是否确认？"
+            : "您将调整止损金额由\(DisplayNumber.text(value.value("current_amount")))调整到\(money(target))，确认后立即生效，是否确认？"
         ).font(.system(size: 16)).lineSpacing(4)
         HStack(spacing: 12) {
           Button("取消") { confirm = false }.buttonStyle(WebButtonStyle(kind: .secondary))
@@ -526,7 +523,7 @@ struct USDTStopLossView: View {
   }
   private var target: Decimal { WebStopLossAmount.roundUp(balance * Decimal(percentage) / 100) }
   private func money(_ value: Decimal) -> String {
-    String(format: "%.2f", NSDecimalNumber(decimal: value).doubleValue)
+    DisplayNumber.text(value)
   }
   private func update(cancel: Bool) {
     guard !saving else { return }
@@ -762,7 +759,7 @@ struct USDTCapitalView: View {
   }
   private func formatted(_ value: String) -> String {
     guard let amount = Decimal(string: value) else { return "--" }
-    return amount.formatted(.number.precision(.fractionLength(2)))
+    return DisplayNumber.text(amount)
   }
   private func apply(_ result: JSONValue) {
     preview = .object(preview.fields.merging(result.fields) { _, new in new })
@@ -945,7 +942,7 @@ struct USDTLegacyCapitalView: View {
         Text("请确认金额、网络与目标地址。").foregroundStyle(WebTheme.secondary)
         USDTMetric(
           title: "金额（USDT）",
-          value: collection.value("transfer_amount", fallback: collection.value("collection_total"))
+          value: DisplayNumber.text(collection.value("transfer_amount", fallback: collection.value("collection_total")))
         )
         USDTMetric(title: "网络", value: collection.value("destination_network"))
         USDTMetric(title: "地址", value: collection.value("destination_address"))
@@ -981,7 +978,7 @@ struct USDTLegacyCapitalView: View {
   }
   private func amount(_ value: String) -> String {
     guard let decimal = Decimal(string: value) else { return "--" }
-    return String(format: "%.2f U", NSDecimalNumber(decimal: decimal).doubleValue)
+    return DisplayNumber.text(decimal) + " U"
   }
   private var collection: JSONValue {
     preview.value("status") == "collection_pending"
@@ -1270,7 +1267,7 @@ struct USDTCapitalReminderView: View {
   }
   private func amount(_ value: String) -> String {
     guard let decimal = Decimal(string: value) else { return "--" }
-    return String(format: "%.2f U", NSDecimalNumber(decimal: decimal).doubleValue)
+    return DisplayNumber.text(decimal) + " U"
   }
 
 }

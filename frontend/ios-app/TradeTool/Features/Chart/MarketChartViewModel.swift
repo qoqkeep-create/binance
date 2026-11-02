@@ -406,7 +406,7 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     var formattedChange24h: String {
-        String(format: "%+.2f%%", changePercent24h)
+        DisplayNumber.text(changePercent24h, signed: true) + "%"
     }
 
     var referencePrice: Double {
