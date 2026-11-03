@@ -10,6 +10,7 @@
 | --- | --- |
 | Xcode 工程 | `frontend/ios-app/TradeTool.xcodeproj` |
 | 主 Target | `TradeTool` |
+| live 扩展 Target／Bundle ID | `PositionLiveWidget`／`com.waibao2025.trade.integrated.PositionLiveWidget`；同一团队独立登记，不另建 App Store Connect App |
 | 建议归档 Scheme | `TradeTool Release`；其 Archive 配置为 `Release` |
 | Bundle ID | `com.waibao2025.trade.integrated`；使用独立 App 记录 |
 | Version / Build | 源码为 `1.0.1` / `3`；Cloud 起始 Build 已保存为 `4`，随后平台自动递增 |
@@ -33,6 +34,18 @@
 5. 在 Xcode 选择有权使用的开发者团队。若使用已有团队，沿用团队可用的签名资源，不撤销其他应用在用的证书。
 
 自己现有的 App Store Connect 账号可加入内部测试组；单纯测试手机无需另买会员。
+
+## live 扩展的 Cloud 导出签名修复（2026-11-04）
+
+Xcode Cloud 构建 37（`15b4784`）成功；38（`8593267`）首次嵌入 `PositionLiveWidget.appex` 后失败，39（`482c0fb`）沿用该工程配置。39 的 Test 通过，但 Archive action 在 ad-hoc、App Store、development 三种导出阶段退出 70；不能把这一状态称为 Swift 编译失败，也不能以本地无签名构建通过说明分发签名已通过。38 的具体导出日志本轮未下载，不把与 39 相同的根因推断写为已核验。
+
+已下载 39 的 Archive Logs，三种 `xcodebuild-export-archive.log` 均明确报告 `Automatic signing cannot register bundle identifier` 和 `No profiles`，对象都是 `com.waibao2025.trade.integrated.PositionLiveWidget`。Apple Developer 团队 `756Y5JKBUD` 的 App IDs 列表中已有主 App、未找到该扩展。2026-11-04 已在同团队以 Explicit 登记该 Bundle ID，并在列表核验存在。主 App／扩展继续使用现有 Automatic 签名，由 Cloud 获取匹配的描述文件；本轮不更改 Bundle ID、签名团队、业务源码或测试门槛。
+
+扩展只通过 ActivityKit 渲染内容，无独立网络推送注册、App Groups、共享 Keychain 或共享存储，不给扩展启用额外 Push／App Groups capability，也不扩大现有 APNs key 的 topic 授权。live token 仍在主 App 申请，后台 topic 仍为主 App 的 `.push-type.liveactivity`。登记依据见 [Apple App ID 流程](https://developer.apple.com/help/account/identifiers/register-an-app-id)，推送归属见 [ActivityKit 官方说明](https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications)。
+
+排查入口：Xcode → Reports → Cloud → 对应构建 → Archive - iOS → Artifacts → Logs，解压后先看各 `*-export-archive-logs/xcodebuild-export-archive.log`；仅截图中的 exit 70 不足以定位问题。新增任何被嵌入的 extension 时，在推送前核对实际 Release Bundle ID、团队及 Apple App IDs 登记，再以 Cloud App Store export／处理／分发分阶段验收。无需把私钥、描述文件或完整日志提交到 Git。此次重建与最终结果见 [变更记录](changes.md)。
+
+同提交 `482c0fb` 重建的 [Cloud 构建 40](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/xcode-cloud/products/f01be7a9-f719-4ecc-932e-17c7bac455a6/builds/b486171d-111c-4f6a-9363-e07d597e4d13/summary) 已核验 328 项测试全部通过，App Store／ad-hoc／development 导出均成功，App Store Connect 准备步骤也通过；原签名导出错误已消失。测试和导出阶段由云端实际执行，本轮未重复本地编译。Apple 处理、内部组后续分发与手机更新仍需分别确认，不能用导出成功代替已安装。
 
 ## 2. 注册独立 App ID
 

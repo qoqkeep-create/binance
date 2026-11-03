@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-04：Cloud live 扩展签名资产修复
+
+用户截图中构建 39 的六项错误均位于三种 Archive 导出，Test 已通过。下载完整产物后确认：ad-hoc／App Store／development 均因 `com.waibao2025.trade.integrated.PositionLiveWidget` 未登记、找不到匹配描述文件而失败；37（`15b4784`）成功，38（`8593267`）首次嵌入 live 扩展，39（`482c0fb`）的工程配置未再变化。
+
+已在 Apple Developer 同团队 `756Y5JKBUD` 登记并核验扩展 Explicit App ID，未新增 Push／App Groups 能力或扩大 APNs key 授权；主 App 仍负责 live token 与后台 topic。保留现有 Automatic 签名，不修改业务代码、不撤销证书或关闭测试。从 39 以同提交 `482c0fb` 手动重建 40，实际核验 328 项测试、三种导出及 App Store Connect 准备步骤均成功，原导出错误已消失；Apple 处理／内部分发和手机安装继续独立核验。完整排障入口与扩展登记规则归入 [TestFlight](testflight.md#live-扩展的-cloud-导出签名修复2026-11-04)。原始日志和截图留忽略目录 `.integration-runtime/CloudExportFix/`，不上传凭证或完整日志。本轮仅提交推送这三份排障文档，其他任务改动及暂存状态保留；不追加服务器部署。
+
 ## 2026-11-04：持仓策略半屏、淡入淡出与浮窗同步
 
 - 持仓“添加自动止盈”改为共用半屏面板，仅列自动策略，保留二次确认；未知结果锁定原策略与幂等键并查询。保本损等普通弹窗与蒙层统一原位淡入淡出，大面板保留上滑。

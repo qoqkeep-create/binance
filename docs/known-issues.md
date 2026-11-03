@@ -24,6 +24,7 @@
 | 密码重置唤起 | App 可处理已有重置参数；邮件 HTTPS Universal Links 自动唤起尚未配置和验收 |
 | TestFlight | 实际 iPhone 已运行 `1.0.1 (15)`，新诊断上报与落库已贯通；此前用户确认 13／14。对应 `7628111` 的 Apple Test／Archive 已成功，但 13／14／15 的准确 commit／配置映射及全部组分发状态尚未核实。手机只验证了本轮 BTC1h 加载，其他功能与真实交易不据此验收，见 [构建核对说明](testflight.md#构建号自动递增) |
 | Cloud 图表测试失败 | 用户于 2026-11-02 确认构建 26 成功，本轮停止排查旧失败；后续业务代码需独立构建与手机验收，见 [TestFlight](testflight.md) |
+| Cloud live 扩展导出 | 39 的三种导出日志确认 `PositionLiveWidget` Bundle ID 未登记／缺描述文件；2026-11-04 已在同团队补齐 Explicit App ID，扩展不新增 Push／App Groups 权限。同提交重建 40 的 328 项测试、三种导出及 App Store Connect 准备步骤均成功，原导出错误已修复；Apple 处理、内部组分发和手机更新仍需分别确认，见 [签名修复](testflight.md#live-扩展的-cloud-导出签名修复2026-11-04) |
 | Python APNs | 普通信号仅走 App APNs，浮盈独立走 Echobell。47.80.22.243（首尔服务器）于 2026-11-03 15:22 补齐设备注册／注销、HTTP2、App dispatcher 和 p8 只读挂载；旧 Echo 信号两条待发记录已取消且尝试为 0，浮盈任务未启用。手机已注册；首轮 TopicDisallowed 定位为密钥仅授权旧 App，用户明确允许后已增加整合 topic 并保留旧权限。15:44 三条测试均为苹果 200／sent，用户确认全部收到；自然触发、长稳及浮盈仍另验，见 [通知实测](signals-and-notifications.md#普通通知真机测试2026-11-03) |
 | SMTP / 外部通知 | 2026-11-03 已在 47.80.22.243（首尔服务器）限定发布暂停外部 HTTP 接收；普通内部信号走 App，旧外部／Echo 普通信号取消，仓位事件未来走所属用户 App 队列，当前开平仓与合作方总开关继续关闭。Echo 仅浮盈通道，自动任务仍未上线；普通三条／Echo 单次历史实测由用户确认，本轮未发送通知。SMTP 未配置，见 [当前通知规则](signals-and-notifications.md)及[发布](operations.md#外部接收暂停与-app-通知分流2026-11-03) |
 | 真机与真实交易 | 已有模拟器、HTTPS / WSS 与隔离测试证据，并取得 iPhone 构建 15 的 BTC1h 首帧阶段报告；完整业务、其他机型和真实资金操作仍未验收 |
