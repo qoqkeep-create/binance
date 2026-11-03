@@ -541,9 +541,9 @@ struct USDTTradeView: View {
             } label: {
               Text(hasPosition ? heldTakeProfit : strategyEnabled ? store.strategies.first { $0.value("id") == strategyID }?.value("name") ?? "选择策略" : "手动止盈")
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
-                .foregroundStyle(WebTheme.color(0x176342, 0x143F2D))
+                .foregroundStyle(BinanceTheme.onAccent)
                 .padding(.horizontal, 8).frame(height: 28)
-                .background(WebTheme.color(0xE3F4EA, 0xB9E8CE), in: RoundedRectangle(cornerRadius: 6))
+                .background(BinanceTheme.accent, in: RoundedRectangle(cornerRadius: 6))
             }.buttonStyle(.plain).disabled(hasPosition || busy || submitted || confirm)
               .accessibilityIdentifier("chart-ticket.strategy")
           }.frame(maxWidth: .infinity, alignment: .leading)
@@ -742,7 +742,7 @@ struct USDTPositionsView: View {
       HStack(spacing: 8) {
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
-          .frame(maxWidth: 280).frame(height: 32)
+          .frame(maxWidth: 280).frame(height: 38)
         Spacer(minLength: 0)
         Button { floatingPositions.toggle() } label: {
           Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")

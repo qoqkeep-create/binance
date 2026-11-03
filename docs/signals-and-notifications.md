@@ -4,20 +4,20 @@
 
 本主题维护数据流、模块隔离和消息口径；请求字段和响应协议以两份独立 [接入](api/external-signals.md) / [推送](api/trade-notifications.md) 文档为准。
 
-投递语义核对日期：2026-11-02。以下 APNs／Echobell 为本地源码实现，实际配置及手机投递尚未验收。
+投递语义核对日期：2026-11-03。普通自有信号只走 App APNs，只有浮盈提醒走 Echobell；以下为源码实现，完整运行配置及手机后台投递尚未验收。
 
 ## 内部信号恢复状态（2026-11-03）
 
 2026-11-03 12:23（北京时间），**47.80.22.243（首尔服务器）** 已限定部署直接入库链路。旧扫描先检查通知入口 token，缺失时返回 `evaluated=0`，因此前端有读取接口也没有数据；现在计算／持久化不依赖旧通知入口。自然调度已完成 14 个币种 × 4 个周期共 56 项，`failed=0`，当轮真实触发数为 0；鉴权 `source=internal` GET 200、数据仍为空，没有插入样例消息或重放历史。真实触发后的生产保存及手机可见性仍待自然验收，不能把本次空结果写成已有信号到达。
 
-原生信号页进入立即读取，前台停留每 30 秒刷新已入库信号，可下拉手动刷新；离页／后台停止任务，带单模式不启动此读取。该客户端改动尚未发布到 TestFlight。限定包已应用 `mobile.0002` 并包含通知排队所需模型，但没有设备注册路由、通知 dispatcher 或浮盈外发任务，真实发送尝试为 0。下文完整 APNs／Echobell 能力仍是源码实现及待完整发布的边界。版本、备份与回滚见 [运维](operations.md#信号入库与杠杆金额限定发布2026-11-03)，隔离入库／读取用例见 [开发](development.md#图表账户反馈回归2026-11-03)。
+用户于本日后续反馈信号页已出现一条真实信号；这是用户可见性反馈，未另行核对生产事件或后台通知送达。自有信号卡不展示评分。原生信号页进入立即读取，前台停留每 30 秒刷新已入库信号，可下拉手动刷新；离页／后台停止任务，带单模式不启动此读取。该客户端改动尚未发布到 TestFlight。限定包已应用 `mobile.0002` 并包含通知排队所需模型，但没有设备注册路由、通知 dispatcher 或浮盈外发任务，真实发送尝试为 0。下文完整 APNs／Echobell 能力仍是源码实现及待完整发布的边界。版本、备份与回滚见 [运维](operations.md#信号入库与杠杆金额限定发布2026-11-03)，隔离入库／读取用例见 [开发](development.md#图表账户反馈回归2026-11-03)。
 
 ## 三条链路不要混淆
 
 | 链路 | 数据源与去向 | 是否交易 |
 | --- | --- | --- |
 | 外部指标信号 | 合作方 JSON -> webhook 翻译 -> 数据库；新增消息尽力转发企业微信，当前 iOS 不展示该来源 | 否，不读取交易账户、不自动开平仓 |
-| 内部指标信号 | 自有趋势扫描 -> 数据库 -> iOS 信号页及现有通知通道 | 扫描 / 通知本身不自动下单 |
+| 内部指标信号 | 自有趋势扫描 -> 数据库 -> iOS 信号页与 App APNs | 扫描 / 通知本身不自动下单 |
 | 五类仓位事件 | 真实交易状态 -> 通知事件 -> 企业微信等已配置通道 + 独立对方服务器投递 | 只通知既有事件，不因投递而再次交易 |
 
 入站 `EXTERNAL_SIGNAL_API_KEY`、出站 `EXTERNAL_TRADE_SIGNAL_API_KEY`、内部服务 token 和 Binance Key 均不是同一凭证。完整入站链接属于敏感写入凭证，不能放公开日志。
@@ -38,15 +38,15 @@
 
 `TradingViewMessage` 为历史模型名，实际有 external / internal / tradingview 来源；旧 tradingview 数据不能自动归成 external。统一消息按 3 天保留、每 10 分钟清理，不是长期信号档案。清理后仅依赖该表的去重记录也不再永久存在，合作方应避免任意重放历史。
 
-## iOS 信号与 Echobell 独立投递（2026-11-02，本地）
+## iOS 信号 App 通知（2026-11-03，源码规则）
 
 已复现无旧 `MARKET_ANALYSIS_ALERT_URL/TOKEN` 时扫描整轮退出的问题。现在内部扫描直接在同一事务中保存 `source=internal` 消息及 `mobile.NotificationEvent`／`NotificationDelivery`，不再经过旧 webhook。稳定事件键为 `trend:{symbol}:{interval}:{closeMs}`；入库或排队失败不推进扫描标记，下轮可重试。规则本身不变，只记录最后一根已收盘 K 线的真实触发，不补造历史信号。关闭外发仍可保存并读取信号。
 
 登录后的根界面激活原生通知管理器；设备通过 JWT 鉴权的 `POST /api/push/devices/register`／`unregister` 注册或注销，字段为 `installationId`（UUID）、`deviceToken`（十六进制）、`environment`（development／production）、`bundleIdentifier`。退出使用 `X-Push-Installation-ID` 仅停用本用户当前安装。绑定 token 的用户发生变化后，旧用户的待发消息取消。`strategy.signal` 载荷可由原生解析，点击打开同币种、同周期的标准 K 线。
 
-调度器每 10 秒独立派发通知；APNs 与 Echobell 各自领取投递记录，不在扫描或交易成功路径同步发送。APNs 使用 HTTP/2、ES256 provider token、当前应用 topic 和 production／sandbox，60 秒租约、最多 8 次退避尝试；失效 token 停用，超过一小时的事件取消。中断的最后一次尝试收敛为 exhausted；稳定 `apns-id` 不等同于苹果端严格只投一次。Echobell 每事件一次尝试，中断／不确定结果记 unknown，不盲目重拨。异常只记录类型，不保存 token、完整 URL 或原始响应。
+调度器每 10 秒独立派发 App 信号通知，不在扫描或交易成功路径同步发送。内部信号仅生成 APNs 投递，不再根据旧 `SIGNAL_ECHOBELL_ENABLED` 生成 Echo 记录；该旧配置已退役。旧版队列中 pending／failed／租约过期的 Echo 信号记录在领取时取消，不外发、不改写历史成功记录。浮盈 Echo 使用下方独立链路，不受该取消规则影响。APNs 使用 HTTP/2、ES256 provider token、当前应用 topic 和 production／sandbox，60 秒租约、最多 8 次退避尝试；失效 token 停用，超过一小时的事件取消。中断的最后一次尝试收敛为 exhausted；稳定 `apns-id` 不等同于苹果端严格只投一次。浮盈 Echobell 的一次尝试及 unknown 规则见下节。异常只记录类型，不保存 token、完整 URL 或原始响应。
 
-APNs 开关只对开启时新入队事件生成设备投递；Echobell 同理，不承诺开启后自动补发全部历史。设备注册成功、代码编译或前台 WSS 成功均不能代替后台系统通知验收。
+APNs 开关只对开启时新入队事件生成设备投递，关闭时仍保存信号及事件，不回退到 Echobell；不承诺开启后自动补发全部历史。设备注册成功、代码编译或前台 WSS 成功均不能代替后台系统通知验收。
 
 ## 浮盈 Webhook（沿用原 USDT）
 

@@ -217,6 +217,9 @@ private struct MarketChartDetailView: View {
         .task {
             viewModel.start()
         }
+        .task(id: "\(usdt.scope):\(viewModel.market.symbol)") {
+            await usdt.loadDefaultLeverage(for: viewModel.market.symbol)
+        }
         .task(id: "\(usdt.scope):\(usdt.isBound):\(scenePhase)") {
             guard scenePhase == .active else { positions.reset(); return }
             await positions.monitor(usdt)
@@ -292,7 +295,7 @@ private struct MarketChartDetailView: View {
                     tradeTool(title: "指标", action: { isIndicatorSettingsPresented = true }) {
                         indicatorSettingsIcon
                     }.accessibilityIdentifier("market-chart-indicator-settings-shortcut")
-                    tradeTool("gauge.with.dots.needle.67percent", title: "杠杆 × \(usdt.selectedLeverage(for: viewModel.market.symbol).map(String.init) ?? "--")", width: 62, action: { showsLeverage = true })
+                    tradeTool("gauge.with.dots.needle.67percent", title: usdt.displayedLeverage(for: viewModel.market.symbol).map { "杠杆 × \($0)" } ?? "杠杆 · 读取中", width: 62, action: { showsLeverage = true })
                         .accessibilityIdentifier("market-chart-leverage")
                     tradeTool("gearshape", title: "设置", action: { isOrderSettingsPresented = true })
                         .accessibilityIdentifier("market-chart-settings")

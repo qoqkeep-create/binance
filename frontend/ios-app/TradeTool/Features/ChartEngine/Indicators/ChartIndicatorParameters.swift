@@ -56,6 +56,7 @@ struct ChartIndicatorParameters: Equatable, Sendable {
   let parabolicSARMaximum: Double
   let superTrendATRPeriod: Int
   let superTrendMultiplier: Double
+  let superTrendFillAlpha: Double
   let volumeFastPeriod: Int
   let volumeSlowPeriod: Int
   let macdFastPeriod: Int
@@ -95,7 +96,8 @@ struct ChartIndicatorParameters: Equatable, Sendable {
     stochasticRSIWindow: Int = 14,
     stochasticRSIKSmoothing: Int = 3,
     stochasticRSIDSmoothing: Int = 3,
-    atrPeriod: Int = 14
+    atrPeriod: Int = 14,
+    superTrendFillAlpha: Double = 0.16
   ) {
     guard movingAveragePeriods.count == 3,
       movingAveragePeriods.allSatisfy(
@@ -150,7 +152,8 @@ struct ChartIndicatorParameters: Equatable, Sendable {
       Self.stochasticRSISmoothingRange.contains(
         stochasticRSIDSmoothing
       ),
-      Self.atrPeriodRange.contains(atrPeriod)
+      Self.atrPeriodRange.contains(atrPeriod),
+      superTrendFillAlpha.isFinite, (0...1).contains(superTrendFillAlpha)
     else {
       return nil
     }
@@ -178,7 +181,8 @@ struct ChartIndicatorParameters: Equatable, Sendable {
       stochasticRSIWindow: stochasticRSIWindow,
       stochasticRSIKSmoothing: stochasticRSIKSmoothing,
       stochasticRSIDSmoothing: stochasticRSIDSmoothing,
-      atrPeriod: atrPeriod
+      atrPeriod: atrPeriod,
+      superTrendFillAlpha: superTrendFillAlpha
     )
   }
 
@@ -221,7 +225,8 @@ struct ChartIndicatorParameters: Equatable, Sendable {
     stochasticRSIWindow: Int,
     stochasticRSIKSmoothing: Int,
     stochasticRSIDSmoothing: Int,
-    atrPeriod: Int
+    atrPeriod: Int,
+    superTrendFillAlpha: Double = 0.16
   ) {
     movingAveragePeriods = validatedMovingAveragePeriods
     emaPeriods = validatedEMAPeriods
@@ -231,6 +236,7 @@ struct ChartIndicatorParameters: Equatable, Sendable {
     self.parabolicSARMaximum = parabolicSARMaximum
     self.superTrendATRPeriod = superTrendATRPeriod
     self.superTrendMultiplier = superTrendMultiplier
+    self.superTrendFillAlpha = superTrendFillAlpha
     self.volumeFastPeriod = volumeFastPeriod
     self.volumeSlowPeriod = volumeSlowPeriod
     self.macdFastPeriod = macdFastPeriod
@@ -288,6 +294,7 @@ struct ChartIndicatorParametersStore {
     let parabolicSARMaximum: Double?
     let superTrendATRPeriod: Int
     let superTrendMultiplier: Double
+    let superTrendFillAlpha: Double?
     let volumeFastPeriod: Int
     let volumeSlowPeriod: Int
     let macdFastPeriod: Int
@@ -305,7 +312,7 @@ struct ChartIndicatorParametersStore {
     let atrPeriod: Int?
 
     init(_ parameters: ChartIndicatorParameters) {
-      schemaVersion = 4
+      schemaVersion = 5
       movingAveragePeriods = parameters.movingAveragePeriods
       emaPeriods = parameters.emaPeriods
       bollingerPeriod = parameters.bollingerPeriod
@@ -314,6 +321,7 @@ struct ChartIndicatorParametersStore {
       parabolicSARMaximum = parameters.parabolicSARMaximum
       superTrendATRPeriod = parameters.superTrendATRPeriod
       superTrendMultiplier = parameters.superTrendMultiplier
+      superTrendFillAlpha = parameters.superTrendFillAlpha
       volumeFastPeriod = parameters.volumeFastPeriod
       volumeSlowPeriod = parameters.volumeSlowPeriod
       macdFastPeriod = parameters.macdFastPeriod
@@ -332,7 +340,7 @@ struct ChartIndicatorParametersStore {
     }
 
     var parameters: ChartIndicatorParameters? {
-      guard (1...4).contains(schemaVersion) else {
+      guard (1...5).contains(schemaVersion) else {
         return nil
       }
       return ChartIndicatorParameters(
@@ -358,7 +366,8 @@ struct ChartIndicatorParametersStore {
         stochasticRSIWindow: stochasticRSIWindow ?? 14,
         stochasticRSIKSmoothing: stochasticRSIKSmoothing ?? 3,
         stochasticRSIDSmoothing: stochasticRSIDSmoothing ?? 3,
-        atrPeriod: atrPeriod ?? 14
+        atrPeriod: atrPeriod ?? 14,
+        superTrendFillAlpha: superTrendFillAlpha ?? 0.16
       )
     }
   }

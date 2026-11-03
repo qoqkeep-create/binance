@@ -10,9 +10,11 @@ struct USDTStrategiesView: View {
   @State private var selected: JSONValue = .null
   @State private var selecting = false
   @State private var deleting = false
+  @State private var editingStrategy: JSONValue?
+  @State private var editing = false
   var body: some View {
-    ScrollView {
-      VStack(spacing: 16) {
+    List {
+      Group {
         Button {
           selected = .null
           selecting = true
@@ -31,41 +33,35 @@ struct USDTStrategiesView: View {
         }.buttonStyle(.plain).accessibilityIdentifier("strategy.manual")
         ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
           VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-              Button {
+            HStack(spacing: 12) {
+              Text(strategy.value("name")).font(.system(size: 18, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
+              Button(strategy["is_active"]?.flag == true ? "使用中" : "使用") {
                 selected = strategy
                 selecting = true
-              } label: {
-                Text(strategy.value("name")).font(.system(size: 18, weight: .medium)).frame(
-                  maxWidth: .infinity, alignment: .leading)
-              }
-              Button {
-                selected = strategy
-                deleting = true
-              } label: {
-                WebIcon("trash", size: 16).foregroundStyle(WebTheme.danger).frame(
-                  width: 28, height: 28)
-              }
-              NavigationLink {
-                USDTStrategyEditor(strategy: strategy)
-              } label: {
-                WebIcon("square.and.pencil", size: 16).foregroundStyle(WebTheme.secondary).frame(
-                  width: 28, height: 28)
-              }
+              }.buttonStyle(WebButtonStyle(kind: strategy["is_active"]?.flag == true ? .secondary : .primary,
+                height: 32, fontSize: 13, fullWidth: false))
+                .disabled(strategy["is_active"]?.flag == true)
+                .accessibilityIdentifier("strategy.use." + strategy.value("id"))
             }
             VStack(alignment: .leading, spacing: 6) {
-              ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) {
-                index, level in
+              ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) { index, level in
                 Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
                   .foregroundStyle(WebTheme.secondary)
               }
-            }.onTapGesture {
-              selected = strategy
-              selecting = true
             }
-          }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(
-            WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)
-          ).overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+          }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .onTapGesture { editingStrategy = strategy; editing = true }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("strategy.row." + strategy.value("id"))
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              Button(role: .destructive) { selected = strategy; deleting = true } label: {
+                Label("删除", systemImage: "trash")
+              }.buttonStyle(.automatic)
+            }
         }
         NavigationLink {
           USDTStrategyEditor(strategy: nil)
@@ -73,8 +69,13 @@ struct USDTStrategiesView: View {
           Text("新建策略")
         }.buttonStyle(WebButtonStyle(height: 52, radius: 14))
         USDTNotice(text: notice)
-      }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-    }.scrollIndicators(.hidden).usdtPage("我的策略", backAction: onClose).task { await store.refresh() }
+      }.listRowSeparator(.hidden).listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+    }.listStyle(.plain).scrollContentBackground(.hidden).scrollIndicators(.hidden)
+      .usdtPage("我的策略", backAction: onClose).task { await store.refresh() }
+      .navigationDestination(isPresented: $editing) {
+        USDTStrategyEditor(strategy: editingStrategy)
+      }
       .webModal(isPresented: $selecting) {
         WebModal(title: "确认选择策略") {
           Text(selected == .null ? "确定选择手动止盈吗？此设置用于后续开仓。" : "确定要选择策略 \(selected.value("name")) 吗？").foregroundStyle(WebTheme.secondary)
@@ -117,19 +118,22 @@ struct USDTStrategiesView: View {
   }
 }
 
-private struct USDTStrategyLevel: Identifiable {
+struct USDTStrategyLevel: Identifiable {
   let id = UUID()
   var profit = "1"
   var reduce = "20"
   var stopType = "none"
-  var stopValue = "0"
+  var reduceEnabled = true
+  var absoluteStop = "0"
+  var trailingStop = "1"
+  var reduction: Decimal { reduceEnabled ? Decimal(string: reduce) ?? 0 : 0 }
   var payload: JSONValue {
     var result: [String: JSONValue] = [
-      "profitRR": .string(profit), "reducePosition": .string(reduce),
+      "profitRR": .string(profit), "reducePosition": .string(reduceEnabled ? reduce : "0"),
       "stopLossType": .string(stopType),
     ]
-    if stopType == "fixedRR" { result["stopLossRR"] = .string(stopValue) }
-    if stopType == "absoluteRR" { result["stopLossAbsoluteRR"] = .string(stopValue) }
+    if stopType == "fixedRR" { result["stopLossRR"] = .string(trailingStop) }
+    if stopType == "absoluteRR" { result["stopLossAbsoluteRR"] = .string(absoluteStop) }
     return .object(result)
   }
 }
@@ -140,6 +144,8 @@ struct USDTStrategyEditor: View {
   let strategy: JSONValue?
   @State private var name = "新策略"
   @State private var editingName = false
+  @FocusState private var nameFocused: Bool
+  @State private var loaded = false
   @State private var levels = [USDTStrategyLevel()]
   @State private var notice = ""
   @State private var busy = false
@@ -157,7 +163,11 @@ struct USDTStrategyEditor: View {
         }
         if levels.count < 5 {
           Button {
-            levels.append(USDTStrategyLevel(profit: String(levels.count + 1)))
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+              levels.append(USDTStrategyLevel(profit: String(levels.count + 1)))
+            }
           } label: {
             WebLabel("添加层级", "plus")
           }.buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
@@ -179,13 +189,17 @@ struct USDTStrategyEditor: View {
           HStack(spacing: 8) {
             if editingName {
               TextField("策略名称", text: $name).font(.system(size: 18, weight: .bold))
+                .focused($nameFocused).submitLabel(.done)
+                .onAppear { nameFocused = true }
                 .multilineTextAlignment(.center).frame(maxWidth: 220).onSubmit {
+                  nameFocused = false
                   editingName = false
                 }.accessibilityIdentifier("strategy.name")
             } else {
               Text(name).font(.system(size: 18, weight: .bold))
               Button {
                 editingName = true
+                nameFocused = true
               } label: {
                 WebIcon("pencil", size: 16).foregroundStyle(WebTheme.muted)
               }.accessibilityLabel("编辑策略名称")
@@ -193,15 +207,18 @@ struct USDTStrategyEditor: View {
           }.padding(.bottom, 16)
         }
       }.interactivePopGestureEnabled().onAppear {
+        guard !loaded else { return }
+        loaded = true
         guard let strategy else { return }
         name = strategy.value("name")
         levels = (strategy["levels"]?.rows ?? []).map { row in
           USDTStrategyLevel(
-            profit: row.value("profitRR"), reduce: row.value("reducePosition"),
+            profit: WebStrategyText.number(row.value("profitRR")),
+            reduce: WebStrategyText.number(row.value("reducePosition")),
             stopType: row.value("stopLossType"),
-            stopValue: row.value(
-              row.value("stopLossType") == "fixedRR" ? "stopLossRR" : "stopLossAbsoluteRR",
-              fallback: "0"))
+            reduceEnabled: (row["reducePosition"]?.decimal ?? 0) > 0,
+            absoluteStop: WebStrategyText.number(row.value("stopLossAbsoluteRR", fallback: "0")),
+            trailingStop: WebStrategyText.number(row.value("stopLossRR", fallback: "1")))
         }
       }
   }
@@ -209,11 +226,11 @@ struct USDTStrategyEditor: View {
   private func levelCard(_ binding: Binding<USDTStrategyLevel>) -> some View {
     let index = levels.firstIndex { $0.id == binding.wrappedValue.id } ?? 0
     let remaining =
-      100 - levels.prefix(index).reduce(Decimal.zero) { $0 + (Decimal(string: $1.reduce) ?? 0) }
+      100 - levels.prefix(index).reduce(Decimal.zero) { $0 + $1.reduction }
     return USDTCard(radius: 16, spacing: 12) {
       HStack(spacing: 8) {
         Text("L\(index + 1):").font(.system(size: 16, weight: .semibold))
-        Text("剩余仓位 \(DisplayNumber.text(remaining))%").font(.system(size: 14))
+        Text("剩余仓位 \(WebStrategyText.wholePercent(remaining))%").font(.system(size: 14))
           .foregroundStyle(WebTheme.brand).padding(.horizontal, 8).padding(.vertical, 2).background(
             WebTheme.brand.opacity(0.1), in: Capsule())
         Spacer()
@@ -232,17 +249,16 @@ struct USDTStrategyEditor: View {
         Spacer()
       }
       Rectangle().fill(WebTheme.border).frame(height: 1)
-      WebRadio(selected: (Decimal(string: binding.wrappedValue.reduce) ?? 0) == 0, title: "不减仓") {
-        binding.wrappedValue.reduce = "0"
+      WebRadio(selected: !binding.wrappedValue.reduceEnabled, title: "不减仓") {
+        binding.wrappedValue.reduceEnabled = false
       }
       HStack(spacing: 10) {
-        WebRadio(selected: (Decimal(string: binding.wrappedValue.reduce) ?? 0) > 0, title: "减仓") {
-          if (Decimal(string: binding.wrappedValue.reduce) ?? 0) == 0 {
-            binding.wrappedValue.reduce = "20"
-          }
-        }
-        if (Decimal(string: binding.wrappedValue.reduce) ?? 0) > 0 {
-          WebNumberInput(text: binding.reduce, suffix: "%", width: 64)
+        WebRadio(selected: binding.wrappedValue.reduceEnabled, title: "减仓") {
+          binding.wrappedValue.reduceEnabled = true
+        }.accessibilityIdentifier("strategy.level.\(index).reduce-enabled")
+        if binding.wrappedValue.reduceEnabled {
+          WebNumberInput(text: binding.reduce, suffix: "%", width: 64, integerOnly: true,
+            fieldIdentifier: "strategy.level.\(index).reduce")
         }
         Spacer()
       }
@@ -262,15 +278,18 @@ struct USDTStrategyEditor: View {
           WebRadio(selected: binding.wrappedValue.stopType == "absoluteRR", title: "移动到") {
             binding.wrappedValue.stopType = "absoluteRR"
           }
-          WebNumberInput(text: binding.stopValue, suffix: "R")
+          WebNumberInput(text: binding.absoluteStop, suffix: "R",
+            fieldIdentifier: "strategy.level.\(index).absolute-stop")
           Text("一次").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
           Spacer()
         }.padding(.leading, 24)
         HStack(spacing: 8) {
-          WebRadio(selected: binding.wrappedValue.stopType == "fixedRR", title: "当前浮盈减") {
+          WebRadio(selected: binding.wrappedValue.stopType == "fixedRR", title: "当前浮盈") {
             binding.wrappedValue.stopType = "fixedRR"
           }
-          WebNumberInput(text: binding.stopValue, suffix: "R")
+          Text("−").foregroundStyle(BinanceTheme.accent).font(.system(size: 16, weight: .semibold))
+          WebNumberInput(text: binding.trailingStop, suffix: "R",
+            fieldIdentifier: "strategy.level.\(index).trailing-stop")
           Text("持续").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
           Spacer()
         }.padding(.leading, 24)
@@ -282,10 +301,19 @@ struct USDTStrategyEditor: View {
     var total = Decimal.zero
     for level in levels {
       guard let profit = Decimal(string: level.profit), profit > previous,
-        let reduce = Decimal(string: level.reduce), reduce >= 0
+        let reduce = Decimal(string: level.reduceEnabled ? level.reduce : "0"), reduce >= 0,
+        reduce <= 100, WebStrategyText.isWhole(reduce)
       else {
-        notice = "层级盈利 R 必须递增，减仓比例不能为负数"
+        notice = "层级盈利 R 必须递增，减仓比例须为 0 至 100 的整数"
         return
+      }
+      let stopText = level.stopType == "fixedRR" ? level.trailingStop : level.absoluteStop
+      if level.stopType != "none" {
+        guard let stop = Decimal(string: stopText), !stop.isNaN,
+          level.stopType != "fixedRR" || stop >= 0 else {
+          notice = "请填写有效的止损位 R 值，浮盈差值不能为负数"
+          return
+        }
       }
       previous = profit
       total += reduce
@@ -336,8 +364,8 @@ struct USDTLeverageBracketsView: View {
     VStack(spacing: 0) {
       HStack {
         VStack(alignment: .leading, spacing: 4) {
-          Text("杠杆").font(.system(size: 20, weight: .semibold))
-          Text(symbol).font(.system(size: 13)).foregroundStyle(WebTheme.muted)
+          Text("杠杆").font(.system(size: 18, weight: .semibold))
+          Text(symbol + (store.displayedLeverage(for: symbol).map { " · 当前 \($0)×" } ?? "")).font(.system(size: 12)).foregroundStyle(WebTheme.muted)
         }
         Spacer()
         Button { dismiss() } label: {
@@ -364,14 +392,14 @@ struct USDTLeverageBracketsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                       Text("杠杆").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
                       Text(row.value("leverage") + "×")
-                        .font(.system(size: 24, weight: .semibold)).monospacedDigit()
+                        .font(.system(size: 20, weight: .semibold)).monospacedDigit()
                         .foregroundStyle(WebTheme.brand)
                     }
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: 6) {
-                      Text("可开金额").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+                      Text("可开金额").font(.system(size: 11)).foregroundStyle(WebTheme.muted)
                       Text(DisplayNumber.text(row.value("max_open_amount")) + " USDT")
-                        .font(.system(size: 17, weight: .semibold)).monospacedDigit()
+                        .font(.system(size: 16, weight: .semibold)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.65)
                     }
                     Image(systemName: selected == Int(row.value("leverage")) ? "checkmark.circle.fill" : "circle")
@@ -405,22 +433,36 @@ struct USDTLeverageBracketsView: View {
     guard store.isBound else { model.reset(); return }
     await model.load(store, path: "/v1/trade/leverage-brackets", query: [.init(name: "symbol", value: symbol)])
     let available = options.compactMap { Int($0.value("leverage")) }
-    selected = store.selectedLeverage(for: symbol).flatMap { available.contains($0) ? $0 : nil } ?? available.first
+    await store.loadDefaultLeverage(for: symbol)
+    selected = store.displayedLeverage(for: symbol) ?? available.max()
   }
 }
 
 /// Wording shared by the Web strategy cards, picker, and execution log.
 enum WebStrategyText {
+  static func number(_ raw: String) -> String {
+    guard let decimal = Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")),
+      !decimal.isNaN else { return raw }
+    return NSDecimalNumber(decimal: decimal).stringValue
+  }
+  static func wholePercent(_ value: Decimal) -> String {
+    var input = value, result = Decimal()
+    NSDecimalRound(&result, &input, 0, .plain)
+    return NSDecimalNumber(decimal: result).stringValue
+  }
+  static func isWhole(_ value: Decimal) -> Bool {
+    Decimal(string: wholePercent(value)) == value
+  }
   static func level(_ value: JSONValue, index: Int) -> String {
-    var parts = ["L\(index + 1)：当 RR≥" + DisplayNumber.text(value.value("profitRR", fallback: "0"))]
+    var parts = ["L\(index + 1)：当 RR≥" + number(value.value("profitRR", fallback: "0"))]
     if (value["reducePosition"]?.decimal ?? 0) > 0 {
-      parts.append("卖出 " + DisplayNumber.text(value.value("reducePosition")) + "%")
+      parts.append("卖出 " + number(value.value("reducePosition")) + "%")
     }
     if value.value("stopLossType") == "absoluteRR" {
-      parts.append("止损位移动到 " + DisplayNumber.text(value.value("stopLossAbsoluteRR", fallback: "0")) + "R 处")
+      parts.append("止损位移动到 " + number(value.value("stopLossAbsoluteRR", fallback: "0")) + "R 处")
     }
     if value.value("stopLossType") == "fixedRR" {
-      parts.append("止损位移动到浮盈- " + DisplayNumber.text(value.value("stopLossRR", fallback: "0")) + "R 处")
+      parts.append("止损位移动到浮盈- " + number(value.value("stopLossRR", fallback: "0")) + "R 处")
     }
     return parts.joined(separator: "，")
   }

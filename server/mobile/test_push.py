@@ -52,27 +52,27 @@ class PushNotificationTests(TestCase):
 
     @patch('mobile.push.send_apns')
     @patch('positions.profit_alerts.send_echobell')
-    def test_signal_fans_out_once_with_independent_channels(self, echo, apns):
+    def test_signal_uses_only_app_notifications_even_with_legacy_echo_enabled(self, echo, apns):
         event = enqueue_signal(self.message)
         enqueue_signal(self.message)
-        self.assertEqual(NotificationDelivery.objects.count(),2)
-        self.assertEqual(dispatch_notifications(),2)
+        self.assertEqual(NotificationDelivery.objects.count(),1)
+        self.assertEqual(dispatch_notifications(),1)
         self.assertEqual(dispatch_notifications(),0)
-        self.assertEqual(apns.call_count,1);self.assertEqual(echo.call_count,1)
+        self.assertEqual(apns.call_count,1);echo.assert_not_called()
         self.assertEqual(event.payload['route'],'strategy.signal')
         self.assertEqual(event.payload['direction'],'LONG')
 
     @patch('mobile.push.send_apns',side_effect=RuntimeError('redacted'))
     @patch('positions.profit_alerts.send_echobell')
-    def test_apns_retries_without_resending_successful_echo(self, echo, apns):
+    def test_apns_retries_without_ever_sending_echo(self, echo, apns):
         enqueue_signal(self.message)
-        self.assertEqual(dispatch_notifications(),1)
+        self.assertEqual(dispatch_notifications(),0)
         failed = NotificationDelivery.objects.get(status='failed')
         self.assertEqual(dispatch_notifications(),0)
         failed.retry_at=timezone.now()-timedelta(seconds=1);failed.save()
         apns.side_effect=None
         self.assertEqual(dispatch_notifications(),1)
-        self.assertEqual(echo.call_count,1)
+        echo.assert_not_called()
 
     @patch('mobile.push.send_apns')
     def test_reassigned_installation_cannot_receive_previous_users_queued_signal(self, apns):
@@ -84,13 +84,25 @@ class PushNotificationTests(TestCase):
         self.assertEqual(NotificationDelivery.objects.get().status,'cancelled')
 
     @patch('positions.profit_alerts.send_echobell')
-    def test_expired_echo_lease_is_not_replayed(self, echo):
-        enqueue_signal(self.message)
+    def test_legacy_echo_signal_records_are_cancelled_without_delivery(self, echo):
+        event = enqueue_signal(self.message)
         NotificationDelivery.objects.filter(device__isnull=False).delete()
-        NotificationDelivery.objects.update(status='sending',attempts=1,lease_until=timezone.now()-timedelta(seconds=1))
-        self.assertEqual(dispatch_notifications(),0)
+        for status, attempts in [('pending', 0), ('failed', 1), ('sending', 1), ('sending', 8)]:
+            with self.subTest(status=status, attempts=attempts):
+                item = NotificationDelivery.objects.create(event=event, target='echobell:signals',
+                    status=status, attempts=attempts, lease_until=timezone.now()-timedelta(seconds=1))
+                self.assertEqual(dispatch_notifications(), 0)
+                item.refresh_from_db()
+                self.assertEqual(item.status, 'cancelled')
+                self.assertEqual(item.attempts, attempts)
+                item.delete()
         echo.assert_not_called()
-        self.assertEqual(NotificationDelivery.objects.get().status,'unknown')
+
+    @override_settings(APNS_ENABLED=False)
+    def test_signals_are_saved_without_falling_back_to_echo_when_app_push_is_off(self):
+        enqueue_signal(self.message)
+        self.assertEqual(NotificationEvent.objects.count(), 1)
+        self.assertFalse(NotificationDelivery.objects.exists())
 
     @patch('mobile.push.send_apns',side_effect=RuntimeError('no delivery'))
     @patch('positions.profit_alerts.send_echobell')
@@ -127,4 +139,4 @@ class PushNotificationTests(TestCase):
         self.assertEqual(dispatch_notifications(),0)
         apns.assert_not_called();echo.assert_not_called()
         self.assertEqual(NotificationDelivery.objects.get(device=self.device).status,'exhausted')
-        self.assertEqual(NotificationDelivery.objects.get(target='echobell:signals').status,'unknown')
+        self.assertFalse(NotificationDelivery.objects.filter(target='echobell:signals').exists())

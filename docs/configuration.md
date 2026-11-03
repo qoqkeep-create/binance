@@ -80,7 +80,7 @@ SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*
 | `POSITION_PROFIT_CALL_ENABLED` | 原 USDT 浮盈 Echobell 监控／投递，默认 false |
 | `POSITION_PROFIT_CALL_USER_ID` | 整合数据库中的接收用户，默认 0；迁移时按身份核对，不能照搬旧库主键 |
 | `POSITION_PROFIT_CALL_URL` | 沿用旧 Echobell 通道，仅存受限环境文件 |
-| `SIGNAL_ECHOBELL_ENABLED` | 内部信号独立投递同一 Echobell 通道，默认 false；与浮盈开关分开 |
+| `SIGNAL_ECHOBELL_ENABLED`（已退役） | 2026-11-03 起普通信号固定只走 App APNs，旧环境即使保留 true 也不入队／发送 Echo；浮盈仍由独立开关控制 |
 
 p8 只挂载到 scheduler，不进入镜像或 Git；部署前创建来源目录，限制目录访问并确保容器 UID 10001 可读该文件，例如通过专用所有者／组和文件 0400／0440 权限。不能用向所有用户开放私钥的方式修权限。APNs 的 Key 可属于既有团队，但 topic、描述文件和客户端签名环境必须对应整合应用。
 

@@ -94,6 +94,8 @@ struct ChartBarInstance: Equatable, Sendable {
     let bottom: Float
     let color: ChartColor
     let cornerRadius: Float
+    let rightTop: Float
+    let rightBottom: Float
 
     init(
         left: Float,
@@ -101,7 +103,9 @@ struct ChartBarInstance: Equatable, Sendable {
         right: Float,
         bottom: Float,
         color: ChartColor,
-        cornerRadius: Float = 0
+        cornerRadius: Float = 0,
+        rightTop: Float? = nil,
+        rightBottom: Float? = nil
     ) {
         self.left = left
         self.top = top
@@ -109,13 +113,16 @@ struct ChartBarInstance: Equatable, Sendable {
         self.bottom = bottom
         self.color = color
         self.cornerRadius = cornerRadius
+        self.rightTop = rightTop ?? top
+        self.rightBottom = rightBottom ?? bottom
     }
 
     var isValid: Bool {
-        [left, top, right, bottom, cornerRadius]
+        [left, top, right, bottom, cornerRadius, rightTop, rightBottom]
             .allSatisfy(\.isFinite)
             && right >= left
             && bottom >= top
+            && rightBottom >= rightTop
             && cornerRadius >= 0
     }
 }

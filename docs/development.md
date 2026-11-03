@@ -14,6 +14,18 @@
 
 2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
 
+## 策略编辑、指标设置与触摸归属（2026-11-03）
+
+本轮将默认杠杆接到既有只读最大倍数接口；Super 默认填充调为 16%，用连续四边形贴合趋势线，增加持久化透明度；同次长按始终移动十字线，抬手后的新拖动才平移。策略草稿、名称焦点、紧凑数字、列表整行编辑／左滑删除和独立使用按钮已调整，账户按钮与归集按钮同尺寸并对齐，持仓筛选等宽。普通信号只生成 App APNs 投递，浮盈继续独立走 Echobell。实现口径见 [行情](market-data.md#拖动一致性当前价与尾线修复2026-11-03)、[策略与指标界面](ios-web-parity.md#策略编辑与指标设置2026-11-03) 和 [通知](signals-and-notifications.md#ios-信号-app-通知2026-11-03源码规则)。
+
+新增故障回归先复现同触点长按被 pan 接管和信号误入 Echo。自查又以价格轴 2／4 倍放大复现填充越界的四个断言失败，修复为按主图边界交点切分再裁剪。最终 `TradeTool`／`Debug-Seoul` 在 `3E685E56-9767-43E7-81DD-35972DE7FAD7` 实际运行 **158 项通过（24.662 秒，0 失败、0 跳过）**：ChartEngineCore 149、ChartOrderTicket 6、StrategyDraftEditing 3；覆盖历史／实时填充精确端点、两主题真实 Metal 斜边像素和平移、纵向裁剪、透明度旧偏好兼容、独立策略值及默认杠杆的账户隔离。
+
+实际模拟器 UI 四项分轮通过：持仓进入图表及默认／手选杠杆保存；浅深色四列指标卡、Super 滑杆应用后保留、模式／归集按钮宽高和左边缘一致、持仓三项等宽及自有信号不评分；名称直接聚焦、清空减仓仍选中、两个止损值分别输入和添加层级；列表整行编辑、左滑删除及二次确认。初轮发现容器覆盖内部控件标识，已改为独立字段及包含式分组；左滑按钮显式恢复 `.automatic`，避免继承全页 `.plain` 导致不显示。输入测试在字段末端删除并断言实际清空，滚动到固定保存栏上方再切换焦点；滑杆测试核对实际落点的持久化，不假定系统拖动必然精确落在 65%。已实际打开最终浅深图表、指标设置、模式按钮、持仓筛选、策略编辑和左滑截图检查。
+
+后端使用隔离 SQLite／LocMem 和通知替身，`mobile.test_push positions.test_profit_alerts market_analysis.test_notification_independence` **30 项通过（5.740 秒）**，包括旧 Echo 信号记录取消、APNs 关闭仍保存且不回退 Echo，未真实发送通知。最终 generic iOS `Release` 无签名构建通过；未执行真实开平仓、资金划转或保护单操作。
+
+证据在忽略目录 `.integration-runtime/InteractionStrategyReview/`：`before-backend.log`、`before-crosshair.log`、`before-clip.log`、`final-verified-core.log`、`backend-verified.log`、`ui.log`、`ui-verified.log`、`strategy-ui-final.log`、`release-verified.log` 及各 attachments 目录。XCTest 结果在 `.integration-runtime/ChartBusinessBuild/Logs/Test/`。本轮按用户明确授权提交推送全部安全源码，见 [交付记录](changes.md#2026-11-03策略指标交互与通知分流源码交付)；没有追加后端部署或手动 TestFlight 上传，手机触摸／键盘及真实后台通知仍待配套发布验收。
+
 ## 图表账户反馈回归（2026-11-03）
 
 用户后续已授权整批提交推送，包含本节及下方顶部控件任务；交付范围见 [变更记录](changes.md#2026-11-03图表账户反馈与顶部控件整批源码交付)。下文未提交状态是本地验证结束时的记录，本次交付沿用既有证据。

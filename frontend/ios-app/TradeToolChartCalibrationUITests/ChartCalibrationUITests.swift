@@ -2779,6 +2779,115 @@ final class WebParityUITests: XCTestCase {
     add(image)
   }
 
+  func testStrategyEditorKeepsDraftChoicesAndFocusesName() {
+    launch("strategy-editor")
+    app.buttons["编辑策略名称"].tap()
+    let name = app.textFields["strategy.name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    name.typeText("测试\n")
+    XCTAssertTrue(app.staticTexts["新策略测试"].waitForExistence(timeout: 5))
+    let reduce = app.textFields["strategy.level.0.reduce"]
+    XCTAssertTrue(reduce.exists)
+    reduce.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+    reduce.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2))
+    XCTAssertTrue(reduce.exists, "Clearing the percentage must preserve the enabled reduction input")
+    XCTAssertEqual(reduce.value as? String, "")
+    XCTAssertTrue(app.buttons["strategy.level.0.reduce-enabled"].isSelected)
+    reduce.typeText("20")
+    app.buttons["移动止损位"].tap()
+    let absolute = app.textFields["strategy.level.0.absolute-stop"]
+    let trailing = app.textFields["strategy.level.0.trailing-stop"]
+    XCTAssertTrue(absolute.waitForExistence(timeout: 3))
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.46))
+      .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.24)))
+    absolute.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+    absolute.typeText(XCUIKeyboardKey.delete.rawValue + "2")
+    trailing.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+    trailing.typeText(XCUIKeyboardKey.delete.rawValue + "3")
+    XCTAssertEqual(absolute.value as? String, "2")
+    XCTAssertEqual(trailing.value as? String, "3")
+    capture("strategy-independent-inputs-keyboard")
+    app.buttons["编辑策略名称"].tap()
+    app.textFields["strategy.name"].typeText("\n")
+    if !app.buttons["添加层级"].isHittable { app.swipeUp() }
+    app.buttons["添加层级"].tap()
+    XCTAssertTrue(app.staticTexts["剩余仓位 80%"].waitForExistence(timeout: 3))
+    capture("strategy-new-level")
+  }
+
+  func testStrategyListRowEditingAndSwipeDelete() {
+    launch("strategies")
+    let row = app.descendants(matching: .any)["strategy.row.1"].firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["strategy.use.1"].label, "使用中")
+    XCTAssertFalse(app.buttons["删除"].exists)
+    XCTAssertTrue(app.staticTexts["L1：当 RR≥1，卖出 30%，止损位移动到 0R 处"].exists)
+    capture("strategy-list-compact")
+    row.tap()
+    XCTAssertTrue(app.buttons["保存策略"].waitForExistence(timeout: 5))
+    app.buttons["返回"].firstMatch.tap()
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    row.swipeLeft()
+    XCTAssertTrue(app.buttons["删除"].waitForExistence(timeout: 3))
+    capture("strategy-list-swipe-delete")
+    app.buttons["删除"].tap()
+    XCTAssertTrue(app.staticTexts["确认删除"].waitForExistence(timeout: 3))
+    app.buttons["取消"].tap()
+  }
+
+  func testIndicatorCardsSuperOpacityAndAlignedProfileControls() {
+    for (options, appearance) in [([String](), "light"), (["--fixture-dark"], "dark")] {
+      launch("market", options + ["--fixture-entry-ready"])
+      app.buttons["搜索币种、币对或合约"].tap()
+      app.buttons["pairs.select.BTCUSDT"].tap()
+      let leverage = app.buttons["market-chart-leverage"]
+      XCTAssertTrue(leverage.waitForExistence(timeout: 10))
+      XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "杠杆 × 50"), object: leverage)], timeout: 5), .completed)
+      capture("super-connected-fill-" + appearance)
+      app.buttons["market-chart-indicator-settings-shortcut"].tap()
+      let tabs = ["MA", "EMA", "BOLL", "SAR"].map { app.buttons["indicator-settings.tab." + $0] }
+      XCTAssertTrue(tabs[0].waitForExistence(timeout: 5))
+      for tab in tabs { XCTAssertEqual(tab.frame.minY, tabs[0].frame.minY, accuracy: 1) }
+      app.buttons["indicator-settings.tab.Super"].tap()
+      let opacity = app.sliders["indicator-settings.super-opacity"]
+      XCTAssertTrue(opacity.waitForExistence(timeout: 5))
+      let initialOpacity = opacity.value as? String
+      opacity.adjust(toNormalizedSliderPosition: 0.65)
+      let savedOpacity = opacity.value as? String
+      XCTAssertNotNil(savedOpacity)
+      XCTAssertNotEqual(savedOpacity, initialOpacity)
+      XCTAssertTrue(app.staticTexts[savedOpacity!].exists)
+      capture("indicator-super-opacity-" + appearance)
+      app.buttons["应用"].tap()
+      XCTAssertTrue(leverage.waitForExistence(timeout: 5))
+      app.buttons["market-chart-indicator-settings-shortcut"].tap()
+      app.buttons["indicator-settings.tab.Super"].tap()
+      XCTAssertTrue(opacity.waitForExistence(timeout: 5))
+      XCTAssertEqual(opacity.value as? String, savedOpacity)
+      XCTAssertTrue(app.staticTexts[savedOpacity!].exists)
+      app.buttons["返回"].firstMatch.tap()
+      app.buttons["返回"].firstMatch.tap()
+      app.buttons["我的"].firstMatch.tap()
+      let mode = app.buttons["profile.switchMode"], collect = app.buttons["profile.collectBalance"]
+      XCTAssertTrue(collect.waitForExistence(timeout: 5))
+      XCTAssertEqual(mode.frame.width, collect.frame.width, accuracy: 1)
+      XCTAssertEqual(mode.frame.height, collect.frame.height, accuracy: 1)
+      XCTAssertEqual(mode.frame.minX, collect.frame.minX, accuracy: 1)
+      capture("profile-matching-controls-" + appearance)
+      app.buttons["持仓"].firstMatch.tap()
+      let segments = ["positions", "limits", "history"].map { app.buttons["positions.tabs." + $0] }
+      XCTAssertTrue(segments[0].waitForExistence(timeout: 5))
+      for segment in segments { XCTAssertEqual(segment.frame.width, segments[0].frame.width, accuracy: 1) }
+      XCTAssertGreaterThanOrEqual(segments[0].frame.height, 32)
+      segments[2].tap()
+      capture("positions-equal-segments-" + appearance)
+    }
+    launch("signals")
+    XCTAssertTrue(app.staticTexts["自有"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["85分"].exists)
+  }
+
   func testChartAccountFeedbackInBothAppearances() {
     for (options, name) in [([String](), "light"), (["--fixture-dark"], "dark")] {
       launch("market", options + ["--fixture-entry-ready", "--fixture-extra-leverage"])

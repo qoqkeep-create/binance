@@ -154,8 +154,8 @@ private struct MetalBarInstance {
         flags = SIMD4(
             appliesTimelineTransform ? 1 : 0,
             instance.cornerRadius,
-            0,
-            0
+            instance.rightTop - instance.top,
+            instance.rightBottom - instance.bottom
         )
     }
 }

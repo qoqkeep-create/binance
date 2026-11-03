@@ -14,6 +14,8 @@ private enum IndicatorSettingsPalette {
 struct ChartIndicatorSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
+    @State private var selectedIndicator = "MA"
+    @State private var superTrendFillAlpha: Double
     @State private var movingAverageFast: String
     @State private var movingAverageMiddle: String
     @State private var movingAverageSlow: String
@@ -48,6 +50,7 @@ struct ChartIndicatorSettingsView: View {
         parameters: ChartIndicatorParameters,
         onApply: @escaping (ChartIndicatorParameters) -> Void
     ) {
+        _superTrendFillAlpha = State(initialValue: parameters.superTrendFillAlpha)
         _movingAverageFast = State(
             initialValue: String(parameters.movingAveragePeriods[0])
         )
@@ -125,166 +128,210 @@ struct ChartIndicatorSettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            indicatorSelector
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 12) {
-                    settingsSection(
-                        title: "MA",
-                        subtitle: "移动平均线（币安默认 7 / 25 / 99）"
-                    ) {
-                        integerRow("周期 1", value: $movingAverageFast)
-                        integerRow("周期 2", value: $movingAverageMiddle)
-                        integerRow("周期 3", value: $movingAverageSlow)
+                    if selectedIndicator == "MA" {
+                        settingsSection(
+                            title: "MA",
+                            subtitle: "移动平均线（币安默认 7 / 25 / 99）"
+                        ) {
+                            integerRow("周期 1", value: $movingAverageFast)
+                            integerRow("周期 2", value: $movingAverageMiddle)
+                            integerRow("周期 3", value: $movingAverageSlow)
+                        }
                     }
 
-                    settingsSection(
-                        title: "EMA",
-                        subtitle: "主图指数移动平均线"
-                    ) {
-                        integerRow("周期 1", value: $emaFast)
-                        integerRow("周期 2", value: $emaMiddle)
-                        integerRow("周期 3", value: $emaSlow)
+                    if selectedIndicator == "EMA" {
+                        settingsSection(
+                            title: "EMA",
+                            subtitle: "主图指数移动平均线"
+                        ) {
+                            integerRow("周期 1", value: $emaFast)
+                            integerRow("周期 2", value: $emaMiddle)
+                            integerRow("周期 3", value: $emaSlow)
+                        }
                     }
 
-                    settingsSection(
-                        title: "BOLL",
-                        subtitle: "布林线计算周期与带宽"
-                    ) {
-                        integerRow("计算周期", value: $bollingerPeriod)
-                        decimalRow("带宽", value: $bollingerMultiplier)
+                    if selectedIndicator == "BOLL" {
+                        settingsSection(
+                            title: "BOLL",
+                            subtitle: "布林线计算周期与带宽"
+                        ) {
+                            integerRow("计算周期", value: $bollingerPeriod)
+                            decimalRow("带宽", value: $bollingerMultiplier)
+                        }
                     }
 
-                    settingsSection(
-                        title: "SAR",
-                        subtitle: "抛物线转向加速因子"
-                    ) {
-                        decimalRow("开始", value: $parabolicSARStart)
-                        decimalRow("最大", value: $parabolicSARMaximum)
+                    if selectedIndicator == "SAR" {
+                        settingsSection(
+                            title: "SAR",
+                            subtitle: "抛物线转向加速因子"
+                        ) {
+                            decimalRow("开始", value: $parabolicSARStart)
+                            decimalRow("最大", value: $parabolicSARMaximum)
+                        }
                     }
 
-                    settingsSection(
-                        title: "AVL",
-                        subtitle: "每根 K 线的成交额 ÷ 成交量均价线"
-                    ) {
-                        Text("无周期参数")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(
-                                IndicatorSettingsPalette.secondaryText
+                    if selectedIndicator == "AVL" {
+                        settingsSection(
+                            title: "AVL",
+                            subtitle: "每根 K 线的成交额 ÷ 成交量均价线"
+                        ) {
+                            Text("无周期参数")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(
+                                    IndicatorSettingsPalette.secondaryText
+                                )
+                                .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
+                        }
+                    }
+
+                    if selectedIndicator == "Super" {
+                        settingsSection(
+                            title: "Super",
+                            subtitle: "ATR 周期与趋势带倍数"
+                        ) {
+                            integerRow(
+                                "ATR 周期",
+                                value: $superTrendATRPeriod
                             )
-                            .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
-                    }
-
-                    settingsSection(
-                        title: "SuperTrend",
-                        subtitle: "ATR 周期与趋势带倍数"
-                    ) {
-                        integerRow(
-                            "ATR 周期",
-                            value: $superTrendATRPeriod
-                        )
-                        decimalRow(
-                            "倍数",
-                            value: $superTrendMultiplier
-                        )
-                    }
-
-                    settingsSection(
-                        title: "VOL",
-                        subtitle: "成交量均线周期"
-                    ) {
-                        integerRow(
-                            "快速均量",
-                            value: $volumeFastPeriod
-                        )
-                        integerRow(
-                            "慢速均量",
-                            value: $volumeSlowPeriod
-                        )
-                    }
-
-                    settingsSection(
-                        title: "MACD",
-                        subtitle: "快线、慢线与信号线周期"
-                    ) {
-                        integerRow(
-                            "快线周期",
-                            value: $macdFastPeriod
-                        )
-                        integerRow(
-                            "慢线周期",
-                            value: $macdSlowPeriod
-                        )
-                        integerRow(
-                            "信号周期",
-                            value: $macdSignalPeriod
-                        )
-                    }
-
-                    settingsSection(
-                        title: "RSI",
-                        subtitle: "Wilder 相对强弱周期"
-                    ) {
-                        integerRow(
-                            "周期",
-                            value: $rsiPeriod
-                        )
-                    }
-
-                    settingsSection(
-                        title: "KDJ",
-                        subtitle: "币安默认 9 / 3 / 3"
-                    ) {
-                        integerRow("计算周期", value: $kdjPeriod)
-                        integerRow("K 平滑", value: $kdjKSmoothing)
-                        integerRow("D 平滑", value: $kdjDSmoothing)
-                    }
-
-                    settingsSection(
-                        title: "OBV",
-                        subtitle: "能量潮主线"
-                    ) {
-                        Text("无周期参数")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(
-                                IndicatorSettingsPalette.secondaryText
+                            decimalRow(
+                                "倍数",
+                                value: $superTrendMultiplier
                             )
-                            .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("填充透明度").font(.system(size: 14))
+                                    Spacer()
+                                    Text("\(Int(((1 - superTrendFillAlpha) * 100).rounded()))%")
+                                        .font(.system(size: 13, weight: .medium)).monospacedDigit()
+                                }
+                                Slider(value: Binding(get: { 1 - superTrendFillAlpha },
+                                    set: { superTrendFillAlpha = 1 - $0 }), in: 0...1, step: 0.01)
+                                    .tint(IndicatorSettingsPalette.accent)
+                                    .accessibilityLabel("Super 填充透明度")
+                                    .accessibilityIdentifier("indicator-settings.super-opacity")
+                            }.foregroundStyle(IndicatorSettingsPalette.primaryText).padding(.top, 12)
+                        }
                     }
 
-                    settingsSection(
-                        title: "WR",
-                        subtitle: "Williams %R"
-                    ) {
-                        integerRow("周期", value: $williamsRPeriod)
-                    }
-
-                    settingsSection(
-                        title: "StochRSI",
-                        subtitle: "RSI / 随机窗口 / K / D"
-                    ) {
-                        integerRow("RSI 周期", value: $stochasticRSIPeriod)
-                        integerRow("随机窗口", value: $stochasticRSIWindow)
-                        integerRow("K 平滑", value: $stochasticRSIKSmoothing)
-                        integerRow("D 平滑", value: $stochasticRSIDSmoothing)
-                    }
-
-                    settingsSection(
-                        title: "ATR",
-                        subtitle: "Wilder 平均真实波幅"
-                    ) {
-                        integerRow("周期", value: $atrPeriod)
-                    }
-
-                    settingsSection(
-                        title: "合约数据",
-                        subtitle: "O.I.、多空比、主动买卖量与 Basis"
-                    ) {
-                        Text("按当前 K 线周期读取币安近 30 天统计数据")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(
-                                IndicatorSettingsPalette.secondaryText
+                    if selectedIndicator == "VOL" {
+                        settingsSection(
+                            title: "VOL",
+                            subtitle: "成交量均线周期"
+                        ) {
+                            integerRow(
+                                "快速均量",
+                                value: $volumeFastPeriod
                             )
-                            .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
+                            integerRow(
+                                "慢速均量",
+                                value: $volumeSlowPeriod
+                            )
+                        }
+                    }
+
+                    if selectedIndicator == "MACD" {
+                        settingsSection(
+                            title: "MACD",
+                            subtitle: "快线、慢线与信号线周期"
+                        ) {
+                            integerRow(
+                                "快线周期",
+                                value: $macdFastPeriod
+                            )
+                            integerRow(
+                                "慢线周期",
+                                value: $macdSlowPeriod
+                            )
+                            integerRow(
+                                "信号周期",
+                                value: $macdSignalPeriod
+                            )
+                        }
+                    }
+
+                    if selectedIndicator == "RSI" {
+                        settingsSection(
+                            title: "RSI",
+                            subtitle: "Wilder 相对强弱周期"
+                        ) {
+                            integerRow(
+                                "周期",
+                                value: $rsiPeriod
+                            )
+                        }
+                    }
+
+                    if selectedIndicator == "KDJ" {
+                        settingsSection(
+                            title: "KDJ",
+                            subtitle: "币安默认 9 / 3 / 3"
+                        ) {
+                            integerRow("计算周期", value: $kdjPeriod)
+                            integerRow("K 平滑", value: $kdjKSmoothing)
+                            integerRow("D 平滑", value: $kdjDSmoothing)
+                        }
+                    }
+
+                    if selectedIndicator == "OBV" {
+                        settingsSection(
+                            title: "OBV",
+                            subtitle: "能量潮主线"
+                        ) {
+                            Text("无周期参数")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(
+                                    IndicatorSettingsPalette.secondaryText
+                                )
+                                .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
+                        }
+                    }
+
+                    if selectedIndicator == "WR" {
+                        settingsSection(
+                            title: "WR",
+                            subtitle: "Williams %R"
+                        ) {
+                            integerRow("周期", value: $williamsRPeriod)
+                        }
+                    }
+
+                    if selectedIndicator == "StochRSI" {
+                        settingsSection(
+                            title: "StochRSI",
+                            subtitle: "RSI / 随机窗口 / K / D"
+                        ) {
+                            integerRow("RSI 周期", value: $stochasticRSIPeriod)
+                            integerRow("随机窗口", value: $stochasticRSIWindow)
+                            integerRow("K 平滑", value: $stochasticRSIKSmoothing)
+                            integerRow("D 平滑", value: $stochasticRSIDSmoothing)
+                        }
+                    }
+
+                    if selectedIndicator == "ATR" {
+                        settingsSection(
+                            title: "ATR",
+                            subtitle: "Wilder 平均真实波幅"
+                        ) {
+                            integerRow("周期", value: $atrPeriod)
+                        }
+                    }
+
+                    if selectedIndicator == "合约数据" {
+                        settingsSection(
+                            title: "合约数据",
+                            subtitle: "O.I.、多空比、主动买卖量与 Basis"
+                        ) {
+                            Text("按当前 K 线周期读取币安近 30 天统计数据")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(
+                                    IndicatorSettingsPalette.secondaryText
+                                )
+                                .frame(minHeight: BinanceTheme.Layout.minimumTapSize)
+                        }
                     }
 
                     if let validationMessage {
@@ -310,6 +357,22 @@ struct ChartIndicatorSettingsView: View {
         )
         .toolbar(.hidden, for: .navigationBar)
         .interactivePopGestureEnabled()
+    }
+
+    private var indicatorSelector: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+            ForEach(["MA", "EMA", "BOLL", "SAR", "AVL", "Super", "VOL", "MACD", "RSI", "KDJ", "OBV", "WR", "StochRSI", "ATR", "合约数据"], id: \.self) { title in
+                Button { selectedIndicator = title } label: {
+                    Text(title).font(.system(size: 12, weight: .medium))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .foregroundStyle(selectedIndicator == title ? BinanceTheme.onAccent : IndicatorSettingsPalette.primaryText)
+                        .frame(maxWidth: .infinity).frame(height: 36)
+                        .background(selectedIndicator == title ? IndicatorSettingsPalette.accent : IndicatorSettingsPalette.surface,
+                            in: RoundedRectangle(cornerRadius: 8))
+                }.buttonStyle(.plain).accessibilityIdentifier("indicator-settings.tab." + title)
+                  .accessibilityAddTraits(selectedIndicator == title ? .isSelected : [])
+            }
+        }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
     }
 
     private var header: some View {
@@ -531,7 +594,8 @@ struct ChartIndicatorSettingsView: View {
             stochasticRSIWindow: stochasticRSIWindow,
             stochasticRSIKSmoothing: stochasticRSIKSmoothing,
             stochasticRSIDSmoothing: stochasticRSIDSmoothing,
-            atrPeriod: atrPeriod
+            atrPeriod: atrPeriod,
+            superTrendFillAlpha: superTrendFillAlpha
         )
     }
 
@@ -611,6 +675,7 @@ struct ChartIndicatorSettingsView: View {
         parabolicSARMaximum = defaults.parabolicSARMaximumText
         superTrendATRPeriod = String(defaults.superTrendATRPeriod)
         superTrendMultiplier = defaults.superTrendMultiplierText
+        superTrendFillAlpha = defaults.superTrendFillAlpha
         volumeFastPeriod = String(defaults.volumeFastPeriod)
         volumeSlowPeriod = String(defaults.volumeSlowPeriod)
         macdFastPeriod = String(defaults.macdFastPeriod)

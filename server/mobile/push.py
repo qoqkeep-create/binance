@@ -1,4 +1,4 @@
-"""Authenticated installations and independent APNs/Echobell delivery outbox."""
+"""Authenticated installations and the App signal notification outbox."""
 import time
 import uuid
 from datetime import timedelta
@@ -69,8 +69,6 @@ def enqueue_signal(message):
         for device in PushDevice.objects.filter(active=True, user__is_active=True).iterator():
             NotificationDelivery.objects.get_or_create(event=event, target=f'apns:{device.pk}',
                 defaults={'device': device, 'user_id_snapshot': device.user_id})
-    if settings.SIGNAL_ECHOBELL_ENABLED:
-        NotificationDelivery.objects.get_or_create(event=event, target='echobell:signals')
     return event
 
 
@@ -110,9 +108,16 @@ def _claim(delivery_id, now):
         expired = item.status == 'sending' and item.lease_until and item.lease_until <= now
         if not (due or expired):
             return None
+        # Ordinary signals belong to the App. Retire queued legacy Echo records
+        # even if an older environment still enables SIGNAL_ECHOBELL_ENABLED.
+        if not item.target.startswith('apns:'):
+            item.status = 'cancelled'
+            item.lease_until = None
+            item.save(update_fields=['status', 'lease_until'])
+            return None
         if item.attempts >= 8:
             if expired:
-                item.status = 'unknown' if item.target.startswith('echobell:') else 'exhausted'
+                item.status = 'exhausted'
                 item.save(update_fields=['status'])
             return None
         if item.event.created_at < now - timedelta(hours=1):
@@ -122,11 +127,6 @@ def _claim(delivery_id, now):
                 return None
             if not item.device.active or item.device.user_id != item.user_id_snapshot:
                 item.status = 'cancelled'; item.save(update_fields=['status']); return None
-        elif not settings.SIGNAL_ECHOBELL_ENABLED:
-            return None
-        # Echo can make a phone call: an interrupted attempt must not be replayed.
-        if expired and item.target.startswith('echobell:'):
-            item.status = 'unknown'; item.save(update_fields=['status']); return None
         item.attempts += 1
         item.status = 'sending'; item.lease_until = now + timedelta(seconds=60)
         item.save(update_fields=['attempts', 'status', 'lease_until'])
@@ -145,16 +145,11 @@ def dispatch_notifications(limit=100):
             continue
         status, error = 'sent', ''
         try:
-            if item.target.startswith('apns:'):
-                send_apns(item.device, item.event.payload, item.event.event_key)
-            else:
-                from positions.profit_alerts import send_echobell
-                alert = item.event.payload['aps']['alert']
-                send_echobell({'title': alert['title'], 'body': alert['body']})
+            send_apns(item.device, item.event.payload, item.event.event_key)
         except PermanentPushError:
             status, error = 'cancelled', 'invalid_device'
         except Exception as exc:
-            status = ('failed' if item.attempts < 8 else 'exhausted') if item.target.startswith('apns:') else 'unknown'
+            status = 'failed' if item.attempts < 8 else 'exhausted'
             error = type(exc).__name__[:80]  # Never persist URLs, credentials or raw error bodies.
         NotificationDelivery.objects.filter(pk=item.pk, status='sending', attempts=item.attempts).update(
             status=status, last_error=error, lease_until=None,

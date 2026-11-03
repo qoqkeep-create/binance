@@ -4015,7 +4015,7 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertFalse(staticBatch.storage.barInstances.isEmpty)
         XCTAssertFalse(
             staticBatch.storage.barInstances.filter {
-                abs($0.color.alpha - 0.28) < 0.000_1
+                abs($0.color.alpha - Float(ChartIndicatorParameters.standard.superTrendFillAlpha)) < 0.000_1
             }.isEmpty
         )
         XCTAssertEqual(liveBatch.storage.candleInstances.count, 1)
@@ -5930,6 +5930,104 @@ final class ChartEngineCoreTests: XCTestCase {
         }
     }
 
+    func testSuperFillUsesTheSameEndpointsAsHistoryAndLiveTrendLines() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+        let pricePanel = try XCTUnwrap(output.panelLayout.pricePanel)
+        for batches in [output.renderState.staticScene.batches, output.renderState.liveTail.batches] {
+            let allBars: [ChartBarInstance] = batches.flatMap { $0.storage.barInstances }
+            let bars = allBars.filter { abs($0.color.alpha - Float(0.16)) < Float(0.0001) }
+            let allLines: [ChartLineSegmentInstance] = batches.flatMap { $0.storage.lineSegments }
+            let lines = allLines.filter { line in
+                let isTrendColor = line.color == ChartColor.positive || line.color == ChartColor.negative
+                return isTrendColor && line.start.y <= pricePanel.plot.bottom && line.end.y <= pricePanel.plot.bottom
+            }
+            var matched = 0
+            for line in lines {
+                let matching = bars.first { bar in
+                    let startMatches = abs(bar.left - line.start.x) < Float(0.001)
+                    let endMatches = abs(bar.right - line.end.x) < Float(0.001)
+                    return startMatches && endMatches
+                }
+                guard let bar = matching else { continue }
+                XCTAssertLessThan(min(abs(bar.top - line.start.y), abs(bar.bottom - line.start.y)), 0.001)
+                XCTAssertLessThan(min(abs(bar.rightTop - line.end.y), abs(bar.rightBottom - line.end.y)), 0.001)
+                matched += 1
+            }
+            XCTAssertGreaterThan(matched, 0, "History and live fills must meet the exact sloping trend-line endpoints")
+        }
+    }
+
+    func testSuperFillClipsToPricePanelWhenPriceAxisIsMagnified() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        for magnification in [2.0, 4.0] {
+            let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport,
+                priceViewport: try XCTUnwrap(ChartPriceViewport(magnification: magnification)))
+            let plot = try XCTUnwrap(output.panelLayout.pricePanel).plot
+            let batches = output.renderState.staticScene.batches + output.renderState.liveTail.batches
+            let bands = batches.flatMap { $0.storage.barInstances }.filter { abs($0.color.alpha - 0.16) < 0.0001 }
+            XCTAssertFalse(bands.isEmpty)
+            XCTAssertTrue(bands.allSatisfy { min($0.top, $0.rightTop) >= plot.top - 0.001 },
+                "Magnifying the price axis must not draw Super fill into the legend")
+            XCTAssertTrue(bands.allSatisfy { max($0.bottom, $0.rightBottom) <= plot.bottom + 0.001 },
+                "Magnifying the price axis must not draw Super fill into lower panels")
+        }
+    }
+
+    func testSlopingBandPixelsStayInsideCurveDuringPan() throws {
+        let renderer = try MetalRenderer(device: XCTUnwrap(MTLCreateSystemDefaultDevice()), pixelFormat: .bgra8Unorm_srgb)
+        let band = ChartBarInstance(left: 20, top: 10, right: 100, bottom: 60,
+            color: .positive.withAlpha(0.16), rightTop: 40, rightBottom: 60)
+        for appearance in [ChartAppearance.light, .dark] {
+            func render(_ translation: Double) throws -> MetalOffscreenImage {
+                let state = RenderState(staticScene: StaticSceneSnapshot(revision: 1,
+                    candleHistory: ChartCandleHistory(candles: []), batches: [ChartRenderBatch(barInstances: [band])],
+                    horizontalPlotBounds: ChartHorizontalPlotBounds(left: 0, right: 160)),
+                    liveTail: LiveTailSnapshot(revision: 1, candle: nil, batches: [], latestPrice: nil),
+                    interaction: InteractionSnapshot(revision: 1, translationX: translation, scaleX: 1, crosshair: nil),
+                    invalidation: .full, appearance: appearance)
+                return try XCTUnwrap(renderer.renderOffscreen(state: state, width: 160, height: 80))
+            }
+            let idle = try render(0), moving = try render(8)
+            func pixel(_ x: Int, _ y: Int) -> [UInt8] {
+                let offset = y * idle.bytesPerRow + x * 4
+                return Array(idle.bgra8UnormSRGB[offset..<offset + 4])
+            }
+            XCTAssertEqual(pixel(90, 25), pixel(5, 25), "The far end must leave the area above the sloping line empty")
+            XCTAssertNotEqual(pixel(30, 25), pixel(5, 25), "The near end must remain filled up to the line")
+            for y in 0..<80 { for x in 0..<140 {
+                let a = y * idle.bytesPerRow + x * 4, b = y * moving.bytesPerRow + (x + 8) * 4
+                XCTAssertEqual(Array(idle.bgra8UnormSRGB[a..<a+4]), Array(moving.bgra8UnormSRGB[b..<b+4]))
+            } }
+        }
+    }
+
+    func testSuperOpacityPersistsAndReachesHistoryAndLiveStyles() async throws {
+        let standard = ChartIndicatorParameters.standard
+        let parameters = try XCTUnwrap(ChartIndicatorParameters(emaPeriods: standard.emaPeriods,
+            superTrendATRPeriod: standard.superTrendATRPeriod, superTrendMultiplier: standard.superTrendMultiplier,
+            volumeFastPeriod: standard.volumeFastPeriod, volumeSlowPeriod: standard.volumeSlowPeriod,
+            macdFastPeriod: standard.macdFastPeriod, macdSlowPeriod: standard.macdSlowPeriod,
+            macdSignalPeriod: standard.macdSignalPeriod, superTrendFillAlpha: 0.35))
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SuperOpacity.\(UUID().uuidString)"))
+        let store = ChartIndicatorParametersStore(defaults: defaults, key: "test")
+        defer { defaults.removeObject(forKey: "test") }
+        store.save(parameters)
+        XCTAssertEqual(store.load(), parameters)
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: "test"))) as? [String: Any])
+        old["schemaVersion"] = 4; old.removeValue(forKey: "superTrendFillAlpha")
+        defaults.set(try JSONSerialization.data(withJSONObject: old), forKey: "test")
+        XCTAssertEqual(store.load().superTrendFillAlpha, 0.16, accuracy: 0.0001)
+        let fixture = try await makeChartSceneFixture()
+        let update = await fixture.pipeline.updateIndicatorConfiguration(selection: .standard, parameters: parameters, revision: 2)
+        let frame = try XCTUnwrap(update?.frame)
+        let styles = frame.indicators.history.series.filter { $0.key.instanceID.hasPrefix("supertrend.") }
+        XCTAssertEqual(styles.count, 2)
+        for style in styles { XCTAssertEqual(style.figureStyle, .lineWithCandleCloseBand(fillAlpha: 0.35)) }
+    }
+
     func testMetalPanPreservesHollowMACDAndContinuousSuperFill() throws {
         let renderer = try MetalRenderer(device: XCTUnwrap(MTLCreateSystemDefaultDevice()),
             pixelFormat: .bgra8Unorm_srgb)
@@ -6830,8 +6928,13 @@ final class ChartEngineCoreTests: XCTestCase {
             }
             host.diagnosticInteractionFrame(at: 10)
             await Task.yield()
-            XCTAssertTrue(dismissed, "Dragging must dismiss the crosshair")
-            XCTAssertNotEqual(try XCTUnwrap(requested.last), baseline)
+            if sameContact {
+                XCTAssertFalse(dismissed, "The creating long press must keep tracking the crosshair")
+                XCTAssertTrue(requested.isEmpty, "Moving the creating contact must not pan the timeline")
+            } else {
+                XCTAssertTrue(dismissed, "A new drag must dismiss the retained crosshair")
+                XCTAssertNotEqual(try XCTUnwrap(requested.last), baseline)
+            }
         }
     }
 

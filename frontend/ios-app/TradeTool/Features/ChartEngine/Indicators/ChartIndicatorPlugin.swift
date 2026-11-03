@@ -133,7 +133,7 @@ struct ChartIndicatorOutputDescriptor: Equatable, Sendable {
       validFigureStyle = true
     case .lineWithCandleCloseBand(let fillAlpha):
       validFigureStyle = fillAlpha.isFinite
-        && fillAlpha > 0
+        && fillAlpha >= 0
         && fillAlpha <= 1
     case .hollowSquareMarker(let sizePoints):
       validFigureStyle = sizePoints.isFinite
@@ -577,6 +577,7 @@ enum ChartIndicatorProductCatalog {
       parameters: [
         "atrPeriod": Double(parameters.superTrendATRPeriod),
         "multiplier": parameters.superTrendMultiplier,
+        "fillAlpha": parameters.superTrendFillAlpha,
       ],
       legendLabel:
         "SUPERTREND(\(parameters.superTrendATRPeriod),"
@@ -1120,7 +1121,7 @@ struct ChartIndicatorEngine: Sendable {
             ),
             lineWidthPoints: output.lineWidthPoints,
             autoscale: output.autoscale,
-            figureStyle: output.figureStyle
+            figureStyle: Self.resolvedFigureStyle(output, configuration: entry.configuration)
           ))
       }
     }
@@ -1154,6 +1155,17 @@ struct ChartIndicatorEngine: Sendable {
     let outputIDs = Set(descriptor.outputs.map(\.id))
     return Set(configuration.outputColorOverrides.keys)
       .isSubset(of: outputIDs)
+  }
+
+  private static func resolvedFigureStyle(
+    _ output: ChartIndicatorOutputDescriptor,
+    configuration: ChartIndicatorInstanceConfiguration
+  ) -> ChartIndicatorFigureStyle {
+    if case .lineWithCandleCloseBand = output.figureStyle,
+      let alpha = configuration.parameters["fillAlpha"] {
+      return .lineWithCandleCloseBand(fillAlpha: Float(alpha))
+    }
+    return output.figureStyle
   }
 
   private static func resolvedColor(

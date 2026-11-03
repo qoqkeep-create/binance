@@ -1493,3 +1493,51 @@ final class ChartOrderTicketTests: XCTestCase {
         XCTAssertEqual(MarketKlineInterval.threeMinutes.duration, 180)
     }
 }
+
+final class StrategyDraftEditingTests: XCTestCase {
+    func testClearingReductionKeepsSelectionAndIndependentStopDrafts() {
+        var level = USDTStrategyLevel()
+        level.reduce = ""
+        XCTAssertTrue(level.reduceEnabled)
+        XCTAssertEqual(level.payload["reducePosition"], .string(""))
+        level.absoluteStop = "2"
+        level.trailingStop = "1.5"
+        level.stopType = "fixedRR"
+        XCTAssertEqual(level.absoluteStop, "2")
+        XCTAssertEqual(level.payload["stopLossRR"], .string("1.5"))
+        XCTAssertNil(level.payload["stopLossAbsoluteRR"])
+        level.stopType = "absoluteRR"
+        XCTAssertEqual(level.payload["stopLossAbsoluteRR"], .string("2"))
+        XCTAssertNil(level.payload["stopLossRR"])
+        level.reduceEnabled = false
+        XCTAssertEqual(level.payload["reducePosition"], .string("0"))
+    }
+
+    func testStrategySummaryPreservesValueWithoutMoneyPrecisionOrTrailingZeros() {
+        let level: JSONValue = .object(["profitRR": .string("1.5000"), "reducePosition": .string("20.000"),
+            "stopLossType": .string("absoluteRR"), "stopLossAbsoluteRR": .string("0.25000")])
+        XCTAssertEqual(WebStrategyText.level(level, index: 0), "L1：当 RR≥1.5，卖出 20%，止损位移动到 0.25R 处")
+        XCTAssertEqual(WebStrategyText.wholePercent(80), "80")
+        XCTAssertFalse(WebStrategyText.isWhole(Decimal(string: "20.5")!))
+    }
+
+    @MainActor
+    func testBackendMaximumIsShownByDefaultAndExplicitChoiceWinsUntilScopeReset() async {
+        let store = USDTStore(api: LeverageDefaultTestAPI())
+        await store.loadDefaultLeverage(for: "BTCUSDT")
+        XCTAssertEqual(store.displayedLeverage(for: "BTCUSDT"), 125)
+        XCTAssertNil(store.selectedLeverage(for: "BTCUSDT"), "The default keeps backend automatic maximum selection")
+        store.selectLeverage(25, for: "BTCUSDT")
+        await store.loadDefaultLeverage(for: "BTCUSDT")
+        XCTAssertEqual(store.displayedLeverage(for: "BTCUSDT"), 25)
+        store.invalidate()
+        XCTAssertNil(store.displayedLeverage(for: "BTCUSDT"))
+    }
+}
+
+private actor LeverageDefaultTestAPI: APIClient {
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        let value: JSONValue = .object(["max_leverage": .number(125)])
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}

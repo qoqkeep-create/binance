@@ -67,7 +67,6 @@ final class KlineChartHostView: UIView {
         }
     }
     private var crosshairLocationPixels: ChartPolylinePoint?
-    private var longPressOrigin: CGPoint?
     private var totalSlotCount = 0
     private var onTimelineViewportChange:
         ((ChartTimelineViewport) -> Void)?
@@ -230,6 +229,7 @@ final class KlineChartHostView: UIView {
             shouldBegin = isPriceScaleAxisLocation(location)
                 && abs(velocity.y) > abs(velocity.x)
         } else if gestureRecognizer === timelinePanGesture {
+            guard interactionState.state != .trackingCrosshair else { return false }
             let velocity = timelinePanGesture.velocity(in: self)
             let location = timelinePanGesture.location(in: self)
             let translation = timelinePanGesture.translation(in: self)
@@ -891,7 +891,6 @@ final class KlineChartHostView: UIView {
                 recognizer.isEnabled = true
                 return
             }
-            longPressOrigin = location
             crosshairFeedback.prepare()
             guard updateCrosshair(
                 location: location,
@@ -906,16 +905,6 @@ final class KlineChartHostView: UIView {
             startInteractionFrames()
             submitInteractiveFrame()
         case .changed:
-            if let origin = longPressOrigin {
-                let dx = location.x - origin.x, dy = location.y - origin.y
-                if interactionState.state == .trackingCrosshair, abs(dx) >= 8, abs(dx) > abs(dy) {
-                    guard beginTimelinePan() else { return }
-                }
-                if interactionState.state == .panningTimeline {
-                    updateTimelinePan(translationPoints: Double(dx))
-                    return
-                }
-            }
             guard interactionState.state
                     == .trackingCrosshair else {
                 return
@@ -931,10 +920,7 @@ final class KlineChartHostView: UIView {
                 submitInteractiveFrame()
             }
         case .ended, .cancelled, .failed:
-            longPressOrigin = nil
-            if interactionState.state == .panningTimeline {
-                finishPanInteraction(velocityPointsPerSecond: 0, allowsInertia: false)
-            } else { finishCrosshairInteraction() }
+            finishCrosshairInteraction()
         default:
             break
         }

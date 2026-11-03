@@ -74,10 +74,6 @@ struct USDTSignalsView: View {
         Text(row.value("symbol").replacingOccurrences(of: "USDT", with: "")).font(
           .system(size: 16, weight: .semibold))
         WebBadge(text: "自有", color: WebTheme.muted)
-        if row["score"] != nil {
-          Text("\(row.value("score"))分").font(.system(size: 12, weight: .medium)).foregroundStyle(
-            WebTheme.brand)
-        }
         Spacer(minLength: 0)
         Text(WebFormat.time(row.value("signal_time", fallback: row.value("received_at")))).font(
           .system(size: 12)

@@ -204,37 +204,27 @@ struct WebCheckbox: View {
   }
 }
 
-/// A native segmented control; title attributes distinguish selection without moving the bar.
-struct WebTabs: UIViewRepresentable {
+/// Equal-width rectangular segments keep the position filters aligned.
+struct WebTabs: View {
   let tabs: [(String, String)]
   @Binding var selection: String
-  func makeCoordinator() -> Coordinator { Coordinator(self) }
-  func makeUIView(context: Context) -> UISegmentedControl {
-    let control = UISegmentedControl(items: tabs.map(\.1))
-    control.apportionsSegmentWidthsByContent = true
-    control.addTarget(context.coordinator, action: #selector(Coordinator.select(_:)), for: .valueChanged)
-    return control
-  }
-  func updateUIView(_ control: UISegmentedControl, context: Context) {
-    context.coordinator.parent = self
-    control.selectedSegmentIndex = tabs.firstIndex { $0.0 == selection } ?? UISegmentedControl.noSegment
-    control.setTitleTextAttributes([
-      .font: UIFont.systemFont(ofSize: 14, weight: .medium),
-      .foregroundColor: UIColor(WebTheme.secondary),
-    ], for: .normal)
-    control.setTitleTextAttributes([
-      .font: UIFont.systemFont(ofSize: 16, weight: .bold),
-      .foregroundColor: UIColor(WebTheme.text),
-    ], for: .selected)
-    control.accessibilityIdentifier = "positions.tabs"
-  }
-  @MainActor final class Coordinator: NSObject {
-    var parent: WebTabs
-    init(_ parent: WebTabs) { self.parent = parent }
-    @objc func select(_ control: UISegmentedControl) {
-      guard parent.tabs.indices.contains(control.selectedSegmentIndex) else { return }
-      parent.selection = parent.tabs[control.selectedSegmentIndex].0
-    }
+  var body: some View {
+    HStack(spacing: 2) {
+      ForEach(tabs, id: \.0) { key, title in
+        Button { selection = key } label: {
+          Text(title).font(.system(size: 14, weight: selection == key ? .semibold : .medium))
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .foregroundStyle(selection == key ? WebTheme.text : WebTheme.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(selection == key ? WebTheme.surface : Color.clear,
+              in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }.buttonStyle(.plain).accessibilityIdentifier("positions.tabs." + key)
+          .accessibilityAddTraits(selection == key ? .isSelected : [])
+      }
+    }.padding(3).background(WebTheme.input, in: RoundedRectangle(cornerRadius: 11))
+      .overlay { RoundedRectangle(cornerRadius: 11).stroke(WebTheme.border, lineWidth: 0.5) }
+      .accessibilityElement(children: .contain).accessibilityIdentifier("positions.tabs")
   }
 }
 
@@ -464,11 +454,14 @@ struct WebNumberInput: View {
   @Binding var text: String
   var suffix = ""
   var width: CGFloat = 64
+  var integerOnly = false
+  var fieldIdentifier = ""
   var body: some View {
     HStack(spacing: 2) {
-      TextField("", text: $text).keyboardType(.decimalPad).multilineTextAlignment(.center).font(
+      TextField("", text: $text).keyboardType(integerOnly ? .numberPad : .decimalPad).multilineTextAlignment(.center).font(
         .system(size: 14)
       ).accessibilityLabel(suffix.isEmpty ? "数值" : suffix)
+        .accessibilityIdentifier(fieldIdentifier)
       if !suffix.isEmpty {
         Text(suffix).font(.system(size: 14, weight: .medium)).foregroundStyle(WebTheme.brand)
       }

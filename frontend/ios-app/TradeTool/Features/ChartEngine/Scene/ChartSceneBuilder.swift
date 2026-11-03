@@ -1072,19 +1072,12 @@ actor ChartSceneBuilder {
           scale: geometry.scale,
           lines: &lines
         )
-        if style.placement == .priceOverlay,
-          let bar = indicatorPriceBandBar(
-            point: livePoint.point,
-            candle: latest,
-            x: liveX,
-            domain: target.domain,
-            top: target.top,
-            bottom: target.bottom,
+        if style.placement == .priceOverlay {
+          appendLivePriceBand(point: livePoint.point, candle: latest,
+            anchor: cache.anchors[livePoint.key], previousCandle: frame.candles.history.candles.last,
+            x: liveX, domain: target.domain, top: target.top, bottom: target.bottom,
             halfSlotWidth: geometry.slotWidth / 2,
-            color: style.colorToken.color.withAlpha(fillAlpha)
-          )
-        {
-          bars.append(bar)
+            color: style.colorToken.color.withAlpha(fillAlpha), bars: &bars)
         }
       case .hollowSquareMarker(let sizePoints):
         if let marker = liveIndicatorHollowSquareMarker(
@@ -1884,62 +1877,79 @@ actor ChartSceneBuilder {
     color: ChartColor
   ) -> [ChartBarInstance] {
     var bars: [ChartBarInstance] = []
-    bars.reserveCapacity(visibleRange.count)
+    var previous: (x: Float, indicator: Float, close: Float)?
     for (offset, index) in visibleRange.enumerated() {
-      guard index < points.count,
-        index < candles.count,
-        offset < xValues.count,
+      guard index < points.count, index < candles.count, offset < xValues.count,
         points[index].openTime == candles[index].openTime,
-        let bar = indicatorPriceBandBar(
-          point: points[index],
-          candle: candles[index],
-          x: xValues[offset],
-          domain: domain,
-          top: top,
-          bottom: bottom,
-          halfSlotWidth: halfSlotWidth,
-          color: color
-        )
-      else {
-        continue
-      }
-      bars.append(bar)
+        points[index].validity == .valid, let value = points[index].value,
+        let y = domain.y(for: value, top: top, bottom: bottom),
+        let close = domain.y(for: candles[index].closePrice, top: top, bottom: bottom)
+      else { previous = nil; continue }
+      let x = xValues[offset]
+      let prior = previous ?? (x: x - halfSlotWidth, indicator: y, close: close)
+      bars.append(contentsOf: indicatorPriceBandQuads(left: prior.x, right: x,
+        leftIndicator: prior.indicator, rightIndicator: y,
+        leftClose: prior.close, rightClose: close, top: top, bottom: bottom, color: color))
+      previous = (x: x, indicator: y, close: close)
     }
     return bars
   }
 
-  private func indicatorPriceBandBar(
-    point: IndicatorPoint,
-    candle: ChartCandle,
-    x: Float,
-    domain: PriceDomain,
-    top: Float,
-    bottom: Float,
-    halfSlotWidth: Float,
+  private func indicatorPriceBandQuads(
+    left: Float, right: Float,
+    leftIndicator: Float, rightIndicator: Float,
+    leftClose: Float, rightClose: Float,
+    top: Float, bottom: Float,
     color: ChartColor
-  ) -> ChartBarInstance? {
-    guard point.validity == .valid,
-      let value = point.value,
-      let indicatorY = domain.y(
-        for: value,
-        top: top,
-        bottom: bottom
-      ),
-      let closeY = domain.y(
-        for: candle.closePrice,
-        top: top,
-        bottom: bottom
-      )
-    else {
-      return nil
+  ) -> [ChartBarInstance] {
+    let upper = (left: min(leftIndicator, leftClose), right: min(rightIndicator, rightClose))
+    let lower = (left: max(leftIndicator, leftClose), right: max(rightIndicator, rightClose))
+    guard max(lower.left, lower.right) > top, min(upper.left, upper.right) < bottom else { return [] }
+    // Split at each plot-boundary crossing before clamping. Clamping only the
+    // original endpoints would tilt the visible edge away from the trend line.
+    var cuts: [Float] = [0, 1]
+    for edge in [upper, lower] where edge.left != edge.right {
+      for boundary in [top, bottom] {
+        let t = (boundary - edge.left) / (edge.right - edge.left)
+        if t > 0 && t < 1 { cuts.append(t) }
+      }
     }
-    return ChartBarInstance(
-      left: x - halfSlotWidth,
-      top: max(top, min(indicatorY, closeY)),
-      right: x + halfSlotWidth,
-      bottom: min(bottom, max(indicatorY, closeY)),
-      color: color
-    )
+    cuts = Array(Set(cuts)).sorted()
+    func clipped(_ edge: (left: Float, right: Float), at t: Float) -> Float {
+      min(bottom, max(top, edge.left + (edge.right - edge.left) * t))
+    }
+    return zip(cuts, cuts.dropFirst()).compactMap { start, end in
+      let startTop = clipped(upper, at: start), startBottom = clipped(lower, at: start)
+      let endTop = clipped(upper, at: end), endBottom = clipped(lower, at: end)
+      guard startBottom > startTop || endBottom > endTop else { return nil }
+      return ChartBarInstance(left: left + (right - left) * start, top: startTop,
+        right: left + (right - left) * end, bottom: startBottom, color: color,
+        rightTop: endTop, rightBottom: endBottom)
+    }
+  }
+
+  private func appendLivePriceBand(
+    point: IndicatorPoint?, candle: ChartCandle, anchor: ChartPolylinePoint?,
+    previousCandle: ChartCandle?, x: Float, domain: PriceDomain,
+    top: Float, bottom: Float, halfSlotWidth: Float, color: ChartColor,
+    bars: inout [ChartBarInstance]
+  ) {
+    guard let point, point.validity == .valid, let value = point.value,
+      let y = domain.y(for: value, top: top, bottom: bottom),
+      let close = domain.y(for: candle.closePrice, top: top, bottom: bottom) else { return }
+    if let anchor, let previousCandle,
+      let priorClose = domain.y(for: previousCandle.closePrice, top: top, bottom: bottom) {
+      bars.append(contentsOf: indicatorPriceBandQuads(left: anchor.x, right: x,
+        leftIndicator: anchor.y, rightIndicator: y, leftClose: priorClose, rightClose: close,
+        top: top, bottom: bottom, color: color))
+    } else {
+      bars.append(contentsOf: indicatorPriceBandQuads(left: x - halfSlotWidth, right: x,
+        leftIndicator: y, rightIndicator: y, leftClose: close, rightClose: close,
+        top: top, bottom: bottom, color: color))
+    }
+    bars.append(contentsOf: indicatorPriceBandQuads(left: x, right: x + halfSlotWidth,
+      leftIndicator: y, rightIndicator: y, leftClose: close, rightClose: close,
+      top: top, bottom: bottom, color: color))
   }
 
   private func liveIndicatorHistogramBar(

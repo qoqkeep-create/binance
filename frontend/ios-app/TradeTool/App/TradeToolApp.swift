@@ -390,6 +390,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           return .object(fields)
         })
       }
+      if request.path == "/v1/trade/symbol/info" {
+        value = .object(["symbol": .string("BTCUSDT"), "max_leverage": .number(50)])
+      }
       if request.path == "/v1/trade/leverage-brackets" {
         var brackets: [JSONValue] = [
           .object(["leverage": .number(50), "max_notional": .string("250000"), "max_open_amount": .string("25000")]),

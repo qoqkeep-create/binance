@@ -73,7 +73,7 @@ Bundle ID 使用 `com.waibao2025.trade.integrated`，与旧客户端隔离。iOS
 
 部署配置模板是 [`deploy/integrated/server.env.example`](../deploy/integrated/server.env.example)，实际凭证位于服务器受限文件。`MARKET_WS_URL` 默认 `wss://fstream.binance.com/market`，`ACCOUNT_WS_URL` 默认 `wss://fstream.binance.com/private`；旧无路由前缀入口会出现握手后无数据。`MARKET_WS_PROXY` 仅供本机开发显式配置代理，生产直接连接。HTTPS 证书校验始终开启。
 
-整合环境 SMTP 及未列明的外部通知通道尚未配置；Echo／APNs 已准备受限配置，实际发送能力仍取决于配套发布与验收。看盘计划、校准问答、手动开仓理由／指标校验及信号研究已按 2026-11-01 新要求移除，旧数据及迁移记录的处理见 [功能退役](research.md)。内部信号已在本地源码接入 Python 独立 APNs／Echobell 投递与原生注册、点击导航；浮盈 Echobell 已沿原 USDT 阈值移植。2026-11-03 已限定发布内部信号保存／排队及真实余额杠杆 GET 至 47.80.22.243（首尔服务器），完整通知注册／派发与浮盈任务未随此包上线，后台手机通知仍待验证，不能将前台 WSS 当作系统通知。链路、去重与待配置边界见 [通知](signals-and-notifications.md)。带单新增风险由 `LEAD_TRADING_ENABLED=false` 保持关闭，已有模式边界照旧。
+整合环境 SMTP 及未列明的外部通知通道尚未配置；Echo／APNs 已准备受限配置，实际发送能力仍取决于配套发布与验收。看盘计划、校准问答、手动开仓理由／指标校验及信号研究已按 2026-11-01 新要求移除，旧数据及迁移记录的处理见 [功能退役](research.md)。内部信号已在源码接入 Python App APNs 投递与原生注册、点击导航；2026-11-03 起普通信号不走 Echobell，浮盈 Echobell 沿原 USDT 阈值独立投递。2026-11-03 已限定发布内部信号保存／排队及真实余额杠杆 GET 至 47.80.22.243（首尔服务器），完整通知注册／派发与浮盈任务未随此包上线，后台手机通知仍待验证，不能将前台 WSS 当作系统通知。链路、去重与待配置边界见 [通知](signals-and-notifications.md)。带单新增风险由 `LEAD_TRADING_ENABLED=false` 保持关闭，已有模式边界照旧。
 
 已完成代码映射不代表每个资金 / 交易分支均实盘验收。没有绑定真实账户，也没有进行真实开平仓、划转、撤保护单或更改旧订单策略。验证记录见 [变更](changes.md)，运维见 [部署](operations.md)。
 

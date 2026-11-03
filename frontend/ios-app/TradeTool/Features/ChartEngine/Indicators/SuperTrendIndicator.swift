@@ -328,6 +328,10 @@ struct SuperTrendChartIndicatorPlugin: ChartIndicatorPlugin {
         range: 0.1...20,
         step: 0.1
       ),
+      ChartIndicatorParameterDescriptor(
+        id: "fillAlpha", displayName: "填充不透明度", defaultValue: 0.16,
+        range: 0...1, step: 0.01
+      ),
     ],
     outputs: [
       ChartIndicatorOutputDescriptor(
@@ -336,7 +340,7 @@ struct SuperTrendChartIndicatorPlugin: ChartIndicatorPlugin {
         colorToken: .positive,
         lineWidthPoints: 1.3,
         autoscale: .included,
-        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.28)
+        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.16)
       ),
       ChartIndicatorOutputDescriptor(
         id: "down",
@@ -344,7 +348,7 @@ struct SuperTrendChartIndicatorPlugin: ChartIndicatorPlugin {
         colorToken: .negative,
         lineWidthPoints: 1.3,
         autoscale: .included,
-        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.28)
+        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.16)
       ),
     ],
     warmupCount: 10,

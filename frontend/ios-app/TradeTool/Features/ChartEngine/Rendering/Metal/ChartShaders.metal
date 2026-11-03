@@ -287,8 +287,8 @@ vertex ChartBarVertexOut chartBarVertex(
     const float2 pixel = float2(
         mix(left, right, corner.x),
         mix(
-            instance.geometry.y,
-            instance.geometry.w,
+            instance.geometry.y + instance.flags.z * corner.x,
+            instance.geometry.w + instance.flags.w * corner.x,
             corner.y
         )
     );

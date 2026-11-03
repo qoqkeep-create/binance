@@ -330,4 +330,3 @@ APNS_BUNDLE_ID = os.getenv('APNS_BUNDLE_ID', 'com.waibao2025.trade.integrated').
 POSITION_PROFIT_CALL_ENABLED = os.getenv('POSITION_PROFIT_CALL_ENABLED', 'False').lower() == 'true'
 POSITION_PROFIT_CALL_USER_ID = int(os.getenv('POSITION_PROFIT_CALL_USER_ID', '0') or '0')
 POSITION_PROFIT_CALL_URL = os.getenv('POSITION_PROFIT_CALL_URL', '').strip()
-SIGNAL_ECHOBELL_ENABLED = os.getenv('SIGNAL_ECHOBELL_ENABLED', 'False').lower() == 'true'

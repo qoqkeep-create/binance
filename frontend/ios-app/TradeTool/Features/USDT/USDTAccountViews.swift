@@ -57,22 +57,9 @@ struct USDTProfileView: View {
             }
             Spacer(minLength: 4)
             Button { modeConfirm = true } label: {
-              HStack(spacing: 4) {
-                Image(systemName: "arrow.left.arrow.right").accessibilityHidden(true)
-                Text(lead ? "合约" : "带单")
-              }.font(.system(size: 12, weight: .medium))
-              .foregroundStyle(lead ? Color(red: 35/255, green: 83/255, blue: 120/255)
-                : Color(red: 122/255, green: 86/255, blue: 0))
-              .padding(.horizontal, 12).frame(height: 36)
-              .background(lead ? WebTheme.color(0xD9EFFF, 0xB6DDF5) : WebTheme.color(0xFFF0AF, 0xF5D983),
-                in: RoundedRectangle(cornerRadius: 8))
-              .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                  .stroke(lead ? Color.blue.opacity(0.25) : Color.orange.opacity(0.3), lineWidth: 0.5)
-              }
-              .contentShape(RoundedRectangle(cornerRadius: 8))
-            }.buttonStyle(.plain)
-              .fixedSize(horizontal: true, vertical: false)
+              WebLabel(lead ? "转合约" : "带单", "arrow.left.arrow.right")
+            }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12))
+              .frame(width: 104)
               .accessibilityLabel(lead ? "切换合约模式" : "切换带单模式")
               .accessibilityIdentifier("profile.switchMode")
           }.padding(.bottom, 20)
@@ -115,7 +102,8 @@ struct USDTProfileView: View {
                   normalize = true
                 } label: {
                   WebLabel("归集余额", "wallet.bifold")
-                }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12, fullWidth: false)).disabled(
+                }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12)).frame(width: 104)
+                  .accessibilityIdentifier("profile.collectBalance").disabled(
                   !store.isBound)
               }.frame(height: 80)
             }
@@ -732,8 +720,8 @@ struct USDTCapitalView: View {
         if busy { HStack(spacing: 8) { ProgressView(); Text(submitted ? "正在提交，请稍候…" : "正在读取资金状态…") }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary) }
         if completed { Label("本次操作已完成", systemImage: "checkmark.circle.fill").foregroundStyle(WebTheme.success).font(.system(size: 15, weight: .semibold)).accessibilityIdentifier("capital.completed") }
         if !notice.isEmpty { Text(notice).font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5).accessibilityIdentifier("capital.notice") }
-        if !busy && preview.value("status") == "ready" && !completed {
-          Text(tab == .transfer ? "暂无可转出的现货资金" : "当前方向暂无可划转金额")
+        if tab == .transfer && !busy && preview.value("status") == "ready" && !completed {
+          Text("暂无可转出的现货资金")
             .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
         }
       }.padding(20)

@@ -37,8 +37,22 @@ final class USDTStore: ObservableObject {
     @Published var binding: JSONValue = .null
     @Published var strategies: [JSONValue] = []
     @Published private(set) var selectedLeverages: [String: Int] = [:]
+    @Published private(set) var defaultLeverages: [String: Int] = [:]
     func selectedLeverage(for symbol: String) -> Int? { selectedLeverages[symbol.uppercased()] }
+    func displayedLeverage(for symbol: String) -> Int? {
+        selectedLeverage(for: symbol) ?? defaultLeverages[symbol.uppercased()]
+    }
     func selectLeverage(_ leverage: Int, for symbol: String) { selectedLeverages[symbol.uppercased()] = leverage }
+    func loadDefaultLeverage(for symbol: String) async {
+        let key = symbol.uppercased()
+        guard defaultLeverages[key] == nil else { return }
+        let requestScope = scope
+        do {
+            let value = try await get("/v1/trade/symbol/info", query: [.init(name: "symbol", value: key)])
+            guard requestScope == scope, let maximum = Int(value.value("max_leverage")), maximum > 0 else { return }
+            defaultLeverages[key] = maximum
+        } catch { }
+    }
     @Published var selectedSymbol = "BTCUSDT"
     @Published var notice = ""
     @Published var isLoading = false
@@ -77,6 +91,7 @@ final class USDTStore: ObservableObject {
         stopRealtime()
         revision += 1
         selectedLeverages = [:]
+        defaultLeverages = [:]
         account = .object([:]); profile = .object([:]); binding = .null; strategies = []; notice = ""
     }
 
