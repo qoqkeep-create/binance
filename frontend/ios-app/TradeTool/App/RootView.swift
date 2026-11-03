@@ -81,10 +81,10 @@ private struct MainAppView: View {
                     })
             }
         }
-        .environmentObject(container.dashboardViewModel)
         .background(BinanceTheme.navigationBackground)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .floatingPositionsOverlay()
+        .environmentObject(container.dashboardViewModel)
         .modifier(PositionLiveActivityLifecycle())
         .environmentObject(livePositions)
         .task {

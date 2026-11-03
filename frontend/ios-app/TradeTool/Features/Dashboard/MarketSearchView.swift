@@ -136,7 +136,7 @@ extension View {
     }
     func largeTradingSheet<Item: Identifiable, Panel: View>(item: Binding<Item?>,
         @ViewBuilder content: @escaping (Item) -> Panel) -> some View {
-        webModal(item: item) { selected in
+        webModal(item: item, motion: .slide) { selected in
             WebSheet(heightFraction: 0.8, protectsBottomSafeArea: true) { content(selected) }
         }
     }

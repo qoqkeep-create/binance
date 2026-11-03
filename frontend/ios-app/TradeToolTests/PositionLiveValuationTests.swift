@@ -131,6 +131,25 @@ final class PositionLiveValuationTests: XCTestCase {
     XCTAssertTrue(quotes.quotes.isEmpty)
   }
 
+  func testMultipleQuoteOwnersCannotCancelOrReplaceEachOther() {
+    let quotes = PositionLiveQuotes()
+    let page = quotes.begin(scope: "account", symbols: ["BTCUSDT"], owner: "page")
+    let floating = quotes.begin(scope: "account", symbols: ["ETHUSDT"], owner: "floating")
+    quotes.receive(ticker("101", time: 1_000_000), session: page, now: now)
+    quotes.receive(ticker("202", time: 1_000_000, symbol: "ETHUSDT"), session: floating, now: now)
+    XCTAssertEqual(quotes.quotes["BTCUSDT"]?.price, Decimal(101))
+    XCTAssertEqual(quotes.quotes["ETHUSDT"]?.price, Decimal(202))
+    quotes.end(page)
+    let hidden = quotes.begin(scope: "account", symbols: [], owner: "page")
+    quotes.end(hidden)
+    quotes.receive(ticker("203", time: 1_000_001, symbol: "ETHUSDT"), session: floating, now: now)
+    XCTAssertEqual(quotes.quotes["ETHUSDT"]?.price, Decimal(203))
+    let resumed = quotes.begin(scope: "account", symbols: ["BTCUSDT"], owner: "page")
+    XCTAssertFalse(quotes.end(page))
+    quotes.receive(ticker("102", time: 1_000_001), session: resumed, now: now)
+    XCTAssertEqual(quotes.quotes["BTCUSDT"]?.price, Decimal(102))
+  }
+
   private func quote(_ price: String) -> PositionMarketQuote {
     PositionMarketQuote(price: Decimal(string: price)!, eventTime: 1_000_000)
   }

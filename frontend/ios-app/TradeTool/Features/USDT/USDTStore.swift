@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftUI
 
 extension JSONValue {
@@ -37,6 +38,9 @@ private struct LocalSignalReadCursor: Codable, Equatable {
 @MainActor
 final class USDTStore: ObservableObject {
     let api: any APIClient
+    let positionSnapshots = FloatingPositionsModel()
+    let positionQuotes = PositionLiveQuotes()
+    private var positionObservers: Set<AnyCancellable> = []
     @Published var mode = "ordinary"
     @Published var revision = 0
     @Published var account: JSONValue = .object([:])
@@ -81,6 +85,11 @@ final class USDTStore: ObservableObject {
     init(api: any APIClient, signalReadDefaults: UserDefaults = .standard) {
         self.api = api
         self.signalReadDefaults = signalReadDefaults
+        // EnvironmentObject consumers observe the store; forward its shared child publications too.
+        positionSnapshots.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &positionObservers)
+        positionQuotes.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &positionObservers)
     }
 
     func begin(userID: String) async {
@@ -154,6 +163,8 @@ final class USDTStore: ObservableObject {
     func invalidate() {
         stopRealtime()
         revision += 1
+        positionSnapshots.reset(scope: scope)
+        positionQuotes.reset()
         selectedLeverages = [:]
         defaultLeverages = [:]
         account = .object([:]); profile = .object([:]); binding = .null; strategies = []; notice = ""
@@ -173,6 +184,12 @@ final class USDTStore: ObservableObject {
             guard eventScope == self.scope, !Task.isCancelled else { return }
             self.liveRevision += 1
         }
+    }
+
+    func refreshPositions() async {
+        guard isBound else { return }
+        if positionSnapshots.scope != scope { positionSnapshots.reset(scope: scope) }
+        await positionSnapshots.refresh(self)
     }
 
     func get(_ path: String, query: [URLQueryItem] = []) async throws -> JSONValue {

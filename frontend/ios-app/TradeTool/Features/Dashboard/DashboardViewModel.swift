@@ -16,7 +16,7 @@ final class DashboardViewModel: ObservableObject {
     private var catalogLoadedAt: Date?
     private var catalogRevision = 0
     private var tradeTickerSymbol: String?
-    private var positionTickerSymbols: Set<String> = []
+    private var positionTickerSymbols: [String: Set<String>] = [:]
     @Published private(set) var isLoadingSignals = false
     @Published private(set) var isLoadingMoreSignals = false
     @Published private(set) var hasMoreSignals = false
@@ -258,12 +258,13 @@ final class DashboardViewModel: ObservableObject {
         return price > 0 ? NSDecimalNumber(value: price).stringValue : ""
     }
 
-    func trackPositionTickerSymbols(_ symbols: [String]) {
+    func trackPositionTickerSymbols(_ symbols: [String], owner: String = "positions") {
         let normalized = Set(symbols.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         }.filter { !$0.isEmpty })
-        guard positionTickerSymbols != normalized else { return }
-        positionTickerSymbols = normalized
+        guard positionTickerSymbols[owner] != normalized else { return }
+        if normalized.isEmpty { positionTickerSymbols.removeValue(forKey: owner) }
+        else { positionTickerSymbols[owner] = normalized }
         updateRealtimeSubscriptions()
     }
 
@@ -834,7 +835,7 @@ final class DashboardViewModel: ObservableObject {
             .filter(\.isVisible)
             .map(\.symbol)
             .sorted()
-        let candidates = positionTickerSymbols.sorted() + [tradeTickerSymbol].compactMap { $0 }
+        let candidates = Set(positionTickerSymbols.values.flatMap { $0 }).sorted() + [tradeTickerSymbol].compactMap { $0 }
             + searchTickerSymbols.sorted() + visibleSymbols
         var seen = Set<String>()
         let subscribedSymbols = Array(candidates.filter { seen.insert($0).inserted }

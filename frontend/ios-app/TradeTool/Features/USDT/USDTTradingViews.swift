@@ -590,7 +590,16 @@ struct USDTPositionsView: View {
   private var floatingPositions = false
   @StateObject private var model = USDTPageModel()
   @StateObject private var trendAdvice = PositionTrendAdviceModel()
-  @StateObject private var liveQuotes = PositionLiveQuotes()
+  private var liveQuotes: PositionLiveQuotes { store.positionQuotes }
+  private var snapshots: FloatingPositionsModel { store.positionSnapshots }
+  private var rows: [JSONValue] {
+    segment == "positions" ? (snapshots.scope == store.scope ? snapshots.rows : []) : model.items
+  }
+  private var loading: Bool { segment == "positions" ? snapshots.loading : model.loading }
+  private var refreshing: Bool { segment != "positions" && model.refreshing }
+  private var loadError: String {
+    segment == "positions" ? (snapshots.failed ? "持仓更新失败，请稍后重试" : "") : model.error
+  }
   @State private var segment = "positions"
   @State private var filter = "all"
   @State private var modelScope = ""
@@ -606,14 +615,14 @@ struct USDTPositionsView: View {
   @State private var closeQueue: [WebCloseTarget] = []
   private var closeQueueKey: String { "integrated.close-queue.\(store.scope)" }
   private var totalPnl: Decimal? {
-    let profits = model.items.compactMap { liveValuation($0)?.profit }
-    return profits.count == model.items.count ? profits.reduce(Decimal.zero, +) : nil
+    let profits = rows.compactMap { liveValuation($0)?.profit }
+    return profits.count == rows.count ? profits.reduce(Decimal.zero, +) : nil
   }
   private var totalPnlText: String { totalPnl.map { DisplayNumber.text($0, signed: true) } ?? "--" }
   private var totalPnlColor: Color { totalPnl.map { $0 >= 0 ? WebTheme.success : WebTheme.danger } ?? WebTheme.muted }
   private var trendSymbols: [String] {
     guard isVisible, store.isBound, segment == "positions", scenePhase == .active, !chart else { return [] }
-    return Array(Set(model.items.map { $0.value("symbol", fallback: "").uppercased() }
+    return Array(Set(rows.map { $0.value("symbol", fallback: "").uppercased() }
       .filter { !$0.isEmpty })).sorted()
   }
   var body: some View {
@@ -677,22 +686,22 @@ struct USDTPositionsView: View {
             }.buttonStyle(.plain).accessibilityIdentifier("positions.bind")
           } else {
             USDTNotice(text: notice)
-            if model.refreshing {
+            if refreshing {
               Text("正在更新历史记录…").font(.system(size: 13)).foregroundStyle(WebTheme.muted)
             }
-            if !model.items.isEmpty { USDTNotice(text: model.error) }
-            if model.loading && model.items.isEmpty {
+            if !rows.isEmpty { USDTNotice(text: loadError) }
+            if loading && rows.isEmpty {
               Text("加载中...").font(.system(size: 16)).foregroundStyle(WebTheme.muted).frame(
                 maxWidth: .infinity
               ).padding(.vertical, 48)
             }
-            if !model.loading && !model.refreshing && model.items.isEmpty {
+            if !loading && !refreshing && rows.isEmpty {
               USDTEmptyState(
                 title: segment == "positions" ? "暂无持仓" : segment == "limits" ? "暂无限价委托" : "暂无历史仓位记录",
-                error: model.error
+                error: loadError
               ) { Task { await reload() } }
             }
-            ForEach(Array(model.items.enumerated()), id: \.offset) { _, row in
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
               if segment == "positions" {
                 positionCard(row)
               } else if segment == "limits" {
@@ -701,13 +710,13 @@ struct USDTPositionsView: View {
                 historyCard(row)
               }
             }
-            if segment == "positions", model.items.count > 1 || !closeQueue.isEmpty { closeAllBar }
-            if model.hasNext {
+            if segment == "positions", rows.count > 1 || !closeQueue.isEmpty { closeAllBar }
+            if segment != "positions", model.hasNext {
               Button("加载更多") {
                 model.page += 1
                 Task { await reload(append: true) }
               }.buttonStyle(WebButtonStyle(kind: .secondary, fontSize: 14))
-                .disabled(model.loading || model.refreshing)
+                .disabled(loading || refreshing)
             }
           }
         }.frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
@@ -731,15 +740,14 @@ struct USDTPositionsView: View {
     }.usdtPage("持仓")
       .task(id: "quotes:\(store.scope):\(store.isBound):\(trendSymbols.joined(separator: ","))") {
         guard store.isBound else {
-          liveQuotes.reset()
-          dashboard.trackPositionTickerSymbols([])
+          dashboard.trackPositionTickerSymbols([], owner: "positions")
           return
         }
         let symbols = trendSymbols
-        let session = liveQuotes.begin(scope: store.scope, symbols: symbols)
-        dashboard.trackPositionTickerSymbols(symbols)
+        let session = liveQuotes.begin(scope: store.scope, symbols: symbols, owner: "positions")
+        dashboard.trackPositionTickerSymbols(symbols, owner: "positions")
         defer {
-          if liveQuotes.end(session) { dashboard.trackPositionTickerSymbols([]) }
+          if liveQuotes.end(session) { dashboard.trackPositionTickerSymbols([], owner: "positions") }
         }
         guard !symbols.isEmpty else { return }
         for await event in container.realtimeClient.events(bufferingPolicy: .bufferingNewest(256)) {
@@ -787,7 +795,7 @@ struct USDTPositionsView: View {
       }
       .webModal(isPresented: $closeAllConfirm) {
         WebModal(title: "全部平仓") {
-          (Text("当前共 \(model.items.count) 笔持仓，预估总盈亏 ")
+          (Text("当前共 \(rows.count) 笔持仓，预估总盈亏 ")
             + Text(totalPnlText + " USDT").foregroundColor(
               totalPnlColor) + Text("，确认全部平仓？"))
             .foregroundStyle(WebTheme.secondary).font(.system(size: 16))
@@ -801,12 +809,14 @@ struct USDTPositionsView: View {
           }
         }
       }
-      .webModal(item: $operation, motion: .fade) { operation in
+      .webModal(item: $operation,
+        motion: operation?.action == "strategy" && operation?.position.value("strategy_status") != "1" ? .slide : .fade
+      ) { operation in
         USDTPositionControls(position: operation.position, action: operation.action) {
-          notice = $0
-          Task { await reload() }
+          completePositionOperation($0)
         }.presentationBackground(.clear)
       }
+      .onChange(of: store.scope) { _, _ in operation = nil }
       .navigationDestination(isPresented: $chart) {
           MarketChartView(
             market: MarketSnapshot(
@@ -853,7 +863,7 @@ struct USDTPositionsView: View {
     let scope = store.scope
     let storageKey = closeQueueKey
     if closeQueue.isEmpty {
-      closeQueue = model.items.compactMap { row in
+      closeQueue = rows.compactMap { row in
         guard let id = row["id"], id != .null else { return nil }
         return WebCloseTarget(positionID: id, key: UUID().uuidString)
       }
@@ -902,10 +912,11 @@ struct USDTPositionsView: View {
       model.reset()
       return
     }
-    let path =
-      segment == "positions"
-      ? "/v1/position/list"
-      : segment == "limits" ? "/v1/trade/limit-order/list" : "/v1/position/history"
+    if segment == "positions" {
+      await store.refreshPositions()
+      return
+    }
+    let path = segment == "limits" ? "/v1/trade/limit-order/list" : "/v1/position/history"
     await model.load(
       store, path: path,
       query: [
@@ -922,7 +933,11 @@ struct USDTPositionsView: View {
           .background(
             row.value("side") == "0" ? WebTheme.success : WebTheme.danger,
             in: RoundedRectangle(cornerRadius: 4))
-        Text(row.value("symbol")).font(.system(size: 16, weight: .medium))
+        Button { openChart(row, valuation: valuation) } label: {
+          Text(row.value("symbol")).font(.system(size: 16, weight: .medium))
+            .foregroundStyle(WebTheme.text).frame(minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel(row.value("symbol") + " K线图")
+          .accessibilityIdentifier("position.symbol." + row.value("id"))
         if row.value("position_origin") == "exchange_external" { WebBadge(text: "手动仓") }
         Text("x\(row.value("leverage"))").font(.system(size: 14)).foregroundStyle(WebTheme.muted)
         Text("止损\(DisplayNumber.text(row.value("stop_loss_amount")))U").font(.system(size: 12)).foregroundStyle(
@@ -953,15 +968,17 @@ struct USDTPositionsView: View {
         }
         inline(
           "市价止损：", row["market_stop_set"]?.flag == true ? DisplayNumber.text(row.value("market_stop_price")) : "未设置")
-        HStack {
+        HStack(spacing: 6) {
           inline(
             "市价止盈：",
             row["manual_take_profit_set"]?.flag == true
-              ? DisplayNumber.text(row.value("manual_take_profit_price")) : "未设置")
+              ? DisplayNumber.text(row.value("manual_take_profit_price")) : "未设置",
+            expands: false)
           Button("设置") { show("takeProfit", row) }.font(.system(size: 12)).foregroundStyle(
             WebTheme.brand
           ).padding(.horizontal, 8).padding(.vertical, 2).background(
             WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+          Spacer(minLength: 0)
         }
         HStack(spacing: 4) {
           Text("手续费：").foregroundStyle(WebTheme.muted)
@@ -1019,11 +1036,11 @@ struct USDTPositionsView: View {
       }
     }
   }
-  private func inline(_ title: String, _ value: String, color: Color? = nil) -> some View {
+  private func inline(_ title: String, _ value: String, color: Color? = nil, expands: Bool = true) -> some View {
     (Text(title).foregroundColor(WebTheme.muted)
       + Text(value).fontWeight(.medium).foregroundColor(color ?? WebTheme.text)).font(
         .system(size: 14)
-      ).frame(maxWidth: .infinity, alignment: .leading)
+      ).frame(maxWidth: expands ? .infinity : nil, alignment: .leading)
   }
   private func liveValuation(_ row: JSONValue) -> PositionLiveValuation? {
     PositionLiveValuation(row: row, quote: liveQuotes.quotes[row.value("symbol").uppercased()])
@@ -1039,6 +1056,11 @@ struct USDTPositionsView: View {
   }
   private func show(_ name: String, _ row: JSONValue) {
     operation = WebPositionOperation(position: row, action: name)
+  }
+  private func completePositionOperation(_ message: String) {
+    notice = message
+    operation = nil
+    Task { await reload() }
   }
   private func historyCard(_ row: JSONValue) -> some View {
     let external = row.value("position_origin") == "exchange_external"
@@ -1258,6 +1280,7 @@ private struct USDTPositionControls: View {
   @State private var notice = ""
   @State private var pendingAction = ""
   @State private var pendingPayload: [String: JSONValue] = [:]
+  @State private var strategyScope = ""
   @State private var cancellingStrategy = false
   @State private var logs: JSONValue = .null
   private var running: Bool { position.value("strategy_status") == "1" }
@@ -1270,8 +1293,7 @@ private struct USDTPositionControls: View {
     Group {
       if action == "strategy" && !running {
         WebStrategyPicker(
-          selection: $strategyID, enabled: .constant(true), autoOnly: true, busy: busy,
-          notice: notice
+          selection: $strategyID, busy: busy, pending: pending, notice: notice
         ) {
           execute("strategy-rebind", extra: ["strategy_id": .string(strategyID)])
         }
@@ -1394,6 +1416,7 @@ private struct USDTPositionControls: View {
         }
       }
     }.task {
+      strategyScope = store.scope
       price =
         position["manual_take_profit_set"]?.flag == true
         ? position.value("manual_take_profit_price") : ""
@@ -1417,6 +1440,12 @@ private struct USDTPositionControls: View {
   }
   private func execute(_ action: String, extra: [String: JSONValue] = [:]) {
     guard !busy else { return }
+    let scope = store.scope
+    if action == "strategy-rebind" {
+      guard scope == strategyScope,
+        pending || store.strategies.contains(where: { $0.value("id", fallback: "") == strategyID && !strategyID.isEmpty })
+      else { return }
+    }
     var payload = extra
     payload["position_id"] = position["id"] ?? .null
     if !pending {
@@ -1427,12 +1456,13 @@ private struct USDTPositionControls: View {
     Task {
       defer { busy = false }
       do {
+        guard scope == store.scope, !Task.isCancelled else { return }
         pending = true
         let result = try await store.command(pendingAction, payload: pendingPayload, key: key)
+        guard scope == store.scope else { return }
         let message = store.commandMessage(result)
         if result.value("status") == "SUCCEEDED" {
           completed(message)
-          dismiss()
         } else {
           notice = message
           if result.value("status") == "FAILED" {
@@ -1440,7 +1470,11 @@ private struct USDTPositionControls: View {
             pending = false
           }
         }
-      } catch { notice = error.localizedDescription }
+      } catch {
+        guard scope == store.scope, !Task.isCancelled else { return }
+        let error = APIError.map(error)
+        if error.shouldPresent { notice = error.userMessage }
+      }
     }
   }
   private func cancelTakeProfit() {
@@ -1452,7 +1486,6 @@ private struct USDTPositionControls: View {
         _ = try await store.send(
           "/v1/position/take-profit", ["position_id": position["id"] ?? .null], method: .delete)
         completed("已取消手动止盈")
-        dismiss()
       } catch { notice = error.localizedDescription }
     }
   }

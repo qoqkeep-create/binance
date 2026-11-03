@@ -29,43 +29,45 @@ struct FloatingPosition: Identifiable, Equatable {
   let isShort: Bool
   let price: Decimal?
   let profit: Decimal?
+  let quoteTime: Date?
 
-  init?(_ row: JSONValue) {
+  init?(_ row: JSONValue, quote: PositionMarketQuote? = nil) {
     let symbol = row.value("symbol", fallback: "").trimmingCharacters(in: .whitespacesAndNewlines)
     guard !symbol.isEmpty else { return nil }
     self.symbol = symbol
     isShort = row.value("side") == "1"
     id = row.value("id", fallback: symbol + (isShort ? ":short" : ":long"))
-    price = Self.decimal(row["current_price"]).flatMap { $0 > 0 ? $0 : nil }
-    profit = Self.decimal(row["pnl"])
+    let valuation = PositionLiveValuation(row: row, quote: quote)
+    price = valuation?.price
+    profit = valuation?.profit
+    quoteTime = quote.map { Date(timeIntervalSince1970: Double($0.eventTime) / 1_000) }
   }
 
   var priceText: String { price.map { DisplayNumber.text($0) } ?? "--" }
   var profitText: String {
     profit.map { DisplayNumber.text($0, signed: true) + " U" } ?? "--"
   }
-
-  private static func decimal(_ value: JSONValue?) -> Decimal? {
-    guard let number = value?.decimal, !number.isNaN else { return nil }
-    return number
-  }
-
 }
 
-/// Owns only read-only snapshots. A reset invalidates in-flight responses, including failures.
+/// One read-only position snapshot is shared by the positions page and both floating presentations.
 @MainActor
 final class FloatingPositionsModel: ObservableObject {
-  @Published private(set) var positions: [FloatingPosition] = []
+  @Published private(set) var rows: [JSONValue] = []
+  @Published private(set) var loading = false
   @Published private(set) var scope = ""
   @Published private(set) var hasLoaded = false
   @Published private(set) var failed = false
   @Published private(set) var updatedAt: Date?
   private var requestID: UUID?
+  private var refreshTask: Task<Void, Never>?
 
   func reset(scope: String) {
+    refreshTask?.cancel()
+    refreshTask = nil
     requestID = nil
     self.scope = scope
-    positions = []
+    rows = []
+    loading = false
     hasLoaded = false
     failed = false
     updatedAt = nil
@@ -73,17 +75,33 @@ final class FloatingPositionsModel: ObservableObject {
 
   func refresh(_ store: USDTStore) async {
     let scope = store.scope
-    guard self.scope == scope, requestID == nil else { return }
+    guard self.scope == scope else { return }
+    if let refreshTask { await refreshTask.value; return }
     let id = UUID()
     requestID = id
-    defer { if requestID == id { requestID = nil } }
+    loading = true
+    // This read belongs to the shared snapshot, not to the first view that requested it.
+    // Cancelling an overlay/page task must not cancel another consumer's pending read.
+    let task = Task { [weak self] in
+      guard let self else { return }
+      await self.read(store, scope: scope, requestID: id)
+    }
+    refreshTask = task
+    await task.value
+  }
+
+  private func read(_ store: USDTStore, scope: String, requestID id: UUID) async {
+    guard self.scope == scope, store.scope == scope, requestID == id else { return }
+    defer {
+      if requestID == id { requestID = nil; refreshTask = nil; loading = false }
+    }
     do {
       let response = try await store.get("/v1/position/list")
       guard case .array = response else { throw APIError.invalidResponse }
       guard !Task.isCancelled, self.scope == scope, store.scope == scope, requestID == id else {
         return
       }
-      positions = response.rows.compactMap(FloatingPosition.init)
+      rows = response.rows
       hasLoaded = true
       failed = false
       updatedAt = Date()
@@ -91,11 +109,10 @@ final class FloatingPositionsModel: ObservableObject {
       guard !Task.isCancelled, self.scope == scope, store.scope == scope, requestID == id else {
         return
       }
-      // Never present an old price as current after an unsuccessful update.
-      positions = []
+      // A failed read does not mean a position closed. Keep the shared last-known rows.
+      // PiP independently marks a snapshot stale rather than presenting it as a fresh update.
       hasLoaded = true
       failed = true
-      updatedAt = nil
     }
   }
 }
@@ -126,6 +143,8 @@ enum FloatingPanelPlacement {
 
 private struct FloatingPositionsOverlay: ViewModifier {
   @EnvironmentObject private var store: USDTStore
+  @EnvironmentObject private var container: AppContainer
+  @EnvironmentObject private var dashboard: DashboardViewModel
   @Environment(\.scenePhase) private var scenePhase
   @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
   private var enabled = false
@@ -133,7 +152,7 @@ private struct FloatingPositionsOverlay: ViewModifier {
   private var x = 1.0
   @AppStorage("integrated.floatingPositions.y", store: FloatingPositionsPreferences.defaults)
   private var y = 0.22
-  @StateObject private var model = FloatingPositionsModel()
+  private var model: FloatingPositionsModel { store.positionSnapshots }
   @StateObject private var pip = FloatingPositionsPiP()
   @State private var selectedID: String?
   @GestureState private var translation = CGSize.zero
@@ -144,7 +163,17 @@ private struct FloatingPositionsOverlay: ViewModifier {
   private var activation: FloatingPiPActivation {
     .requested(enabled: enabled, bound: store.isBound, inBackground: scenePhase == .background)
   }
-  private var positions: [FloatingPosition] { store.isBound && model.scope == store.scope ? model.positions : [] }
+  private var positions: [FloatingPosition] {
+    guard store.isBound, model.scope == store.scope else { return [] }
+    return model.rows.compactMap { row in
+      FloatingPosition(row, quote: store.positionQuotes.quotes[row.value("symbol").uppercased()])
+    }
+  }
+  private var tickerSymbols: [String] {
+    guard refreshing, model.scope == store.scope else { return [] }
+    return Array(Set(model.rows.map { $0.value("symbol", fallback: "").uppercased() }
+      .filter { !$0.isEmpty })).sorted()
+  }
   private var index: Int { positions.firstIndex { $0.id == selectedID } ?? 0 }
   private var selected: FloatingPosition? { positions.isEmpty ? nil : positions[index] }
   private var snapshot: FloatingPiPSnapshot {
@@ -184,16 +213,28 @@ private struct FloatingPositionsOverlay: ViewModifier {
       }
     }
     .task(id: "\(context):\(refreshing)") {
-      if model.scope != context { model.reset(scope: context) }
       guard refreshing else { return }
       while !Task.isCancelled {
-        await model.refresh(store)
+        await store.refreshPositions()
         do { try await Task.sleep(for: .seconds(3)) } catch { return }
+      }
+    }
+    .task(id: "floating-quotes:\(store.scope):\(tickerSymbols.joined(separator: ","))") {
+      let symbols = tickerSymbols
+      let session = store.positionQuotes.begin(scope: store.scope, symbols: symbols, owner: "floating")
+      dashboard.trackPositionTickerSymbols(symbols, owner: "floating")
+      defer {
+        if store.positionQuotes.end(session) { dashboard.trackPositionTickerSymbols([], owner: "floating") }
+      }
+      guard !symbols.isEmpty else { return }
+      for await event in container.realtimeClient.events(bufferingPolicy: .bufferingNewest(256)) {
+        guard !Task.isCancelled else { break }
+        if container.realtimeClient.state == .connected { store.positionQuotes.receive(event, session: session) }
       }
     }
     .onChange(of: store.liveRevision) { _, _ in
       guard refreshing else { return }
-      Task { await model.refresh(store) }
+      Task { await store.refreshPositions() }
     }
     .onChange(of: snapshot) { _, value in pip.update(value) }
     .onChange(of: activation, initial: true) { _, value in
@@ -204,7 +245,7 @@ private struct FloatingPositionsOverlay: ViewModifier {
       apply(activation)
     }
     .onAppear { pip.onSystemClose = { enabled = false }; pip.update(snapshot) }
-    .onDisappear { pip.onSystemClose = nil; model.reset(scope: ""); pip.stop() }
+    .onDisappear { pip.onSystemClose = nil; pip.stop() }
     .alert("跨 App 浮窗", isPresented: Binding(get: { pip.notice != nil }, set: { showing in
       if !showing { Task { @MainActor in pip.notice = nil } }
     })) {

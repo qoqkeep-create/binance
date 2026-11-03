@@ -11,11 +11,13 @@ struct FloatingPiPSnapshot: Equatable {
     let offset = cyclingSince.map { max(0, Int(now.timeIntervalSince($0) / 5)) } ?? 0
     let index = positions.isEmpty ? 0 : (max(0, selectedIndex) + offset) % positions.count
     let position = positions.isEmpty ? nil : positions[index]
-    let stale = updatedAt.map { now.timeIntervalSince($0) > 12 } ?? true
+    // A successful REST read must not renew an old or missing ticker quote.
+    let valuationTime = updatedAt.flatMap { rowTime in position?.quoteTime.map { min(rowTime, $0) } }
+    let stale = valuationTime.map { now.timeIntervalSince($0) > 12 } ?? true
     let available = !paused && !stale
     let formatter = DateFormatter()
     formatter.dateFormat = "HH:mm:ss"
-    let timestamp = updatedAt.map { formatter.string(from: $0) }
+    let timestamp = valuationTime.map { formatter.string(from: $0) }
     let footer: String
     if paused { footer = "已暂停 · 点击播放恢复" }
     else if !positions.isEmpty && stale { footer = "更新延迟 · " + (timestamp ?? "--") }
@@ -39,6 +41,62 @@ struct FloatingPiPPresentation: Equatable {
   let footer: String
 }
 
+/// Retains only the newest presentation while AVKit applies backpressure.
+@MainActor
+final class FloatingPiPFrameDelivery<Frame> {
+  private var pending: Frame?
+  private var requesting = false
+  private let isReady: () -> Bool
+  private let request: (@escaping @MainActor () -> Void) -> Void
+  private let stop: () -> Void
+  private let enqueue: (Frame) -> Void
+
+  init(isReady: @escaping () -> Bool,
+    request: @escaping (@escaping @MainActor () -> Void) -> Void,
+    stop: @escaping () -> Void, enqueue: @escaping (Frame) -> Void) {
+    self.isReady = isReady
+    self.request = request
+    self.stop = stop
+    self.enqueue = enqueue
+  }
+
+  func submit(_ frame: Frame) {
+    pending = frame
+    deliver()
+  }
+
+  func cancel() {
+    pending = nil
+    if requesting { stop(); requesting = false }
+  }
+
+  private func deliver() {
+    guard let frame = pending else { return }
+    guard isReady() else {
+      if !requesting {
+        requesting = true
+        request { [weak self] in self?.deliver() }
+      }
+      return
+    }
+    pending = nil
+    if requesting { stop(); requesting = false }
+    enqueue(frame)
+  }
+}
+
+enum FloatingPiPRenderSchedule {
+  @MainActor
+  static func timer(interval: TimeInterval = 1, tick: @escaping @MainActor () -> Void) -> Timer {
+    let timer = Timer(timeInterval: interval, repeats: true) { _ in
+      MainActor.assumeIsolated { tick() }
+    }
+    // UI tracking must not pause carousel/staleness updates or a pending automatic PiP start.
+    RunLoop.main.add(timer, forMode: .common)
+    return timer
+  }
+}
+
 /// The system owns the external window; no private overlay or silent audio is used.
 @MainActor
 final class FloatingPositionsPiP: NSObject, ObservableObject,
@@ -54,6 +112,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   private weak var sourceView: FloatingPiPSourceView?
   private var possibility: NSKeyValueObservation?
   private var ticker: Timer?
+  private var frameDelivery: FloatingPiPFrameDelivery<FloatingPiPPresentation>?
   private var startDeadline: Task<Void, Never>?
   private var startIssued = false
   private var restoringInline = false
@@ -65,6 +124,19 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
 
   func attach(_ view: FloatingPiPSourceView) {
     sourceView = view
+    frameDelivery?.cancel()
+    let layer = view.displayLayer
+    frameDelivery = FloatingPiPFrameDelivery(
+      isReady: {
+        if layer.status == .failed || layer.requiresFlushToResumeDecoding { layer.flush() }
+        return layer.isReadyForMoreMediaData
+      },
+      request: { ready in
+        layer.requestMediaDataWhenReady(on: .main) { MainActor.assumeIsolated { ready() } }
+      }, stop: { layer.stopRequestingMediaData() },
+      enqueue: { content in
+        if let sample = FloatingPiPFrameRenderer.sample(content) { layer.enqueue(sample) }
+      })
     guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
     let source = AVPictureInPictureController.ContentSource(
       sampleBufferDisplayLayer: view.displayLayer, playbackDelegate: self)
@@ -159,18 +231,15 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
 
   private func startTicker() {
     ticker?.invalidate()
-    ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated { self?.render(); self?.startWhenReady() }
+    ticker = FloatingPiPRenderSchedule.timer { [weak self] in
+      self?.render(); self?.startWhenReady()
     }
   }
 
   private func render() {
-    // Clear the external frame even after SwiftUI has detached its source view.
-    guard let layer = sourceView?.displayLayer ?? controller?.contentSource?.sampleBufferDisplayLayer else { return }
+    // The delivery retains its layer so a detached inline view can still clear the external frame.
     let content = snapshot.presentation(at: Date(), cyclingSince: isActive ? startedAt : nil, paused: isPaused)
-    guard let sample = FloatingPiPFrameRenderer.sample(content) else { return }
-    if layer.status == .failed || layer.requiresFlushToResumeDecoding { layer.flush() }
-    if layer.isReadyForMoreMediaData { layer.enqueue(sample) }
+    frameDelivery?.submit(content)
   }
 
   private func deactivateAudio() {

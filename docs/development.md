@@ -2,6 +2,21 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 持仓交互、弹窗与浮窗同步回归（2026-11-03）
+
+本轮将持仓“添加自动止盈”改为共用 60% 高度的 WebSheet，仅列自动策略；选择后二次确认，成功关闭，失败保留，未知结果锁定原策略／幂等键并查询。开仓及设置入口原有策略选择行为保留。交易对名称复用 K 线导航，市价止盈设置紧随文字；顶部三页签仅保留单层文字缩放和一条黄色短线移动。普通 Bool／item 弹窗默认原位淡入淡出，蒙层共用动画进度；大面板显式上滑，首次有效布局前隐藏，避免零高度误判与系统 fullScreenCover 上滑。页面规则见 [界面](ios-web-parity.md#持仓卡片操作区2026-11-03)。
+
+浮窗问题先用实际类型复现：均价 100、剩余 2、ticker 110、REST pnl 19.5 时，持仓卡片为 20，而旧浮窗为 19.5。现在 Store 共用只读仓位事实和 ticker 估值，报价订阅按 owner 合并；共享读取由独立 Task 持有，消费者等待不会因另一页面退出被取消。回归还先复现消费者取消丢弃首次响应，再验证修复。PiP 即时报送并在背压时只保留最新帧，公共运行循环计时器负责轮播／过期；当前币种的报价与成功仓位事实均须有效，其他币种或新 REST 不续期旧报价。live 首帧显式保留服务端 upl 投影，与后台口径一致；详见 [浮窗](ios-floating-positions.md#数据和生命周期) 和 [行情](market-data.md#持仓市价与浮盈推送限流边界2026-11-02)。
+
+本地隔离结果：
+
+- `python3 frontend/ios-app/scripts/test_position_strategy_picker.py .integration-runtime/PositionStrategyPicker/HostTests`：实际 picker／控制器和既有策略确认逻辑共 17 项（新增 10＋既有 7）通过，测试 0.048 秒。覆盖过滤手动、确认取消／失败／成功、scope 变化、重复点击及未知结果只重查原命令；网络为内存替身。
+- `python3 frontend/ios-app/scripts/test_floating_positions.py .integration-runtime/FloatingValuation/SharedHost`：浮窗 21、ticker 估值 12、live 4，合计 37 项通过，测试 0.055 秒；包含共享读取显式 join 门闩、取消归属、多 owner／session、跨账户／乱序、REST 失败不续期、多币种过期及帧背压。直接编译实际生产类型和仓库测试，不启动 AVKit／ActivityKit 或真实网络。
+- `NetworkLatencyAndModalTests` 的三项动画状态测试，使用实际 `WebModalMotion`／`WebModalTransitionState` 的 host 包通过；旧实现先复现两个断言失败，再验证淡出与蒙层同进度、未知布局隐藏及大面板位移。
+- 最终 `TradeTool Release` generic iOS 无签名 `build` 和 `TradeTool` generic iOS Simulator `build-for-testing` 均通过，包含主 App／Widget 与测试目标。首轮编译发现新增报价参数后旧 `FloatingPosition.init` 引用失配，修正 live 首帧独立投影后重建通过；最终构建所用 Swift 文件 SHA 与交付源码一致。
+
+证据分别在忽略目录 `.integration-runtime/PositionStrategyPicker.log`、`.integration-runtime/FloatingValuation/`、`.integration-runtime/ModalFade/` 和 `.integration-runtime/PositionPolish/{release.log,unit-compile.log}`。57 项为本轮不同 host 用例合计；没有启动模拟器、执行 iOS UI／实机测试、真实交易／资金操作或通知发送。系统弹窗和页签动态观感、PiP 跨 App 长时间刷新需新签名包验收。本轮只交付 iOS 与对应文档，不追加服务端部署或手动 TestFlight 上传；源码提交／推送见 [变更记录](changes.md)。
+
 2026-11-01 用户后续授权整批提交和推送，源码交付范围见 [最新变更记录](changes.md#2026-11-01整批源码提交与-github-交付)。下文“本地／未提交”描述各批验证结束当时的状态；本次交付没有重复测试、部署或手动上传 TestFlight，真实 iPhone 性能和云端分发仍按各主题待验项处理。
 
 2026-11-01 的绑定与延迟界面任务中，用户当时要求停止进一步测试、先部署后自行验收。“我的”绑定长按钮、点击测延迟、三点等待动画和 2 秒单在途采样已完成，`Debug-Seoul` 模拟器目标仅执行 `build`，编译通过（`.integration-runtime/profile-latency-build.log`）；未运行修改后的单测、UI 或速度回归。既有断言已同步新状态并补充慢在途样本及点击重测场景，不能据此称为本轮测试通过。服务端仅执行发布必要的迁移、容器健康、HTTPS 与一次鉴权 WSS 心跳检查，未作交易操作和完整性能验收。新客户端与 WSS 数据库连接清理改动留在本地未提交、未推送；后者已包含在本次 SSH 部署中，版本及备份见 [运维](operations.md)。

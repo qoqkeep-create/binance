@@ -210,25 +210,40 @@ struct WebCheckbox: View {
 struct WebTabs: View {
   let tabs: [(String, String)]
   @Binding var selection: String
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   var body: some View {
-    HStack(spacing: 0) {
-      ForEach(tabs, id: \.0) { key, title in
-        Button { selection = key } label: {
-          Text(title).font(.system(size: selection == key ? 20 : 15,
-            weight: selection == key ? .bold : .regular))
-            .lineLimit(1).minimumScaleFactor(0.95)
-            .foregroundStyle(selection == key ? WebTheme.text : WebTheme.secondary)
-            .overlay(alignment: .bottom) {
-              RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(selection == key ? BinanceTheme.accent : Color.clear)
-                .frame(height: 4).padding(.horizontal, 4).offset(y: 8)
-            }
-            .frame(maxWidth: .infinity).frame(height: 44)
-            .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityIdentifier("positions.tabs." + key)
-          .accessibilityAddTraits(selection == key ? .isSelected : [])
+    GeometryReader { geometry in
+      let slotWidth = geometry.size.width / CGFloat(max(1, tabs.count))
+      let selectedIndex = tabs.firstIndex { $0.0 == selection } ?? 0
+      let title = tabs.indices.contains(selectedIndex) ? tabs[selectedIndex].1 : ""
+      let titleWidth = (title as NSString).size(withAttributes: [
+        .font: UIFont.boldSystemFont(ofSize: 20)
+      ]).width
+      let lineWidth = max(0, min(titleWidth - 8, slotWidth - 12))
+      HStack(spacing: 0) {
+        ForEach(tabs, id: \.0) { key, title in
+          let selected = selection == key
+          Button { selection = key } label: {
+            Text(title).font(.system(size: 20, weight: selected ? .bold : .regular))
+              .lineLimit(1).minimumScaleFactor(0.95)
+              .foregroundStyle(selected ? WebTheme.text : WebTheme.secondary)
+              // Keep one glyph layer: only its scale animates, never cross-fade fonts.
+              .transaction { $0.animation = nil }
+              .scaleEffect(selected ? 1 : 0.75)
+              .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selected)
+              .frame(maxWidth: .infinity).frame(height: 44)
+              .contentShape(Rectangle())
+          }.buttonStyle(.plain).accessibilityIdentifier("positions.tabs." + key)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+        }
       }
+      RoundedRectangle(cornerRadius: 2, style: .continuous)
+        .fill(BinanceTheme.accent).frame(width: lineWidth, height: 4)
+        .offset(x: slotWidth * (CGFloat(selectedIndex) + 0.5) - lineWidth / 2, y: 38)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selection)
+        .allowsHitTesting(false).accessibilityHidden(true)
     }
+      .frame(height: 44)
       .accessibilityElement(children: .contain).accessibilityIdentifier("positions.tabs")
   }
 }
@@ -403,7 +418,7 @@ extension View {
     modifier(WebPageModifier(title: title, refresh: refresh, backAction: backAction))
   }
   func webModal<Content: View>(
-    isPresented: Binding<Bool>, motion: WebModalMotion? = nil, onDismiss: (() -> Void)? = nil,
+    isPresented: Binding<Bool>, motion: WebModalMotion? = .fade, onDismiss: (() -> Void)? = nil,
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     // Observe selected values in the presenting body before the first presentation.
@@ -854,9 +869,29 @@ enum WebModalMotion: Equatable {
   static func resolve(cardHeight: CGFloat, containerHeight: CGFloat, reduceMotion: Bool,
     preferred: Self? = nil) -> Self {
     if reduceMotion { return .fade }
-    return preferred ?? (cardHeight >= containerHeight * 0.5 ? .slide : .fade)
+    if let preferred { return preferred }
+    guard cardHeight.isFinite, containerHeight.isFinite,
+          cardHeight > 0, containerHeight > 0 else { return .fade }
+    return cardHeight >= containerHeight * 0.5 ? .slide : .fade
   }
   var openingDuration: Double { self == .slide ? 0.18 : 0.16 }
+}
+struct WebModalTransitionState: Equatable {
+  let phase: CGFloat
+  let cardOffset: CGFloat
+  let cardOpacity: Double
+
+  init(motion: WebModalMotion?, progress: CGFloat, drag: CGFloat, containerHeight: CGFloat) {
+    guard let motion, containerHeight.isFinite, containerHeight > 0 else {
+      phase = 0; cardOffset = 0; cardOpacity = 0
+      return
+    }
+    let progress = max(0, min(1, progress))
+    let drag = max(0, drag)
+    phase = progress * max(0, 1 - drag / containerHeight)
+    cardOffset = motion == .slide ? (1 - progress) * containerHeight + drag : 0
+    cardOpacity = motion == .slide ? 1 : Double(phase)
+  }
 }
 private struct WebModalCardFrameKey: PreferenceKey {
   static var defaultValue: CGRect = .zero
@@ -897,7 +932,7 @@ extension View {
   func webModalDismissDisabled(_ disabled: Bool) -> some View {
     preference(key: WebModalBlockedKey.self, value: disabled)
   }
-  func webModal<Item: Identifiable, Content: View>(item: Binding<Item?>, motion: WebModalMotion? = nil,
+  func webModal<Item: Identifiable, Content: View>(item: Binding<Item?>, motion: WebModalMotion? = .fade,
       @ViewBuilder content: @escaping (Item) -> Content) -> some View {
     modifier(WebItemModalPresenter(item: item, preferredMotion: motion, builder: content))
   }
@@ -914,6 +949,10 @@ private struct WebModalPresenter<Modal: View>: ViewModifier {
         var transaction = Transaction(); transaction.disablesAnimations = true
         withTransaction(transaction) { cover = false }
       }.presentationBackground(.clear)
+    }.transaction(value: cover) { transaction in
+      // Suppress the system cover's vertical transition for both binding and
+      // item presenters. The card/backdrop animate their own progress below.
+      transaction.disablesAnimations = true
     }.onChange(of: isPresented, initial: true) { _, shown in
       if shown {
         var transaction = Transaction(); transaction.disablesAnimations = true
@@ -939,13 +978,15 @@ private struct WebModalStage<Modal: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   var body: some View {
     GeometryReader { geometry in
+      let transition = WebModalTransitionState(motion: motion, progress: progress,
+        drag: drag, containerHeight: geometry.size.height)
       modal
         .environment(\.webModalBase, underlying)
-        .environment(\.webModalUnderlying, max(underlying, overlayOpacity * Double(progress * max(0, 1 - drag / geometry.size.height))))
+        .environment(\.webModalUnderlying, max(underlying, overlayOpacity * Double(transition.phase)))
         .environment(\.webModalCloseAction, { if !blocked { isPresented = false } })
-        .environment(\.webModalPhase, progress * max(0, 1 - drag / geometry.size.height))
-        .environment(\.webModalOffset, motion == .slide ? (1 - progress) * geometry.size.height + drag : 0)
-        .environment(\.webModalOpacity, motion == .slide ? 1 : Double(progress * max(0, 1 - drag / geometry.size.height)))
+        .environment(\.webModalPhase, transition.phase)
+        .environment(\.webModalOffset, transition.cardOffset)
+        .environment(\.webModalOpacity, transition.cardOpacity)
         .environment(\.webModalDrag, { amount, ended in
           guard !blocked, !closing else { return }
           if ended {
@@ -956,7 +997,7 @@ private struct WebModalStage<Modal: View>: View {
         .onPreferenceChange(WebModalBlockedKey.self) { blocked = $0 }
         .onPreferenceChange(WebModalDimmingPreferenceKey.self) { overlayOpacity = $0 }
         .onPreferenceChange(WebModalCardFrameKey.self) { frame in
-          guard motion == nil, frame.height > 0 else { return }
+          guard motion == nil, frame.height > 0, geometry.size.height > 0 else { return }
           let selected = WebModalMotion.resolve(cardHeight: frame.height,
             containerHeight: geometry.size.height, reduceMotion: reduceMotion, preferred: preferredMotion)
           motion = selected
@@ -1015,10 +1056,10 @@ struct WebSheet<Content: View>: View {
 
 extension View {
   func webSheet<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
-    webModal(isPresented: isPresented) { WebSheet(content: content) }
+    webModal(isPresented: isPresented, motion: .slide) { WebSheet(content: content) }
   }
   func webSheet<Item: Identifiable, Content: View>(item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
-    webModal(item: item) { selected in WebSheet { content(selected) } }
+    webModal(item: item, motion: .slide) { selected in WebSheet { content(selected) } }
   }
 }
 

@@ -540,91 +540,137 @@ struct WebStrategyPicker: View {
   @EnvironmentObject private var store: USDTStore
   @Environment(\.webDismiss) private var dismiss
   @Binding var selection: String
-  @Binding var enabled: Bool
-  var autoOnly = false
   var busy = false
+  var pending = false
   var notice = ""
   let confirmed: () -> Void
   @State private var manage = false
+  @State private var confirmingSelection = false
+  @State private var pendingSelection = ""
+  @State private var selectionScope = ""
+  @State private var loading = false
+  @State private var loadNotice = ""
+  private var automaticStrategies: [JSONValue] {
+    store.strategies.filter { !$0.value("id", fallback: "").isEmpty }
+  }
+  private var pendingName: String {
+    automaticStrategies.first { $0.value("id") == pendingSelection }?.value("name") ?? ""
+  }
   var body: some View {
-    GeometryReader { geometry in
-      ZStack(alignment: .bottom) {
-        WebModalBackdrop()
-        VStack(spacing: 0) {
-          HStack {
-            Text("止盈止损策略").font(.system(size: 18, weight: .bold))
-            Spacer()
-            Button {
-              dismiss()
-            } label: {
-              WebIcon("x", size: 20).padding(4)
-            }.accessibilityLabel("关闭")
-          }.padding(16).background(WebTheme.surface)
-          Rectangle().fill(WebTheme.border).frame(height: 1)
-          ScrollView {
-            VStack(spacing: 16) {
-              if !autoOnly {
-                HStack {
-                  Text("手动止盈").fontWeight(.medium)
-                  Spacer()
-                  WebRadio(selected: !enabled, title: "") { enabled = false }
-                }.padding(.bottom, 12)
-                Rectangle().fill(WebTheme.border).frame(height: 1)
-                HStack {
-                  Text("自动止盈").fontWeight(.medium)
-                  Spacer()
-                  WebRadio(selected: enabled, title: "") { enabled = true }
-                }
-              }
-              if store.strategies.isEmpty {
-                Text("暂无策略").font(.system(size: 14)).foregroundStyle(WebTheme.muted).frame(
-                  maxWidth: .infinity, alignment: .leading
-                ).padding(16).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-              }
-              ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
-                Button {
-                  selection = strategy.value("id")
-                  enabled = true
-                } label: {
-                  VStack(alignment: .leading, spacing: 12) {
+    WebSheet(heightFraction: 0.6, protectsBottomSafeArea: true, panelBackground: WebTheme.page) {
+      VStack(spacing: 0) {
+        HStack {
+          Text("自动止盈策略").font(.system(size: 18, weight: .semibold))
+          Spacer()
+          Button { dismiss() } label: {
+            WebIcon("x", size: 20).frame(width: 44, height: 44).contentShape(Rectangle())
+          }.buttonStyle(.plain).disabled(busy).accessibilityLabel("关闭")
+        }.padding(.leading, 16).padding(.trailing, 6)
+        Rectangle().fill(WebTheme.border).frame(height: 1)
+        ScrollView {
+          VStack(spacing: 12) {
+            if automaticStrategies.isEmpty {
+              Text(loading ? "加载中…" : "暂无自动止盈策略")
+                .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
+                .frame(maxWidth: .infinity).padding(.vertical, 24)
+            }
+            ForEach(Array(automaticStrategies.enumerated()), id: \.offset) { _, strategy in
+              Button { chooseStrategy(strategy) } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                  HStack(spacing: 8) {
                     Text(strategy.value("name")).font(.system(size: 16, weight: .medium))
-                    VStack(alignment: .leading, spacing: 6) {
-                      ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) {
-                        index, level in
-                        Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
-                          .foregroundStyle(WebTheme.secondary)
-                      }
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                    if selection == strategy.value("id") {
+                      Image(systemName: "checkmark").foregroundStyle(BinanceTheme.accent)
                     }
-                  }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(
-                    WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)
-                  ).overlay {
-                    RoundedRectangle(cornerRadius: 16).stroke(
-                      enabled && selection == strategy.value("id")
-                        ? WebTheme.brand : WebTheme.border, lineWidth: 1)
                   }
-                }.buttonStyle(.plain)
-              }
-              Button("添加/编辑策略") { manage = true }.font(.system(size: 16)).foregroundStyle(
-                Color(red: 74 / 255, green: 158 / 255, blue: 255 / 255)
-              ).frame(maxWidth: .infinity).padding(.vertical, 4)
-              USDTNotice(text: notice)
-            }.padding(16)
-          }.fixedSize(horizontal: false, vertical: true).frame(
-            maxHeight: geometry.size.height * 0.6
-          ).scrollIndicators(.hidden)
-          Button(busy ? "处理中..." : "确定", action: confirmed).buttonStyle(
-            WebButtonStyle(height: 52, radius: 14)
-          ).disabled(busy || ((enabled || autoOnly) && selection.isEmpty)).padding(.horizontal, 16)
-            .padding(.bottom, 24)
-        }.font(.system(size: 16)).foregroundStyle(WebTheme.text).background(
-          WebTheme.color(0xF8FAFC, 0x272F3A)
-        ).clipShape(UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)).frame(
-          maxWidth: 448
-        ).padding(.bottom, -geometry.safeAreaInsets.bottom).webModalCard()
+                  ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) { index, level in
+                    Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
+                      .foregroundStyle(WebTheme.secondary)
+                  }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                  .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                  .overlay {
+                    RoundedRectangle(cornerRadius: 14).stroke(
+                      selection == strategy.value("id") ? BinanceTheme.accent : WebTheme.border,
+                      lineWidth: selection == strategy.value("id") ? 2 : 1)
+                  }
+              }.buttonStyle(.plain).disabled(busy || pending)
+                .accessibilityIdentifier("position.strategy.row." + strategy.value("id"))
+            }
+            Button("添加/编辑策略") { manage = true }.font(.system(size: 14))
+              .foregroundStyle(WebTheme.brand).frame(maxWidth: .infinity, minHeight: 44)
+              .disabled(busy || pending)
+            USDTNotice(text: notice.isEmpty ? loadNotice : notice)
+          }.padding(16)
+        }.scrollIndicators(.hidden)
+        if busy || pending {
+          Button(busy ? "处理中…" : "查询设置结果") { queryPendingSelection() }
+            .buttonStyle(WebButtonStyle(height: 48, radius: 14)).disabled(busy)
+            .padding(16).accessibilityIdentifier("position.strategy.query")
+        }
       }
-    }.presentationBackground(.clear).buttonStyle(.plain).webModalDismissDisabled(busy)
+    }.foregroundStyle(WebTheme.text).webModalDismissDisabled(busy)
+      .accessibilityIdentifier("position.strategy.sheet")
+      .task(id: store.scope) { await reload() }
+      .onChange(of: store.scope) { _, _ in cancelSelection(); selection = "" }
+      .webModal(isPresented: $confirmingSelection, motion: .fade) {
+        WebModal(title: "确认选择") {
+          Text("确定为当前持仓添加“\(pendingName)”自动止盈策略吗？")
+            .foregroundStyle(WebTheme.secondary)
+          HStack(spacing: 12) {
+            Button("取消") { cancelSelection() }
+              .buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
+              .accessibilityIdentifier("position.strategy.cancel")
+            Button("确定") { confirmSelection() }.buttonStyle(WebButtonStyle(radius: 14))
+              .accessibilityIdentifier("position.strategy.confirm")
+          }
+        }
+      }
       .webSheet(isPresented: $manage) {
         NavigationStack { USDTStrategiesView(onClose: { manage = false }) }
       }
+  }
+  private func chooseStrategy(_ strategy: JSONValue) {
+    let id = strategy.value("id", fallback: "")
+    guard !busy, !pending, !id.isEmpty,
+      automaticStrategies.contains(where: { $0.value("id") == id }) else { return }
+    pendingSelection = id
+    selectionScope = store.scope
+    confirmingSelection = true
+  }
+  private func cancelSelection() {
+    confirmingSelection = false
+    pendingSelection = ""
+    selectionScope = ""
+  }
+  private func confirmSelection() {
+    guard !busy, !pending, confirmingSelection else { return }
+    let id = pendingSelection
+    let scope = selectionScope
+    cancelSelection()
+    guard scope == store.scope,
+      automaticStrategies.contains(where: { $0.value("id") == id }) else { return }
+    selection = id
+    confirmed()
+  }
+  private func queryPendingSelection() {
+    guard !busy, pending else { return }
+    confirmed()
+  }
+  private func reload() async {
+    let scope = store.scope
+    loading = true
+    loadNotice = ""
+    do {
+      try await store.reloadStrategies()
+      guard scope == store.scope, !Task.isCancelled else { return }
+      loading = false
+    } catch {
+      guard scope == store.scope, !Task.isCancelled else { return }
+      loading = false
+      let error = APIError.map(error)
+      if error.shouldPresent { loadNotice = error.userMessage }
+    }
   }
 }

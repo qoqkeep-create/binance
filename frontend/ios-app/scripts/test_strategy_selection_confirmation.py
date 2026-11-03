@@ -48,9 +48,16 @@ def generate(destination):
     (sources / "APIClient.swift").write_text(protocol)
     (sources / "APIRequest.swift").write_text(read("Core/Networking/APIRequest.swift"))
     (sources / "APIError.swift").write_text(read("Core/Networking/APIError.swift"))
+    realtime = read("Core/Networking/RealtimeClient.swift")
+    message = "struct RealtimeServerMessage:" + realtime.split("struct RealtimeServerMessage:", 1)[1]
+    message = message.split("struct RealtimeSubscriptionAcknowledgement:", 1)[0]
     (sources / "Boundaries.swift").write_text(
-        "import Foundation\nfinal class RequestDiagnostics {}\n"
-        "struct RealtimeServerMessage { let type: String; let channel: String? }\n")
+        "import Foundation\nfinal class RequestDiagnostics {}\n" + message)
+    snapshot = read("Features/USDT/FloatingPositionsView.swift").split(
+        "/// One read-only position snapshot", 1)[1].split("enum FloatingPanelPlacement", 1)[0]
+    (sources / "PositionSnapshots.swift").write_text(
+        "import Foundation\nimport Combine\n/// One read-only position snapshot" + snapshot)
+    (sources / "PositionLiveValuation.swift").write_text(read("Features/USDT/PositionLiveValuation.swift"))
     fixture = IOS / "scripts/fixtures/StrategySelectionConfirmationTests.swift"
     (tests / fixture.name).write_text(fixture.read_text())
     (destination / "Package.swift").write_text('''// swift-tools-version: 6.0
@@ -62,6 +69,7 @@ let package = Package(name: "StrategySelectionChecks", platforms: [.macOS(.v14)]
 ''')
     inputs = [APP / name for name in (
         "Features/USDT/USDTStrategyViews.swift", "Features/USDT/USDTStore.swift",
+        "Features/USDT/FloatingPositionsView.swift", "Features/USDT/PositionLiveValuation.swift",
         "Core/Networking/RealtimeClient.swift", "Core/Networking/APIClient.swift",
         "Core/Networking/APIRequest.swift", "Core/Networking/APIError.swift")]
     inputs.append(fixture)

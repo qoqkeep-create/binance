@@ -26,30 +26,36 @@ struct PositionLiveValuation: Equatable {
 @MainActor
 final class PositionLiveQuotes: ObservableObject {
   @Published private(set) var quotes: [String: PositionMarketQuote] = [:]
-  private var symbols: Set<String> = []
-  private var generation = UUID()
+  private struct Subscription {
+    let owner: String
+    let symbols: Set<String>
+  }
+  private var subscriptions: [UUID: Subscription] = [:]
+  private var owners: [String: UUID] = [:]
   private var scope: String?
 
-  func begin(scope: String, symbols: [String]) -> UUID {
-    if self.scope != scope { clear(); self.scope = scope }
-    generation = UUID()
-    self.symbols = Set(symbols.map { $0.uppercased() })
-    // An empty subscription pauses updates; it must not erase the visible snapshot.
-    if !self.symbols.isEmpty { quotes = quotes.filter { self.symbols.contains($0.key) } }
-    return generation
+  /// Each visible consumer owns its lifetime; leaving the positions page must not stop PiP quotes.
+  func begin(scope: String, symbols: [String], owner: String = "positions") -> UUID {
+    if self.scope != scope { reset(); self.scope = scope }
+    if let previous = owners[owner] { subscriptions.removeValue(forKey: previous) }
+    let session = UUID()
+    owners[owner] = session
+    subscriptions[session] = Subscription(owner: owner, symbols: Set(symbols.map { $0.uppercased() }))
+    return session
   }
 
   @discardableResult
   func end(_ session: UUID) -> Bool {
-    guard session == generation else { return false }
-    generation = UUID()
-    symbols = []
+    guard let subscription = subscriptions.removeValue(forKey: session),
+      owners[subscription.owner] == session else { return false }
+    owners.removeValue(forKey: subscription.owner)
+    // A paused consumer keeps the last quote for a seamless return to its page.
     return true
   }
 
   func reset() {
-    generation = UUID()
-    symbols = []
+    subscriptions = [:]
+    owners = [:]
     scope = nil
     clear()
   }
@@ -59,10 +65,10 @@ final class PositionLiveQuotes: ObservableObject {
   }
 
   func receive(_ message: RealtimeServerMessage, session: UUID, now: Date = .now) {
-    guard session == generation else { return }
+    guard let subscription = subscriptions[session] else { return }
     guard message.type == "event", message.channel == "market.ticker",
       let data = message.data,
-      let symbol = data["symbol"]?.text.uppercased(), symbols.contains(symbol),
+      let symbol = data["symbol"]?.text.uppercased(), subscription.symbols.contains(symbol),
       let price = data["lastPrice"]?.decimal, !price.isNaN, price > 0,
       let time = data["eventTime"].flatMap({ Int64($0.text) }), time > 0 else { return }
     let quote = PositionMarketQuote(price: price, eventTime: time)

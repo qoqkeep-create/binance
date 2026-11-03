@@ -8,12 +8,22 @@ enum PositionLiveIdentity {
       .map { String(format: "%02x", $0) }.joined()
   }
 
-  static func content(positions: [FloatingPosition], at date: Date) -> PositionLiveContentState {
-    PositionLiveContentState(positions: positions.prefix(4).map {
-      PositionLiveRow(id: $0.id, symbol: $0.symbol, isShort: $0.isShort, profit: $0.profitText)
-    }, totalCount: positions.count, updatedAt: Int(date.timeIntervalSince1970),
-      status: positions.isEmpty ? "暂无持仓" : "")
+  /// Live updates use the server's exchange upl projection, including the initial frame.
+  /// App/PiP ticker valuation is independent from the server-managed ActivityKit payload.
+  static func content(rows: [JSONValue], at date: Date) -> PositionLiveContentState {
+    let positions = rows.compactMap { row -> PositionLiveRow? in
+      let symbol = row.value("symbol", fallback: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !symbol.isEmpty else { return nil }
+      let isShort = row.value("side") == "1"
+      let id = row.value("id", fallback: symbol + (isShort ? ":short" : ":long"))
+      let pnl = row["pnl"]?.decimal.flatMap { $0.isNaN ? nil : $0 }
+      let profit = pnl.map { DisplayNumber.text($0, signed: true) + " U" } ?? "--"
+      return PositionLiveRow(id: id, symbol: symbol, isShort: isShort, profit: profit)
+    }
+    return PositionLiveContentState(positions: Array(positions.prefix(4)), totalCount: positions.count,
+      updatedAt: Int(date.timeIntervalSince1970), status: positions.isEmpty ? "暂无持仓" : "")
   }
+
 }
 
 /// ActivityKit owns the surface; the server independently refreshes it after app suspension.
@@ -132,7 +142,7 @@ final class PositionLiveActivityController: ObservableObject {
           return
         }
         let now = Date()
-        let state = PositionLiveIdentity.content(positions: response.rows.compactMap(FloatingPosition.init), at: now)
+        let state = PositionLiveIdentity.content(rows: response.rows, at: now)
         let current = try Activity.request(
           attributes: PositionLiveActivityAttributes(ownerKey: owner, tradingMode: store.mode,
             startedAt: now.timeIntervalSince1970),

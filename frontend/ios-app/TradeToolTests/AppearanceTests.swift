@@ -316,12 +316,52 @@ final class NetworkLatencyAndModalTests: XCTestCase {
   }
 
   func testSmallDialogsFadeAndLargePanelsSlideUnlessReducedMotionIsEnabled() {
+    XCTAssertEqual(WebModalMotion.resolve(cardHeight: 0, containerHeight: 0, reduceMotion: false), .fade)
+    XCTAssertEqual(WebModalMotion.resolve(cardHeight: 240, containerHeight: 0, reduceMotion: false), .fade)
     XCTAssertEqual(WebModalMotion.resolve(cardHeight: 240, containerHeight: 800, reduceMotion: false), .fade)
     XCTAssertEqual(WebModalMotion.resolve(cardHeight: 600, containerHeight: 800, reduceMotion: false), .slide)
     XCTAssertEqual(WebModalMotion.resolve(cardHeight: 600, containerHeight: 800, reduceMotion: true), .fade)
     XCTAssertEqual(WebModalMotion.resolve(cardHeight: 600, containerHeight: 800, reduceMotion: false,
       preferred: .fade), .fade)
+    XCTAssertEqual(WebModalMotion.resolve(cardHeight: 600, containerHeight: 800, reduceMotion: true,
+      preferred: .slide), .fade)
     XCTAssertLessThan(WebModalMotion.slide.openingDuration, 0.28)
+  }
+
+  func testModalFadeKeepsCardAndBackdropAtTheSameProgress() {
+    // Both directions use the same path, including a partially dragged dialog.
+    for progress in [CGFloat(0), 0.25, 0.5, 0.75, 1, 0.75, 0.5, 0.25, 0] {
+      let state = WebModalTransitionState(motion: .fade, progress: progress,
+        drag: 0, containerHeight: 800)
+      XCTAssertEqual(state.cardOffset, 0)
+      XCTAssertEqual(state.phase, progress)
+      XCTAssertEqual(state.cardOpacity, Double(state.phase))
+    }
+    let dragged = WebModalTransitionState(motion: .fade, progress: 1,
+      drag: 200, containerHeight: 800)
+    XCTAssertEqual(dragged.cardOffset, 0)
+    XCTAssertEqual(dragged.phase, 0.75)
+    XCTAssertEqual(dragged.cardOpacity, 0.75)
+  }
+
+  func testModalSlideOnlyMovesTheLargeCardAndStartsHiddenUntilMeasured() {
+    for progress in [CGFloat(0), 0.5, 1] {
+      let unknown = WebModalTransitionState(motion: nil, progress: progress,
+        drag: 0, containerHeight: 800)
+      XCTAssertEqual(unknown.cardOffset, 0)
+      XCTAssertEqual(unknown.cardOpacity, 0)
+      XCTAssertEqual(unknown.phase, 0)
+    }
+    let unmeasured = WebModalTransitionState(motion: .slide, progress: 1,
+      drag: 0, containerHeight: 0)
+    XCTAssertEqual(unmeasured.cardOffset, 0)
+    XCTAssertEqual(unmeasured.cardOpacity, 0)
+    XCTAssertEqual(unmeasured.phase, 0)
+    let large = WebModalTransitionState(motion: .slide, progress: 0.5,
+      drag: 0, containerHeight: 800)
+    XCTAssertEqual(large.cardOffset, 400)
+    XCTAssertEqual(large.cardOpacity, 1)
+    XCTAssertEqual(large.phase, 0.5)
   }
 
   func testLaunchStoryboardUses96PointContinuousRoundedIcon() throws {
