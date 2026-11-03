@@ -2852,7 +2852,9 @@ final class WebParityUITests: XCTestCase {
     capture("strategy-list-compact")
     row.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.2)).tap()
     XCTAssertFalse(app.buttons["保存策略"].exists, "Selecting a card must not enter the editor")
-    XCTAssertFalse(app.staticTexts["确认选择策略"].exists)
+    XCTAssertTrue(app.staticTexts["确认选择"].waitForExistence(timeout: 3))
+    app.buttons["strategy.selection.cancel"].tap()
+    XCTAssertTrue(row.exists, "Cancelling selection must stay on the strategy list")
     edit.tap()
     XCTAssertTrue(app.buttons["保存策略"].waitForExistence(timeout: 5))
     app.buttons["返回"].firstMatch.tap()
@@ -3251,9 +3253,8 @@ final class WebParityUITests: XCTestCase {
     modes.buttons["市价"].tap()
     lower.press(forDuration: 0.6)
     ticket.tap()
-    XCTAssertTrue(app.staticTexts["方向初筛通过，再次点击确认开仓"].waitForExistence(timeout: 5))
-    ticket.tap()
     XCTAssertTrue(app.staticTexts["开仓确认"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["方向初筛"].exists)
     capture("chart-shared-market-confirmation")
     app.buttons["取消"].tap()
   }
@@ -3593,19 +3594,15 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     if !toggle.isHittable { app.swipeUp() }
     toggle.tap()
-    let unavailable = app.alerts.staticTexts["此设备暂不支持画中画，仍可使用 App 内浮窗。"]
-    if unavailable.waitForExistence(timeout: 2) {
-      capture("floating-pip-device-unsupported")
-      app.alerts.buttons["知道了"].tap()
-      throw XCTSkip("当前设备的 AVKit 明确返回画中画不受支持；跨 App 验收需支持该能力的 iPhone。")
-    }
+    let panel = app.otherElements["floating.positions.panel"]
+    XCTAssertTrue(panel.waitForExistence(timeout: 10))
     let status = app.otherElements["floating.positions.pipStatus"]
-    XCTAssertTrue(status.waitForExistence(timeout: 10))
-    let active = NSPredicate(format: "value == %@", "画中画已开启")
-    expectation(for: active, evaluatedWith: status)
-    waitForExpectations(timeout: 12)
-    capture("floating-pip-started")
+    XCTAssertEqual(status.value as? String, "App 内显示")
+    // Enabling prepares inline playback. Home, rather than the toggle, starts external PiP.
     XCUIDevice.shared.press(.home)
+    let started = expectation(description: "Automatic PiP background transition")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { started.fulfill() }
+    wait(for: [started], timeout: 4)
     let home = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
     home.name = "floating-pip-home"
     home.lifetime = .keepAlways
@@ -3626,13 +3623,28 @@ final class WebParityUITests: XCTestCase {
     updated.lifetime = .keepAlways
     add(updated)
     app.activate()
-    XCTAssertEqual(status.value as? String, "画中画已开启")
+    let unavailable = app.alerts.staticTexts["此设备暂不支持画中画，仍可使用 App 内浮窗。"]
+    if unavailable.waitForExistence(timeout: 2) {
+      capture("floating-pip-device-unsupported")
+      app.alerts.buttons["知道了"].tap()
+      throw XCTSkip("当前设备的 AVKit 明确返回画中画不受支持；跨 App 验收需支持该能力的 iPhone。")
+    }
+    XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
+    // The inline source is transparent during external playback, including AVKit's placeholder.
+    let external = NSPredicate(format: "exists == false")
+    expectation(for: external, evaluatedWith: panel)
+    waitForExpectations(timeout: 12)
+    capture("floating-pip-started")
+    XCTAssertEqual(toggle.value as? String, "已开启")
     if !toggle.isHittable { app.swipeUp() }
     toggle.tap()
     XCTAssertFalse(app.otherElements["floating.positions.pipStatus"].exists)
     XCTAssertEqual(toggle.value as? String, "未开启")
     toggle.tap()
-    expectation(for: active, evaluatedWith: status)
+    XCTAssertTrue(panel.waitForExistence(timeout: 5))
+    XCTAssertEqual(status.value as? String, "App 内显示")
+    app.buttons["floating.positions.pip"].tap()
+    expectation(for: external, evaluatedWith: panel)
     waitForExpectations(timeout: 12)
     toggle.tap()
     XCTAssertEqual(toggle.value as? String, "未开启")
@@ -3784,12 +3796,12 @@ final class WebParityUITests: XCTestCase {
     stop.typeText("66000")
     let done = app.buttons["完成"].firstMatch
     if done.waitForExistence(timeout: 3) { done.tap() }
-    app.buttons["方向初筛"].tap()
     let open = app.buttons["市价开多"]
     if !open.isHittable { app.swipeUp() }
     XCTAssertTrue(open.waitForExistence(timeout: 10))
     XCTAssertTrue(open.isHittable)
-    capture("ema-passed")
+    XCTAssertFalse(app.buttons["方向初筛"].exists)
+    capture("entry-without-screening")
   }
   func testLoginAndPasswordResetRequest() {
     launch("login")

@@ -8,7 +8,7 @@
 | [架构](architecture.md) | 运行单元、模块责任和账户身份 |
 | [Web 原生复刻](ios-web-parity.md) | 页面映射、尺寸、主题、截图回归及验证边界 |
 | [品牌与认证](ios-authentication.md) | Binance Tools 名称与图标、USDC 认证布局、底部弹窗及已有接口 |
-| [持仓浮窗](ios-floating-positions.md) | App 内与系统画中画、刷新与账户隔离、跨 App 真机待验范围 |
+| [持仓浮窗](ios-floating-positions.md) | App 内、自动画中画与 ActivityKit live 卡片，刷新、账户隔离及真机待验范围 |
 | [鸿蒙客户端](harmony-client.md) | 原生源码、已编译未签名 HAP、Mate 80 安装待验与功能差异 |
 | [开发验证](development.md) | 后端、Xcode、测试与回归范围 |
 | [配置](configuration.md) | 整合环境的配置入口和关键参数 |

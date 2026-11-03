@@ -59,6 +59,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   private var restoringInline = false
   private var userClose = true
   private var ownsAudioSession = false
+  private var isPreparedForAutomaticStart = false
   private var startedAt: Date?
   private var snapshot = FloatingPiPSnapshot()
 
@@ -76,7 +77,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
     }
     controller = pip
     pip.delegate = self
-    pip.canStartPictureInPictureAutomaticallyFromInline = false
+    pip.canStartPictureInPictureAutomaticallyFromInline = isPreparedForAutomaticStart
     possibility = pip.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
       Task { @MainActor in self?.startWhenReady() }
     }
@@ -89,11 +90,12 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
     render()
   }
 
-  func start() {
-    guard !isActive, !isStarting else { return }
+  @discardableResult
+  func prepareForAutomaticStart(reportFailure: Bool = false) -> Bool {
+    if isPreparedForAutomaticStart { return true }
     guard AVPictureInPictureController.isPictureInPictureSupported() else {
-      notice = "此设备暂不支持画中画，仍可使用 App 内浮窗。"
-      return
+      if reportFailure { notice = "此设备暂不支持画中画，仍可使用 App 内浮窗。" }
+      return false
     }
     do {
       let audio = AVAudioSession.sharedInstance()
@@ -101,18 +103,27 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
       try audio.setActive(true)
       ownsAudioSession = true
     } catch {
-      notice = "画中画音频会话暂不可用，请稍后重试。"
-      return
+      if reportFailure { notice = "画中画音频会话暂不可用，请稍后重试。" }
+      return false
     }
     notice = nil
     playback.setPaused(false)
     isPaused = false
-    isStarting = true
-    startIssued = false
+    isPreparedForAutomaticStart = true
     userClose = true
     restoringInline = false
+    controller?.canStartPictureInPictureAutomaticallyFromInline = true
+    controller?.invalidatePlaybackState()
     startTicker()
     render()
+    return true
+  }
+
+  func start() {
+    guard !isActive, !isStarting else { return }
+    guard prepareForAutomaticStart(reportFailure: true) else { return }
+    isStarting = true
+    startIssued = false
     startWhenReady()
     startDeadline?.cancel()
     startDeadline = Task { [weak self] in
@@ -124,6 +135,8 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   }
 
   func stop() {
+    isPreparedForAutomaticStart = false
+    controller?.canStartPictureInPictureAutomaticallyFromInline = false
     userClose = false
     startDeadline?.cancel()
     startDeadline = nil
@@ -167,6 +180,15 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   }
 
   // AVKit may query playback state off the main thread; UI changes are dispatched explicitly.
+  nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    Task { @MainActor [weak self] in
+      guard let self, self.userClose else { return }
+      self.isStarting = true
+      self.startIssued = true
+      self.startTicker()
+    }
+  }
+
   nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
     Task { @MainActor [weak self] in
       guard let self else { return }
@@ -192,6 +214,8 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
     Task { @MainActor [weak self] in
       guard let self else { return }
       let close = self.userClose && !self.restoringInline
+      let resumeAutomatic = self.isPreparedForAutomaticStart && !close
+      self.isPreparedForAutomaticStart = false
       self.isActive = false
       self.isStarting = false
       self.isPaused = false
@@ -200,6 +224,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
       self.ticker = nil
       self.deactivateAudio()
       if close { self.onSystemClose?() }
+      else if resumeAutomatic { self.prepareForAutomaticStart() }
     }
   }
 

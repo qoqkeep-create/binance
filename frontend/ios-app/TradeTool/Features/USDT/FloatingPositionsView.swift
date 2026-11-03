@@ -13,6 +13,16 @@ enum FloatingPositionsPreferences {
   }()
 }
 
+/// Arming inline playback must not open a second window until the app actually leaves the foreground.
+enum FloatingPiPActivation: Equatable {
+  case disabled, inline, external
+
+  static func requested(enabled: Bool, bound: Bool, inBackground: Bool) -> Self {
+    guard enabled && bound else { return .disabled }
+    return inBackground ? .external : .inline
+  }
+}
+
 struct FloatingPosition: Identifiable, Equatable {
   let id: String
   let symbol: String
@@ -130,7 +140,10 @@ private struct FloatingPositionsOverlay: ViewModifier {
 
   private var active: Bool { enabled && scenePhase == .active }
   private var refreshing: Bool { enabled && store.isBound && (scenePhase == .active || pip.keepsUpdating) }
-  private var context: String { refreshing ? store.scope : "" }
+  private var context: String { enabled && store.isBound ? store.scope : "" }
+  private var activation: FloatingPiPActivation {
+    .requested(enabled: enabled, bound: store.isBound, inBackground: scenePhase == .background)
+  }
   private var positions: [FloatingPosition] { store.isBound && model.scope == store.scope ? model.positions : [] }
   private var index: Int { positions.firstIndex { $0.id == selectedID } ?? 0 }
   private var selected: FloatingPosition? { positions.isEmpty ? nil : positions[index] }
@@ -153,6 +166,8 @@ private struct FloatingPositionsOverlay: ViewModifier {
             if !pip.isActive { panel }
           }
             .frame(width: FloatingPanelPlacement.size.width, height: FloatingPanelPlacement.size.height)
+            // Keep the AVKit source attached for PiP, while hiding its inline system placeholder.
+            .opacity(pip.isActive ? 0 : 1)
             .allowsHitTesting(active && !pip.isActive)
             .position(FloatingPanelPlacement.center(
               in: geometry.size, fraction: CGPoint(x: x, y: y), translation: translation))
@@ -168,8 +183,8 @@ private struct FloatingPositionsOverlay: ViewModifier {
         }
       }
     }
-    .task(id: context) {
-      model.reset(scope: context)
+    .task(id: "\(context):\(refreshing)") {
+      if model.scope != context { model.reset(scope: context) }
       guard refreshing else { return }
       while !Task.isCancelled {
         await model.refresh(store)
@@ -181,16 +196,13 @@ private struct FloatingPositionsOverlay: ViewModifier {
       Task { await model.refresh(store) }
     }
     .onChange(of: snapshot) { _, value in pip.update(value) }
-    .onChange(of: enabled) { _, value in
-      if value {
-        #if DEBUG
-          if ProcessInfo.processInfo.arguments.contains("--fixture-inline-floating") { return }
-        #endif
-        pip.start()
-      } else { pip.stop() }
+    .onChange(of: activation, initial: true) { _, value in
+      apply(value)
     }
-    .onChange(of: store.scope) { _, _ in pip.stop() }
-    .onChange(of: store.isBound) { _, bound in if !bound { pip.stop() } }
+    .onChange(of: store.scope) { _, _ in
+      pip.stop()
+      apply(activation)
+    }
     .onAppear { pip.onSystemClose = { enabled = false }; pip.update(snapshot) }
     .onDisappear { pip.onSystemClose = nil; model.reset(scope: ""); pip.stop() }
     .alert("跨 App 浮窗", isPresented: Binding(get: { pip.notice != nil }, set: { showing in
@@ -198,6 +210,20 @@ private struct FloatingPositionsOverlay: ViewModifier {
     })) {
       Button("知道了", role: .cancel) {}
     } message: { Text(pip.notice ?? "") }
+  }
+
+  private func apply(_ activation: FloatingPiPActivation) {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--fixture-inline-floating") {
+        pip.stop()
+        return
+      }
+    #endif
+    switch activation {
+    case .disabled: pip.stop()
+    case .inline: pip.prepareForAutomaticStart()
+    case .external: pip.start()
+    }
   }
 
   private var panel: some View {

@@ -42,6 +42,7 @@ private struct MainAppView: View {
     @EnvironmentObject private var store: USDTStore
     @EnvironmentObject private var notifications: StrategySignalNotificationManager
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var livePositions = PositionLiveActivityController()
     @State private var selectedTab: AppTab = .markets
     @State private var isShowingMarketSearch = false
     @State private var isShowingMarketSettings = false
@@ -84,6 +85,8 @@ private struct MainAppView: View {
         .background(BinanceTheme.navigationBackground)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .floatingPositionsOverlay()
+        .modifier(PositionLiveActivityLifecycle())
+        .environmentObject(livePositions)
         .task {
             guard let userID = container.authStore.session?.user.id else { return }
             notifications.activateSession()

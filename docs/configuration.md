@@ -75,6 +75,7 @@ SMTP 的 `EMAIL_*`、通知的 `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALER
 | 参数 | 用途 |
 | --- | --- |
 | `APNS_ENABLED` | 内部信号及普通仓位通知生成 App APNs 投递，默认 false；仓位另受总开关控制 |
+| `LIVE_ACTIVITIES_ENABLED` | ActivityKit 持仓卡片注册与独立调度，源码及模板默认 false；另需 `APNS_ENABLED=true`，不控制普通信号或浮盈通知 |
 | `EXTERNAL_SIGNAL_INGEST_ENABLED` | 旧 HTTP 信号入站总开关，默认 false；暂停所有自报来源，内部扫描直接入库不受影响 |
 | `APNS_TEAM_ID` / `APNS_KEY_ID` | 原 Apple 团队及 APNs 签名 Key 标识 |
 | `APNS_KEY_PATH` | scheduler 内的受限 p8 路径，模板 `/run/tradetools-secrets/AuthKey.p8` |
@@ -90,3 +91,11 @@ p8 只挂载到 scheduler，不进入镜像或 Git；部署前创建来源目录
 完整 App／浮盈通知部署需先应用 `mobile.0002` 与 `positions.0029` 两个仅新增模型的 migration；仅 App 注册／派发限定包只依赖已应用的 `mobile.0002`，不加载浮盈模型和任务。回滚到旧代码可以保留新增表，代码回滚不还原数据库，也不重放已尝试通知。
 
 2026-11-02 已按用户提供的 Echo 地址和原 iOS 项目的 APNs 签名材料，将这批配置准备到 47.80.22.243（首尔服务器）。环境文件保持 0600，p8 为 UID 10001／0400，来源目录 0700；APNs topic 使用整合应用标识，旧项目文件保持只读。开关在受限配置文件中已设为开启。2026-11-03 最初信号限定发布只包含排队和 `mobile.0002`；15:22 的 App 通知限定发布已补齐注册路由、HTTP2、每 10 秒的普通通知 dispatcher 和 scheduler 的 p8 只读挂载。浮盈扫描／Echobell 任务仍未启用；配置文件的开启不等于任务已运行。现有 APNs key 原为仅授权旧 App 的 topic-specific key；仅团队匹配不足以允许整合 topic。用户明确允许后于 15:42 在 Apple 后台保留旧 topic、新增整合 topic，三条生产测试通知苹果均接受，用户于 15:44 确认手机全部收到。设备注册和详细送达状态见 [通知实测](signals-and-notifications.md#普通通知真机测试2026-11-03)，备份与回滚见 [运维](operations.md#app-普通信号通知限定发布2026-11-03)。
+
+## ActivityKit live 持仓卡片
+
+2026-11-03 新增 `LIVE_ACTIVITIES_ENABLED=false`，API 注册和派发同时要求它与 `APNS_ENABLED` 开启；scheduler 仅在 live 开关开启时挂载独立的每 15 秒任务。复用现有 APNs 团队、签名 key、bundle ID 与只读 p8 挂载，不新增第三方凭证。实时活动使用每活动 token 和 `APNS_BUNDLE_ID + .push-type.liveactivity` topic，普通通知设备 token 不能替代。后台更新固定 `apns-priority=5`，无声音或横幅，不回退 Echobell；频繁更新授权时目标间隔 15 秒，否则 60 秒，均为尽力调度及投递，不保证系统按秒刷新。
+
+发布需配套应用仅新增表的 `mobile.0003_liveactivityregistration`，该注册表记录活动、安装、用户／模式／绑定代际、token 轮换、租约与结束状态。注册最长有效期为开始时间起 8 小时，客户端不因 token 更新延长；快照 90 秒过期。退回旧代码可保留新增表，但须先停用 live 调度并评估尚在系统展示的活动，代码回滚不会撤回已送达的卡片或还原数据库。token 属敏感数据，不输出到文档或请求日志。
+
+iOS 主应用开启 `NSSupportsLiveActivities` 与 `NSSupportsLiveActivitiesFrequentUpdates`，嵌入 `PositionLiveWidget` 扩展；频繁更新是否允许仍读取系统实时权限。ActivityKit 与普通通知路由隔离，关闭普通仓位通知不会自动停用 live。2026-11-03 22:49 在 **47.80.22.243（首尔服务器）** 核验 API／scheduler 已加载 `LIVE_ACTIVITIES_ENABLED=true`、APNs true，原三个通知／外部接收暂停开关仍为 false，注册表迁移完成；当前没有活动 token。本轮新包未上传、真实 APNs live 送达待验，版本及回退见 [运维](operations.md#live-后台持仓卡片限定发布2026-11-03)，行为见 [持仓浮窗](ios-floating-positions.md#activitykit-live-持仓卡片2026-11-03源码实现)。

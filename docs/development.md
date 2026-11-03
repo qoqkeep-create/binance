@@ -16,6 +16,28 @@
 
 策略选择／绿色统一与持仓页签／方向标记两批已按用户后续授权统一提交推送 iOS 源码；下方“未提交”保留各任务验证结束时的记录，本批交付不重复测试或平台上传，范围见 [源码交付](changes.md#2026-11-03策略选择持仓标记与配色-ios-源码交付)。
 
+## 开仓初筛退役、止盈选择与策略确认（2026-11-03）
+
+本轮隐藏十字线 OHLC 详情卡，保留原绘制及格式化代码和显式启用参数，时间／价格轴标签不变。开仓页无自动策略时使用手动止盈；止盈选择改为下划线及箭头，手动绿字、自动策略黄字并截断长名称。失效策略显示“请选择止盈方式”，按钮保持原全色。开仓模块不再放行内小字结果，复用公共 toast；正常取消不报错。手动／自动策略整卡选择均先二次确认，K 线入口成功返回、设置入口留列表，取消或失败均保留当前页。
+
+客户端删除 EMA 初筛状态、卡片、计时、请求与 DEBUG 替身；后端删除专属路由、缓存与新单门控。直接进入原资金预检、冻结确认与持久命令，预检和发送前仍检查 scope、草稿和持仓就绪。旧 `ema_check_id` 仅保留指纹兼容：历史字符串与数值继续按旧字符串规则 trim，不读取初筛缓存或行情。并非移除图表 EMA／内部信号或资金风控。当前规范见 [界面](ios-web-parity.md)、[行情](market-data.md#十字线详情卡隐藏2026-11-03)与[交易安全](trading-safety.md#图表与标准开仓共用流程2026-11-02)。
+
+- 实际策略页面方法及 Store 的 host 回归 **7 项通过（0.026 秒）**，覆盖确认／取消、手动重选、成功与失败、两种入口、切账户和迟到响应；可复现命令为 `python3 frontend/ios-app/scripts/test_strategy_selection_confirmation.py`。只替换网络及导航记录，fixture 与提取脚本纳入追踪，产物置于忽略目录。
+- 实际 `advanceEntry`、`currentDraft`、校验方法、页面初始化任务及 Store 的方法级 host 回归 **6 项通过（0.021 秒）**，一次点击只发资金预检再确认；空 active 恢复手动、有策略恢复自动，阻断／超时／参数或 scope 变化不进入确认。实际 Draft／Decimal 载荷回归另有 **4 项通过（0.004 秒）**，覆盖手动不携策略字段、自动快照和无 EMA 字段。
+- 十字线真实场景构建器及原 XCTest 方法 host 回归 **2 项通过（7.582 秒）**，对比默认隐藏／显式显示，覆盖 320／390／440 pt、2／3 倍屏、10k 蜡烛及轴标签。各组为分开范围，不作为整套 iOS 测试通过。
+
+最终 generic iOS Release 无签名 `build` 及 generic iOS Simulator arm64 `build-for-testing` 均通过，后者只编译单测／UI 目标，没有启动模拟器或运行 iOS UI。UI 断言同步为单次点击直接确认和策略二次确认取消。证据位于忽略目录 `.integration-runtime/{EntryTakeProfit,DirectEntryMethod,CrosshairCard}/` 和 `strategy-selection-confirmation.log`。后端 API 快照以 LivePositions 实际运行版为基线，**264 项通过（116.000 秒）**；worker 以自身 `171be8` 实际运行版为基线，**264 项通过（116.140 秒）**，两组重叠、不相加。均为 SQLite／LocMem、外部 socket 禁用；覆盖无字段／过期／任意／空白／null 旧编号不门控，历史 scalar trim 及请求指纹、持久命令、资金、账户／带单隔离。两个归档分别核对 317／307 个源文件，只有相同 5 条允许路径变化（运行 3、测试 2），72 个非目标 views 声明逐字节保持原样；worker 的原运行源码另有 295 个镜像文件只读哈希匹配。证据位于 `.integration-runtime/RemoveEntryEMA/` 的包清单、归档审计和两份 snapshot 测试日志。生产检查与本地回归分开记录，不执行真实开平仓、划转、撤保护或测试通知。新客户端触摸／弹窗与 live 系统行为仍待签名包 iPhone 验收。
+
+## MACD 操作色、十字线缩放与 live 持仓卡片（2026-11-03）
+
+开多、选择止损价提示及 auto 直接使用图表当前主题的 MACD 绿色，开空使用同一 MACD 红色；移除交易按钮禁用态的整体半透明，保留原禁用条件。账户刷新此前仅识别原生 `CancellationError`，网络层转换后的 `APIError.cancelled` 被写成“请求已取消”；现在按任务、账户 scope 与 `shouldPresent` 过滤正常取消，真实错误仍展示。行情编辑图标改为 20 pt、保留 44 pt 点击区，延迟与编辑之间去掉多余间距。
+
+实际生产逻辑提取到 macOS host 包的回归共 **12 项通过**：取消提示 3 项（0.003 秒，旧版 4 个断言失败）、十字线／pinch 状态 3 项（0.001 秒，旧版 2 个断言失败）、inline／Home PiP 激活策略 3 项（0.002 秒）、Live 跨端载荷／Decimal／身份隔离 3 项（0.001 秒）。同次长按仍可单指移动十字线，双指缩放接管后清除十字线，后到的长按结束回调不能中断缩放。UIKit 手势与跨 App UI 断言已编译，未在 iPhone 或模拟器执行。证据分别在忽略目录 `.integration-runtime/ChartActionCancel/`、`CrosshairPinch/`、`FloatingAutoPiP/`、`LivePositions/`。
+
+live 使用主 App ActivityKit 与独立 Widget 扩展，共享秒级 Unix 时间和 Decimal 格式化的内容结构；后台为独立 APNs 推送，不依赖手机进程持续运行。当前后端 `mobile.test_live_activities` **54 项通过（0.251 秒）**；实际线上基线只叠加 9 条允许路径的 317 文件快照 **108 项通过（6.946 秒，0 跳过）**，涵盖 mobile 通知、信号隔离及 scheduler。这两组有重叠，不相加。均使用 SQLite／LocMem、外部 socket 禁用及投递替身，没有真实通知、开平仓、划转或保护单操作。新增迁移仅建独立注册表；隔离库执行 `mobile.0002 → 0003 → 0002 → 0003`，保留原普通通知数据，`makemigrations --check --dry-run` 通过。发布快照、哈希审查与测试见 `.integration-runtime/LivePositions/{package.json,snapshot-verification.json,snapshot-tests.log}`，迁移证据在 `.integration-runtime/activitykit-migration-check.log`。
+
+最终 generic iOS Release 无签名编译通过，主 App 与 `PositionLiveWidget` 同时构建；generic iOS Simulator arm64 的单测／UI 目标 `build-for-testing` 通过，仅编译。最后静态检查发现两套 DEBUG fixture 缺少新增 live 控制器注入，已补齐后重新编译通过，未运行 UI。最终日志为 `.integration-runtime/LivePositions/{release-final.log,unit-compile-final.log}`。macOS 离屏渲染实际共享 SwiftUI 卡片辅助视图，375 × 157 pt 的当前／过期两种布局已查看，过期隐藏金额；这不是 iOS 截图或真机 UI 验收。本轮未启动模拟器、未上传 TestFlight。新签名包的 PiP 自动切出／placeholder、锁屏与灵动岛、APNs 后台实际送达、系统刷新预算及手势体感仍需 iPhone 验收。线上发布事实另见 [运维](operations.md#live-后台持仓卡片限定发布2026-11-03)，使用与生命周期见 [持仓浮窗](ios-floating-positions.md)。
+
 ## 信号红点与通知分流回归（2026-11-03）
 
 信号红点只保存本机服务器／用户的最新与已读 ID；普通模式前台最新一条探测与可见列表复用，后台／带单停止。账户卡统一黄色、余额标题和数字间距 4 pt，下方钱包间距 18 pt；持仓三项页签宽度收至 248 pt。模式入口使用当前模式品牌色。接口暂停外部 HTTP 接收，普通消息仅 App，已排队外部／Echo 普通信号取消，开平仓暂停也覆盖已移交的 App 记录。

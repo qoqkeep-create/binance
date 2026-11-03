@@ -2905,9 +2905,23 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertTrue(machine.beginCrosshair())
         XCTAssertEqual(machine.state, .trackingCrosshair)
         XCTAssertFalse(machine.beginPan())
-        XCTAssertFalse(machine.beginPinch())
+        XCTAssertTrue(machine.beginPinch())
+        XCTAssertEqual(machine.state, .pinchingTimeline)
+        XCTAssertFalse(machine.beginCrosshair())
         machine.finishInteraction()
         XCTAssertEqual(machine.state, .idle)
+    }
+
+    func testCrosshairPinchTransitionKeepsSingleTouchOwnership() {
+        var machine = ChartInteractionStateMachine()
+        XCTAssertTrue(machine.beginCrosshair())
+        XCTAssertFalse(machine.beginPan(), "A single-touch drag must keep moving its creating crosshair")
+        XCTAssertTrue(machine.beginPinch(), "A second finger must be able to hand the chart to pinch zoom")
+        XCTAssertEqual(machine.state, .pinchingTimeline)
+        XCTAssertFalse(machine.beginCrosshair(), "The old contact cannot recreate a cursor during pinch")
+        machine.finishInteraction()
+        XCTAssertTrue(machine.beginPan())
+        XCTAssertFalse(machine.beginPinch(), "An active one-finger pan keeps its existing ownership")
     }
 
     func testCrosshairDisplayPercentUsesLatestPriceAndAmplitudeUsesOpen()
@@ -3288,6 +3302,24 @@ final class ChartEngineCoreTests: XCTestCase {
         }
 
         let snapshot = try XCTUnwrap(latestSnapshot)
+        let withCandleCard = ChartCrosshairOverlayBuilder(showsCandleCard: true).makeSnapshot(
+            hit: snapshot.hit, data: data, latestPrice: 62_832.6)
+        let hiddenCardStorage = try XCTUnwrap(snapshot.batches.first?.storage)
+        let visibleCardStorage = try XCTUnwrap(withCandleCard.batches.first?.storage)
+        let cardColors: [ChartColor] = [.crosshairLabelBorder, .crosshairLabelBackground]
+        XCTAssertFalse(hiddenCardStorage.barInstances.contains { cardColors.contains($0.color) },
+            "Selected-candle details stay hidden by default")
+        XCTAssertEqual(visibleCardStorage.barInstances.filter { cardColors.contains($0.color) }.count, 2,
+            "The existing detail-card renderer remains available")
+        XCTAssertEqual(hiddenCardStorage.barInstances,
+            visibleCardStorage.barInstances.filter { !cardColors.contains($0.color) })
+        XCTAssertEqual(hiddenCardStorage.lineSegments, visibleCardStorage.lineSegments)
+        XCTAssertEqual(hiddenCardStorage.glyphInstances.filter { $0.color == .crosshairAxisLabelText },
+            visibleCardStorage.glyphInstances.filter { $0.color == .crosshairAxisLabelText },
+            "Hiding candle details must retain the price and time labels")
+        XCTAssertEqual(snapshot.hit, withCandleCard.hit)
+        XCTAssertEqual(snapshot.renderedIndicatorKeys, withCandleCard.renderedIndicatorKeys)
+        XCTAssertEqual(snapshot.axisPriceChangeRate, withCandleCard.axisPriceChangeRate)
         XCTAssertEqual(state.staticScene.revision, staticRevision)
         XCTAssertEqual(
             ObjectIdentifier(state.staticScene),
@@ -7182,6 +7214,52 @@ final class ChartEngineCoreTests: XCTestCase {
                 XCTAssertTrue(dismissed, "A new drag must dismiss the retained crosshair")
                 XCTAssertNotEqual(try XCTUnwrap(requested.last), baseline)
             }
+        }
+    }
+
+    @MainActor
+    func testPinchDismissesActiveAndRetainedCrosshairWithoutAnotherTap() async throws {
+        for keepsCreatingContact in [false, true] {
+            let fixture = try await makeChartSceneFixture()
+            let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+            let baseline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: 30))
+            let scene = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport,
+                timelineViewport: baseline)
+            let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+            defer { host.dispose() }
+            var requested: [ChartTimelineViewport] = []
+            host.configureTimelineInteraction(viewport: baseline, totalSlotCount: 221) { requested.append($0) }
+            host.submit(scene.renderState)
+            var dismissed = false
+            host.onCrosshairDismiss = { dismissed = true }
+            let press = ContinuousScaleTestLongPress()
+            press.phase = .began
+            host.perform(NSSelectorFromString("handleCrosshair:"), with: press)
+            if !keepsCreatingContact {
+                press.phase = .ended
+                host.perform(NSSelectorFromString("handleCrosshair:"), with: press)
+            }
+            let nativePinch = try XCTUnwrap(host.gestureRecognizers?.compactMap { $0 as? UIPinchGestureRecognizer }.first)
+            let nativePress = try XCTUnwrap(host.gestureRecognizers?.compactMap { $0 as? UILongPressGestureRecognizer }.first)
+            XCTAssertTrue(host.gestureRecognizerShouldBegin(nativePinch), "Cursor tracking must allow a second finger to start pinch")
+            XCTAssertTrue(host.gestureRecognizer(nativePinch, shouldRecognizeSimultaneouslyWith: nativePress))
+            let pinch = ContinuousScaleTestPinch()
+            pinch.phase = .began
+            host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
+            // UIKit can deliver the cancelled long press after the pinch starts.
+            // It must not restore the cursor or reset the zoom state.
+            press.phase = .cancelled
+            host.perform(NSSelectorFromString("handleCrosshair:"), with: press)
+            pinch.phase = .changed
+            pinch.scale = 1.25
+            host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
+            host.diagnosticInteractionFrame(at: 10)
+            await Task.yield()
+            XCTAssertTrue(dismissed, "Pinch must dismiss the active or retained cursor immediately")
+            XCTAssertLessThan(try XCTUnwrap(requested.last).visibleSlotCount, baseline.visibleSlotCount,
+                "The same pinch must zoom rather than requiring another gesture")
+            pinch.phase = .ended
+            host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
         }
     }
 

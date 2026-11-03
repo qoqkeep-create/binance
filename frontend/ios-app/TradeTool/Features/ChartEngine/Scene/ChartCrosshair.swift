@@ -678,6 +678,12 @@ enum ChartCrosshairResolver {
 
 @MainActor
 final class ChartCrosshairOverlayBuilder {
+    private let showsCandleCard: Bool
+
+    init(showsCandleCard: Bool = false) {
+        self.showsCandleCard = showsCandleCard
+    }
+
     private enum TextAlignment {
         case leading
         case center
@@ -954,13 +960,15 @@ final class ChartCrosshairOverlayBuilder {
             bottom: pricePanel.plot.top,
             color: .chartBackground
         ))
-        appendCandleCard(
-            hit: hit,
-            pricePanel: pricePanel,
-            data: data,
-            bars: &bars,
-            glyphs: &glyphs
-        )
+        if showsCandleCard {
+            appendCandleCard(
+                hit: hit,
+                pricePanel: pricePanel,
+                data: data,
+                bars: &bars,
+                glyphs: &glyphs
+            )
+        }
         let priceValues = hit.indicatorValues.filter {
             $0.placement == .priceOverlay
         }

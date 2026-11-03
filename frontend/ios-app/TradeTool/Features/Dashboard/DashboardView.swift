@@ -191,7 +191,7 @@ struct DashboardView: View {
     }
 
     private var marketHeader: some View {
-        HStack {
+        HStack(spacing: 0) {
             Text("合约")
                 .font(BinanceTheme.Typography.selectedTab)
                 .foregroundStyle(BinanceTheme.primaryText)
@@ -202,13 +202,12 @@ struct DashboardView: View {
                 isRefreshing: realtimeClient.isTestingLatency) {
                 realtimeClient.requestLatencyTest()
             }
-                .padding(.trailing, 6)
             Button {
                 isShowingMarketSettings = true
             } label: {
                 MarketEditSymbol()
                     .fill(BinanceTheme.primaryText)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 20, height: 20)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

@@ -153,6 +153,16 @@ def _dispatch_mobile_notifications_job():
 
 
 @_with_database_connections
+def _dispatch_live_activities_job():
+    """Read-only position snapshots; never calls the trading/protection workers."""
+    from mobile.live_activities import dispatch_live_activities
+    try:
+        dispatch_live_activities()
+    except Exception as exc:
+        logger.warning('live activity job failed error_type=%s', type(exc).__name__)
+
+
+@_with_database_connections
 def _audit_suspicious_closed_orders_job():
     """巡检异常平仓记录（本地已平仓但缺少交易所平仓锚点）"""
     try:
@@ -392,6 +402,13 @@ def start_scheduler():
         id='dispatch_mobile_notifications', name='iOS信号与浮盈通知', replace_existing=True,
         next_run_time=now + timedelta(seconds=8), max_instances=1, coalesce=True,
     )
+
+    if getattr(settings, 'LIVE_ACTIVITIES_ENABLED', False):
+        _scheduler.add_job(
+            _dispatch_live_activities_job, trigger=IntervalTrigger(seconds=15),
+            id='dispatch_live_activities', name='iOS持仓实时活动', replace_existing=True,
+            next_run_time=now + timedelta(seconds=11), max_instances=1, coalesce=True,
+        )
 
     # 每180秒巡检一次可疑平仓记录（错峰 + 抖动）
     _scheduler.add_job(

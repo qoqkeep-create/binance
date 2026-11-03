@@ -338,6 +338,8 @@ APNS_TEAM_ID = os.getenv('APNS_TEAM_ID', '').strip()
 APNS_KEY_ID = os.getenv('APNS_KEY_ID', '').strip()
 APNS_KEY_PATH = os.getenv('APNS_KEY_PATH', '').strip()
 APNS_BUNDLE_ID = os.getenv('APNS_BUNDLE_ID', 'com.waibao2025.trade.integrated').strip()
+# ActivityKit tokens and low-priority updates are separate from alert devices.
+LIVE_ACTIVITIES_ENABLED = os.getenv('LIVE_ACTIVITIES_ENABLED', 'False').lower() == 'true'
 POSITION_PROFIT_CALL_ENABLED = os.getenv('POSITION_PROFIT_CALL_ENABLED', 'False').lower() == 'true'
 POSITION_PROFIT_CALL_USER_ID = int(os.getenv('POSITION_PROFIT_CALL_USER_ID', '0') or '0')
 POSITION_PROFIT_CALL_URL = os.getenv('POSITION_PROFIT_CALL_URL', '').strip()

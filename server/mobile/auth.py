@@ -73,6 +73,8 @@ class MobileLogoutView(APIView):
             installation = UUID(request.headers.get('X-Push-Installation-ID', ''))
             if request.user.is_authenticated:
                 PushDevice.objects.filter(user=request.user, installation_id=installation).update(active=False)
+                from mobile.live_activities import request_end
+                request_end(user_id=request.user.pk, installation_id=installation)
         except (ValueError, TypeError):
             pass
         return LogoutView.as_view()(internal_request(request, "/v1/auth/logout", {}))

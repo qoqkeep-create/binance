@@ -1,6 +1,6 @@
 # 看盘计划、手动校验与信号研究退役
 
-核对日期：2026-11-01；以下为当前本地源码状态，发布和验证范围见 [变更与验收](changes.md)。
+核对日期：2026-11-03；以下为当前源码状态，发布和验证范围见 [变更与验收](changes.md)。
 
 ## 看盘计划与手动校验已移除
 
@@ -8,7 +8,7 @@
 
 后端移除 `watch_plans` 应用注册、模型、服务、路由和专属 CRUD 测试，`/v1/watch-plan/list/create/update/delete` 不再解析；移除 `/v1/auth/preflight-status`、`preflight-complete` 及登录响应的校准时间。`users.0009_retire_watch_calibration` 通过 `SeparateDatabaseAndState` 删除 ORM 字段，数据库操作为空：历史 nullable 列、计划表、数据和已应用的 migration 记录保留，便于回滚。`server/watch_plans/` 仅保留空包及历史 migrations，新库不再创建计划表。
 
-移除范围是手动清单和计划功能。资金预检、EMA 方向初筛、图表技术指标及内部信号扫描仍属于各自现行业务。后端发布状态见 [运维](operations.md)，客户端改动仍在本地，尚未推送或分发。
+移除范围是手动清单和计划功能。资金预检、图表技术指标及内部信号扫描继续保留。2026-11-03 又按用户要求移除开仓 EMA 方向初筛专属模块与接口，当前市价／限价直接进入资金预检和订单确认；详见 [交易安全](trading-safety.md#图表与标准开仓共用流程2026-11-02)。后端发布状态见 [运维](operations.md)，客户端源码交付状态见 [本轮记录](changes.md#2026-11-03开仓初筛退役止盈显示与策略二次确认)，签名新包仍待分发／手机验收。
 
 ## 当前保留的能力
 

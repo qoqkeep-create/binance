@@ -5,10 +5,13 @@ from mobile.auth import MobileLoginView, MobileLogoutView, MobileMeView, MobileR
 from mobile.views import CommandsView, CommandDetailView
 
 from mobile.push import PushRegisterView, PushUnregisterView
+from mobile.live_activities import LiveActivityRegisterView, LiveActivityUnregisterView
 
 urlpatterns = [
     path("push/devices/register", PushRegisterView.as_view()),
     path("push/devices/unregister", PushUnregisterView.as_view()),
+    path("push/live-activities/register", LiveActivityRegisterView.as_view()),
+    path("push/live-activities/unregister", LiveActivityUnregisterView.as_view()),
     path("commands", CommandsView.as_view()),
     path("commands/<uuid:command_id>", CommandDetailView.as_view()),
     path("auth/login", MobileLoginView.as_view()),

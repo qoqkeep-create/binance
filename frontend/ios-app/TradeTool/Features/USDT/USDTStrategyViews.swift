@@ -9,6 +9,9 @@ struct USDTStrategiesView: View {
   @State private var notice = ""
   @State private var selected: JSONValue = .null
   @State private var mutating = false
+  @State private var pendingSelection: JSONValue = .null
+  @State private var selectionScope = ""
+  @State private var confirmingSelection = false
   @State private var deleting = false
   @State private var editingStrategy: JSONValue?
   @State private var editing = false
@@ -105,6 +108,21 @@ struct USDTStrategiesView: View {
       .navigationDestination(isPresented: $editing) {
         USDTStrategyEditor(strategy: editingStrategy)
       }
+      .onChange(of: store.scope) { _, _ in cancelSelection() }
+      .webModal(isPresented: $confirmingSelection) {
+        WebModal(title: "确认选择") {
+          Text(pendingSelection == .null ? "确定使用手动止盈吗？"
+            : "确定使用“\(pendingSelection.value("name"))”策略吗？")
+            .foregroundStyle(WebTheme.secondary)
+          HStack(spacing: 12) {
+            Button("取消") { cancelSelection() }.buttonStyle(
+              WebButtonStyle(kind: .secondary, radius: 14))
+              .accessibilityIdentifier("strategy.selection.cancel")
+            Button("确定") { confirmSelection() }.buttonStyle(WebButtonStyle(radius: 14))
+              .accessibilityIdentifier("strategy.selection.confirm")
+          }
+        }
+      }
       .webModal(isPresented: $deleting) {
         WebModal(title: "确认删除") {
           Text("确定要删除这个策略吗？").foregroundStyle(WebTheme.secondary)
@@ -121,13 +139,23 @@ struct USDTStrategiesView: View {
   }
   private func chooseStrategy(_ strategy: JSONValue) {
     guard !mutating else { return }
-    // An empty or still-loading list does not prove that manual mode is active.
-    let alreadySelected = strategy != .null && strategy["is_active"]?.flag == true
-    if alreadySelected {
-      finishSelection(strategy)
-    } else {
-      mutate("set-active", strategy: strategy)
-    }
+    pendingSelection = strategy
+    selectionScope = store.scope
+    confirmingSelection = true
+  }
+  private func cancelSelection() {
+    confirmingSelection = false
+    pendingSelection = .null
+    selectionScope = ""
+  }
+  private func confirmSelection() {
+    guard !mutating, confirmingSelection else { return }
+    let strategy = pendingSelection
+    let scope = selectionScope
+    cancelSelection()
+    guard scope == store.scope else { return }
+    // Re-save even a highlighted card: the displayed list may be an older read.
+    mutate("set-active", strategy: strategy)
   }
   private func finishSelection(_ strategy: JSONValue) {
     guard returnAfterSelection else { return }
@@ -149,7 +177,11 @@ struct USDTStrategiesView: View {
         try await store.reloadStrategies()
         guard scope == store.scope else { return }
         if action == "set-active" { finishSelection(strategy) }
-      } catch { if scope == store.scope { notice = error.localizedDescription } }
+      } catch {
+        guard scope == store.scope, !Task.isCancelled else { return }
+        let error = APIError.map(error)
+        if error.shouldPresent { notice = error.userMessage }
+      }
     }
   }
 }

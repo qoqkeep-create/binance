@@ -114,6 +114,12 @@
 		A18000000000000000000003 /* PositionTrendAdviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18000000000000000000004 /* PositionTrendAdviceTests.swift */; };
 		A19000000000000000000001 /* PositionLiveValuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* PositionLiveValuation.swift */; };
 		A19000000000000000000003 /* PositionLiveValuationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000004 /* PositionLiveValuationTests.swift */; };
+		A1B000000000000000000002 /* PositionLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000001 /* PositionLiveActivityAttributes.swift */; };
+		A1B000000000000000000003 /* PositionLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000001 /* PositionLiveActivityAttributes.swift */; };
+		A1B000000000000000000005 /* PositionLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000004 /* PositionLiveActivity.swift */; };
+		A1B000000000000000000007 /* PositionLiveActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000006 /* PositionLiveActivityTests.swift */; };
+		A1B000000000000000000009 /* PositionLiveWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000008 /* PositionLiveWidget.swift */; };
+		A1B000000000000000000011 /* PositionLiveWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A1B00000000000000000000B /* PositionLiveWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -131,7 +137,28 @@
 			remoteGlobalIDString = 050000000000000000000001;
 			remoteInfo = TradeTool;
 		};
+		A1B000000000000000000014 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 060000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1B00000000000000000000C;
+			remoteInfo = PositionLiveWidget;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A1B000000000000000000012 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1B000000000000000000011 /* PositionLiveWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		D15A00000000000000000002 /* DisplayNumber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayNumber.swift; sourceTree = "<group>"; };
@@ -248,6 +275,12 @@
 		A18000000000000000000004 /* PositionTrendAdviceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionTrendAdviceTests.swift; sourceTree = "<group>"; };
 		A19000000000000000000002 /* PositionLiveValuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveValuation.swift; sourceTree = "<group>"; };
 		A19000000000000000000004 /* PositionLiveValuationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveValuationTests.swift; sourceTree = "<group>"; };
+		A1B000000000000000000001 /* PositionLiveActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		A1B000000000000000000004 /* PositionLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveActivity.swift; sourceTree = "<group>"; };
+		A1B000000000000000000006 /* PositionLiveActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveActivityTests.swift; sourceTree = "<group>"; };
+		A1B000000000000000000008 /* PositionLiveWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionLiveWidget.swift; sourceTree = "<group>"; };
+		A1B00000000000000000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1B00000000000000000000B /* PositionLiveWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PositionLiveWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -272,6 +305,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B000000000000000000010 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -279,6 +319,8 @@
 			isa = PBXGroup;
 			children = (
 				040000000000000000000002 /* TradeTool */,
+				A1B000000000000000000016 /* Shared */,
+				A1B000000000000000000015 /* PositionLiveWidget */,
 				0B0000000000000000000006 /* TradeToolTests */,
 				0D0000000000000000000006 /* TradeToolChartCalibrationUITests */,
 				040000000000000000000011 /* Config */,
@@ -378,6 +420,7 @@
 			isa = PBXGroup;
 			children = (
 				02000000000000000000000B /* TradeTool.app */,
+				A1B00000000000000000000B /* PositionLiveWidget.appex */,
 				0B0000000000000000000004 /* TradeToolTests.xctest */,
 				0D0000000000000000000004 /* TradeToolChartCalibrationUITests.xctest */,
 			);
@@ -591,6 +634,7 @@
 				A17000000000000000000004 /* FloatingPositionsTests.swift */,
 				A18000000000000000000004 /* PositionTrendAdviceTests.swift */,
 				A19000000000000000000004 /* PositionLiveValuationTests.swift */,
+				A1B000000000000000000006 /* PositionLiveActivityTests.swift */,
 				D15A00000000000000000004 /* DisplayNumberTests.swift */,
 				0B0000000000000000000002 /* ChartEngineCoreTests.swift */,
 				0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */,
@@ -619,12 +663,30 @@
 				18C443B8F02115C83974CD29 /* USDTStore.swift */,
 				A18000000000000000000002 /* PositionTrendAdvice.swift */,
 				A19000000000000000000002 /* PositionLiveValuation.swift */,
+				A1B000000000000000000004 /* PositionLiveActivity.swift */,
 				A17000000000000000000002 /* FloatingPositionsView.swift */,
 				A17000000000000000000006 /* FloatingPositionsPiP.swift */,
 				9F809D7E960B2B57A1B3363F /* USDTStrategyViews.swift */,
 				F5FB36AC81EAC4579B7CADD9 /* USDTTradingViews.swift */,
 			);
 			path = USDT;
+			sourceTree = "<group>";
+		};
+		A1B000000000000000000015 /* PositionLiveWidget */ = {
+			isa = PBXGroup;
+			children = (
+				A1B000000000000000000008 /* PositionLiveWidget.swift */,
+				A1B00000000000000000000A /* Info.plist */,
+			);
+			path = PositionLiveWidget;
+			sourceTree = "<group>";
+		};
+		A1B000000000000000000016 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A1B000000000000000000001 /* PositionLiveActivityAttributes.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -637,10 +699,12 @@
 				080000000000000000000001 /* Sources */,
 				030000000000000000000001 /* Frameworks */,
 				070000000000000000000001 /* Resources */,
+				A1B000000000000000000012 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A1B000000000000000000013 /* PBXTargetDependency */,
 			);
 			name = TradeTool;
 			packageProductDependencies = (
@@ -685,6 +749,23 @@
 			productReference = 0D0000000000000000000004 /* TradeToolChartCalibrationUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A1B00000000000000000000C /* PositionLiveWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B00000000000000000000D /* Build configuration list for PBXNativeTarget "PositionLiveWidget" */;
+			buildPhases = (
+				A1B00000000000000000000E /* Sources */,
+				A1B000000000000000000010 /* Frameworks */,
+				A1B00000000000000000000F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PositionLiveWidget;
+			productName = PositionLiveWidget;
+			productReference = A1B00000000000000000000B /* PositionLiveWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -696,6 +777,9 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					050000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					A1B00000000000000000000C = {
 						CreatedOnToolsVersion = 16.0;
 					};
 					0B0000000000000000000007 = {
@@ -725,6 +809,7 @@
 			projectRoot = "";
 			targets = (
 				050000000000000000000001 /* TradeTool */,
+				A1B00000000000000000000C /* PositionLiveWidget */,
 				0B0000000000000000000007 /* TradeToolTests */,
 				0D0000000000000000000007 /* TradeToolChartCalibrationUITests */,
 			);
@@ -758,6 +843,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B00000000000000000000F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -773,6 +865,8 @@
 				059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */,
 				A18000000000000000000001 /* PositionTrendAdvice.swift in Sources */,
 				A19000000000000000000001 /* PositionLiveValuation.swift in Sources */,
+				A1B000000000000000000005 /* PositionLiveActivity.swift in Sources */,
+				A1B000000000000000000002 /* PositionLiveActivityAttributes.swift in Sources */,
 				A17000000000000000000001 /* FloatingPositionsView.swift in Sources */,
 				A17000000000000000000005 /* FloatingPositionsPiP.swift in Sources */,
 				F67763823BB9FE464C06D388 /* USDTStrategyViews.swift in Sources */,
@@ -868,6 +962,7 @@
 				A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */,
 				A18000000000000000000003 /* PositionTrendAdviceTests.swift in Sources */,
 				A19000000000000000000003 /* PositionLiveValuationTests.swift in Sources */,
+				A1B000000000000000000007 /* PositionLiveActivityTests.swift in Sources */,
 				D15A00000000000000000003 /* DisplayNumberTests.swift in Sources */,
 				0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */,
 				0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */,
@@ -884,6 +979,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B00000000000000000000E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B000000000000000000009 /* PositionLiveWidget.swift in Sources */,
+				A1B000000000000000000003 /* PositionLiveActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -896,6 +1000,11 @@
 			isa = PBXTargetDependency;
 			target = 050000000000000000000001 /* TradeTool */;
 			targetProxy = 0D0000000000000000000003 /* PBXContainerItemProxy */;
+		};
+		A1B000000000000000000013 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B00000000000000000000C /* PositionLiveWidget */;
+			targetProxy = A1B000000000000000000014 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1331,6 +1440,93 @@
 			};
 			name = "Debug-Seoul";
 		};
+		A1B000000000000000000017 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PositionLiveWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "持仓 Live";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.PositionLiveWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug";
+		};
+		A1B000000000000000000019 /* Debug-Seoul */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PositionLiveWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "持仓 Live";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.PositionLiveWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-Seoul";
+		};
+		A1B000000000000000000018 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 756Y5JKBUD;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PositionLiveWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "持仓 Live";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.waibao2025.trade.integrated.PositionLiveWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Release";
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1373,6 +1569,16 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = "Debug-Seoul";
+		};
+		A1B00000000000000000000D /* Build configuration list for PBXNativeTarget "PositionLiveWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B000000000000000000017 /* Debug */,
+				A1B000000000000000000019 /* Debug-Seoul */,
+				A1B000000000000000000018 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

@@ -10,8 +10,6 @@ struct USDTTradeView: View {
   private var risk: String { store.riskAmount }
   @State private var includeFee = false
   @State private var strategyID = ""
-  @State private var ema: JSONValue = .null
-  @State private var notice = ""
   @State private var busy = false
   @State private var confirm = false
   @State private var requestIdentity = UUID().uuidString
@@ -47,9 +45,7 @@ struct USDTTradeView: View {
   @State private var showSymbols = false
   @State private var showStopLoss = false
   @State private var showChart = false
-  @State private var strategyEnabled = true
-  @State private var emaExpanded = false
-  @State private var now = Date()
+  private var strategyEnabled: Bool { !strategyID.isEmpty }
 
   private var standardForm: some View {
     VStack(spacing: 0) {
@@ -97,34 +93,12 @@ struct USDTTradeView: View {
               USDTField(title: "限价", text: $limit, numeric: true, placeholder: "请输入限价")
             }
             USDTField(title: "止损价", text: $stop, numeric: true, placeholder: "请输入止损价")
-            VStack(spacing: 8) {
-              HStack {
-                Text("止盈策略").font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-                Spacer()
-                WebCheckbox(checked: $strategyEnabled)
-              }
+            VStack(alignment: .leading, spacing: 8) {
+              Text("止盈方式").font(.system(size: 14)).foregroundStyle(WebTheme.muted)
               NavigationLink {
                 USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
               } label: {
-                Text(
-                  strategyEnabled
-                    ? store.strategies.first(where: { $0.value("id") == strategyID })?.value("name")
-                      ?? "请选择策略" : "未启用自动止盈策略"
-                )
-                .font(.system(size: 16, weight: .medium)).foregroundStyle(
-                  strategyEnabled ? WebTheme.brand : WebTheme.muted
-                )
-                .frame(maxWidth: .infinity).frame(height: 52)
-                .background(
-                  (strategyEnabled ? WebTheme.brand : WebTheme.secondaryButton).opacity(0.12),
-                  in: RoundedRectangle(cornerRadius: 10)
-                )
-                .overlay {
-                  RoundedRectangle(cornerRadius: 10).stroke(
-                    style: StrokeStyle(lineWidth: 2, dash: [4])
-                  ).foregroundStyle(
-                    (strategyEnabled ? WebTheme.brand : WebTheme.border).opacity(0.35))
-                }
+                takeProfitSelectionLabel
               }.buttonStyle(.plain).accessibilityIdentifier("trade.strategy")
             }.padding(.bottom, 12)
           }
@@ -145,19 +119,13 @@ struct USDTTradeView: View {
               Toggle("止损含手续费", isOn: $includeFee).toggleStyle(WebSwitchStyle()).fixedSize()
             }
           }
-          if orderType == "market", !ema.fields.isEmpty { emaCard }
-          Button(entryButtonText, action: advanceEntry).buttonStyle(
-            WebButtonStyle(
-              kind: hasPosition ? .primary : !inputValid || !strategyValid
-                ? .inactive
-                : orderType == "market" && !emaValid ? .primary : isLong ? .longEntry : .danger)
-          ).disabled(entryDisabled)
-          if submitted {
-            NavigationLink("查看交易命令", destination: USDTCommandsView()).font(.system(size: 14))
-              .foregroundStyle(WebTheme.brand)
-          }
-          USDTNotice(text: notice)
-          USDTNotice(text: positions.error)
+          Button(action: advanceEntry) {
+            Text(entryButtonText).font(.system(size: 16, weight: .semibold))
+              .frame(maxWidth: .infinity, minHeight: 48)
+              .foregroundStyle(hasPosition ? BinanceTheme.onAccent : Color.white)
+              .background(hasPosition ? BinanceTheme.accent : chartActionColor,
+                in: RoundedRectangle(cornerRadius: 10))
+          }.buttonStyle(ChartTicketActionStyle()).disabled(entryDisabled)
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).scrollDismissesKeyboard(.interactively)
     }.usdtPage("开仓")
@@ -186,16 +154,20 @@ struct USDTTradeView: View {
       }
       .onChange(of: store.scope) { _, _ in
         confirmationDraft = nil; confirm = false; submitted = false
-        requestIdentity = UUID().uuidString; ema = .null
+        requestIdentity = UUID().uuidString
         strategyID = store.activeStrategy?.value("id") ?? ""
       }
       .onChange(of: includeFee) { _, _ in resetDraft() }
       .onChange(of: risk) { _, _ in resetDraft() }
-      .onChange(of: strategyEnabled) { _, _ in resetDraft() }
       .task(id: store.scope) {
+        let scope = store.scope
+        strategyID = store.activeStrategy?.value("id") ?? ""
         await store.refresh()
-        if strategyID.isEmpty { strategyID = store.activeStrategy?.value("id") ?? "" }
+        guard scope == store.scope, !Task.isCancelled else { return }
+        strategyID = store.activeStrategy?.value("id") ?? ""
       }
+      .onChange(of: chartPositionsError, initial: true) { _, message in presentPositionError(message) }
+      .onChange(of: positions.error) { _, message in presentPositionError(message) }
       .onAppear {
         if chartInput == nil { dashboard.restoreRealtimeSubscriptions() }
         if !initialStop.isEmpty { stop = initialStop }
@@ -204,15 +176,13 @@ struct USDTTradeView: View {
           orderType = "limit"
         }
       }
-      .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
       .onChange(of: symbol) { _, _ in resetDraft() }
       .onChange(of: stop) { _, _ in resetDraft() }
       .onChange(of: limit) { _, _ in resetDraft() }
       .onChange(of: orderType) { _, _ in resetDraft() }
-      .onChange(of: strategyID) { _, _ in requestIdentity = UUID().uuidString }
+      .onChange(of: strategyID) { _, _ in resetDraft() }
       .onChange(of: store.activeStrategy?.value("id")) { _, id in
         strategyID = id ?? ""
-        strategyEnabled = id != nil
       }
       .navigationDestination(isPresented: $showChart) {
           MarketChartView(
@@ -276,10 +246,7 @@ struct USDTTradeView: View {
             Button("确定") {
               confirm = false
               guard confirmationScope == store.scope, draft.matchesIntent(currentDraft) else {
-                notice = "开仓参数已变化，请重新确认"; return
-              }
-              guard draft.orderType != "market" || emaValid else {
-                notice = "方向初筛已失效，请重新检测"; return
+                container.toastCenter.warning("开仓参数已变化，请重新确认"); return
               }
               submit(draft)
             }.buttonStyle(WebButtonStyle(radius: 14, weight: .bold))
@@ -310,103 +277,48 @@ struct USDTTradeView: View {
   private var strategyValid: Bool {
     !strategyEnabled || store.strategies.contains { $0.value("id") == strategyID }
   }
-  private var emaExpired: Bool {
-    !ema.fields.isEmpty && (WebFormat.date(ema.value("expires_at")) ?? .distantPast) <= now
-  }
-  private var emaDirectionChanged: Bool {
-    !ema.fields.isEmpty && ema.value("side") != (isLong ? "long" : "short")
-  }
-  private var emaValid: Bool {
-    ema["has_any_matching_interval"]?.flag == true && !emaExpired && !emaDirectionChanged
-      && ema.value("symbol") == symbol
-  }
   private var entryButtonText: String {
     if hasPosition { return "正在持仓中" }
     if store.isBound && !positionsReady { return "正在确认持仓…" }
-    if submitted { return "请求已提交，请查看命令记录" }
-    if busy { return orderType == "market" && !emaValid ? "检测中..." : "提交中..." }
-    if !inputValid { return orderType == "market" ? "输入止损价开仓" : "输入止损价/限价开仓" }
-    if !strategyValid { return "请选择止盈策略" }
-    if orderType == "market" && !emaValid { return ema.fields.isEmpty ? "方向初筛" : "重新方向初筛" }
-    return (orderType == "market" ? "市价开" : "限价开") + (isLong ? "多" : "空")
+    if submitted { return "已提交" }
+    if busy { return "处理中…" }
+    if !strategyValid { return "请选择止盈方式" }
+    if !inputValid { return chartInput != nil ? "在 K 线图上选择止损价开仓"
+      : orderType == "market" ? "输入止损价开仓" : "输入止损价/限价开仓" }
+    return chartInput != nil ? (isLong ? "开多" : "开空")
+      : (orderType == "market" ? "市价开" : "限价开") + (isLong ? "多" : "空")
   }
-  private var emaCard: some View {
-    let items = ema["items"]?.rows ?? []
-    let supported = items.filter { $0["supported"]?.flag == true }.count
-    let matches = items.filter {
-      $0["supported"]?.flag == true && $0["matches_direction"]?.flag == true
-    }.count
-    return VStack(spacing: 12) {
-      Button {
-        emaExpanded.toggle()
-      } label: {
-        VStack(alignment: .leading, spacing: 12) {
-          HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-              Text(
-                emaExpired
-                  ? "方向初筛已过期"
-                  : emaDirectionChanged
-                    ? "方向初筛方向已变化"
-                    : ema["has_any_matching_interval"]?.flag == true ? "方向初筛通过" : "所有周期暂不支持当前方向"
-              ).font(.system(size: 14, weight: .medium)).foregroundStyle(
-                emaValid ? WebTheme.success : WebTheme.brand)
-              Text((ema.value("side") == "long" ? "做多" : "做空") + " · 3分钟内有效").font(
-                .system(size: 12)
-              ).foregroundStyle(WebTheme.muted)
-            }
-            Spacer(minLength: 0)
-            Text("\(matches)/\(supported > 0 ? supported : items.count)").font(
-              .system(size: 14, weight: .semibold))
-            WebIcon(emaExpanded ? "chevron-up" : "chevron-down", size: 18).foregroundStyle(
-              WebTheme.muted)
-          }
-          if !emaExpanded {
-            HStack(spacing: 12) {
-              ForEach(Array(items.enumerated()), id: \.offset) { _, row in
-                let pass = row["supported"]?.flag == true && row["matches_direction"]?.flag == true
-                HStack(spacing: 6) {
-                  WebIcon(pass ? "circle-check" : "circle-x", size: 16)
-                  Text(row.value("label"))
-                }.font(.system(size: 12)).foregroundStyle(pass ? WebTheme.success : WebTheme.danger)
-              }
-            }
-          }
-        }.contentShape(Rectangle())
-      }.buttonStyle(.plain)
-      if emaExpanded {
-        VStack(spacing: 8) {
-          ForEach(Array(items.enumerated()), id: \.offset) { _, row in
-            let supported = row["supported"]?.flag == true
-            let pass = supported && row["matches_direction"]?.flag == true
-            VStack(alignment: .leading, spacing: 4) {
-              HStack(spacing: 8) {
-                WebIcon(pass ? "circle-check" : "circle-x", size: 16).foregroundStyle(
-                  pass ? WebTheme.success : WebTheme.danger)
-                Text(row.value("label")).font(.system(size: 14))
-                Spacer()
-                Text(!supported ? "数据不足" : pass ? "支持" : "不支持").font(
-                  .system(size: 12, weight: .medium)
-                ).foregroundStyle(
-                  !supported ? WebTheme.muted : pass ? WebTheme.success : WebTheme.danger)
-              }
-              Text(row.value("relation")).font(.system(size: 12)).foregroundStyle(WebTheme.muted)
-            }.padding(.horizontal, 12).padding(.vertical, 8).background(
-              WebTheme.surface, in: RoundedRectangle(cornerRadius: 8))
-          }
-        }
+
+  private var takeProfitSelectionText: String {
+    if hasPosition { return heldTakeProfit }
+    if !strategyEnabled { return "手动止盈" }
+    return store.strategies.first { $0.value("id") == strategyID }?.value("name", fallback: "选择止盈方式") ?? "选择止盈方式"
+  }
+  private var takeProfitIsAutomatic: Bool {
+    if hasPosition { return heldRow?.value("strategy_status") == "1" }
+    return strategyEnabled
+  }
+  private var takeProfitSelectionLabel: some View {
+    HStack(spacing: 4) {
+      Text(takeProfitSelectionText).font(.system(size: 16, weight: .semibold))
+        .lineLimit(1).truncationMode(.tail).underline(!hasPosition)
+      if !hasPosition {
+        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
       }
-    }.padding(12).background(
-      (emaValid ? WebTheme.success : WebTheme.brand).opacity(emaValid ? 0.08 : 0.1),
-      in: RoundedRectangle(cornerRadius: 10)
-    ).overlay {
-      RoundedRectangle(cornerRadius: 10).stroke(
-        (emaValid ? WebTheme.success : WebTheme.brand).opacity(emaValid ? 0.25 : 0.3), lineWidth: 1)
-    }
+    }.foregroundStyle(takeProfitIsAutomatic ? BinanceTheme.accent : ChartTradingPalette.color(.positive, for: colorScheme))
+      .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).contentShape(Rectangle())
+  }
+
+  private func presentPositionError(_ message: String) {
+    guard !message.isEmpty else { return }
+    container.toastCenter.error(message)
+  }
+  private func presentEntryError(_ error: Error, suffix: String = "") {
+    let mapped = APIError.map(error)
+    guard mapped.shouldPresent else { return }
+    container.toastCenter.error(mapped.userMessage + suffix)
   }
   private func resetDraft() {
-    ema = .null
-    emaExpanded = false
     if !submitted { requestIdentity = UUID().uuidString }
   }
   private func advanceEntry() {
@@ -415,7 +327,6 @@ struct USDTTradeView: View {
       return
     }
     guard !busy, !submitted, store.isBound, inputValid, strategyValid, positionsReady else { return }
-    if orderType == "market" && !emaValid { checkEMA(); return }
     let draft = currentDraft
     let scope = store.scope
     busy = true
@@ -427,28 +338,14 @@ struct USDTTradeView: View {
         confirmationDraft = draft
         confirmationScope = scope
         confirm = true
-      } catch { if scope == store.scope { notice = error.localizedDescription } }
-    }
-  }
-  private func checkEMA() {
-    let draft = currentDraft
-    let scope = store.scope
-    busy = true
-    Task {
-      defer { busy = false }
-      do {
-        let result = try await store.send("/v1/trade/ema-check",
-          ["symbol": .string(draft.symbol.uppercased()), "stop_loss_price": .string(draft.stopLossPrice)])
-        guard scope == store.scope, draft.matchesIntent(currentDraft) else { return }
-        ema = result
-      } catch { if scope == store.scope { notice = error.localizedDescription } }
+      } catch { if scope == store.scope { presentEntryError(error) } }
     }
   }
   private func submit(_ draft: USDTEntryDraft) {
     guard !hasPosition, positionsReady else { confirm = false; return }
     let scope = store.scope
     let key = requestIdentity
-    let payload = draft.payload(ema: ema)
+    let payload = draft.payload()
     busy = true
     submitted = true
     Task {
@@ -457,8 +354,11 @@ struct USDTTradeView: View {
         let result = try await store.command(
           draft.orderType == "limit" ? "limit-create" : "open", payload: payload, key: key)
         guard scope == store.scope else { return }
-        notice = store.commandMessage(result)
-      } catch { if scope == store.scope { notice = error.localizedDescription + "。请先核对命令记录。" } }
+        let status = result.value("status")
+        container.toastCenter.present(store.commandMessage(result),
+          style: status == "SUCCEEDED" ? .success : status == "FAILED" ? .error : .warning,
+          duration: status == "SUCCEEDED" ? 1.5 : 4)
+      } catch { if scope == store.scope { presentEntryError(error, suffix: "。请先核对命令记录。") } }
     }
   }
 
@@ -539,11 +439,7 @@ struct USDTTradeView: View {
             NavigationLink {
               USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
             } label: {
-              Text(hasPosition ? heldTakeProfit : strategyEnabled ? store.strategies.first { $0.value("id") == strategyID }?.value("name") ?? "选择策略" : "手动止盈")
-                .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
-                .foregroundStyle(BinanceTheme.onAccent)
-                .padding(.horizontal, 8).frame(height: 28)
-                .background(BinanceTheme.accent, in: RoundedRectangle(cornerRadius: 6))
+              takeProfitSelectionLabel
             }.buttonStyle(.plain).disabled(hasPosition || busy || submitted || confirm)
               .accessibilityIdentifier("chart-ticket.strategy")
           }.frame(maxWidth: .infinity, alignment: .leading)
@@ -560,29 +456,17 @@ struct USDTTradeView: View {
           .disabled(hasPosition || busy || submitted || confirm)
         Button(action: advanceEntry) {
           HStack(spacing: 6) {
-          Text(hasPosition ? "正在持仓中" : store.isBound && !positionsReady ? "正在确认持仓…"
-            : submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "在 K 线图上选择止损价开仓")
+          Text(entryButtonText)
             .font(.system(size: inputValid || hasPosition ? 16 : 12, weight: .semibold))
             .lineLimit(1).minimumScaleFactor(0.75)
           if hasPosition { Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)) }
           }.frame(maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(hasPosition ? BinanceTheme.onAccent : inputValid ? BinanceTheme.onTradeAction : Color.white)
-            .background(hasPosition ? BinanceTheme.accent : inputValid ? chartActionColor : BinanceTheme.positive,
+            .background(hasPosition ? BinanceTheme.accent : inputValid ? chartActionColor : ChartTradingPalette.color(.positive, for: colorScheme),
               in: RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(ChartTicketActionStyle(showsSelectionHint: !inputValid && !hasPosition)).disabled(entryDisabled)
+        }.buttonStyle(ChartTicketActionStyle()).disabled(entryDisabled)
           .accessibilityIdentifier("chart-ticket.submit")
       }
-      if !store.isBound {
-        Text("请先在我的页面绑定 API").font(.system(size: 11)).foregroundStyle(WebTheme.muted)
-      } else if orderType == "market", !ema.fields.isEmpty {
-        Text(emaValid ? "方向初筛通过，再次点击确认开仓" : emaDirectionChanged ? "方向已变化，请重新初筛" : "方向初筛未通过或已过期")
-          .font(.system(size: 11)).foregroundStyle(emaValid ? WebTheme.success : WebTheme.brand)
-      }
-      if submitted {
-        NavigationLink("查看交易命令", destination: USDTCommandsView()).font(.system(size: 12))
-      }
-      USDTNotice(text: notice)
-      USDTNotice(text: chartPositionsError)
     }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
       .frame(maxWidth: .infinity)
       .background(BinanceTheme.surface.ignoresSafeArea(edges: [.horizontal, .bottom]))
@@ -610,24 +494,17 @@ struct USDTTradeView: View {
       .accessibilityIdentifier("chart-ticket." + title)
   }
   private var chartActionColor: Color {
-    if isLong { return BinanceTheme.positive }
-    let color = ChartColor.negative
-      .resolved(for: colorScheme == .dark ? .dark : .light)
-    return Color(.sRGB, red: Double(color.red), green: Double(color.green),
-      blue: Double(color.blue), opacity: Double(color.alpha))
+    ChartTradingPalette.color(isLong ? .positive : .negative, for: colorScheme)
   }
   private func selectStrategy(_ strategy: JSONValue?) {
-    strategyEnabled = strategy != nil
     strategyID = strategy?.value("id") ?? ""
     resetDraft()
   }
 }
 
 private struct ChartTicketActionStyle: ButtonStyle {
-  let showsSelectionHint: Bool
-  @Environment(\.isEnabled) private var enabled
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label.opacity(configuration.isPressed ? 0.8 : enabled || showsSelectionHint ? 1 : 0.5)
+    configuration.label.opacity(configuration.isPressed ? 0.8 : 1)
   }
 }
 
@@ -688,12 +565,12 @@ struct USDTEntryDraft: Equatable {
       && limitPrice == other.limitPrice && riskAmount == other.riskAmount && includeFee == other.includeFee
       && strategy == other.strategy && leverage == other.leverage && isLong == other.isLong
   }
-  func payload(ema: JSONValue) -> [String: JSONValue] {
+  func payload() -> [String: JSONValue] {
     var result: [String: JSONValue] = ["symbol": .string(symbol.uppercased()),
       "stop_loss_price": .string(stopLossPrice), "stop_loss_amount": .string(riskAmount)]
     if let leverage { result["leverage"] = .number(Double(leverage)) }
     if orderType == "limit" { result["limit_price"] = .string(limitPrice) }
-    else { result["include_fee"] = .bool(includeFee); result["ema_check_id"] = ema["check_id"] }
+    else { result["include_fee"] = .bool(includeFee) }
     if let strategy {
       result["strategy_id"] = strategy["id"]; result["strategy_name"] = strategy["name"]
       result["strategy_config"] = strategy["levels"]
@@ -707,6 +584,7 @@ struct USDTPositionsView: View {
   var onOpenChart: ((String, String) -> Void)? = nil
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var dashboard: DashboardViewModel
+  @EnvironmentObject private var liveActivity: PositionLiveActivityController
   @Environment(\.scenePhase) private var scenePhase
   @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
   private var floatingPositions = false
@@ -740,11 +618,24 @@ struct USDTPositionsView: View {
   }
   var body: some View {
     VStack(spacing: 0) {
-      HStack(spacing: 8) {
+      HStack(spacing: 4) {
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
           .frame(maxWidth: 248).frame(height: 44)
         Spacer(minLength: 0)
+        Button { liveActivity.toggle(store: store, container: container) } label: {
+          VStack(spacing: 1) {
+            if liveActivity.isStarting || liveActivity.isRegistering {
+              ProgressView().controlSize(.mini).frame(height: 17)
+            } else {
+              Image(systemName: "waveform.path.ecg").font(.system(size: 17, weight: .medium))
+            }
+            Text("live").font(.system(size: 9, weight: .semibold))
+          }.foregroundStyle(liveActivity.isActive ? WebTheme.brand : WebTheme.secondary)
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("positions.liveActivity")
+          .accessibilityLabel("live 持仓实时活动")
+          .accessibilityValue(liveActivity.isActive ? "已开启" : "未开启")
         Button { floatingPositions.toggle() } label: {
           Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")
             .font(.system(size: 18, weight: .medium))

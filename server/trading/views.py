@@ -42,7 +42,6 @@ from common.binance import (
     is_binance_auth_or_permission_error,
     is_binance_rate_limit_error,
     normalize_stop_trigger_price,
-    resolve_order_direction,
     should_verify_cancel_result,
     standardize_open_order_request,
     to_inst_id,
@@ -112,15 +111,6 @@ logger = logging.getLogger(__name__)
 TV_MESSAGE_API_TOKEN = os.getenv("TV_MESSAGE_API_TOKEN", "").strip()
 TV_MESSAGE_RETENTION_DAYS = 3
 TOTAL_FEE_RATE = Decimal("0.001")
-EMA_CHECK_TTL_SECONDS = 180
-EMA_CHECK_KLINE_LIMIT = 220
-EMA_CHECK_INTERVALS = [
-    ("3m", "3分钟"),
-    ("15m", "15分钟"),
-    ("1h", "1小时"),
-    ("4h", "4小时"),
-    ("1d", "1天"),
-]
 MARKET_KLINE_INTERVALS = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"}
 
 
@@ -571,138 +561,6 @@ def _estimate_total_fee(open_price: Decimal, size: Decimal, ct_val_raw) -> Decim
     return (size * open_price * ct_val * TOTAL_FEE_RATE).quantize(Decimal("0.00000001"))
 
 
-def _fmt_decimal(value: Decimal) -> str:
-    return format(value, "f")
-
-
-def _ema(values: list[Decimal], period: int) -> Optional[Decimal]:
-    if len(values) < period:
-        return None
-    seed = sum(values[:period]) / Decimal(period)
-    multiplier = Decimal("2") / Decimal(period + 1)
-    ema_value = seed
-    for price in values[period:]:
-        ema_value = (price - ema_value) * multiplier + ema_value
-    return ema_value
-
-
-def _build_ema_relation(position_side: str, ema21: Decimal, ema55: Decimal, ema144: Decimal) -> tuple[str, bool]:
-    pos_side = str(position_side or "").lower()
-    if pos_side == "long":
-        if ema21 > ema55 and ema55 > ema144:
-            return "EMA21 > EMA55 > EMA144", True
-        if ema21 > ema55:
-            return "EMA21 > EMA55", True
-        if ema21 > ema144:
-            return "EMA21 > EMA144", True
-        return "EMA21 <= EMA55 且 EMA21 <= EMA144", False
-    if ema21 < ema55 and ema55 < ema144:
-        return "EMA21 < EMA55 < EMA144", True
-    if ema21 < ema55:
-        return "EMA21 < EMA55", True
-    if ema21 < ema144:
-        return "EMA21 < EMA144", True
-    return "EMA21 >= EMA55 且 EMA21 >= EMA144", False
-
-
-def _build_ema_check_item(interval: str, label: str, rows: list[list[str]], position_side: str) -> dict:
-    closed_rows = rows[:-1] if len(rows) > 1 else []
-    closes = []
-    for row in closed_rows:
-        if len(row) < 5:
-            continue
-        closes.append(Decimal(str(row[4])))
-    if len(closes) < 144:
-        return {
-            "interval": interval,
-            "label": label,
-            "supported": False,
-            "matches_direction": False,
-            "relation": "K线数据不足",
-            "ema21": "",
-            "ema55": "",
-            "ema144": "",
-        }
-
-    ema21 = _ema(closes, 21)
-    ema55 = _ema(closes, 55)
-    ema144 = _ema(closes, 144)
-    if ema21 is None or ema55 is None or ema144 is None:
-        return {
-            "interval": interval,
-            "label": label,
-            "supported": False,
-            "matches_direction": False,
-            "relation": "K线数据不足",
-            "ema21": "",
-            "ema55": "",
-            "ema144": "",
-        }
-
-    relation, matches_direction = _build_ema_relation(position_side, ema21, ema55, ema144)
-    return {
-        "interval": interval,
-        "label": label,
-        "supported": True,
-        "matches_direction": matches_direction,
-        "relation": relation,
-        "ema21": _fmt_decimal(ema21),
-        "ema55": _fmt_decimal(ema55),
-        "ema144": _fmt_decimal(ema144),
-    }
-
-
-def _ema_check_cache_key(user_id: int, check_id: str) -> str:
-    return f"trade:ema-check:{user_id}:{check_id}"
-
-
-def _parse_cached_decimal(raw: str, name: str) -> Decimal:
-    try:
-        return Decimal(str(raw))
-    except (InvalidOperation, TypeError, ValueError):
-        raise BinanceApiError(f"方向初筛{name}已失效，请重新检测")
-
-
-def _validate_ema_check_for_market_open(
-    *,
-    user_id: int,
-    ema_check_id: str,
-    symbol: str,
-    stop_loss_price: Decimal,
-    current_price: Decimal,
-) -> dict:
-    cached = cache.get(_ema_check_cache_key(user_id, ema_check_id))
-    if not isinstance(cached, dict):
-        raise BinanceApiError("请先完成方向初筛")
-
-    expires_at_ts = float(cached.get("expires_at_ts") or 0)
-    if expires_at_ts <= timezone.now().timestamp():
-        raise BinanceApiError("方向初筛已过期，请重新检测")
-
-    cached_symbol = str(cached.get("symbol") or "")
-    if cached_symbol != symbol:
-        raise BinanceApiError("方向初筛交易对已变化，请重新检测")
-
-    cached_stop_loss_price = _parse_cached_decimal(cached.get("stop_loss_price") or "", "止损价")
-    if cached_stop_loss_price != stop_loss_price:
-        raise BinanceApiError("方向初筛止损价已变化，请重新检测")
-
-    current_direction = resolve_order_direction(current_price, stop_loss_price)
-    current_side = str(current_direction.get("position_side") or "")
-    cached_side = str(cached.get("side") or "")
-    if cached_side != current_side:
-        raise BinanceApiError("方向初筛方向已变化，请重新检测")
-
-    if not bool(cached.get("has_any_supported_interval")):
-        raise BinanceApiError("方向初筛数据不足，请稍后重试")
-
-    if not bool(cached.get("has_any_matching_interval")):
-        direction_label = "做多" if cached_side == "long" else "做空"
-        raise BinanceApiError(f"所有周期均不支持{direction_label}，禁止开仓")
-
-    return cached
-
-
 def _exchange_has_symbol_position(pos_rows: list[dict], inst_id: str) -> bool:
     for row in pos_rows:
         if str(row.get("instId") or "") != inst_id:
@@ -1046,11 +904,18 @@ class TradeOpenSerializer(serializers.Serializer):
     stop_loss_price = serializers.CharField(max_length=64)
     stop_loss_amount = serializers.CharField(max_length=64)
     include_fee = serializers.BooleanField()
-    ema_check_id = serializers.CharField(required=False, allow_blank=False, max_length=128)
+    # Opaque legacy field: retain persisted request identity, never gate entry.
+    ema_check_id = serializers.JSONField(required=False, allow_null=True)
     strategy_id = serializers.CharField(required=False, allow_blank=False, max_length=32)
     strategy_name = serializers.CharField(required=False, allow_blank=False, max_length=100)
     strategy_config = serializers.JSONField(required=False)
     client_request_id = serializers.UUIDField(required=False)
+
+    def validate_ema_check_id(self, value):
+        # Preserve former CharField normalization for already persisted retries.
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            return str(value).strip()
+        return value
 
     def validate(self, attrs):
         err = _validate_strategy_payload(
@@ -1061,11 +926,6 @@ class TradeOpenSerializer(serializers.Serializer):
         if err:
             raise serializers.ValidationError(err)
         return attrs
-
-
-class TradeEmaCheckSerializer(serializers.Serializer):
-    symbol = serializers.CharField(max_length=32)
-    stop_loss_price = serializers.CharField(max_length=64)
 
 
 class CapitalNormalizeSerializer(serializers.Serializer):
@@ -1663,77 +1523,6 @@ class SymbolInfoView(APIView):
         return ok(data=data)
 
 
-class TradeEmaCheckView(APIView):
-    def post(self, request):
-        if not get_user_binance_credentials(request.user, trading_mode=request_trading_mode(request)):
-            return fail("使用交易功能需先绑定 Binance Futures 实盘 API，是否立即前往绑定？")
-
-        serializer = TradeEmaCheckSerializer(data=request.data)
-        if not serializer.is_valid():
-            errors = serializer.errors
-            first_key = next(iter(errors.keys()), None)
-            if first_key and errors[first_key]:
-                return fail(str(errors[first_key][0]))
-            return fail("请求参数错误")
-
-        data = serializer.validated_data
-        try:
-            inst_id = to_inst_id(data["symbol"])
-            normalized_symbol = to_symbol(inst_id)
-            raw_stop_loss_price = _to_decimal(data["stop_loss_price"], "止损价")
-            ticker = _extract_ticker(inst_id)
-            current_price = _to_decimal(str(ticker.get("last") or "0"), "行情价格")
-            direction = resolve_order_direction(current_price, raw_stop_loss_price)
-            side = str(direction["position_side"])
-
-            items = []
-            for interval, label in EMA_CHECK_INTERVALS:
-                payload = binance_get_candles(inst_id, bar=interval, limit=EMA_CHECK_KLINE_LIMIT)
-                rows = payload.get("data") or []
-                items.append(_build_ema_check_item(interval, label, rows, side))
-
-            has_any_supported_interval = any(bool(item.get("supported")) for item in items)
-            has_any_matching_interval = any(bool(item.get("matches_direction")) for item in items)
-            now = timezone.now()
-            expires_at = now + timedelta(seconds=EMA_CHECK_TTL_SECONDS)
-            check_id = uuid4().hex
-            response_data = {
-                "check_id": check_id,
-                "symbol": normalized_symbol,
-                "side": side,
-                "stop_loss_price": _fmt_decimal(raw_stop_loss_price),
-                "current_price": _fmt_decimal(current_price),
-                "created_at": now.isoformat(),
-                "expires_at": expires_at.isoformat(),
-                "ttl_seconds": EMA_CHECK_TTL_SECONDS,
-                "has_supported_interval": has_any_supported_interval,
-                "has_any_supported_interval": has_any_supported_interval,
-                "has_matching_interval": has_any_matching_interval,
-                "has_any_matching_interval": has_any_matching_interval,
-                "items": items,
-            }
-            cache.set(
-                _ema_check_cache_key(request.user.id, check_id),
-                {
-                    **response_data,
-                    "user_id": request.user.id,
-                    "expires_at_ts": expires_at.timestamp(),
-                },
-                timeout=EMA_CHECK_TTL_SECONDS,
-            )
-            return ok(data=response_data)
-        except BinanceApiError as exc:
-            return fail(safe_error_summary(exc, include_type=False))
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "ema_check_failed user=%s symbol=%s err=%s",
-                getattr(request.user, "id", None),
-                data.get("symbol"),
-                safe_error_summary(exc),
-            )
-            return fail("方向初筛失败，请稍后重试")
-
-
 class TradeOpenView(APIView):
     def post(self, request):
         data = None
@@ -1905,16 +1694,6 @@ class TradeOpenView(APIView):
                     entry_price = _to_decimal(str(ticker.get("last") or "0"), "行情价格")
                     if entry_price == raw_stop_loss_price:
                         raise BinanceApiError("止损价不能等于当前价格")
-                    ema_check_id = str(data.get("ema_check_id") or "").strip()
-                    if not ema_check_id:
-                        raise BinanceApiError("请先完成方向初筛")
-                    _validate_ema_check_for_market_open(
-                        user_id=request.user.id,
-                        ema_check_id=ema_check_id,
-                        symbol=normalized_symbol,
-                        stop_loss_price=raw_stop_loss_price,
-                        current_price=entry_price,
-                    )
                     standardized_open = standardize_open_order_request(
                         entry_price=entry_price,
                         stop_loss_price=raw_stop_loss_price,

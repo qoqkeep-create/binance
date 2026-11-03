@@ -2,6 +2,29 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。
 
+## 开仓周期初筛退役限定发布（2026-11-03）
+
+2026-11-03 23:31（北京时间）核验 **47.80.22.243（首尔服务器）** 的 `current` 为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`（API）；worker 独立为 `integrated-20261103-worker-retire-entry-ema-f7a289ab3c7d`。本次按用户要求移除 EMA 方向／周期初筛接口及新单门控，未替换完整 Git HEAD。下方发布记录均保留各次操作时点，当前组合以本节为准。
+
+- API 从紧接下方的 LivePositions 实际运行版叠加 5 条允许路径，317 个源文件中 312 个原样；worker 从自身 `integrated-20261102-git-171be8d74c50` 叠加同一范围，307 个文件中 302 个原样。只改 3 个运行及 2 个测试文件，72 个非目标 views 声明逐字节不变；发布前只读核对 worker 镜像 295 个源码哈希。API 归档 SHA-256 为 `8570b8ae4ce991286546570cfeec4bff72ecaf122e698e8534e381cc44668202`，worker 为 `8d028ce19df756435bd7256daf40c4fea387f58bc47d90f661cd06cd2e0456c7`，两端一致。两个独立限定包各 264 项隔离回归通过，重叠不相加，见 [开发](development.md#开仓初筛退役止盈选择与策略确认2026-11-03)。
+- 备份与结果在 `/opt/trade-tools-integrated/backups/integrated-20261103-retire-entry-ema-2d2d93f13dbf/`（0700），保存前版、两个来源清单、原容器、回退命令和结果。无 schema／数据迁移，仅执行 `migrate --check`，沿用上次 LivePositions 的 **334441616-byte** 数据库 gzip 并再次完整解压核验；保存引用，不恢复数据库或重放队列。环境文件的 inode、大小、mtime 与权限未变。
+- build 和切换前两次只读核对 RUNNING 命令均为 0；只重建并替换 API／worker，scheduler／market／MySQL／Redis 的 ID 与镜像均未变。六服务 healthy，公网 HTTPS 深度健康 200。API 与 scheduler 的 live／APNs 继续 true，仓位事件／合作方外发／外部入站三个暂停开关继续 false。
+- 新 API 与 worker 各自运行禁用 SQL／网络的实际视图替身检查：EMA 路由 404，原开仓别名保留，9 种旧字段形态都直接到原资金／Decimal 计算边界。没有读取初筛缓存或 K 线，没有执行真实交易、划转、撤保护或测试通知；旧已持久化请求的字符串归一化和指纹恢复保留。旧客户端仍主动请求初筛时会 404，新开仓需配套更新本轮 iOS；客户端 push 不代表 TestFlight 分发完成。
+
+当前 Compose 使用本版 `compose.integrated.yaml`＋`compose.signal-leverage.yaml`＋`compose.entry-ema.yaml`，第三份 override 将 worker 固定为独立新镜像、scheduler 固定为前版 LivePositions、其他服务固定为实际原镜像，不能漏带而将 worker 改回旧初筛。`INTEGRATED_RELEASE` 使用 API release。回滚执行本次备份中 `rollback.sh`，它只恢复 API／worker 的原镜像与 `current`，保留环境、数据库和其他容器；不执行反迁移、订单重试或数据库恢复。回退后旧初筛会恢复，需同步评估客户端版本。源码交付和手机待验范围见 [本轮记录](changes.md#2026-11-03开仓初筛退役止盈显示与策略二次确认)。
+
+## live 后台持仓卡片限定发布（2026-11-03）
+
+2026-11-03 22:49（北京时间）核验 **47.80.22.243（首尔服务器）** 当前为 `integrated-20261103-position-live-activity-3a1a95e914ba`。仅增加 ActivityKit 注册／注销、登出结束标记、独立注册表及只读持仓后台推送任务。`LIVE_ACTIVITIES_ENABLED=true`、APNs 保持 true；`TRADE_NOTIFICATION_ENABLED`、`EXTERNAL_TRADE_SIGNAL_ENABLED`、`EXTERNAL_SIGNAL_INGEST_ENABLED` 三项继续 false。下方旧发布段落保留各次操作时点，当前版本以本节为准。
+
+- 以 `app-notification-routing-5f05a076af1a` 的实际存档为基线，317 个源文件逐项核对，仅 9 个允许路径变化，其余 308 个保持原样。scheduler 只叠加 settings 引入、独立 live job 和开关注册分支，原有任务编排不变；没有带入完整 Git HEAD 中尚未部署的浮盈任务或交易修改。清单在 release 的 `source-release.json`，归档 SHA-256 为 `10a54e16af1a4238906b276a13e5b42318ec7840d26e4ec8e1e3d469c892225a`，两端一致。限定包 108 项隔离回归通过，详见 [开发](development.md#macd-操作色十字线缩放与-live-持仓卡片2026-11-03)。
+- 迁移前新建 `/opt/trade-tools-integrated/backups/integrated-20261103-position-live-activity-3a1a95e914ba/`（0700），保存原环境（0600）、前版路径、来源、容器记录和 **334441616 bytes** 的数据库 gzip；进程返回、完整解压 CRC 和体积校验通过。迁移计划严格只有 `mobile.0003_liveactivityregistration`，只创建独立 live 注册表，执行后 `migrate --check` 通过；不初始化、反迁移或改写既有订单。
+- 仅替换 API／scheduler，六服务 healthy，market／worker／MySQL／Redis 的容器 ID 和镜像均未变化。公网 HTTPS 深度健康 200；API 与 scheduler 分别确认新开关 true、三个暂停开关 false、APNs true、新表及迁移存在。匿名新路由 401，内存鉴权替身的无效请求 400；当前注册数为 0，投递／交易所读取替身下 dispatcher 返回 0，零发送、零交易所调用。未创建假 token、发送真实通知或执行交易／资金／保护单操作。
+
+Compose 继续使用本版 `compose.integrated.yaml`＋`compose.signal-leverage.yaml` 和对应 `INTEGRATED_RELEASE`。兼容代码回退读取备份中的 `previous-release`，只切回 API／scheduler 及 `current`；新增表保留，不能以数据库恢复或反迁移回退代码。部署脚本的启动失败回退仅恢复旧镜像，保留新增表及 live 环境开关（旧代码忽略该项），不覆盖原三个暂停设置；计划回退前应评估并结束已展示的活动、停用 live 调度。回滚不会撤回已送达的系统卡片。
+
+此前 `15b4784` 已推送，本轮新源码保留本地，尚未提交／推送或手动上传 TestFlight。新签名包的活动 token、`liveactivity` topic 苹果接受、锁屏／灵动岛及长时间后台更新仍待 iPhone 验收；服务器健康不代表手机已收到。客户端生命周期及系统预算边界见 [持仓浮窗](ios-floating-positions.md#activitykit-live-持仓卡片2026-11-03源码实现)与[通知](signals-and-notifications.md#activitykit-live-持仓卡片2026-11-03源码实现)。
+
 ## 外部接收暂停与 App 通知分流（2026-11-03）
 
 2026-11-03 21:57（北京时间）核验 **47.80.22.243（首尔服务器）** 当前为 `integrated-20261103-app-notification-routing-5f05a076af1a`。`EXTERNAL_SIGNAL_INGEST_ENABLED=false` 已应用到 API／scheduler；开平仓总开关与合作方发送开关继续 false，APNs 保持 true。普通内部信号走 App；旧外部／Echo 普通信号队列领取时取消，仓位通知以后只移交所属用户 App 队列，暂停期间也不领取已移交记录。浮盈配置和任务编排未变，浮盈自动任务仍未上线。

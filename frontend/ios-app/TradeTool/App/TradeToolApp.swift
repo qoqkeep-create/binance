@@ -104,6 +104,7 @@ private struct ChartCalibrationFixtureView: View {
     @StateObject private var store = USDTStore(api: WebParityFixtureAPI())
     @StateObject private var toastCenter = AppToastCenter()
     @StateObject private var dashboard = DashboardViewModel(apiClient: ChartCalibrationFixtureAPIClient())
+    @StateObject private var livePositions = PositionLiveActivityController()
 
     private let apiClient = ChartCalibrationFixtureAPIClient()
     private let realtimeClient = RealtimeClient(
@@ -150,6 +151,7 @@ private struct ChartCalibrationFixtureView: View {
         .environmentObject(container)
         .environmentObject(dashboard)
         .environmentObject(store)
+        .environmentObject(livePositions)
     }
 }
 
@@ -243,7 +245,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     }
   }
 
-  /// Isolated visual states. This API has no network transport; only local precheck / EMA previews allow POST.
+  /// Isolated visual states. This API has no network transport; only local capital previews allow POST.
   private struct WebParityFixtureAPI: APIClient {
     private let requests = WebParityFixtureRequests()
     static var empty: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-empty") }
@@ -254,7 +256,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       guard
         request.method == .get
-          || ["/v1/trade/capital/precheck", "/v1/trade/capital/wallet/precheck", "/v1/trade/ema-check"].contains(request.path)
+          || ["/v1/trade/capital/precheck", "/v1/trade/capital/wallet/precheck"].contains(request.path)
       else {
         throw APIError.business(code: "VISUAL_FIXTURE", message: "视觉校准模式不执行写操作")
       }
@@ -364,21 +366,6 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         && ProcessInfo.processInfo.arguments.contains("--fixture-unbound")
       {
         value = .null
-      }
-      if request.path == "/v1/trade/ema-check" {
-        value = .object([
-          "check_id": .string("visual-fixture-only"), "symbol": .string("BTCUSDT"),
-          "side": .string("long"), "has_any_matching_interval": .bool(true),
-          "expires_at": .string(
-            ISO8601DateFormatter().string(from: Date().addingTimeInterval(180))),
-          "items": .array(
-            ["15m", "1h", "4h", "1d"].map {
-              .object([
-                "interval": .string($0), "label": .string($0), "supported": .bool(true),
-                "matches_direction": .bool(true), "relation": .string("EMA21 > EMA55 > EMA144"),
-              ])
-            }),
-        ])
       }
       if request.path == "/v1/position/list",
         ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
@@ -761,6 +748,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     @StateObject private var container = AppContainer(
       baseURL: URL(string: "http://127.0.0.1:1/")!, bundleIdentifier: "com.riskon.visual-fixture")
     @StateObject private var store = USDTStore(api: WebParityFixtureAPI())
+    @StateObject private var livePositions = PositionLiveActivityController()
     @StateObject private var dashboard = DashboardViewModel(markets: [
       MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 68000, changePercent24h: 1, updatedAt: .now),
       MarketSnapshot(symbol: "ETHUSDT", quoteAsset: "USDT", price: 2600, changePercent24h: 2, updatedAt: .now),
@@ -800,6 +788,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       .environmentObject(container).environmentObject(container.authStore).environmentObject(
         container.toastCenter
       ).environmentObject(store).environmentObject(dashboard)
+      .environmentObject(livePositions)
       .preferredColorScheme(dark ? .dark : .light)
       .task {
         FloatingPositionsPreferences.defaults.set(false, forKey: FloatingPositionsPreferences.enabledKey)

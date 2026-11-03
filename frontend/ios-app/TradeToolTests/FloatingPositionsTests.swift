@@ -5,6 +5,26 @@ import UIKit
 @testable import TradeTool
 
 final class FloatingPositionsTests: XCTestCase {
+  func testEnablingInlineFloatingArmsPiPWithoutOpeningAnExternalWindow() {
+    XCTAssertEqual(FloatingPiPActivation.requested(enabled: true, bound: true, inBackground: false), .inline)
+    // Inactive scenes (Control Center and permission dialogs) are not background transitions.
+    XCTAssertNotEqual(FloatingPiPActivation.requested(enabled: true, bound: true, inBackground: false), .external)
+  }
+
+  func testHomeRequestsExternalPiPAndReturningRestoresInlineIntent() {
+    let transitions = [false, true, false, true].map {
+      FloatingPiPActivation.requested(enabled: true, bound: true, inBackground: $0)
+    }
+    XCTAssertEqual(transitions, [.inline, .external, .inline, .external])
+  }
+
+  func testDisabledOrUnboundFloatingNeverRequestsAutomaticPiP() {
+    for inBackground in [false, true] {
+      XCTAssertEqual(FloatingPiPActivation.requested(enabled: false, bound: true, inBackground: inBackground), .disabled)
+      XCTAssertEqual(FloatingPiPActivation.requested(enabled: true, bound: false, inBackground: inBackground), .disabled)
+    }
+  }
+
   func testPictureInPictureRotatesAcrossPositionsWithoutLosingSnapshotTime() throws {
     let now = Date(timeIntervalSince1970: 1_000)
     let positions = [try XCTUnwrap(FloatingPosition(row())),

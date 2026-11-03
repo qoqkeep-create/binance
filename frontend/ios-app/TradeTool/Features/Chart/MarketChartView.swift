@@ -11,6 +11,14 @@ private enum ChartPalette {
     static let detailDivider = BinanceTheme.border
 }
 
+enum ChartTradingPalette {
+    static func color(_ token: ChartColor, for scheme: ColorScheme) -> Color {
+        let color = token.resolved(for: scheme == .dark ? .dark : .light)
+        return Color(.sRGB, red: Double(color.red), green: Double(color.green),
+            blue: Double(color.blue), opacity: Double(color.alpha))
+    }
+}
+
 private enum MarketChartIndicatorCatalog {
     static let overlays = [
         "MA", "EMA", "BOLL", "SAR", "AVL", "SUPER",
@@ -1358,13 +1366,14 @@ enum ChartIntervalPreferences {
 }
 
 private struct ChartAutoFitToggleStyle: ToggleStyle {
+    @Environment(\.colorScheme) private var colorScheme
     func makeBody(configuration: Configuration) -> some View {
         Button { configuration.isOn.toggle() } label: {
             HStack(spacing: 4) {
                 configuration.label
                     .foregroundStyle(BinanceTheme.secondaryText)
                 Capsule()
-                    .fill(configuration.isOn ? BinanceTheme.positive : BinanceTheme.border)
+                    .fill(configuration.isOn ? ChartTradingPalette.color(.positive, for: colorScheme) : BinanceTheme.border)
                     .frame(width: 28, height: 17)
                     .overlay(alignment: configuration.isOn ? .trailing : .leading) {
                         Circle().fill(.white).frame(width: 13, height: 13).padding(2)

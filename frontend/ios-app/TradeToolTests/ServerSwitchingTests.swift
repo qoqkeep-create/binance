@@ -1420,11 +1420,11 @@ final class ChartOrderTicketTests: XCTestCase {
     func testChosenLeverageIsPartOfFrozenEntryIntentAndPayload() {
         var first = draft()
         first.leverage = 25
-        XCTAssertEqual(first.payload(ema: .null)["leverage"], .number(25))
+        XCTAssertEqual(first.payload()["leverage"], .number(25))
         var second = first
         second.leverage = 50
         XCTAssertFalse(first.matchesIntent(second))
-        XCTAssertNil(draft().payload(ema: .null)["leverage"])
+        XCTAssertNil(draft().payload()["leverage"])
     }
 
     func testSharedDecimalSizingAndAutomaticDirection() {
@@ -1443,17 +1443,30 @@ final class ChartOrderTicketTests: XCTestCase {
     }
     func testFrozenIntentAndOriginalCommandPayload() {
         let market = draft()
-        let payload = market.payload(ema: .object(["check_id": .string("screening")]))
+        let payload = market.payload()
         XCTAssertEqual(payload["stop_loss_price"], .string("99"))
-        XCTAssertEqual(payload["ema_check_id"], .string("screening"))
+        XCTAssertNil(payload["ema_check_id"], "Market entry no longer requires direction screening")
+        XCTAssertNil(payload["strategy_id"], "No saved strategy means manual take-profit")
+        XCTAssertNil(payload["strategy_config"])
         XCTAssertNil(payload["limit_price"])
         XCTAssertFalse(market.matchesIntent(draft(stop: "98")))
         XCTAssertFalse(market.matchesIntent(draft(stop: "99", entry: "98")))
         XCTAssertTrue(market.matchesIntent(draft(entry: "100.01")))
         let limit = draft(stop: "99", entry: "101", type: "limit")
-        XCTAssertEqual(limit.payload(ema: .null)["limit_price"], .string("101"))
-        XCTAssertNil(limit.payload(ema: .null)["ema_check_id"])
+        XCTAssertEqual(limit.payload()["limit_price"], .string("101"))
+        XCTAssertNil(limit.payload()["ema_check_id"])
         XCTAssertEqual(payload["symbol"], .string("BTCUSDT"), "Editing another draft must not change the frozen request")
+    }
+    func testAutomaticTakeProfitSnapshotDoesNotLeakIntoManualDraft() {
+        let strategy: JSONValue = .object(["id": .string("7"), "name": .string("长名称策略"),
+            "levels": .array([.object(["profitRR": .string("2"), "reducePosition": .string("100")])])])
+        let automatic = USDTEntryDraft(symbol: "BTCUSDT", orderType: "market", stopLossPrice: "99",
+            limitPrice: "", currentPrice: "100", riskAmount: "10", includeFee: false, strategy: strategy)
+        XCTAssertEqual(automatic.payload()["strategy_id"], .string("7"))
+        XCTAssertEqual(automatic.payload()["strategy_config"], strategy["levels"])
+        XCTAssertFalse(automatic.matchesIntent(draft()))
+        XCTAssertNil(draft().payload()["strategy_id"])
+        XCTAssertNil(draft(type: "limit").payload()["strategy_config"])
     }
     func testLimitDrawingCanCrossAndInferBothDirections() throws {
         var drawing = try XCTUnwrap(ChartOrderDrawingState.make(side: .long, entryOrderType: .limit, referencePrice: 100))
@@ -1763,6 +1776,98 @@ private actor GatedSignalBadgeAPI: APIClient {
             readStarted?.resume(); readStarted = nil
         }
         let value: JSONValue = .array([.object(["id": .number(99), "source": .string("internal")])])
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}
+
+@MainActor
+final class ProfileRefreshCancellationTests: XCTestCase {
+    func testCancellationFormsKeepCachedBalanceWithoutAnErrorNotice() async {
+        for failure in [ProfileRefreshFixtureAPI.Failure.taskCancelled, .urlCancelled, .apiCancelled] {
+            let api = ProfileRefreshFixtureAPI()
+            let store = USDTStore(api: api)
+            store.prepareSession(userID: UUID().uuidString)
+            await store.refresh()
+            let cached = store.account
+            await api.failNextRead(failure)
+            await store.refresh()
+            XCTAssertEqual(store.account, cached)
+            XCTAssertEqual(store.notice, "", "Cancelling a page read is not a user-facing failure")
+            XCTAssertFalse(store.isLoading)
+        }
+    }
+
+    func testRealFailureRemainsVisibleAndSuccessfulRetryClearsIt() async {
+        let api = ProfileRefreshFixtureAPI()
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: UUID().uuidString)
+        await store.refresh()
+        await api.failNextRead(.timeout)
+        await store.refresh()
+        XCTAssertEqual(store.notice, APIError.timeout.userMessage)
+        XCTAssertEqual(store.account.value("balance"), "100")
+        await store.refresh()
+        XCTAssertEqual(store.notice, "")
+    }
+
+    func testCancelledRefreshRejectsAResponseThatIgnoresTransportCancellation() async {
+        let api = ProfileRefreshFixtureAPI()
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: UUID().uuidString)
+        await store.refresh()
+        await api.gateNextRead(balance: "200")
+        let pending = Task { await store.refresh() }
+        await api.waitForRead()
+        pending.cancel()
+        await api.completeRead()
+        await pending.value
+        XCTAssertEqual(store.account.value("balance"), "100")
+        XCTAssertEqual(store.notice, "")
+        XCTAssertFalse(store.isLoading)
+    }
+}
+
+private actor ProfileRefreshFixtureAPI: APIClient {
+    enum Failure {
+        case taskCancelled, urlCancelled, apiCancelled, timeout
+        var error: Error {
+            switch self {
+            case .taskCancelled: CancellationError()
+            case .urlCancelled: URLError(.cancelled)
+            case .apiCancelled: APIError.cancelled
+            case .timeout: APIError.timeout
+            }
+        }
+    }
+    private var nextFailure: Failure?
+    private var balance = "100"
+    private var gated = false
+    private var pending: CheckedContinuation<Void, Never>?
+    private var readStarted: CheckedContinuation<Void, Never>?
+    func failNextRead(_ failure: Failure) { nextFailure = failure }
+    func gateNextRead(balance: String) { self.balance = balance; gated = true }
+    func waitForRead() async {
+        if pending != nil { return }
+        await withCheckedContinuation { readStarted = $0 }
+    }
+    func completeRead() { pending?.resume(); pending = nil }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        let value: JSONValue
+        switch request.path {
+        case "/v1/api/info": value = .object(["id": .number(1)])
+        case "/v1/account/info":
+            if let failure = nextFailure { nextFailure = nil; throw failure.error }
+            if gated {
+                gated = false
+                await withCheckedContinuation {
+                    pending = $0
+                    readStarted?.resume(); readStarted = nil
+                }
+            }
+            value = .object(["balance": .string(balance)])
+        case "/v1/strategy/list": value = .array([])
+        default: value = .object([:])
+        }
         return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
     }
 }

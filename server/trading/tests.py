@@ -598,23 +598,6 @@ class TradingApiTests(APITestCase):
         self.assertEqual(new_rows, [{"algoId": "new-key"}])
         self.assertEqual(client.get_pending_algo_orders.call_count, 2)
 
-    def _sample_kline_rows(self, closes: list[str]) -> list[list[str]]:
-        rows = []
-        for idx, close in enumerate(closes):
-            rows.append(
-                [
-                    str(1700000000000 + idx * 60000),
-                    close,
-                    close,
-                    close,
-                    close,
-                    "0",
-                    "0",
-                    "0",
-                ]
-            )
-        return rows
-
     def _create_strategy(self, name: str = "稳健通用") -> Strategy:
         strategy = Strategy.objects.create(user=self.user, name=name, is_active=True)
         StrategyLevel.objects.create(
@@ -1179,174 +1162,100 @@ class TradingApiTests(APITestCase):
         self.assertEqual(resp.data["data"]["current_price"], "123.4")
         self.assertEqual(resp.data["data"]["max_leverage"], 75)
 
-    @patch("trading.views.binance_get_candles")
-    @patch("trading.views._extract_ticker")
-    @patch("trading.views.get_user_binance_credentials")
-    def test_ema_check_returns_pass_result_for_market_long(self, mock_creds, mock_ticker, mock_get_candles):
-        mock_creds.return_value = object()
-        mock_ticker.return_value = {"last": "100"}
-        closes = [str(100 + i) for i in range(220)]
-        mock_get_candles.return_value = {"code": "0", "data": self._sample_kline_rows(closes)}
+    def test_retired_ema_check_route_is_not_available(self):
+        from django.urls import Resolver404, resolve
+        with self.assertRaises(Resolver404):
+            resolve("/v1/trade/ema-check")
 
-        resp = self.client.post(
-            "/v1/trade/ema-check",
-            {"symbol": "BTCUSDT", "stop_loss_price": "90"},
-            format="json",
-        )
-
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertTrue(resp.data["data"]["has_supported_interval"])
-        self.assertTrue(resp.data["data"]["has_matching_interval"])
-        self.assertEqual(resp.data["data"]["side"], "long")
-        self.assertEqual(len(resp.data["data"]["items"]), 5)
-        self.assertEqual(mock_get_candles.call_count, 5)
-        self.assertEqual(resp.data["data"]["items"][0]["relation"], "EMA21 > EMA55 > EMA144")
-
-    @patch("trading.views.binance_get_candles")
-    @patch("trading.views._extract_ticker")
-    @patch("trading.views.get_user_binance_credentials")
-    def test_ema_check_returns_blocked_result_when_no_interval_matches(self, mock_creds, mock_ticker, mock_get_candles):
-        mock_creds.return_value = object()
-        mock_ticker.return_value = {"last": "100"}
-        closes = [str(300 - i) for i in range(220)]
-        mock_get_candles.return_value = {"code": "0", "data": self._sample_kline_rows(closes)}
-
-        resp = self.client.post(
-            "/v1/trade/ema-check",
-            {"symbol": "BTCUSDT", "stop_loss_price": "90"},
-            format="json",
-        )
-
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertTrue(resp.data["data"]["has_supported_interval"])
-        self.assertFalse(resp.data["data"]["has_matching_interval"])
-        self.assertEqual(resp.data["data"]["side"], "long")
-
+    @patch("trading.views.binance_get_candles", side_effect=AssertionError("entry must not read klines"))
     @patch("trading.views.BinanceFuturesClient")
-    @patch("trading.views._extract_ticker")
-    @patch("trading.views._extract_instrument")
-    @patch("trading.views.get_user_binance_credentials")
-    def test_trade_open_requires_ema_check_id(self, mock_creds, mock_inst, mock_ticker, mock_client_cls):
-        mock_creds.return_value = object()
-        mock_ticker.return_value = {"last": "100"}
-        mock_inst.return_value = {"ctVal": "0.01", "lotSz": "1"}
-        mock_client = MagicMock()
-        mock_client.get_positions.return_value = {"code": "0", "data": []}
-        mock_client_cls.return_value = mock_client
-
-        resp = self.client.post(
-            "/v1/trade/open",
-            {
-                "symbol": "BTCUSDT",
-                "stop_loss_price": "90",
-                "stop_loss_amount": "30",
-                "include_fee": True,
-            },
-            format="json",
-        )
-
-        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(resp.data["message"], "请先完成方向初筛")
-
-    @patch("trading.views.BinanceFuturesClient")
-    @patch("trading.views._extract_ticker")
-    @patch("trading.views._extract_instrument")
-    @patch("trading.views.get_user_binance_credentials")
-    def test_trade_open_rejects_expired_ema_check(self, mock_creds, mock_inst, mock_ticker, mock_client_cls):
-        mock_creds.return_value = object()
-        mock_ticker.return_value = {"last": "100"}
-        mock_inst.return_value = {"ctVal": "0.01", "lotSz": "1"}
-        mock_client = MagicMock()
-        mock_client.get_positions.return_value = {"code": "0", "data": []}
-        mock_client_cls.return_value = mock_client
-        cache.set(
-            f"trade:ema-check:{self.user.id}:expired-check",
-            {
-                "symbol": "BTCUSDT",
-                "side": "long",
-                "stop_loss_price": "90",
-                "has_any_supported_interval": True,
-                "has_any_matching_interval": True,
-                "expires_at_ts": timezone.now().timestamp() - 5,
-            },
-            timeout=180,
-        )
-
-        resp = self.client.post(
-            "/v1/trade/open",
-            {
-                "symbol": "BTCUSDT",
-                "stop_loss_price": "90",
-                "stop_loss_amount": "30",
-                "include_fee": True,
-                "ema_check_id": "expired-check",
-            },
-            format="json",
-        )
-
-        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(resp.data["message"], "方向初筛已过期，请重新检测")
-
-    @patch("trading.views.BinanceFuturesClient")
-    @patch("trading.views._extract_ticker")
-    @patch("trading.views._extract_instrument")
-    @patch("trading.views.get_user_binance_credentials")
-    def test_trade_open_uses_cached_ema_check_without_refetching_klines(
-        self,
-        mock_creds,
-        mock_inst,
-        mock_ticker,
-        mock_client_cls,
+    @patch("trading.views._extract_ticker", return_value={"last": "100.125"})
+    @patch("trading.views._extract_instrument", return_value={"ctVal": "0.01", "lotSz": "1"})
+    def test_market_open_ignores_legacy_ema_values_and_keeps_capital_decimal_boundary(
+        self, instrument, _ticker, factory, candles,
     ):
-        mock_creds.return_value = object()
-        mock_ticker.return_value = {"last": "100"}
-        mock_inst.return_value = {"ctVal": "0.01", "lotSz": "1"}
-        mock_client = MagicMock()
-        mock_client.get_account_config.return_value = {"code": "0", "data": [{"posMode": "long_short_mode"}]}
-        mock_client.get_positions.return_value = {"code": "0", "data": []}
-        mock_client.place_market_order.return_value = {"code": "0", "data": [{"ordId": "ema-open-1"}]}
-        mock_client.get_order.return_value = {"code": "0", "data": [{"state": "filled", "fillSz": "3", "avgPx": "100.1"}]}
-        mock_client.place_stop_loss_order.return_value = {"code": "0", "data": [{"algoId": "ema-sl-1"}]}
-        mock_client.place_stop_market_order.return_value = {"code": "0", "data": [{"algoId": "ema-slm-1"}]}
-        mock_client.get_pending_algo_orders.return_value = {"code": "0", "data": [{"algoId": "ema-sl-1", "sz": "3"}]}
-        mock_client_cls.return_value = mock_client
-        cache.set(
-            f"trade:ema-check:{self.user.id}:ready-check",
-            {
-                "symbol": "BTCUSDT",
-                "side": "long",
-                "stop_loss_price": "90",
-                "has_any_supported_interval": True,
-                "has_any_matching_interval": True,
-                "expires_at_ts": timezone.now().timestamp() + 180,
-            },
-            timeout=180,
-        )
+        exchange = factory.return_value
+        exchange.get_positions.return_value = {"data": []}
+        exchange.get_pending_orders.return_value = {"data": []}
+        exchange.get_pending_algo_orders.return_value = {"data": []}
+        cache.set(f"trade:ema-check:{self.user.id}:expired-check", {
+            "symbol": "ETHUSDT", "side": "short", "stop_loss_price": "999",
+            "has_any_supported_interval": False, "has_any_matching_interval": False,
+            "expires_at_ts": timezone.now().timestamp() - 5,
+        }, timeout=180)
+        body = {"symbol": "BTCUSDT", "stop_loss_price": "90.12345678",
+            "stop_loss_amount": "30.001", "include_fee": False}
+        for legacy, expected_legacy in (({}, ""), ({"ema_check_id": "expired-check"}, "expired-check"),
+                ({"ema_check_id": "arbitrary-check"}, "arbitrary-check"), ({"ema_check_id": ""}, ""),
+                ({"ema_check_id": None}, ""), ({"ema_check_id": {"retired": True}}, "{'retired': True}"),
+                ({"ema_check_id": "  legacy-id  "}, "legacy-id"), ({"ema_check_id": 0}, "0"),
+                ({"ema_check_id": 0.0}, "0.0")):
+            with self.subTest(legacy=legacy):
+                self.mock_entry_capital_error.reset_mock()
+                sequence = []
+                self.mock_entry_capital_error.side_effect = lambda *_args, **_kwargs: sequence.append("capital")
 
-        with patch("trading.views.binance_get_candles", side_effect=AssertionError("should not refetch klines")):
-            resp = self.client.post(
-                "/v1/trade/open",
-                {
-                    "symbol": "BTCUSDT",
-                    "stop_loss_price": "90",
-                    "stop_loss_amount": "30",
-                    "include_fee": True,
-                    "ema_check_id": "ready-check",
-                },
-                format="json",
-            )
+                def reached_calculation(**kwargs):
+                    sequence.append("calculation")
+                    self.assertEqual(kwargs["entry_price"], Decimal("100.125"))
+                    self.assertEqual(kwargs["stop_loss_price"], Decimal("90.12345678"))
+                    self.assertEqual(kwargs["stop_loss_amount"], Decimal("30.001"))
+                    self.assertEqual(kwargs["instrument"], instrument.return_value)
+                    raise BinanceApiError("reached original entry calculation")
 
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertTrue(Order.objects.filter(user=self.user, binance_order_id="ema-open-1").exists())
+                with patch("trading.views.standardize_open_order_request", side_effect=reached_calculation):
+                    response = self.client.post("/v1/trade/open", {**body, **legacy}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+                self.assertEqual(response.data["message"], "reached original entry calculation")
+                self.assertEqual(sequence, ["capital", "calculation"])
+                self.mock_entry_capital_error.assert_called_once()
+                self.assertEqual(self.mock_entry_capital_error.call_args.kwargs["purpose"], "entry")
+                self.assertEqual(TradeOpenRequest.objects.order_by("-id").first().request_payload["ema_check_id"],
+                    expected_legacy)
+        candles.assert_not_called()
+        exchange.set_leverage.assert_not_called()
+        exchange.place_market_order.assert_not_called()
+
+    @patch("trading.views.binance_get_candles", side_effect=AssertionError("entry must not read klines"))
+    @patch("trading.views.BinanceFuturesClient")
+    @patch("trading.views._extract_ticker", return_value={"last": "100"})
+    @patch("trading.views._extract_instrument", return_value={"ctVal": "0.01", "lotSz": "1"})
+    def test_market_open_without_ema_uses_existing_execution_and_stable_request_identity(
+        self, _instrument, _ticker, factory, candles,
+    ):
+        exchange = factory.return_value
+        exchange.get_account_config.return_value = {"data": [{"posMode": "long_short_mode"}]}
+        exchange.get_positions.return_value = {"data": []}
+        exchange.get_pending_orders.return_value = {"data": []}
+        exchange.get_pending_algo_orders.return_value = {"data": []}
+        exchange.place_market_order.return_value = {"data": [{"ordId": "direct-open"}]}
+        exchange.get_order.return_value = {"data": [{"state": "filled", "fillSz": "3", "avgPx": "100.1"}]}
+        exchange.place_stop_market_order.return_value = {"data": [{"algoId": "direct-stop"}]}
+        body = {"symbol": "BTCUSDT", "stop_loss_price": "90", "stop_loss_amount": "30",
+            "include_fee": False, "client_request_id": "77777777-7777-4777-8777-777777777777"}
+        first = self.client.post("/v1/trade/open", body, format="json")
+        second = self.client.post("/v1/trade/open", body, format="json")
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+        self.assertEqual(second.status_code, status.HTTP_200_OK, second.data)
+        self.assertEqual(first.data["data"]["position_id"], second.data["data"]["position_id"])
+        self.assertEqual(exchange.place_market_order.call_count, 1)
+        record = TradeOpenRequest.objects.get(client_request_id=body["client_request_id"])
+        self.assertEqual(record.request_payload["ema_check_id"], "")
+        # The retired field keeps its old fingerprint role. Changing an old
+        # caller field must not turn one persisted request into a second order.
+        conflict = self.client.post("/v1/trade/open", {**body, "ema_check_id": "legacy-token"}, format="json")
+        self.assertEqual(conflict.status_code, status.HTTP_409_CONFLICT, conflict.data)
+        self.assertEqual(exchange.place_market_order.call_count, 1)
+        self.assertEqual(Order.objects.get(pk=first.data["data"]["position_id"]).exchange_size, Decimal("3"))
+        self.mock_entry_capital_error.assert_called_once()
+        candles.assert_not_called()
 
     @patch("trading.views.BinanceFuturesClient")
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_creates_order(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -1387,10 +1296,8 @@ class TradingApiTests(APITestCase):
         return_value={"ctVal": "0.01", "lotSz": "1", "lever": "10"},
     )
     @patch("trading.views.get_user_binance_credentials", return_value=object())
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_market_open_stops_when_leverage_setting_hits_shared_rate_limit(
         self,
-        _mock_ema_check,
         _mock_creds,
         _mock_inst,
         _mock_ticker,
@@ -1434,10 +1341,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_succeeds_when_stop_order_visibility_is_delayed(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -1477,10 +1382,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_uses_market_order_fill_from_submit_response(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -1523,10 +1426,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_does_not_create_position_when_fill_is_unknown(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -1566,10 +1467,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_protects_only_confirmed_partial_fill(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -1617,10 +1516,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_recovers_when_submit_response_is_lost(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -1678,10 +1575,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker", return_value={"last": "100"})
     @patch("trading.views._extract_instrument", return_value={"ctVal": "0.01", "lotSz": "1"})
     @patch("trading.views.get_user_binance_credentials", return_value=object())
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_retry_uses_persisted_direction_instead_of_new_market_price(
         self,
-        _mock_ema_check,
         _mock_creds,
         _mock_inst,
         mock_ticker,
@@ -2231,10 +2126,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_with_strategy_creates_snapshot_and_log(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -2287,10 +2180,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_auto_closes_stale_local_order_during_duplicate_check(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,
@@ -2361,10 +2252,8 @@ class TradingApiTests(APITestCase):
     @patch("trading.views._extract_ticker")
     @patch("trading.views._extract_instrument")
     @patch("trading.views.get_user_binance_credentials")
-    @patch("trading.views._validate_ema_check_for_market_open")
     def test_trade_open_blocks_when_exchange_position_exists_without_local_order(
         self,
-        _mock_ema_check,
         mock_creds,
         mock_inst,
         mock_ticker,

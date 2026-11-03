@@ -12,7 +12,7 @@ LEAD_PATHS = frozenset({
     "/v1/account/stop-loss/cancel", "/v1/account/version",
     "/v1/account/client-layout-log",
     "/v1/account/operation-logs",
-    "/v1/trade/symbols", "/v1/trade/symbol/info", "/v1/trade/ema-check",
+    "/v1/trade/symbols", "/v1/trade/symbol/info",
     "/v1/trade/market/klines", "/v1/trade/market/prices",
     "/v1/trade/open", "/v1/trade/open-position", "/v1/trade/capital/precheck",
     "/v1/trade/limit-order/create", "/v1/trade/limit-order/list",

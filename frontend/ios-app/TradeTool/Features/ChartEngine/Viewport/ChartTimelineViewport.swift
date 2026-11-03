@@ -728,6 +728,8 @@ struct ChartInteractionStateMachine: Equatable {
 
     private(set) var state: State = .idle
 
+    var canBeginPinch: Bool { state == .idle || state == .trackingCrosshair }
+
     mutating func beginPan() -> Bool {
         guard state == .idle else {
             return false
@@ -737,7 +739,7 @@ struct ChartInteractionStateMachine: Equatable {
     }
 
     mutating func beginPinch() -> Bool {
-        guard state == .idle else {
+        guard canBeginPinch else {
             return false
         }
         state = .pinchingTimeline

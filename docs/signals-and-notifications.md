@@ -72,6 +72,18 @@ Apple 开发者后台只读核对确认：首轮使用的生产 APNs 密钥为 T
 
 APNs 开关只对开启时新入队事件生成设备投递，关闭时仍保存信号及事件，不回退到 Echobell；不承诺开启后自动补发全部历史。设备注册成功、代码编译或前台 WSS 成功均不能代替后台系统通知验收。
 
+## ActivityKit live 持仓卡片（2026-11-03，源码实现）
+
+live 是用户主动开启的锁屏／灵动岛持仓展示，与普通信号 APNs、仓位事件和浮盈 Echobell 各自独立。客户端在前台创建活动后，用 JWT 鉴权的 `POST /api/push/live-activities/register` 注册每活动 token；注销使用同前缀的 `/unregister`。注册按安装 ID 保留当前活动，校验所属用户、普通／带单模式、有效 API 绑定代际和开始时间；token 轮换有独立时间序，旧活动、旧 token 或旧账户请求不能覆盖新注册。设备普通通知 token 不用于 live，普通通知权限或 APNs 测试成功不等于实时活动已可更新。
+
+`mobile.LiveActivityRegistration` 与 `mobile/live_activities.py` 独立维护注册、45 秒租约、投递结果及结束状态，通过 `mobile.0003_liveactivityregistration` 新增表。scheduler 每 15 秒检查到期注册，频繁更新权限开启时成功投递后的目标间隔为 15 秒，关闭时为 60 秒；APNs 使用 `liveactivity` push type、`bundle ID + .push-type.liveactivity` topic 及静默优先级 5，不附声音或 alert，不生成普通通知或 Echobell。发送在数据库锁外执行，token／账户变更以 fence 阻止旧投递结果写回；失败退避，连续八次失败或活动 token 永久失效后停用。苹果的预算、合并和网络状况仍可能延迟或丢失更新，这些间隔不代表锁屏实时刷新保证。
+
+后台只读当前身份的交易所持仓缓存或 GET 仓位接口，以 Decimal 格式化浮盈，最多四行并保留总持仓数；不调用仓位对账、交易执行、保护单维护或绑定健康写入。普通／带单按各自用户、绑定 ID、API 指纹与绑定创建时间隔离；同一轮相同账户复用读取。读取后再次核对绑定，失效／解绑／用户停用或注册到期时发送结束状态；注销和登出仅标记结束投递，不与交易成功路径同步发送。
+
+每份载荷含 Unix `updatedAt` 和 90 秒 `stale-date`；读取失败立即使用“更新延迟”和无效时间戳，Widget 同时检查系统过期标记和快照时间，以 `--` 隐藏旧盈亏。活动最长 8 小时，开始时间不被注册重试或 token 轮换延长，过期需用户重新开启。客户端退出、切模式或账户／绑定范围变化会结束旧活动；系统生命周期与 Widget 外观见 [持仓浮窗](ios-floating-positions.md#activitykit-live-持仓卡片2026-11-03源码实现)。
+
+新开关 `LIVE_ACTIVITIES_ENABLED` 在源码和模板均默认 false，注册与派发另需 `APNS_ENABLED=true`；不受仓位事件总开关控制，也不启用外部信号或浮盈呼叫。2026-11-03 22:49 已在 **47.80.22.243（首尔服务器）** 核验独立注册表、API／scheduler 及 live 开关 true，普通 APNs 保持 true、原三个暂停设置仍为 false；当前注册为 0，没有发送真实 live 通知。版本和验收见 [运维](operations.md#live-后台持仓卡片限定发布2026-11-03)，参数见 [配置](configuration.md#activitykit-live-持仓卡片)。本轮新包未上传，正式签名包的锁屏／灵动岛、Home 后投递、权限、token 轮换、90 秒过期与 8 小时生命周期仍待真机验收；此前三条普通通知和一次 Echo 测试不覆盖 live。
+
 ## 浮盈 Webhook（沿用原 USDT）
 
 已按用户要求从原 USDT Git 基线 `c299f58` 移植 `positions/profit_alerts.py` 及回归。阈值为 **1R、1.5R、2R、3R、4R、5R、6R、7R、8R**，R 固定为首次观察时的止损额；浮盈取当前交易所仓位，不从客户端显示值推算。仅监控配置用户、当前绑定代际的普通／带单有效仓位，同币种同向本地重复订单不猜测归属；读取失败不关闭现有仓位或取消已有保护。

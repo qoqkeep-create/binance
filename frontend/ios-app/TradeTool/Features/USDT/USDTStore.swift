@@ -200,7 +200,7 @@ final class USDTStore: ObservableObject {
         defer { if refreshScope == requestScope { isLoading = false } }
         do {
             let latestBinding = try await get("/v1/api/info")
-            guard requestScope == scope else { return }
+            guard requestScope == scope, !Task.isCancelled else { return }
             if binding != latestBinding { binding = latestBinding }
             async let info = includeAccount
                 ? get("/v1/account/info", query: freshBalance ? [.init(name: "fresh", value: "1")] : [])
@@ -209,12 +209,16 @@ final class USDTStore: ObservableObject {
             let strategyRevision = strategyReadRevision
             async let plans = get("/v1/strategy/list")
             let values = try await (info, user, plans)
-            guard requestScope == scope else { return }
+            guard requestScope == scope, !Task.isCancelled else { return }
             if includeAccount, account != values.0 { account = values.0 }
             if profile != values.1 { profile = values.1 }
             if strategyRevision == strategyReadRevision, strategies != values.2.rows { strategies = values.2.rows }
-        } catch is CancellationError { }
-        catch { if requestScope == scope { notice = error.localizedDescription } }
+            notice = ""
+        } catch {
+            guard requestScope == scope, !Task.isCancelled else { return }
+            let apiError = APIError.map(error)
+            if apiError.shouldPresent { notice = apiError.userMessage }
+        }
     }
 
     /// A saved selection must re-read the list even while the page's initial refresh is in flight.

@@ -251,7 +251,6 @@ class LeadAccountIsolationTests(APITestCase):
             self.addCleanup(patcher.stop)
         for target, value in (("trading.views._extract_ticker", {"last": "100"}),
                               ("trading.views._extract_instrument", rules),
-                              ("trading.views._validate_ema_check_for_market_open", None),
                               ("trading.adapters.get_usdt_equity_snapshot", ("500", "500"))):
             patcher = patch(target, return_value=value)
             patcher.start()

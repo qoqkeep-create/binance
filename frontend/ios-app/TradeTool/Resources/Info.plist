@@ -6,6 +6,10 @@
 	<string>$(API_BASE_URL)</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

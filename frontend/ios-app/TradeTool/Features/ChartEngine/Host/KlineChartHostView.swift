@@ -222,9 +222,10 @@ final class KlineChartHostView: UIView {
     override func gestureRecognizerShouldBegin(
         _ gestureRecognizer: UIGestureRecognizer
     ) -> Bool {
+        let beginsPinch = gestureRecognizer === timelinePinchGesture
         guard !isDisposed,
               !isPriceScaleGestureActive,
-              interactionState.state == .idle,
+              (beginsPinch ? interactionState.canBeginPinch : interactionState.state == .idle),
               committedViewportAwaitingRender == nil,
               pendingGuardBandRebase == nil else {
             return false
@@ -252,7 +253,7 @@ final class KlineChartHostView: UIView {
                 metrics: interactionMetrics
             ) == .chart
         } else if gestureRecognizer === timelinePinchGesture {
-            shouldBegin = currentCrosshair == nil
+            shouldBegin = true
         } else if gestureRecognizer === crosshairGesture {
             let location = crosshairGesture.location(in: self)
             shouldBegin = Double(location.x)
@@ -846,12 +847,19 @@ final class KlineChartHostView: UIView {
     ) {
         switch recognizer.state {
         case .began:
-            guard interactionState.beginPinch(),
-                  let timelineViewport else {
+            guard interactionState.canBeginPinch, let timelineViewport else {
                 recognizer.isEnabled = false
                 recognizer.isEnabled = true
                 return
             }
+            if currentCrosshair != nil || interactionState.state == .trackingCrosshair {
+                dismissCrosshair()
+                // A second finger takes over the creating contact. Its late
+                // long-press callbacks must not end the pinch that follows.
+                crosshairGesture.isEnabled = false
+                crosshairGesture.isEnabled = true
+            }
+            guard interactionState.beginPinch() else { return }
             gestureViewportBaseline = timelineViewport
             if interactionBaseline == nil {
                 interactionBaseline = timelineViewport
@@ -1056,6 +1064,7 @@ final class KlineChartHostView: UIView {
                 submitInteractiveFrame()
             }
         case .ended, .cancelled, .failed:
+            guard interactionState.state == .trackingCrosshair else { return }
             finishCrosshairInteraction()
         default:
             break
@@ -1664,6 +1673,7 @@ extension KlineChartHostView: UIGestureRecognizerDelegate {
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer:
             UIGestureRecognizer
     ) -> Bool {
-        false
+        (gestureRecognizer === timelinePinchGesture && otherGestureRecognizer === crosshairGesture)
+            || (gestureRecognizer === crosshairGesture && otherGestureRecognizer === timelinePinchGesture)
     }
 }
