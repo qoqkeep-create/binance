@@ -14,6 +14,26 @@
 
 2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
 
+## 图表账户反馈回归（2026-11-03）
+
+用户后续已授权整批提交推送，包含本节及下方顶部控件任务；交付范围见 [变更记录](changes.md#2026-11-03图表账户反馈与顶部控件整批源码交付)。下文未提交状态是本地验证结束时的记录，本次交付沿用既有证据。
+
+本轮修复图表交互矩形、固定右轴当前价、长按转平移、切周期临时尾线与权威快照合并，并调整主题、文案、杠杆前三档、余额手动刷新及资金卡片。实现见 [行情](market-data.md#拖动一致性当前价与尾线修复2026-11-03)、[界面](ios-web-parity.md#图表与账户反馈2026-11-03) 与 [资金](capital-and-transfers.md#原生划转与转账2026-11-02)。
+
+新增三项真实故障回归在修改前均失败：Metal 平移后的空心柱／连续填充像素差异、临时新桶开盘衔接、离屏价格轴位置。修复后 `TradeTool`／`Debug-Seoul` 在 `3E685E56-9767-43E7-81DD-35972DE7FAD7` 实际运行 **181 项通过（38.638 秒，0 跳过）**，覆盖 ChartEngineCore、MarketFastPath、ServerSwitching、RetainedTradeRisk、ChartOrderTicket。包含两主题 GPU 像素平移、历史与未来视口右轴、同触点长按转 pan、快照修正真实 open／报价极值、私有事件不重读余额且显式刷新带 `fresh=1`。旧场景断言同步为新的轴内价格标记和完整绘图区虚线，未删除或跳过必过回归。
+
+`TradeTool Chart Calibration` 的实际持仓／杠杆保存流程通过（27.702 秒）；最终图表账户两主题与资金三页签／方向流程 **2 项通过（102.402 秒）**，验证多余档位被裁到前三、确认后外部倍数、余额刷新可点、合约余额与保留额分别展示、转账仅一处金额、浅黄／浅蓝模式按钮。初轮资金断言误期望整数 `100`，按统一格式器修正为 `100.00` 后通过。已打开最终浅深截图核对提示绿色、Super 填充、MACD、星标、止盈浅绿框、弹窗同底色和两行资金卡；没有以存在控件代替视觉检查。generic iOS Release 无签名构建通过。
+
+后端本地隔离 SQLite／LocMem 和交易所替身 **36 项通过（0.830 秒）**；实际线上基线组合出的限定包再次运行信号、通知独立入库、杠杆与鉴权相关 **26 项通过（0.752 秒）**，迁移一致性检查无遗漏。两组用例重叠，不能相加为独立测试数。后端限定发布与生产只读验收见 [运维](operations.md#信号入库与杠杆金额限定发布2026-11-03)；未执行真实开平仓、划转、撤保护或外发通知。
+
+证据统一在忽略目录 `.integration-runtime/ChartAccountFeedback/`：`before.log`、`final-core.log`、`final-ui.log`、`release-build.log`、`backend.log`、`limited-backend.log`、`limited-schema.log`、`FinalScreenshots/` 与发布／只读验收记录。XCTest 结果保留在 `.integration-runtime/ChartBusinessBuild/Logs/Test/`。本轮未提交、推送或上传 TestFlight，真机拖动流畅度、显示及下一次自然信号仍待新包验收。
+
+## 持仓顶部控件与周期选择（2026-11-03）
+
+本地新增持仓页左侧原生分段选择器、选中项 16 pt 粗体与右侧浮窗图标；信号与持仓顶栏统一 44 pt，历史日期筛选及图表周期面板使用紧凑圆角选项。浮窗沿用已有共享偏好与 overlay，不新增请求任务。实现口径见 [页面对照](ios-web-parity.md#顶部选择器与时间筛选2026-11-03本地) 和 [浮窗](ios-floating-positions.md)。
+
+当前共享工作区执行 `TradeTool`／`Debug-Seoul` 的 generic iOS Simulator arm64 `clean build-for-testing` 通过，客户端与单元测试目标均成功编译；同步删除图表回归 fixture 中 `MarketCandle` 不支持的 `closed` 参数。证据在忽略目录 `.integration-runtime/PositionHeaderReview/build-clean-verified.log`。本轮没有启动模拟器或执行 XCTest／UI，不把编译当成交互或截图验收；浅深色、窄屏原生分段控件及图标与菜单同步仍待新包实机确认。本次追加界面改动未提交、未推送，没有后端发布或真实交易操作。
+
 ## 持仓线颜色、固定宽度与模式按钮（2026-11-03）
 
 持仓开仓标签按未格式化 Decimal 浮盈的正负同步切换文字、边框与虚线颜色；持仓标签固定 120 pt，不再以每次实时金额重新测量。账户模式按钮改为双向切换图标和“带单／合约”短文案。现行样式见 [行情](market-data.md#价格轴与图内订单标签2026-11-02)、[原生界面](ios-web-parity.md#账户与资金面板2026-11-02) 与 [带单模式](lead-trading.md#使用范围)。

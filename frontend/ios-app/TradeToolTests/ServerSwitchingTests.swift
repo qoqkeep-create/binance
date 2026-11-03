@@ -236,6 +236,12 @@ final class NativeIntegrationTests: XCTestCase {
         XCTAssertEqual(store.liveRevision, 1)
         let paths = await api.paths
         XCTAssertEqual(paths.filter { $0 == "/v1/api/info" }.count, 1)
+        XCTAssertFalse(paths.contains("/v1/account/info"), "Account events must not poll the profile balance")
+        await store.refresh(freshBalance: true)
+        let refreshed = await api.paths
+        XCTAssertEqual(refreshed.filter { $0 == "/v1/account/info" }.count, 1)
+        let queries = await api.balanceQueries
+        XCTAssertEqual(queries.last?.first(where: { $0.name == "fresh" })?.value, "1")
         store.stopRealtime()
     }
 
@@ -540,8 +546,10 @@ private actor HistorySnapshotFixtureAPI: APIClient {
 
 private actor NativeFixtureClient: APIClient {
     private(set) var paths: [String] = []
+    private(set) var balanceQueries: [[URLQueryItem]] = []
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
         paths.append(request.path)
+        if request.path == "/v1/account/info" { balanceQueries.append(request.queryItems) }
         let value: JSONValue
         switch request.path {
         case "/slow":

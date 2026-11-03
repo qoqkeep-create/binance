@@ -330,7 +330,7 @@ struct MACDChartIndicatorPlugin: ChartIndicatorPlugin {
       ChartIndicatorOutputDescriptor(
         id: "dif",
         displayName: "DIF",
-        colorToken: .ema21,
+        colorToken: .positive,
         lineWidthPoints: 0.8,
         autoscale: .included
       ),
@@ -453,8 +453,8 @@ private struct MACDChartIndicatorCalculator:
           id: "dif",
           label: "DIF:",
           value: point.dif,
-          labelColorToken: .ema21,
-          colorToken: .ema21,
+          labelColorToken: .positive,
+          colorToken: .positive,
           order: 0
         ),
         ChartIndicatorLegendComponent(

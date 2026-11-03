@@ -247,7 +247,7 @@ private struct MarketChartDetailView: View {
             ChartIntervalSettingsView(selection: viewModel.interval,
                 favorites: $favoriteIntervals, onSelect: viewModel.selectInterval)
         }
-        .largeTradingSheet(isPresented: $showsLeverage) {
+        .largeTradingSheet(isPresented: $showsLeverage, background: WebTheme.page) {
             USDTLeverageBracketsView(symbol: viewModel.market.symbol)
         }
         .onChange(of: viewModel.currentPrice, initial: true) { _, _ in initializeLimitDrawing() }
@@ -269,7 +269,7 @@ private struct MarketChartDetailView: View {
                             .foregroundStyle(BinanceTheme.primaryText)
 
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 7, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(BinanceTheme.secondaryText)
                       }
 
@@ -292,7 +292,7 @@ private struct MarketChartDetailView: View {
                     tradeTool(title: "指标", action: { isIndicatorSettingsPresented = true }) {
                         indicatorSettingsIcon
                     }.accessibilityIdentifier("market-chart-indicator-settings-shortcut")
-                    tradeTool("gauge.with.dots.needle.67percent", title: "自动杠杆", action: { showsLeverage = true })
+                    tradeTool("gauge.with.dots.needle.67percent", title: "杠杆 × \(usdt.selectedLeverage(for: viewModel.market.symbol).map(String.init) ?? "--")", width: 62, action: { showsLeverage = true })
                         .accessibilityIdentifier("market-chart-leverage")
                     tradeTool("gearshape", title: "设置", action: { isOrderSettingsPresented = true })
                         .accessibilityIdentifier("market-chart-settings")
@@ -306,7 +306,7 @@ private struct MarketChartDetailView: View {
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(
                             isFavorite
-                                ? BinanceTheme.accentText
+                                ? BinanceTheme.accent
                                 : BinanceTheme.secondaryText
                         )
                         .frame(width: 44, height: 44)
@@ -462,9 +462,10 @@ private struct MarketChartDetailView: View {
     private func tradeTool(
         _ icon: String,
         title: String,
+        width: CGFloat = 44,
         action: @escaping () -> Void
     ) -> some View {
-        tradeTool(title: title, action: action) {
+        tradeTool(title: title, width: width, action: action) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .medium))
         }
@@ -472,6 +473,7 @@ private struct MarketChartDetailView: View {
 
     private func tradeTool<Icon: View>(
         title: String,
+        width: CGFloat = 44,
         action: @escaping () -> Void,
         @ViewBuilder icon: () -> Icon
     ) -> some View {
@@ -483,7 +485,7 @@ private struct MarketChartDetailView: View {
                     .font(.system(size: 9, weight: .medium))
             }
             .foregroundStyle(BinanceTheme.primaryText)
-            .frame(width: 44, height: 44)
+            .frame(width: width, height: 44)
         }
         .buttonStyle(.plain)
     }
@@ -1343,39 +1345,45 @@ private struct ChartIntervalSettingsView: View {
             Text("点击周期切换图表；星标周期显示在快捷栏，至少保留一个。")
                 .font(.system(size: 12)).foregroundStyle(BinanceTheme.secondaryText)
                 .padding(.horizontal, 20).padding(.bottom, 12)
-            List {
-                intervalSection("分钟", intervals: [.oneMinute, .threeMinutes, .fiveMinutes, .fifteenMinutes])
-                intervalSection("小时", intervals: [.oneHour, .fourHours])
-                intervalSection("天", intervals: [.oneDay])
-            }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 8)], spacing: 4) {
+                    ForEach(MarketKlineInterval.allCases) { interval in
+                        intervalOption(interval)
+                    }
+                }.padding(.horizontal, 20)
+            }.scrollIndicators(.hidden)
             Button("恢复默认周期") { favorites = ChartIntervalPreferences.defaultValue }
                 .buttonStyle(.plain).foregroundStyle(BinanceTheme.accentText)
                 .frame(minHeight: 44).padding(.bottom, 12)
         }.foregroundStyle(BinanceTheme.primaryText).background(BinanceTheme.background)
 
     }
-    private func intervalSection(_ title: String, intervals: [MarketKlineInterval]) -> some View {
-        Section(title) {
-            ForEach(intervals) { interval in
-                HStack {
-                    Button {
-                        onSelect(interval); dismiss()
-                    } label: {
-                        HStack {
-                            Text(interval.title)
-                            Spacer()
-                            if interval == selection { Image(systemName: "checkmark").foregroundStyle(BinanceTheme.accentText) }
-                        }.contentShape(Rectangle()).frame(minHeight: 44)
-                    }.buttonStyle(.plain).accessibilityIdentifier("interval-settings.select." + interval.rawValue)
-                    let enabled = ChartIntervalPreferences.favorites(favorites).contains(interval)
-                    Button { favorites = ChartIntervalPreferences.toggling(interval, in: favorites) } label: {
-                        Image(systemName: enabled ? "star.fill" : "star")
-                            .foregroundStyle(enabled ? BinanceTheme.accentText : BinanceTheme.secondaryText)
-                            .frame(width: 44, height: 44)
-                    }.buttonStyle(.plain).accessibilityLabel(interval.title + (enabled ? "停用快捷周期" : "启用快捷周期"))
-                        .accessibilityIdentifier("interval-settings.favorite." + interval.rawValue)
-                }.listRowBackground(BinanceTheme.surface)
-            }
+    private func intervalOption(_ interval: MarketKlineInterval) -> some View {
+        let selected = interval == selection
+        let enabled = ChartIntervalPreferences.favorites(favorites).contains(interval)
+        return HStack(spacing: 0) {
+            Button {
+                onSelect(interval); dismiss()
+            } label: {
+                Text(interval.title).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(selected ? WebTheme.color(0x735500, 0xFFE58A) : BinanceTheme.secondaryText)
+                    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("interval-settings.select." + interval.rawValue)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            Button { favorites = ChartIntervalPreferences.toggling(interval, in: favorites) } label: {
+                Image(systemName: enabled ? "star.fill" : "star")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(enabled ? Color(red: 0.86, green: 0.62, blue: 0) : BinanceTheme.secondaryText)
+                    .frame(width: 28, height: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel(interval.title + (enabled ? "停用快捷周期" : "启用快捷周期"))
+                .accessibilityIdentifier("interval-settings.favorite." + interval.rawValue)
+        }.background {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(selected ? WebTheme.color(0xFFF5CC, 0x51451F) : BinanceTheme.surface)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(selected ? BinanceTheme.accent : BinanceTheme.border, lineWidth: 1)
+                }.frame(height: 32)
         }
     }
 }

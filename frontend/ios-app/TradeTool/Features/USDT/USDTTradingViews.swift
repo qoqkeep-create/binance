@@ -233,7 +233,7 @@ struct USDTTradeView: View {
           store.selectedSymbol = symbol
         }
       }
-      .largeTradingSheet(isPresented: $showStopLoss) {
+      .largeTradingSheet(isPresented: $showStopLoss, background: WebTheme.page) {
         USDTStopLossView()
       }
       .webModal(isPresented: $confirm) {
@@ -541,9 +541,9 @@ struct USDTTradeView: View {
             } label: {
               Text(hasPosition ? heldTakeProfit : strategyEnabled ? store.strategies.first { $0.value("id") == strategyID }?.value("name") ?? "选择策略" : "手动止盈")
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
-                .foregroundStyle(WebTheme.color(0x176342, 0x8AE0B5))
+                .foregroundStyle(WebTheme.color(0x176342, 0x143F2D))
                 .padding(.horizontal, 8).frame(height: 28)
-                .background(WebTheme.color(0xE3F4EA, 0x234338), in: RoundedRectangle(cornerRadius: 6))
+                .background(WebTheme.color(0xE3F4EA, 0xB9E8CE), in: RoundedRectangle(cornerRadius: 6))
             }.buttonStyle(.plain).disabled(hasPosition || busy || submitted || confirm)
               .accessibilityIdentifier("chart-ticket.strategy")
           }.frame(maxWidth: .infinity, alignment: .leading)
@@ -561,14 +561,15 @@ struct USDTTradeView: View {
         Button(action: advanceEntry) {
           HStack(spacing: 6) {
           Text(hasPosition ? "正在持仓中" : store.isBound && !positionsReady ? "正在确认持仓…"
-            : submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "选择止损价")
-            .font(.system(size: 16, weight: .semibold))
+            : submitted ? "已提交" : busy ? "处理中…" : inputValid ? (isLong ? "开多" : "开空") : "在 K 线图上选择止损价开仓")
+            .font(.system(size: inputValid || hasPosition ? 16 : 12, weight: .semibold))
+            .lineLimit(1).minimumScaleFactor(0.75)
           if hasPosition { Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)) }
           }.frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(hasPosition ? BinanceTheme.onAccent : inputValid ? BinanceTheme.onTradeAction : BinanceTheme.secondaryText)
+            .foregroundStyle(hasPosition ? BinanceTheme.onAccent : inputValid ? BinanceTheme.onTradeAction : BinanceTheme.positive)
             .background(hasPosition ? BinanceTheme.accent : inputValid ? chartActionColor : BinanceTheme.elevated,
               in: RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain).disabled(entryDisabled)
+        }.buttonStyle(ChartTicketActionStyle(showsSelectionHint: !inputValid && !hasPosition)).disabled(entryDisabled)
           .accessibilityIdentifier("chart-ticket.submit")
       }
       if !store.isBound {
@@ -618,6 +619,14 @@ struct USDTTradeView: View {
     strategyEnabled = strategy != nil
     strategyID = strategy?.value("id") ?? ""
     resetDraft()
+  }
+}
+
+private struct ChartTicketActionStyle: ButtonStyle {
+  let showsSelectionHint: Bool
+  @Environment(\.isEnabled) private var enabled
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label.opacity(configuration.isPressed ? 0.8 : enabled || showsSelectionHint ? 1 : 0.5)
   }
 }
 
@@ -698,6 +707,8 @@ struct USDTPositionsView: View {
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var dashboard: DashboardViewModel
   @Environment(\.scenePhase) private var scenePhase
+  @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
+  private var floatingPositions = false
   @StateObject private var model = USDTPageModel()
   @StateObject private var trendAdvice = PositionTrendAdviceModel()
   @StateObject private var liveQuotes = PositionLiveQuotes()
@@ -728,8 +739,22 @@ struct USDTPositionsView: View {
   }
   var body: some View {
     VStack(spacing: 0) {
-      WebTabs(
-        tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
+      HStack(spacing: 8) {
+        WebTabs(
+          tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
+          .frame(maxWidth: 280).frame(height: 32)
+        Spacer(minLength: 0)
+        Button { floatingPositions.toggle() } label: {
+          Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")
+            .font(.system(size: 18, weight: .medium))
+            .foregroundStyle(floatingPositions ? WebTheme.brand : WebTheme.secondary)
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("positions.floatingPositions")
+          .accessibilityLabel("持仓浮窗").accessibilityValue(floatingPositions ? "已开启" : "未开启")
+      }.padding(.leading, 16).padding(.trailing, 8).frame(height: WebTheme.rootHeaderHeight)
+        .background(WebTheme.surface).overlay(alignment: .bottom) {
+          Rectangle().fill(WebTheme.border).frame(height: 1)
+        }.accessibilityIdentifier("positions.header")
       GeometryReader { geometry in
       ScrollView {
         VStack(spacing: 10) {
@@ -738,13 +763,14 @@ struct USDTPositionsView: View {
               ForEach(
                 [("all", "全部"), ("day", "一天内"), ("three-days", "三天"), ("week", "一周")], id: \.0
               ) { key, label in
-                Button(label) { filter = key }.font(.system(size: 14, weight: .medium)).frame(
-                  maxWidth: .infinity
-                ).padding(.vertical, 6)
-                  .foregroundStyle(filter == key ? Color.black : WebTheme.secondary)
-                  .background(
-                    filter == key ? WebTheme.brand : WebTheme.secondaryButton,
+                Button(label) { filter = key }
+                  .font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(height: 32)
+                  .foregroundStyle(filter == key ? WebTheme.color(0x735500, 0xFFE58A) : WebTheme.secondary)
+                  .background(filter == key ? WebTheme.color(0xFFF5CC, 0x51451F) : WebTheme.secondaryButton,
                     in: RoundedRectangle(cornerRadius: 8))
+                  .overlay { RoundedRectangle(cornerRadius: 8).stroke(filter == key ? BinanceTheme.accent : WebTheme.border, lineWidth: 1) }
+                  .frame(minHeight: 44).contentShape(Rectangle())
+                  .accessibilityAddTraits(filter == key ? .isSelected : [])
               }
               Spacer()
             }
@@ -1174,9 +1200,9 @@ struct USDTPositionsView: View {
           }.accessibilityLabel("查看止盈止损记录")
         }
       }
-      if !row.value("settlement_note", fallback: "").isEmpty {
-        USDTNotice(text: row.value("settlement_note"))
-      }
+      let settlementNote = row.value("settlement_note", fallback: "")
+        .components(separatedBy: "；").filter { !$0.contains("资金费来自持仓时间窗口") }.joined(separator: "；")
+      if !settlementNote.isEmpty { USDTNotice(text: settlementNote) }
     }
   }
   private func detail(_ title: String, _ value: String, color: Color? = nil) -> some View {

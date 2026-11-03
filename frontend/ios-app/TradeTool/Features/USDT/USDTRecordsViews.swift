@@ -4,18 +4,19 @@ struct USDTSignalsView: View {
   @EnvironmentObject private var store: USDTStore
   @StateObject private var model = USDTPageModel()
   @State private var rules = false
+  @Environment(\.scenePhase) private var scenePhase
   let openChart: (String, String) -> Void
   var body: some View {
     VStack(spacing: 0) {
-      WebPageHeader("信号", back: false, centered: true, height: 60, trailing: {
+      WebPageHeader("信号", back: false, centered: true, height: WebTheme.rootHeaderHeight, trailing: {
         Button {
           rules = true
         } label: {
-          Color.clear.frame(width: 32, height: 32).overlay {
+          Color.clear.frame(width: 44, height: 44).overlay {
             WebIcon("info.circle", size: 18).foregroundStyle(WebTheme.muted)
           }.contentShape(Rectangle())
         }.buttonStyle(.plain).padding(.trailing, 8).zIndex(1).accessibilityLabel("内部信号规则")
-      })
+      }).accessibilityIdentifier("signals.header")
       ScrollView {
         VStack(spacing: 10) {
           ForEach(Array(model.items.enumerated()), id: \.offset) { _, row in
@@ -36,7 +37,13 @@ struct USDTSignalsView: View {
           }
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).refreshable { await load() }
-    }.usdtPage("信号").task(id: store.scope) { await load() }
+    }.usdtPage("信号").task(id: "\(store.scope):\(scenePhase)") {
+      guard scenePhase == .active, store.mode == "ordinary" else { model.reset(); return }
+      while !Task.isCancelled {
+        await load()
+        do { try await Task.sleep(for: .seconds(30)) } catch { return }
+      }
+    }
       .webModal(isPresented: $rules) {
         WebModal(title: "信号规则") {
           ScrollView {

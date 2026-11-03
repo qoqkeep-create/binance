@@ -18,6 +18,7 @@ struct ChartCandleSnapshot: Sendable {
 struct CandleStorage {
     private var history: ChartCandleHistory
     private var liveTail: ChartCandle?
+    private var quoteOnlyRange: (openTime: Int64, high: Double, low: Double)?
     private var revision: UInt64 = 0
     private let historyLimit: Int
 
@@ -45,12 +46,14 @@ struct CandleStorage {
                 || candle.openTime
                     >= (liveTail?.openTime ?? Int64.min) {
                 liveTail = candle
+                quoteOnlyRange = nil
             }
 
         case .closed:
             commit(candle)
             if liveTail?.openTime == candle.openTime {
                 liveTail = nil
+                quoteOnlyRange = nil
             }
         }
 
@@ -64,6 +67,7 @@ struct CandleStorage {
         preservingNewerData: Bool = false
     ) -> ChartCandleSnapshot {
         let previousLive = liveTail
+        let previousQuoteRange = quoteOnlyRange
         let merged = Self.normalizedClosed(
             (preservingNewerData ? history.candles : []) + closedCandles,
             limit: historyLimit
@@ -73,12 +77,26 @@ struct CandleStorage {
             history = ChartCandleHistory(candles: merged)
         }
         liveTail = liveCandle.map(preservingTradingData(in:))
+        quoteOnlyRange = nil
         if preservingNewerData, let previousLive,
            previousLive.openTime >= (liveCandle?.openTime ?? Int64.min),
            previousLive.openTime > (history.candles.last?.openTime ?? Int64.min) {
-            liveTail = previousLive.withTradingData(
-                liveCandle?.openTime == previousLive.openTime
-                    ? liveCandle?.tradingData ?? previousLive.tradingData : previousLive.tradingData)
+            if let liveCandle, liveCandle.openTime == previousLive.openTime {
+                // A quote-only tail has no authoritative open/range/volume. Install
+                // those from the snapshot while keeping the newer live close.
+                liveTail = ChartCandle(openTime: liveCandle.openTime, closeTime: liveCandle.closeTime,
+                    openPrice: liveCandle.openPrice,
+                    highPrice: max(liveCandle.highPrice, previousQuoteRange?.high ?? previousLive.highPrice),
+                    lowPrice: min(liveCandle.lowPrice, previousQuoteRange?.low ?? previousLive.lowPrice),
+                    closePrice: previousLive.closePrice,
+                    volume: max(liveCandle.volume, previousLive.volume),
+                    quoteVolume: max(liveCandle.quoteVolume, previousLive.quoteVolume),
+                    tradingData: liveCandle.tradingData ?? previousLive.tradingData,
+                    closure: .provisional)
+            } else {
+                liveTail = previousLive
+                quoteOnlyRange = previousQuoteRange
+            }
         }
         if preservingNewerData, let tail = liveTail,
            tail.openTime <= (history.candles.last?.openTime ?? Int64.min) { liveTail = nil }
@@ -87,7 +105,8 @@ struct CandleStorage {
     }
 
     mutating func upsertProvisional(
-        _ candle: ChartCandle
+        _ candle: ChartCandle,
+        quotedPrice: Double? = nil
     ) -> ChartCandleSnapshot {
         let resolved = preservingTradingData(in: candle)
         guard resolved.isValid,
@@ -97,6 +116,13 @@ struct CandleStorage {
                     >= (liveTail?.openTime ?? Int64.min) else {
             return snapshot()
         }
+        if let quotedPrice {
+            if liveTail?.openTime != candle.openTime {
+                quoteOnlyRange = (candle.openTime, quotedPrice, quotedPrice)
+            } else if let range = quoteOnlyRange {
+                quoteOnlyRange = (range.openTime, max(range.high, quotedPrice), min(range.low, quotedPrice))
+            }
+        } else { quoteOnlyRange = nil }
         liveTail = resolved.withClosure(.provisional)
         revision &+= 1
         return snapshot()

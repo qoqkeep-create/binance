@@ -90,7 +90,7 @@ final class USDTStore: ObservableObject {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
             guard let self, eventScope == self.scope else { return }
             self.eventRefresh = nil
-            await self.refresh()
+            await self.refresh(includeAccount: false)
             guard eventScope == self.scope, !Task.isCancelled else { return }
             self.liveRevision += 1
         }
@@ -113,7 +113,7 @@ final class USDTStore: ObservableObject {
         return result
     }
 
-    func refresh() async {
+    func refresh(includeAccount: Bool = true, freshBalance: Bool = false) async {
         let requestScope = scope
         guard !isLoading || refreshScope != requestScope else { return }
         refreshScope = requestScope
@@ -123,12 +123,14 @@ final class USDTStore: ObservableObject {
             let latestBinding = try await get("/v1/api/info")
             guard requestScope == scope else { return }
             if binding != latestBinding { binding = latestBinding }
-            async let info = get("/v1/account/info")
+            async let info = includeAccount
+                ? get("/v1/account/info", query: freshBalance ? [.init(name: "fresh", value: "1")] : [])
+                : account
             async let user = get("/v1/account/profile")
             async let plans = get("/v1/strategy/list")
             let values = try await (info, user, plans)
             guard requestScope == scope else { return }
-            if account != values.0 { account = values.0 }
+            if includeAccount, account != values.0 { account = values.0 }
             if profile != values.1 { profile = values.1 }
             if strategies != values.2.rows { strategies = values.2.rows }
         } catch is CancellationError { }

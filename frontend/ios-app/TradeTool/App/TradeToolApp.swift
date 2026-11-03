@@ -391,11 +391,15 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         })
       }
       if request.path == "/v1/trade/leverage-brackets" {
-        value = .object(["symbol": .string("BTCUSDT"), "brackets": .array([
+        var brackets: [JSONValue] = [
           .object(["leverage": .number(50), "max_notional": .string("250000"), "max_open_amount": .string("25000")]),
           .object(["leverage": .number(25), "max_notional": .string("1000000"), "max_open_amount": .string("12500")]),
           .object(["leverage": .number(10), "max_notional": .string("2000000"), "max_open_amount": .string("5000")]),
-        ])])
+        ]
+        if ProcessInfo.processInfo.arguments.contains("--fixture-extra-leverage") {
+          brackets.insert(.object(["leverage": .number(5), "max_notional": .string("3000000"), "max_open_amount": .string("2500")]), at: 0)
+        }
+        value = .object(["symbol": .string("BTCUSDT"), "brackets": .array(brackets)])
       }
       if request.path == "/v1/position/list",
         ProcessInfo.processInfo.arguments.contains("--fixture-multiple"),

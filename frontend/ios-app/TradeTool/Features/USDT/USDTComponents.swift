@@ -3,6 +3,7 @@ import UIKit
 
 /// Values from the USDT Web theme.css and computed Tailwind styles. CSS px maps to logical pt.
 @MainActor enum WebTheme {
+  static let rootHeaderHeight: CGFloat = 44
   static func color(
     _ light: UInt32, _ dark: UInt32, leadLight: UInt32? = nil, leadDark: UInt32? = nil
   ) -> Color {
@@ -203,27 +204,36 @@ struct WebCheckbox: View {
   }
 }
 
-struct WebTabs: View {
+/// A native segmented control; title attributes distinguish selection without moving the bar.
+struct WebTabs: UIViewRepresentable {
   let tabs: [(String, String)]
   @Binding var selection: String
-  var body: some View {
-    HStack(spacing: 0) {
-      ForEach(tabs, id: \.0) { key, title in
-        Button {
-          selection = key
-        } label: {
-          Text(title).font(.system(size: 16)).foregroundStyle(
-            selection == key ? WebTheme.brand : WebTheme.muted
-          )
-          .frame(maxWidth: .infinity).frame(height: 44)
-          .overlay(alignment: .bottom) {
-            if selection == key { Rectangle().fill(WebTheme.brand).frame(height: 2) }
-          }
-          .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityAddTraits(selection == key ? .isSelected : [])
-      }
-    }.background(WebTheme.surface).overlay(alignment: .bottom) {
-      Rectangle().fill(WebTheme.border).frame(height: 1).offset(y: 1)
+  func makeCoordinator() -> Coordinator { Coordinator(self) }
+  func makeUIView(context: Context) -> UISegmentedControl {
+    let control = UISegmentedControl(items: tabs.map(\.1))
+    control.apportionsSegmentWidthsByContent = true
+    control.addTarget(context.coordinator, action: #selector(Coordinator.select(_:)), for: .valueChanged)
+    return control
+  }
+  func updateUIView(_ control: UISegmentedControl, context: Context) {
+    context.coordinator.parent = self
+    control.selectedSegmentIndex = tabs.firstIndex { $0.0 == selection } ?? UISegmentedControl.noSegment
+    control.setTitleTextAttributes([
+      .font: UIFont.systemFont(ofSize: 14, weight: .medium),
+      .foregroundColor: UIColor(WebTheme.secondary),
+    ], for: .normal)
+    control.setTitleTextAttributes([
+      .font: UIFont.systemFont(ofSize: 16, weight: .bold),
+      .foregroundColor: UIColor(WebTheme.text),
+    ], for: .selected)
+    control.accessibilityIdentifier = "positions.tabs"
+  }
+  @MainActor final class Coordinator: NSObject {
+    var parent: WebTabs
+    init(_ parent: WebTabs) { self.parent = parent }
+    @objc func select(_ control: UISegmentedControl) {
+      guard parent.tabs.indices.contains(control.selectedSegmentIndex) else { return }
+      parent.selection = parent.tabs[control.selectedSegmentIndex].0
     }
   }
 }
@@ -975,6 +985,7 @@ private struct WebModalStage<Modal: View>: View {
 struct WebSheet<Content: View>: View {
   var heightFraction: CGFloat = 0.96
   var protectsBottomSafeArea = false
+  var panelBackground: Color = BinanceTheme.background
   @ViewBuilder var content: Content
   private var containerBottomInset: CGFloat {
     UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -993,7 +1004,7 @@ struct WebSheet<Content: View>: View {
             // the window's home-indicator inset so a focused list can still scroll.
             .padding(.bottom, protectsBottomSafeArea ? containerBottomInset : 0)
         }.frame(maxWidth: 720).frame(height: geometry.size.height * heightFraction)
-          .background(BinanceTheme.background)
+          .background(panelBackground)
           .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24))
           .webModalCard()
       }

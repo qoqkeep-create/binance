@@ -1854,7 +1854,30 @@ final class ChartEngineCoreTests: XCTestCase {
         let live = try XCTUnwrap(seeded.frame?.candles.liveTail)
         XCTAssertEqual(live.openTime, currentOpenTime)
         XCTAssertEqual(live.closePrice, 60_250)
+        XCTAssertEqual(live.openPrice, 60_199, "A quote-only tail must start from the adjacent closed candle")
+        XCTAssertEqual(live.lowPrice, 60_199)
         XCTAssertEqual(live.closure, .provisional)
+    }
+
+    func testRepairSnapshotCorrectsQuoteOnlyOpenWithoutLosingLatestClose() async throws {
+        let epoch = KlineStreamEpoch(generation: 23)
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: 3_600_000, epoch: epoch))
+        _ = await pipeline.installSnapshot([marketCandle(openTime: 0, closePrice: 100)],
+            fetchedAtMilliseconds: 3_600_001, epoch: epoch)
+        _ = await pipeline.mergeLatestPrice(140, eventTimeMilliseconds: 3_600_001, epoch: epoch)
+        _ = await pipeline.mergeLatestPrice(120, eventTimeMilliseconds: 3_600_002, epoch: epoch)
+        let authoritative = MarketCandle(openTime: 3_600_000, closeTime: 7_199_999,
+            openPrice: 111, highPrice: 130, lowPrice: 108, closePrice: 110,
+            volume: 30, quoteVolume: 3300)
+        let repaired = await pipeline.installSnapshot([authoritative],
+            fetchedAtMilliseconds: 3_600_003, epoch: epoch, preservingNewerData: true)
+        let live = try XCTUnwrap(repaired.frame?.candles.liveTail)
+        XCTAssertEqual(live.openPrice, 111)
+        XCTAssertEqual(live.closePrice, 120)
+        XCTAssertEqual(live.highPrice, 140)
+        XCTAssertEqual(live.lowPrice, 108, "The seeded previous close must not survive as a false low after the real OHLC arrives")
+        XCTAssertEqual(live.volume, 30)
     }
 
     func testChartDataPipelineSwitchesIndicatorsWithoutLosingIngress()
@@ -3426,7 +3449,7 @@ final class ChartEngineCoreTests: XCTestCase {
         }
     }
 
-    func testOffscreenPriceMarkerStaysInsidePlotAcrossDisplayScales()
+    func testOffscreenPriceMarkerStaysOnPriceAxisAcrossDisplayScales()
         async throws {
         let fixture = try await makeChartSceneFixture()
         for scale in [2.0, 3.0] {
@@ -3442,15 +3465,15 @@ final class ChartEngineCoreTests: XCTestCase {
                 )
                 let marker = try XCTUnwrap(output.renderState.liveTail.latestPriceMarker)
                 XCTAssertTrue(marker.returnsToLatest)
-                XCTAssertGreaterThanOrEqual(marker.left, output.panelLayout.plotLeft)
-                XCTAssertLessThanOrEqual(marker.right, output.panelLayout.plotRight)
+                XCTAssertGreaterThanOrEqual(marker.left, output.panelLayout.plotRight)
+                XCTAssertLessThanOrEqual(marker.right, Float(viewport.widthPixels))
                 let priceBatch = try XCTUnwrap(output.renderState.liveTail.batches.first {
                     $0.coordinateSpace == .latestPrice
                 })
-                XCTAssertTrue(priceBatch.storage.lineSegments.allSatisfy {
+                XCTAssertTrue(priceBatch.storage.lineSegments.filter { $0.dashLength > 0 }.allSatisfy {
                     min($0.start.x, $0.end.x) >= output.panelLayout.plotLeft
                         && max($0.start.x, $0.end.x) <= output.panelLayout.plotRight
-                }, "Offscreen price lines must not cross the price axis")
+                }, "The price reference line must stay inside the plot")
             }
         }
     }
@@ -3691,8 +3714,8 @@ final class ChartEngineCoreTests: XCTestCase {
             plotLeft: output.panelLayout.plotLeft,
             plotRight: output.panelLayout.plotRight
         )
-        XCTAssertLessThanOrEqual(
-            marker.right,
+        XCTAssertGreaterThanOrEqual(
+            marker.left,
             output.panelLayout.plotRight
         )
         XCTAssertTrue(liveBatch.storage.glyphInstances.isEmpty)
@@ -3992,7 +4015,7 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertFalse(staticBatch.storage.barInstances.isEmpty)
         XCTAssertFalse(
             staticBatch.storage.barInstances.filter {
-                abs($0.color.alpha - 0.01) < 0.000_1
+                abs($0.color.alpha - 0.28) < 0.000_1
             }.isEmpty
         )
         XCTAssertEqual(liveBatch.storage.candleInstances.count, 1)
@@ -5907,6 +5930,44 @@ final class ChartEngineCoreTests: XCTestCase {
         }
     }
 
+    func testMetalPanPreservesHollowMACDAndContinuousSuperFill() throws {
+        let renderer = try MetalRenderer(device: XCTUnwrap(MTLCreateSystemDefaultDevice()),
+            pixelFormat: .bgra8Unorm_srgb)
+        let bars: [ChartBarInstance] = [
+            .init(left: 20, top: 10, right: 40, bottom: 12, color: .positive),
+            .init(left: 20, top: 28, right: 40, bottom: 30, color: .positive),
+            .init(left: 20, top: 12, right: 22, bottom: 28, color: .positive),
+            .init(left: 38, top: 12, right: 40, bottom: 28, color: .positive),
+            .init(left: 60, top: 40, right: 80, bottom: 60, color: .positive.withAlpha(0.2)),
+            .init(left: 80, top: 40, right: 100, bottom: 60, color: .positive.withAlpha(0.2)),
+        ]
+        for appearance in [ChartAppearance.light, .dark] {
+            let scene = StaticSceneSnapshot(revision: 1, candleHistory: ChartCandleHistory(candles: []),
+                batches: [ChartRenderBatch(barInstances: bars)],
+                horizontalPlotBounds: ChartHorizontalPlotBounds(left: 0, right: 160))
+            func state(_ moving: Bool) -> RenderState {
+                RenderState(staticScene: scene,
+                    liveTail: LiveTailSnapshot(revision: 1, candle: nil, batches: [], latestPrice: nil),
+                    interaction: InteractionSnapshot(revision: moving ? 2 : 1,
+                        translationX: moving ? 8 : 0, scaleX: 1,
+                        candleHalfBodyWidthPixels: moving ? 5 : 0, crosshair: nil),
+                    invalidation: .full, appearance: appearance)
+            }
+            let idle = try XCTUnwrap(renderer.renderOffscreen(state: state(false), width: 160, height: 80))
+            let moving = try XCTUnwrap(renderer.renderOffscreen(state: state(true), width: 160, height: 80))
+            // Compare every pixel after a pure pan, including the hollow center and band seams.
+            var changed = 0
+            for y in 0..<80 {
+                for x in 0..<140 {
+                    let a = y * idle.bytesPerRow + x * 4
+                    let b = y * moving.bytesPerRow + (x + 8) * 4
+                    if idle.bgra8UnormSRGB[a..<a+4] != moving.bgra8UnormSRGB[b..<b+4] { changed += 1 }
+                }
+            }
+            XCTAssertEqual(changed, 0, "Pan must preserve rectangle coverage in \(appearance)")
+        }
+    }
+
     func testChartColorLinearizesSRGBForMetalTarget() throws {
         let positive = ChartColor.positive.linearRGBA
         XCTAssertEqual(positive.x, 0.021_219, accuracy: 0.000_001)
@@ -6737,6 +6798,44 @@ final class ChartEngineCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testCrosshairCanBecomePanWithoutAnExtraTap() async throws {
+        for sameContact in [false, true] {
+            let fixture = try await makeChartSceneFixture()
+            let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+            let baseline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: 30))
+            let scene = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport,
+                timelineViewport: baseline)
+            let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+            defer { host.dispose() }
+            var requested: [ChartTimelineViewport] = []
+            host.configureTimelineInteraction(viewport: baseline, totalSlotCount: 221) { requested.append($0) }
+            host.submit(scene.renderState)
+            var dismissed = false
+            host.onCrosshairDismiss = { dismissed = true }
+            let press = ContinuousScaleTestLongPress()
+            press.phase = .began
+            host.perform(NSSelectorFromString("handleCrosshair:"), with: press)
+            if sameContact {
+                press.phase = .changed
+                press.point.x += 60
+                host.perform(NSSelectorFromString("handleCrosshair:"), with: press)
+            } else {
+                press.phase = .ended
+                host.perform(NSSelectorFromString("handleCrosshair:"), with: press)
+                let pan = ContinuousScaleTestPan()
+                pan.phase = .began
+                host.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+                pan.phase = .changed; pan.translationX = 60
+                host.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+            }
+            host.diagnosticInteractionFrame(at: 10)
+            await Task.yield()
+            XCTAssertTrue(dismissed, "Dragging must dismiss the crosshair")
+            XCTAssertNotEqual(try XCTUnwrap(requested.last), baseline)
+        }
+    }
+
+    @MainActor
     func testTimelinePanPreservesTranslationAndCommitsLatestAfterCancel() async throws {
         let fixture = try await makeChartSceneFixture()
         let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
@@ -7003,37 +7102,35 @@ final class ChartEngineCoreTests: XCTestCase {
         )
     }
 
-    /// The marker may touch a plot edge, leaving a single visible line segment.
-    /// Together, the marker and visible segments must cover exactly the plot width.
+    /// The fixed right-axis marker accompanies a reference line spanning the full plot.
     private func assertPriceReferenceCoversPlot(
         _ lines: [ChartLineSegmentInstance], marker: ChartBarInstance,
         plotLeft: Float, plotRight: Float,
         file: StaticString = #filePath, line: UInt = #line
     ) throws {
-        XCTAssertFalse(lines.isEmpty, file: file, line: line)
-        XCTAssertLessThanOrEqual(lines.count, 2, file: file, line: line)
-        XCTAssertGreaterThanOrEqual(marker.left, plotLeft, file: file, line: line)
-        XCTAssertLessThanOrEqual(marker.right, plotRight, file: file, line: line)
+        XCTAssertEqual(lines.count, 1, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(marker.left, plotRight, file: file, line: line)
         let markerY = (marker.top + marker.bottom) / 2
-        var spans = [(left: marker.left, right: marker.right)]
         for segment in lines {
             XCTAssertEqual(segment.start.y, markerY, accuracy: 0.001, file: file, line: line)
             XCTAssertEqual(segment.end.y, markerY, accuracy: 0.001, file: file, line: line)
             let left = min(segment.start.x, segment.end.x)
             let right = max(segment.start.x, segment.end.x)
-            XCTAssertLessThan(left, right, file: file, line: line)
-            XCTAssertGreaterThanOrEqual(left, plotLeft, file: file, line: line)
-            XCTAssertLessThanOrEqual(right, plotRight, file: file, line: line)
-            spans.append((left: left, right: right))
+            XCTAssertEqual(left, plotLeft, accuracy: 0.001, file: file, line: line)
+            XCTAssertEqual(right, plotRight, accuracy: 0.001, file: file, line: line)
         }
-        spans.sort { $0.left < $1.left }
-        let first = try XCTUnwrap(spans.first, file: file, line: line)
-        let last = try XCTUnwrap(spans.last, file: file, line: line)
-        XCTAssertEqual(first.left, plotLeft, accuracy: 0.001, file: file, line: line)
-        XCTAssertEqual(last.right, plotRight, accuracy: 0.001, file: file, line: line)
-        for (before, after) in zip(spans, spans.dropFirst()) {
-            XCTAssertEqual(before.right, after.left, accuracy: 0.001,
-                "Price reference must have no gaps or overlaps", file: file, line: line)
+    }
+
+    func testLatestPriceMarkerStaysOnRightAxisAcrossHistoryAndFutureScroll() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 396, displayScale: 3))
+        for offset: Double in [-35, 0, 50, 150] {
+            let timeline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: offset))
+            let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport,
+                timelineViewport: timeline)
+            let marker = try XCTUnwrap(output.renderState.liveTail.latestPriceMarker)
+            XCTAssertGreaterThanOrEqual(marker.left, output.panelLayout.plotRight)
+            XCTAssertEqual(marker.right, Float(viewport.widthPixels) - 3, accuracy: 0.01)
         }
     }
 
@@ -7387,6 +7484,17 @@ private final class ContinuousScaleTestPinch: UIPinchGestureRecognizer {
     override func location(in view: UIView?) -> CGPoint {
         CGPoint(x: 168, y: 120)
     }
+}
+
+@MainActor
+private final class ContinuousScaleTestLongPress: UILongPressGestureRecognizer {
+    var phase: UIGestureRecognizer.State = .possible
+    var point = CGPoint(x: 168, y: 120)
+    override var state: UIGestureRecognizer.State {
+        get { phase }
+        set { phase = newValue }
+    }
+    override func location(in view: UIView?) -> CGPoint { point }
 }
 
 @MainActor

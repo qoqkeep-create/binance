@@ -67,6 +67,7 @@ final class KlineChartHostView: UIView {
         }
     }
     private var crosshairLocationPixels: ChartPolylinePoint?
+    private var longPressOrigin: CGPoint?
     private var totalSlotCount = 0
     private var onTimelineViewportChange:
         ((ChartTimelineViewport) -> Void)?
@@ -229,9 +230,6 @@ final class KlineChartHostView: UIView {
             shouldBegin = isPriceScaleAxisLocation(location)
                 && abs(velocity.y) > abs(velocity.x)
         } else if gestureRecognizer === timelinePanGesture {
-            guard currentCrosshair == nil else {
-                return false
-            }
             let velocity = timelinePanGesture.velocity(in: self)
             let location = timelinePanGesture.location(in: self)
             let translation = timelinePanGesture.translation(in: self)
@@ -672,50 +670,47 @@ final class KlineChartHostView: UIView {
         onPriceViewportChange?(viewport)
     }
 
+    private func beginTimelinePan() -> Bool {
+        if currentCrosshair != nil { dismissCrosshair() }
+        guard interactionState.beginPan(), let timelineViewport else { return false }
+        gestureViewportBaseline = timelineViewport
+        if interactionBaseline == nil {
+            interactionBaseline = timelineViewport
+            interactionBaseStaticRevision = baseRenderState?.staticScene.revision
+        }
+        timelineMotion.cancel()
+        boundaryTranslationPoints = 0
+        lastInteractionFrameTimestamp = nil
+        pendingGuardBandRebase = nil
+        committedViewportAwaitingRender = nil
+        startInteractionFrames()
+        return true
+    }
+
+    private func updateTimelinePan(translationPoints: Double) {
+        guard interactionState.state == .panningTimeline,
+              let baseline = gestureViewportBaseline else { return }
+        let sample = baseline.pannedWithBoundaryResistance(
+            translationPoints: translationPoints,
+            plotWidthPoints: interactionMetrics.plotWidth(totalWidthPoints: Double(bounds.width)),
+            totalSlotCount: totalSlotCount, interactionMetrics: interactionMetrics, motionMetrics: motionMetrics)
+        boundaryTranslationPoints = sample.boundaryTranslationPoints
+        updateInteractiveTimelineViewport(sample.viewport)
+    }
+
     @objc
     private func handleTimelinePan(
         _ recognizer: UIPanGestureRecognizer
     ) {
         switch recognizer.state {
         case .began:
-            guard interactionState.beginPan(),
-                  let timelineViewport else {
+            guard beginTimelinePan() else {
                 recognizer.isEnabled = false
                 recognizer.isEnabled = true
                 return
             }
-            gestureViewportBaseline = timelineViewport
-            if interactionBaseline == nil {
-                interactionBaseline = timelineViewport
-                interactionBaseStaticRevision =
-                    baseRenderState?.staticScene.revision
-            }
-            timelineMotion.cancel()
-            boundaryTranslationPoints = 0
-            lastInteractionFrameTimestamp = nil
-            pendingGuardBandRebase = nil
-            committedViewportAwaitingRender = nil
-            startInteractionFrames()
         case .changed:
-            guard interactionState.state == .panningTimeline,
-                  let baseline = gestureViewportBaseline else {
-                return
-            }
-            let translation = recognizer.translation(in: self)
-            let sample = baseline.pannedWithBoundaryResistance(
-                translationPoints: Double(translation.x),
-                plotWidthPoints: interactionMetrics.plotWidth(
-                    totalWidthPoints: Double(bounds.width)
-                ),
-                totalSlotCount: totalSlotCount,
-                interactionMetrics: interactionMetrics,
-                motionMetrics: motionMetrics
-            )
-            boundaryTranslationPoints =
-                sample.boundaryTranslationPoints
-            updateInteractiveTimelineViewport(
-                sample.viewport
-            )
+            updateTimelinePan(translationPoints: Double(recognizer.translation(in: self).x))
         case .ended:
             finishPanInteraction(
                 velocityPointsPerSecond: Double(
@@ -896,6 +891,7 @@ final class KlineChartHostView: UIView {
                 recognizer.isEnabled = true
                 return
             }
+            longPressOrigin = location
             crosshairFeedback.prepare()
             guard updateCrosshair(
                 location: location,
@@ -910,6 +906,16 @@ final class KlineChartHostView: UIView {
             startInteractionFrames()
             submitInteractiveFrame()
         case .changed:
+            if let origin = longPressOrigin {
+                let dx = location.x - origin.x, dy = location.y - origin.y
+                if interactionState.state == .trackingCrosshair, abs(dx) >= 8, abs(dx) > abs(dy) {
+                    guard beginTimelinePan() else { return }
+                }
+                if interactionState.state == .panningTimeline {
+                    updateTimelinePan(translationPoints: Double(dx))
+                    return
+                }
+            }
             guard interactionState.state
                     == .trackingCrosshair else {
                 return
@@ -925,7 +931,10 @@ final class KlineChartHostView: UIView {
                 submitInteractiveFrame()
             }
         case .ended, .cancelled, .failed:
-            finishCrosshairInteraction()
+            longPressOrigin = nil
+            if interactionState.state == .panningTimeline {
+                finishPanInteraction(velocityPointsPerSecond: 0, allowsInertia: false)
+            } else { finishCrosshairInteraction() }
         default:
             break
         }
@@ -1009,28 +1018,8 @@ final class KlineChartHostView: UIView {
             state.revision
         )
         interactionRevision &+= 1
-        let liveTail: LiveTailSnapshot
-        if current.containsLatestSlot {
-            liveTail = state.liveTail
-        } else {
-            liveTail = LiveTailSnapshot(
-                revision: state.liveTail.revision,
-                readyTime: state.liveTail.readyTime,
-                candle: state.liveTail.candle,
-                batches: state.liveTail.batches.filter {
-                    $0.coordinateSpace != .latestPrice
-                        && $0.coordinateSpace
-                            != .latestPriceTimelineLine
-                },
-                latestPrice: state.liveTail.latestPrice,
-                latestPriceMarker:
-                    state.liveTail.latestPriceMarker,
-                displayedLegends:
-                    state.liveTail.displayedLegends,
-                crosshairLiveData:
-                    state.liveTail.crosshairLiveData
-            )
-        }
+        // Keep the fixed-axis price overlay throughout a gesture and scene rebase.
+        let liveTail = state.liveTail
         frameCoordinator?.submit(RenderState(
             staticScene: state.staticScene,
             liveTail: liveTail,

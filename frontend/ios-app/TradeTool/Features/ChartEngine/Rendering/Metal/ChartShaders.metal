@@ -278,20 +278,10 @@ vertex ChartBarVertexOut chartBarVertex(
     float left = instance.geometry.x;
     float right = instance.geometry.z;
     if (appliesTimelineTransform) {
-        if (uniforms.timelineBodyStyle.x > 0.0) {
-            const float center = (left + right) * 0.5
-                * uniforms.translationAndScale.y
-                + uniforms.translationAndScale.x;
-            left = center - uniforms.timelineBodyStyle.x;
-            right = center + uniforms.timelineBodyStyle.x;
-        } else {
-            left = left
-                * uniforms.translationAndScale.y
-                + uniforms.translationAndScale.x;
-            right = right
-                * uniforms.translationAndScale.y
-                + uniforms.translationAndScale.x;
-        }
+        // These rectangles also represent hollow borders and full-slot fills.
+        // Preserve both edges; candle body sizing applies only to candles.
+        left = left * uniforms.translationAndScale.y + uniforms.translationAndScale.x;
+        right = right * uniforms.translationAndScale.y + uniforms.translationAndScale.x;
     }
     const float2 corner = corners[vertexID];
     const float2 pixel = float2(

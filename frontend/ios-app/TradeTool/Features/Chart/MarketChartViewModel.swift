@@ -1026,9 +1026,15 @@ final class MarketChartViewModel: ObservableObject {
                 - update.eventTime % intervalMilliseconds
             return updateBucket == loadedBucket ? update : nil
         }
+        // A fetched OHLC tail is authoritative. Do not overwrite it with a
+        // cached quote from the previous interval or an older ticker snapshot.
+        if pending == nil, installedFrame.candles.liveTail != nil { return installedFrame }
+        let recentPrice = latestPriceEventTime.flatMap { timestamp in
+            timestamp >= loadedBucket ? realtimePrice : nil
+        }
         let price = pending?.price
-            ?? realtimePrice
-            ?? ticker?.lastPrice
+            ?? recentPrice
+            ?? installedFrame.candles.history.candles.last?.closePrice
             ?? market.price
         guard price.isFinite, price > 0 else {
             return installedFrame

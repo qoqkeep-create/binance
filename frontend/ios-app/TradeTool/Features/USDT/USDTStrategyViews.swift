@@ -319,23 +319,31 @@ struct USDTChartOrderSettingsView: View {
 struct USDTLeverageBracketsView: View {
   let symbol: String
   @EnvironmentObject private var store: USDTStore
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.webDismiss) private var dismiss
   @StateObject private var model = USDTPageModel()
   @State private var selected: Int?
-  private var options: [JSONValue] { model.value["brackets"]?.rows ?? [] }
+  private var options: [JSONValue] {
+    Array((model.value["brackets"]?.rows ?? []).filter {
+      guard let amount = $0["max_open_amount"]?.decimal else { return false }
+      return !amount.isNaN && amount >= 0
+    }.sorted {
+      let lhs = $0["max_open_amount"]?.decimal ?? 0, rhs = $1["max_open_amount"]?.decimal ?? 0
+      return lhs == rhs ? (Int($0.value("leverage")) ?? 0) < (Int($1.value("leverage")) ?? 0) : lhs > rhs
+    }.prefix(3))
+  }
 
   var body: some View {
     VStack(spacing: 0) {
       HStack {
         VStack(alignment: .leading, spacing: 4) {
-          Text("自动杠杆").font(.system(size: 20, weight: .semibold))
+          Text("杠杆").font(.system(size: 20, weight: .semibold))
           Text(symbol).font(.system(size: 13)).foregroundStyle(WebTheme.muted)
         }
         Spacer()
         Button { dismiss() } label: {
           Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
             .frame(width: 44, height: 44).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("关闭自动杠杆")
+        }.buttonStyle(.plain).accessibilityLabel("关闭杠杆")
       }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
@@ -345,11 +353,11 @@ struct USDTLeverageBracketsView: View {
             USDTNotice(text: "请先绑定 Binance API 后查看当前账户的杠杆档位")
           } else if model.loading && model.value.fields.isEmpty {
             ProgressView("正在读取杠杆档位").frame(maxWidth: .infinity).padding(.vertical, 32)
-          } else if !model.error.isEmpty || (model.value["brackets"]?.rows ?? []).isEmpty {
-            USDTEmptyState(title: "暂无杠杆档位", error: model.error) { Task { await load() } }
+          } else if !model.error.isEmpty || options.isEmpty {
+            USDTEmptyState(title: "暂无可用杠杆档位", error: model.error.isEmpty ? "未取得账户可开金额，请刷新后重试" : model.error) { Task { await load() } }
           } else {
             LazyVStack(spacing: 10) {
-              ForEach(Array((model.value["brackets"]?.rows ?? []).enumerated()), id: \.offset) { _, row in
+              ForEach(Array(options.enumerated()), id: \.offset) { _, row in
                 Button { selected = Int(row.value("leverage")) } label: {
                 USDTCard(radius: 12, padding: 16) {
                   HStack(alignment: .center, spacing: 20) {
@@ -362,7 +370,7 @@ struct USDTLeverageBracketsView: View {
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: 6) {
                       Text("可开金额").font(.system(size: 12)).foregroundStyle(WebTheme.muted)
-                      Text(DisplayNumber.text(row.value("max_open_amount", fallback: row.value("max_notional"))) + " USDT")
+                      Text(DisplayNumber.text(row.value("max_open_amount")) + " USDT")
                         .font(.system(size: 17, weight: .semibold)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.65)
                     }

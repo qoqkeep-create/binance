@@ -2,6 +2,18 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。
 
+## 信号入库与杠杆金额限定发布（2026-11-03）
+
+2026-11-03 12:23（北京时间）核验 **47.80.22.243（首尔服务器）** 当前为 **`integrated-20261103-signal-leverage-0ead6851a38e`**。旧版扫描入口因 `MARKET_ANALYSIS_ALERT_TOKEN` 未配置而整轮跳过，信号库为空；旧杠杆路由只返回标准名义档位。本次更新独立信号入库及每次读取真实可用保证金后的前三档金额，未改变信号触发规则或交易执行。
+
+- 以实际运行的 `integrated-20261102-leverage-api-3fb1859` 为基线，重新核对 **311** 个存档文件。限定叠加 `market_analysis/trend.py`、杠杆视图及回归、`mobile` 新模型／`push.py`／0002 迁移和通知配置读取；313 个发布文件逐文件记录 SHA-256，清单位于 `source-release.json`。未带入工作区的账户流、开仓、保护、结算或调度任务编排修改；该包不是完整 Git HEAD。
+- 包 SHA-256 为 `a64875ea17edfe611317c4bee01a04ffa67e8a15eb7b9f6a9cd01dc7728de13e`，两端一致。备份目录 `/opt/trade-tools-integrated/backups/integrated-20261103-signal-leverage-0ead6851a38e/` 为 0700，数据库压缩备份为 0600、317263357 bytes，gzip 完整性通过；保存前版路径、来源、容器 ID 和发布结果。只应用 `mobile.0002_notificationevent_pushdevice_notificationdelivery_and_more`，仅新增设备、通知事件、投递三张表及约束；随后 `migrate --check` 通过，没有初始化、反迁移或交易所写操作。
+- 仅重建 API 与 scheduler，六服务 healthy；market、worker、MySQL、Redis 的容器 ID 和镜像与发布前完全相同。旧 scheduler 的订单维护源码与任务编排保持原样，仅其内部信号计算模块改变。发布前后数据库活动订单、待成交限价、未决命令、待提交开仓请求计数均为 0；这只是本地库状态检查，不代替交易所全面审计。
+- 实际绑定账户经 API 容器内真实 HTTP／JWT 路由读取 BTCUSDT 杠杆返回 200、**3 项**，金额是有效 Decimal 字符串且按可开金额降序；没有设置交易所杠杆。公网 HTTPS／证书验证与健康均 200。自然调度完成 **56** 条币种／周期序列，`evaluated=56, alerted=0, failed=0`，缓存也有 56 项扫描标记；内部信号 GET 200、当前 0 条。当轮没有规则触发，未插入测试消息或补造历史信号，下一次真实触发的生产入库／手机显示仍待自然验收。
+- 本包仅包含信号保存及通知排队依赖，**没有启用通知 dispatcher、设备注册路由或浮盈外发任务**；投递尝试为 0，不能称为 APNs／Echobell／浮盈通知已完整上线。完整通知发布仍需配套路由、依赖、任务、密钥挂载及 `positions.0029`，见 [通知](signals-and-notifications.md)。客户端、测试与文档保留本地，未提交／推送或上传 TestFlight。
+
+该 release 的 Compose 操作使用 `-f compose.integrated.yaml -f compose.signal-leverage.yaml`，指定本版 `INTEGRATED_RELEASE`；override 固定 market／worker 的原镜像，不沿用前版将 scheduler 固定旧镜像的 override。回滚时读备份的 `previous-release`，在前版使用其 `compose.api-leverage.yaml` 和对应 release 值，仅恢复 API／scheduler，然后恢复 `current` 并验证健康。新增三表可保留，不能以反迁移或恢复数据库撤销代码发布；代码回滚后信号扫描恢复旧限制。客户端本地验证见 [开发](development.md#图表账户反馈回归2026-11-03)。
+
 ## 通知配置准备（2026-11-02）
 
 2026-11-02 23:15（北京时间）已在 **47.80.22.243（首尔服务器）** 保存本轮通知所需配置，没有部署源码、应用迁移或重启容器。`current` 仍为 `integrated-20261102-leverage-api-3fb1859`，六服务只读核对均 healthy；当前进程未加载新增参数，不能将此记录写成 APNs／Echo 已上线或手机通知通过。
@@ -9,7 +21,7 @@
 - Echo 地址来自用户本轮提供，浮盈接收范围使用整合库当前唯一有效绑定用户。环境文件 `/opt/trade-tools-integrated/server.env` 保持 0600，只增加／更新通知配置项，不公开地址或密钥。
 - APNs 材料从原 iOS 项目只读取得，核对现有 P-256 私钥、Key 标识及团队与整合 Xcode 工程一致；topic 指向整合应用。p8 保存在 `/opt/trade-tools-integrated/secrets/AuthKey.p8`，目录 0700、文件 0400、UID 10001，配套 Compose 仅给 scheduler 只读挂载；未改变原项目文件。
 - 首次 Echo 配置前环境备份为 `/opt/trade-tools-integrated/backups/notification-config-20261102-231232/server.env`；加入 APNs 前再次备份到 `notification-config-apns-20261102-231520/server.env`。备份目录 0700／文件 0600。回退配置须按上述阶段选取备份，保留其他后续配置；恢复文件不改变正在运行进程的环境。
-- 后续发布须包含新依赖、`mobile.0002`／`positions.0029` 的仅新增模型迁移及 API／scheduler 配套代码，再加载新环境。代码回滚保留新增表，不重放已尝试通知。真实后台送达另作验收，本轮没有发送测试通知或执行交易／资金／保护单操作。配置及本地验证见 [配置](configuration.md#ios-信号和浮盈通知)、[通知](signals-and-notifications.md) 与 [开发](development.md#图表持仓杠杆与通知回归2026-11-02)。
+- 后续完整通知发布须包含新依赖、`positions.0029` 的仅新增模型迁移及 API／scheduler 配套路由、任务与挂载；`mobile.0002` 已在 2026-11-03 信号限定发布应用，不能再把其完成当作整套通知已上线。代码回滚保留新增表，不重放已尝试通知。真实后台送达另作验收，本轮没有发送测试通知或执行交易／资金／保护单操作。配置及本地验证见 [配置](configuration.md#ios-信号和浮盈通知)、[通知](signals-and-notifications.md) 与 [开发](development.md#图表持仓杠杆与通知回归2026-11-02)。
 
 ## 自动杠杆只读接口补发（2026-11-02）
 
@@ -225,6 +237,8 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 本机最终 dump 的 SHA-256 与远端迁移报告一致；迁移报告 `/opt/trade-tools-integrated/migration-20261031.json` 只含表计数 / 哈希与版本，不含行内容或密码。远端临时 dump 和上传包已删除。数据库备份与应用解密配置必须一起保管，备份中可能含敏感数据，不能上传源码仓库。
 
 ## GitHub 源码交付
+
+2026-11-03 用户明确授权提交推送当前整合工作区全部未提交内容，本批以 `df1e032` 为基线，将 31 个客户端、测试及文档文件交付 `codex/integrated-ios`，包括其他会话留存的顶部控件、浮窗入口和周期／日期选项。范围与验证边界见 [本批交付记录](changes.md#2026-11-03图表账户反馈与顶部控件整批源码交付)。沿用既有独立 Git 元数据，父 Gitee 仓库及忽略的凭证、备份、构建不参与；本次不追加部署或手动上传 TestFlight。**47.80.22.243（首尔服务器）** 的实际运行代码继续以上方信号／杠杆限定发布为准。
 
 2026-11-02 用户后续明确要求直接提交并推送全部改动，本批以 `d533b19` 为基线交付工作区 21 个文件到 `codex/integrated-ios`，包含此前开仓／持仓切页优化与十字光标／杠杆界面及配套测试、文档。验证证据及未验范围见 [整批交付记录](changes.md#2026-11-02开仓面板持仓缓存与十字光标整批源码交付)。本次不重新部署或手动上传 TestFlight；**47.80.22.243（首尔服务器）** 的运行状态继续以上方 API 限定发布为准，GitHub 全部源码交付不等于所有后端改动已上线。
 

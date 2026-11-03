@@ -1168,15 +1168,7 @@ actor ChartSceneBuilder {
       latest.closePrice,
       reference: latest.closePrice
     )
-    let markerText: String
-    switch latestPriceState {
-    case .visible:
-      markerText = label
-    case .offscreenLeading:
-      markerText = "< \(label)"
-    case .offscreenTrailing:
-      markerText = "\(label) >"
-    }
+    let markerText = label
     let measuredMarkerText = alignedText(
       markerText,
       atlas: cache.atlas,
@@ -1190,27 +1182,9 @@ actor ChartSceneBuilder {
       geometry.plotBottom - markerHalfHeight * 2,
       max(geometry.plotTop, latestY - markerHalfHeight)
     )
-    let normalMarkerLeft = geometry.plotRight + 2 * geometry.scale
-    let offscreenMarkerWidth = max(
-      58 * geometry.scale,
-      Float(measuredMarkerText.advance) + 10 * geometry.scale
-    )
-    let markerLeft: Float
-    let markerRight: Float
-    switch latestPriceState {
-    case .visible:
-      markerLeft = normalMarkerLeft
-      markerRight = geometry.width - geometry.scale
-    case .offscreenLeading:
-      markerLeft = geometry.plotLeft
-      markerRight = min(
-        geometry.plotRight,
-        markerLeft + offscreenMarkerWidth
-      )
-    case .offscreenTrailing:
-      markerRight = geometry.plotRight
-      markerLeft = max(geometry.plotLeft, markerRight - offscreenMarkerWidth)
-    }
+    // A horizontal pan never moves the current price out of the right price axis.
+    let markerLeft = geometry.plotRight + 2 * geometry.scale
+    let markerRight = geometry.width - geometry.scale
     let marker = ChartBarInstance(
       left: markerLeft,
       top: markerTop,
@@ -1249,51 +1223,15 @@ actor ChartSceneBuilder {
       width: borderWidth,
       color: .latestPriceLine
     )
-    var latestPriceFixedLines: [ChartLineSegmentInstance] = []
-    switch latestPriceState {
-    case .visible:
-      latestPriceFixedLines.append(ChartLineSegmentInstance(
-        start: ChartPolylinePoint(x: geometry.plotLeft, y: markerCenterY),
-        end: ChartPolylinePoint(x: geometry.plotRight, y: markerCenterY),
-        width: max(1, geometry.scale * 0.7),
-        dashLength: 4 * geometry.scale,
-        gapLength: 3 * geometry.scale,
-        dashPhase: 0,
-        color: .latestPriceLine
-      ))
-    case .offscreenLeading, .offscreenTrailing:
-      if markerLeft > geometry.plotLeft {
-        latestPriceFixedLines.append(ChartLineSegmentInstance(
-          start: ChartPolylinePoint(x: geometry.plotLeft, y: markerCenterY),
-          end: ChartPolylinePoint(
-            x: markerLeft,
-            y: markerCenterY
-          ),
-          width: max(1, geometry.scale * 0.7),
-          dashLength: 4 * geometry.scale,
-          gapLength: 3 * geometry.scale,
-          dashPhase: 0,
-          color: .latestPriceLine
-        ))
-      }
-      if markerRight < geometry.plotRight {
-        latestPriceFixedLines.append(ChartLineSegmentInstance(
-          start: ChartPolylinePoint(
-            x: markerRight,
-            y: markerCenterY
-          ),
-          end: ChartPolylinePoint(
-            x: geometry.plotRight,
-            y: markerCenterY
-          ),
-          width: max(1, geometry.scale * 0.7),
-          dashLength: 4 * geometry.scale,
-          gapLength: 3 * geometry.scale,
-          dashPhase: 0,
-          color: .latestPriceLine
-        ))
-      }
-    }
+    let latestPriceFixedLines = [ChartLineSegmentInstance(
+      start: ChartPolylinePoint(x: geometry.plotLeft, y: markerCenterY),
+      end: ChartPolylinePoint(x: geometry.plotRight, y: markerCenterY),
+      width: max(1, geometry.scale * 0.7),
+      dashLength: 4 * geometry.scale,
+      gapLength: 3 * geometry.scale,
+      dashPhase: 0,
+      color: .latestPriceLine
+    )]
     let markerBaseline = markerCenterY + Float(
       (measuredMarkerText.ascent
         - measuredMarkerText.descent) / 2

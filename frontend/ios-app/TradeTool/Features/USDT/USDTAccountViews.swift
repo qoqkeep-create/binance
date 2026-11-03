@@ -61,13 +61,14 @@ struct USDTProfileView: View {
                 Image(systemName: "arrow.left.arrow.right").accessibilityHidden(true)
                 Text(lead ? "合约" : "带单")
               }.font(.system(size: 12, weight: .medium))
-              .foregroundStyle(WebTheme.color(0x405A73, 0xBDD2E6))
+              .foregroundStyle(lead ? Color(red: 35/255, green: 83/255, blue: 120/255)
+                : Color(red: 122/255, green: 86/255, blue: 0))
               .padding(.horizontal, 12).frame(height: 36)
-              .background(WebTheme.color(0xE8EEF4, 0x2C3D4F),
+              .background(lead ? WebTheme.color(0xD9EFFF, 0xB6DDF5) : WebTheme.color(0xFFF0AF, 0xF5D983),
                 in: RoundedRectangle(cornerRadius: 8))
               .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                  .stroke(WebTheme.color(0x9CB0C3, 0x647C94).opacity(0.5), lineWidth: 0.5)
+                  .stroke(lead ? Color.blue.opacity(0.25) : Color.orange.opacity(0.3), lineWidth: 0.5)
               }
               .contentShape(RoundedRectangle(cornerRadius: 8))
             }.buttonStyle(.plain)
@@ -80,15 +81,18 @@ struct USDTProfileView: View {
             Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)").font(.system(size: 14, weight: .medium))
               .foregroundStyle(WebTheme.secondary)
             Button {
-              Task { await store.refresh() }
+              Task { await store.refresh(freshBalance: true) }
             } label: {
               HStack(spacing: 4) {
-                WebIcon("refresh-cw", size: 12)
+                if store.isLoading { ProgressView().controlSize(.mini) }
+                else { WebIcon("refresh-cw", size: 14) }
                 Text("刷新").underline()
-              }.font(.system(size: 12)).foregroundStyle(WebTheme.muted)
-            }
+              }.font(.system(size: 12)).foregroundStyle(WebTheme.secondary)
+                .frame(minWidth: 60, minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(store.isLoading)
+              .accessibilityIdentifier("profile.refreshBalance").accessibilityLabel("刷新合约余额")
           }
-          .frame(height: 20).padding(.bottom, 8)
+          .frame(minHeight: 44).padding(.bottom, 8)
           HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 12) {
               Text(balance("balance")).font(.system(size: 36, weight: .bold)).tracking(-0.9).frame(
@@ -190,12 +194,12 @@ struct USDTProfileView: View {
         maxWidth: .infinity)
     }.scrollIndicators(.hidden).usdtPage("我的")
       .task(id: store.scope) {
-        await store.refresh()
+        await store.refresh(freshBalance: true)
         collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
-      }.refreshable { await store.refresh() }
+      }.refreshable { await store.refresh(freshBalance: true) }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
-      .largeTradingSheet(isPresented: $stopLoss) { USDTStopLossView() }
-      .largeTradingSheet(isPresented: $normalize) { USDTCapitalView(initialTab: capitalTab) }
+      .largeTradingSheet(isPresented: $stopLoss, background: WebTheme.page) { USDTStopLossView() }
+      .largeTradingSheet(isPresented: $normalize, background: WebTheme.page) { USDTCapitalView(initialTab: capitalTab) }
       .webModal(isPresented: $logout) {
         WebModal(title: "确认退出登录") {
           Text("确认要退出登录吗？").foregroundStyle(WebTheme.secondary)
@@ -680,24 +684,15 @@ struct USDTCapitalView: View {
               }
             }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
           }
-          Text(direction == "to_spot"
-            ? "合约余额超过止损额的 5 倍时无法开启新一轮交易。确认后，超额部分与资金账户可划转金额一起转入现货。"
-            : "按合约距 5 倍止损额的差额补入，最多使用所选账户的可用余额。")
-            .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
-        } else {
-          VStack(alignment: .leading, spacing: 12) {
-            HStack {
-              Text("转出账户").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
-              Spacer()
-              refreshButton
-            }
-            VStack(spacing: 18) {
-              HStack { Label("现货账户", systemImage: "wallet.bifold").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
-              moneyRow("现货可用余额", key: "spot_available")
-              Divider().overlay(WebTheme.border)
-              moneyRow("本次转出金额", key: "operation_amount", emphasis: true)
-            }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+          if direction != "to_spot" {
+            Text("按合约距 5 倍止损额的差额补入，最多使用所选账户的可用余额。")
+              .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
           }
+        } else {
+          VStack(spacing: 18) {
+            moneyRow("现货账户", key: "spot_available")
+            moneyRow("本次转出金额", key: "operation_amount", emphasis: true)
+          }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
           VStack(alignment: .leading, spacing: 12) {
             HStack {
               Text("收款账号").font(.system(size: 15, weight: .semibold))
@@ -746,9 +741,11 @@ struct USDTCapitalView: View {
   }
   private var walletFooter: some View {
     VStack(spacing: 12) {
-      moneyRow(legacyPending ? "原归集转出金额" : tab == .transfer ? "本次转出金额" : direction == "to_spot" ? "合计划转到现货" : "本次转入合约",
-        key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true)
-        .accessibilityElement(children: .combine).accessibilityIdentifier("capital.total")
+      if tab != .transfer || legacyPending {
+        moneyRow(legacyPending ? "原归集转出金额" : direction == "to_spot" ? "合计划转到现货" : "本次转入合约",
+          key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true)
+          .accessibilityElement(children: .combine).accessibilityIdentifier("capital.total")
+      }
       Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == .transfer ? "转账" : "确定划转") {
         if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
       }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || (!completed && !legacyPending && !canSubmit))
@@ -772,6 +769,7 @@ struct USDTCapitalView: View {
       HStack { Label("合约账户", systemImage: "chart.line.uptrend.xyaxis").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
       Text(formatted(preview.value("futures_balance"))).font(.system(size: 32, weight: .bold)).monospacedDigit()
         .lineLimit(1).minimumScaleFactor(0.6)
+        .accessibilityIdentifier("capital.futuresBalance")
       Divider().overlay(WebTheme.border)
       moneyRow("保留上限 · 止损额 × 5", key: "maximum_futures_balance")
     }.padding(20).background(WebTheme.brand.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))

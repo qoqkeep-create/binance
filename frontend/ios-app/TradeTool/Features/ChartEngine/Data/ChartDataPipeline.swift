@@ -273,12 +273,15 @@ actor ChartDataPipeline {
             base = nil
         }
 
+        let previous = current.history.candles.last
+        let adjacentClose = previous.flatMap { $0.closeTime == bucketOpenTime - 1 ? $0.closePrice : nil }
+        let openingPrice = base?.openPrice ?? adjacentClose ?? price
         let candle = ChartCandle(
             openTime: bucketOpenTime,
             closeTime: base?.closeTime ?? bucketCloseTime,
-            openPrice: base?.openPrice ?? price,
-            highPrice: max(base?.highPrice ?? price, price),
-            lowPrice: min(base?.lowPrice ?? price, price),
+            openPrice: openingPrice,
+            highPrice: max(base?.highPrice ?? openingPrice, price),
+            lowPrice: min(base?.lowPrice ?? openingPrice, price),
             closePrice: price,
             volume: base?.volume ?? 0,
             quoteVolume: base?.quoteVolume ?? 0,
@@ -293,7 +296,7 @@ actor ChartDataPipeline {
         }
 
         lastMergedPriceEventTime = eventTimeMilliseconds
-        let updated = store.upsertProvisional(candle)
+        let updated = store.upsertProvisional(candle, quotedPrice: price)
         return ChartDataPipelineDrainResult(
             frame: makeFrame(candles: updated),
             recoveryRequest: ingress.recoveryRequest

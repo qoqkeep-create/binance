@@ -334,17 +334,17 @@ struct SuperTrendChartIndicatorPlugin: ChartIndicatorPlugin {
         id: "up",
         displayName: "Up",
         colorToken: .positive,
-        lineWidthPoints: 0.85,
+        lineWidthPoints: 1.3,
         autoscale: .included,
-        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.01)
+        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.28)
       ),
       ChartIndicatorOutputDescriptor(
         id: "down",
         displayName: "Down",
         colorToken: .negative,
-        lineWidthPoints: 0.85,
+        lineWidthPoints: 1.3,
         autoscale: .included,
-        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.01)
+        figureStyle: .lineWithCandleCloseBand(fillAlpha: 0.28)
       ),
     ],
     warmupCount: 10,
