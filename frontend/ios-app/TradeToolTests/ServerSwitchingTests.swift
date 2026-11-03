@@ -1558,3 +1558,62 @@ private actor LeverageDefaultTestAPI: APIClient {
         return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
     }
 }
+
+@MainActor
+final class StrategySelectionReloadTests: XCTestCase {
+    func testSelectionReloadWinsOverAnEarlierPageRefresh() async throws {
+        let api = GatedStrategySelectionAPI()
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: UUID().uuidString)
+        let initial = Task { await store.refresh(includeAccount: false) }
+        await api.waitForFirstRead()
+        try await store.reloadStrategies()
+        XCTAssertEqual(store.activeStrategy?.value("id"), "2")
+        await api.completeFirstRead()
+        await initial.value
+        XCTAssertEqual(store.activeStrategy?.value("id"), "2", "An older page response must not undo the new selection")
+    }
+
+    func testSelectionReloadCannotPopulateAnotherAccount() async throws {
+        let api = GatedStrategySelectionAPI()
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: UUID().uuidString)
+        let pending = Task { try await store.reloadStrategies() }
+        await api.waitForFirstRead()
+        store.prepareSession(userID: UUID().uuidString)
+        await api.completeFirstRead()
+        do {
+            try await pending.value
+            XCTFail("The previous account's response must be rejected")
+        } catch is CancellationError { }
+        XCTAssertTrue(store.strategies.isEmpty)
+    }
+}
+
+private actor GatedStrategySelectionAPI: APIClient {
+    private var reads = 0
+    private var firstRead: CheckedContinuation<Void, Never>?
+    private var readStarted: CheckedContinuation<Void, Never>?
+    func waitForFirstRead() async {
+        if firstRead != nil { return }
+        await withCheckedContinuation { readStarted = $0 }
+    }
+    func completeFirstRead() { firstRead?.resume(); firstRead = nil }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        let value: JSONValue
+        if request.path == "/v1/strategy/list" {
+            reads += 1
+            let id = reads == 1 ? 1 : 2
+            if reads == 1 {
+                await withCheckedContinuation {
+                    firstRead = $0
+                    readStarted?.resume(); readStarted = nil
+                }
+            }
+            value = .array([.object(["id": .number(Double(id)), "is_active": .bool(true)])])
+        } else {
+            value = .object([:])
+        }
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}

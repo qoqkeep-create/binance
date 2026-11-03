@@ -263,9 +263,38 @@ struct ChartPositionLine: Identifiable, Equatable {
     }
 }
 
+enum ChartPositionEntryMarkers {
+    static func markers(in rows: [JSONValue], symbol: String) -> [ChartCandleMarker] {
+        ChartPositionLine.positions(in: rows, symbol: symbol).enumerated().compactMap { index, row in
+            guard let quantity = (row["exchange_size"] ?? row["size"])?.decimal,
+                  !quantity.isNaN, quantity != 0,
+                  let side = row["side"]?.text, ["0", "1"].contains(side),
+                  let date = ["opened_at", "created_at"].compactMap({ key in
+                      row[key].flatMap { WebFormat.date($0.text) }
+                  }).first else { return nil }
+            let milliseconds = date.timeIntervalSince1970 * 1_000
+            guard milliseconds.isFinite, milliseconds > 0, milliseconds < Double(Int64.max) else { return nil }
+            let isLong = side == "0"
+            return ChartCandleMarker(id: "position-entry." + row.value("id", fallback: String(index)) + "." + side,
+                symbol: symbol.uppercased(), timestamp: Int64(milliseconds.rounded(.down)), text: isLong ? "B" : "S",
+                placement: isLong ? .below : .above, color: isLong ? .positive : .negative,
+                accessibilityLabel: isLong ? "当前多仓开仓标记" : "当前空仓开仓标记")
+        }
+    }
+}
+
 struct ChartPositionLinesOverlay: View {
     let lines: [ChartPositionLine]
     let projection: ChartPriceProjection
+
+    static func labelFrames(lines: [ChartPositionLine], projection: ChartPriceProjection) -> [CGRect] {
+        let label = ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: 120)
+        return lines.compactMap { line in
+            guard let y = projection.screenY(for: NSDecimalNumber(decimal: line.price).doubleValue),
+                  y >= projection.plotTop, y <= projection.plotBottom else { return nil }
+            return CGRect(x: label.centerX - label.width / 2, y: y - 12, width: label.width, height: 24)
+        }
+    }
 
     var body: some View {
         GeometryReader { _ in

@@ -206,10 +206,11 @@ struct DashboardView: View {
             Button {
                 isShowingMarketSettings = true
             } label: {
-                Image(systemName: "pencil.line")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(BinanceTheme.secondaryText)
-                    .frame(width: 30, height: 30)
+                MarketEditSymbol()
+                    .fill(BinanceTheme.primaryText)
+                    .frame(width: 24, height: 24)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("编辑行情列表")
@@ -484,4 +485,17 @@ struct MarketTickerRow: View {
         .frame(minHeight: BinanceTheme.Layout.marketRowHeight)
         .contentShape(Rectangle())
     }
+}
+
+/// User-provided 编辑.svg, rendered as a theme-tinted vector with its original aspect ratio.
+private struct MarketEditSymbol: Shape {
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width / 1061, rect.height / 1024)
+        let drawingRect = CGRect(x: 0, y: 0, width: 1061 * scale, height: 1061 * scale)
+        return WebSVGPath(data: Self.svgPath, viewBox: 1061).path(in: drawingRect)
+            .offsetBy(dx: rect.minX + (rect.width - 1061 * scale) / 2,
+                dy: rect.minY + (rect.height - 1024 * scale) / 2)
+    }
+
+    private static let svgPath = "M838.580148 762.728296c0 25.6-20.745481 46.345481-46.345481 46.345482H328.704a46.345481 46.345481 0 0 1-46.383407-46.345482V252.852148c0-25.6 20.783407-46.383407 46.383407-46.383407h370.801778V113.777778h-417.185185A92.690963 92.690963 0 0 0 189.62963 206.468741v602.642963a92.690963 92.690963 0 0 0 92.690963 92.690963h556.259555a92.690963 92.690963 0 0 0 92.728889-92.728889v-185.419852H838.542222v139.07437z m-417.185185-46.345481h160.654222l321.460148-321.460148-160.654222-160.654223-321.460148 321.460149v160.654222zM863.345778 113.777778l-80.327111 80.327111 160.654222 160.654222L1024 274.432 863.345778 113.777778z"
 }

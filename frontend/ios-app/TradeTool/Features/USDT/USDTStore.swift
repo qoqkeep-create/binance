@@ -59,6 +59,7 @@ final class USDTStore: ObservableObject {
     @Published var liveRevision = 0
     private var userID = ""
     private var refreshScope = ""
+    private var strategyReadRevision = 0
     private var eventRefresh: Task<Void, Never>?
     var scope: String { "\(userID):\(mode):\(revision)" }
     var isBound: Bool { if case .null = binding { return false }; return !binding.fields.isEmpty }
@@ -142,14 +143,25 @@ final class USDTStore: ObservableObject {
                 ? get("/v1/account/info", query: freshBalance ? [.init(name: "fresh", value: "1")] : [])
                 : account
             async let user = get("/v1/account/profile")
+            let strategyRevision = strategyReadRevision
             async let plans = get("/v1/strategy/list")
             let values = try await (info, user, plans)
             guard requestScope == scope else { return }
             if includeAccount, account != values.0 { account = values.0 }
             if profile != values.1 { profile = values.1 }
-            if strategies != values.2.rows { strategies = values.2.rows }
+            if strategyRevision == strategyReadRevision, strategies != values.2.rows { strategies = values.2.rows }
         } catch is CancellationError { }
         catch { if requestScope == scope { notice = error.localizedDescription } }
+    }
+
+    /// A saved selection must re-read the list even while the page's initial refresh is in flight.
+    func reloadStrategies() async throws {
+        let requestScope = scope
+        strategyReadRevision += 1
+        let readRevision = strategyReadRevision
+        let result = try await get("/v1/strategy/list")
+        guard requestScope == scope, readRevision == strategyReadRevision else { return }
+        strategies = result.rows
     }
 
     func command(_ action: String, payload: [String: JSONValue], key: String) async throws -> JSONValue {

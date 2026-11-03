@@ -6,6 +6,10 @@ final class KlineChartHostView: UIView {
     var onCrosshairSelection: ((ChartCrosshairSelection) -> Void)?
     var onCrosshairDismiss: (() -> Void)?
     private let metalView: MTKView
+    private let candleMarkerContainer = UIView()
+    private var candleMarkers: [ChartCandleMarker] = []
+    private var candleMarkerExclusions: [CGRect] = []
+    private var candleMarkerLabels: [String: UILabel] = [:]
     private let errorLabel = UILabel()
     private let rendererHealth = MetalRendererHealth()
     private let interactionMetrics = ChartInteractionMetrics.standard
@@ -106,6 +110,9 @@ final class KlineChartHostView: UIView {
         super.init(frame: frame)
 
         configureMetalView()
+        candleMarkerContainer.isUserInteractionEnabled = false
+        candleMarkerContainer.clipsToBounds = true
+        addSubview(candleMarkerContainer)
         configureErrorLabel()
         setAppearance(appearance)
         configureGestures()
@@ -200,6 +207,7 @@ final class KlineChartHostView: UIView {
             height: max(0, bounds.height * scale)
         )
         updateHostPresentationContext()
+        updateCandleMarkers()
     }
 
     override func didMoveToWindow() {
@@ -335,11 +343,84 @@ final class KlineChartHostView: UIView {
         )
         errorLabel.backgroundColor = color
         errorLabel.textColor = .secondaryLabel
+        updateCandleMarkers()
+    }
+
+    func setCandleMarkers(_ markers: [ChartCandleMarker], exclusions: [CGRect] = []) {
+        guard candleMarkers != markers || candleMarkerExclusions != exclusions else { return }
+        candleMarkers = markers
+        candleMarkerExclusions = exclusions
+        let identifiers = Set(markers.map(\.id))
+        for id in candleMarkerLabels.keys.filter({ !identifiers.contains($0) }) {
+            candleMarkerLabels.removeValue(forKey: id)?.removeFromSuperview()
+        }
+        updateCandleMarkers()
+    }
+
+    private func updateCandleMarkers() {
+        guard !isDisposed, !candleMarkers.isEmpty,
+              let state = baseRenderState, let data = state.staticScene.crosshairData,
+              let plot = data.panelLayout.pricePanel?.plot else {
+            candleMarkerContainer.isHidden = true
+            return
+        }
+        let scale = Double(data.displayScale)
+        candleMarkerContainer.frame = CGRect(x: Double(plot.left) / scale, y: Double(plot.top) / scale,
+            width: Double(plot.width) / scale, height: Double(plot.height) / scale)
+        candleMarkerContainer.isHidden = false
+        let transform = currentTimelineTransform()
+        for marker in candleMarkers {
+            var frame: CGRect?
+            if marker.symbol == data.stream.symbol {
+                let candle: ChartCandle?
+                let slot: Int?
+                if let tail = state.liveTail.candle, data.reservesLiveSlot,
+                   tail.openTime <= marker.timestamp, marker.timestamp <= tail.closeTime {
+                    candle = tail
+                    slot = data.historyCount
+                } else if let index = marker.candleIndex(in: data.history.candles) {
+                    candle = data.history.candles[index]
+                    slot = index
+                } else {
+                    candle = nil
+                    slot = nil
+                }
+                if let candle, let slot, let x = data.baselineX(globalSlot: slot) {
+                    frame = ChartCandleMarkerLayout.frame(marker: marker, candle: candle, baselineX: x,
+                        plot: plot, domain: data.priceDomain, transform: transform, displayScale: scale,
+                        boundaryTranslationPoints: boundaryTranslationPoints, avoiding: candleMarkerExclusions)
+                }
+            }
+            guard let frame else { candleMarkerLabels[marker.id]?.isHidden = true; continue }
+            let label: UILabel
+            if let existing = candleMarkerLabels[marker.id] { label = existing }
+            else {
+                label = UILabel()
+                label.font = .systemFont(ofSize: 7.5, weight: .bold)
+                label.textAlignment = .center
+                label.textColor = .white
+                label.layer.cornerRadius = 2
+                label.clipsToBounds = true
+                label.isAccessibilityElement = true
+                label.accessibilityIdentifier = marker.id
+                candleMarkerLabels[marker.id] = label
+                candleMarkerContainer.addSubview(label)
+            }
+            label.isHidden = false
+            label.text = marker.text
+            label.accessibilityLabel = marker.accessibilityLabel
+            let color = marker.color.resolved(for: appearance)
+            label.backgroundColor = UIColor(red: CGFloat(color.red), green: CGFloat(color.green),
+                blue: CGFloat(color.blue), alpha: CGFloat(color.alpha))
+            label.frame = frame.offsetBy(dx: -candleMarkerContainer.frame.minX,
+                dy: -candleMarkerContainer.frame.minY)
+        }
     }
 
     func submit(_ incomingState: RenderState) {
         let state = incomingState.withAppearance(appearance)
         baseRenderState = state
+        defer { updateCandleMarkers() }
         updateTimelineAccessibilityState()
         if currentCrosshair != nil,
            let location = crosshairLocationPixels {
@@ -389,6 +470,10 @@ final class KlineChartHostView: UIView {
         onCrosshairDismiss = nil
         onFirstFramePresented = nil
         baseRenderState = nil
+        candleMarkerContainer.isHidden = true
+        candleMarkers = []
+        candleMarkerLabels.values.forEach { $0.removeFromSuperview() }
+        candleMarkerLabels = [:]
         pendingGuardBandRebase = nil
         pendingContinuousViewport = nil
         committedViewportAwaitingRender = nil
@@ -1057,6 +1142,7 @@ final class KlineChartHostView: UIView {
         interactionRevision &+= 1
         // Keep the fixed-axis price overlay throughout a gesture and scene rebase.
         let liveTail = state.liveTail
+        updateCandleMarkers()
         frameCoordinator?.submit(RenderState(
             staticScene: state.staticScene,
             liveTail: liveTail,

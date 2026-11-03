@@ -338,6 +338,8 @@ private struct MarketChartDetailView: View {
             KlineChartSceneView(
                 frame: viewModel.chartDataFrame,
                 automaticallyFitsPrice: automaticallyFitsPrice,
+                candleMarkers: ChartPositionEntryMarkers.markers(in: heldPositions, symbol: viewModel.market.symbol),
+                candleMarkerExclusions: positionMarkerExclusions,
                 diagnostics: viewModel.loadDiagnostics,
                 onFirstFramePresented: { epoch, time in
                     viewModel.chartFirstFramePresented(epoch: epoch, at: time)
@@ -382,6 +384,12 @@ private struct MarketChartDetailView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("market-chart-plot")
+    }
+
+    private var positionMarkerExclusions: [CGRect] {
+        guard let projection = chartPriceProjection else { return [] }
+        return ChartPositionLinesOverlay.labelFrames(lines: ChartPositionLine.lines(in: heldPositions,
+            symbol: viewModel.market.symbol), projection: projection)
     }
 
     private var indicatorSettingsIcon: some View {

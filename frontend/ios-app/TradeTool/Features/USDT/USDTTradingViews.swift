@@ -150,7 +150,7 @@ struct USDTTradeView: View {
             WebButtonStyle(
               kind: hasPosition ? .primary : !inputValid || !strategyValid
                 ? .inactive
-                : orderType == "market" && !emaValid ? .primary : isLong ? .success : .danger)
+                : orderType == "market" && !emaValid ? .primary : isLong ? .longEntry : .danger)
           ).disabled(entryDisabled)
           if submitted {
             NavigationLink("查看交易命令", destination: USDTCommandsView()).font(.system(size: 14))
@@ -610,7 +610,8 @@ struct USDTTradeView: View {
       .accessibilityIdentifier("chart-ticket." + title)
   }
   private var chartActionColor: Color {
-    let color = (isLong ? ChartColor.positive : ChartColor.negative)
+    if isLong { return BinanceTheme.positive }
+    let color = ChartColor.negative
       .resolved(for: colorScheme == .dark ? .dark : .light)
     return Color(.sRGB, red: Double(color.red), green: Double(color.green),
       blue: Double(color.blue), opacity: Double(color.alpha))
@@ -742,7 +743,7 @@ struct USDTPositionsView: View {
       HStack(spacing: 8) {
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
-          .frame(maxWidth: 280).frame(height: 38)
+          .frame(maxWidth: 280).frame(height: 44)
         Spacer(minLength: 0)
         Button { floatingPositions.toggle() } label: {
           Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")

@@ -375,6 +375,8 @@ final class KlineChartSceneController: ObservableObject {
 struct KlineChartSceneView: View {
   let frame: ChartDataFrame?
   var automaticallyFitsPrice = true
+  var candleMarkers: [ChartCandleMarker] = []
+  var candleMarkerExclusions: [CGRect] = []
   var diagnostics: ChartLoadDiagnostics? = nil
   var onFirstFramePresented: (KlineStreamEpoch, TimeInterval) -> Void = { _, _ in }
   var onNeedsOlderHistory: () -> Void = {}
@@ -436,6 +438,8 @@ struct KlineChartSceneView: View {
               controller.updatePriceViewport(next)
             },
             automaticallyFitsPrice: automaticallyFitsPrice,
+            candleMarkers: candleMarkers,
+            candleMarkerExclusions: candleMarkerExclusions,
             onFirstFramePresented: { time in
               if let epoch = frame?.epoch { onFirstFramePresented(epoch, time) }
             },

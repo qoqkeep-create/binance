@@ -215,24 +215,16 @@ struct USDTProfileView: View {
   }
   private var accountBorder: Color {
     if scheme == .dark { return WebTheme.brand.opacity(0.2) }
-    // Tailwind 4 yellow-200 / sky-200 from the original USDT profile card.
-    return lead
-      ? Color(red: 184 / 255, green: 230 / 255, blue: 254 / 255)
-      : Color(red: 255 / 255, green: 240 / 255, blue: 133 / 255)
+    return Color(red: 167 / 255, green: 243 / 255, blue: 208 / 255)
   }
   private var accountBackground: LinearGradient {
     LinearGradient(
       colors: scheme == .dark
         ? [WebTheme.brand.opacity(0.10), WebTheme.brand.opacity(0.18)]
-        : lead
-          ? [
-            Color(red: 240 / 255, green: 249 / 255, blue: 255 / 255),
-            Color(red: 239 / 255, green: 246 / 255, blue: 255 / 255),
-          ]
-          : [
-            Color(red: 255 / 255, green: 243 / 255, blue: 179 / 255),
-            Color(red: 255 / 255, green: 231 / 255, blue: 144 / 255),
-          ], startPoint: .topLeading, endPoint: .bottomTrailing)
+        : [
+          Color(red: 236 / 255, green: 253 / 255, blue: 245 / 255),
+          Color(red: 209 / 255, green: 250 / 255, blue: 229 / 255),
+        ], startPoint: .topLeading, endPoint: .bottomTrailing)
   }
   private func balance(_ key: String) -> String {
     guard let amount = store.account[key]?.decimal else { return "--" }

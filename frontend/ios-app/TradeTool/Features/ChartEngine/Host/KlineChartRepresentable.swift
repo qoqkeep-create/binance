@@ -9,6 +9,8 @@ struct KlineChartRepresentable: UIViewRepresentable {
     let onTimelineViewportChange: (ChartTimelineViewport) -> Void
     let onPriceViewportChange: (ChartPriceViewport) -> Void
     var automaticallyFitsPrice = true
+    var candleMarkers: [ChartCandleMarker] = []
+    var candleMarkerExclusions: [CGRect] = []
     var onFirstFramePresented: (TimeInterval) -> Void = { _ in }
     var onCrosshairSelection: (ChartCrosshairSelection) -> Void = { _ in }
     var onCrosshairDismiss: () -> Void = {}
@@ -24,6 +26,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
         context: Context
     ) {
         view.setAppearance(colorScheme == .light ? .light : .dark)
+        view.setCandleMarkers(candleMarkers, exclusions: candleMarkerExclusions)
         view.observeFirstPresentation(onFirstFramePresented)
         view.onCrosshairSelection = onCrosshairSelection
         view.onCrosshairDismiss = onCrosshairDismiss

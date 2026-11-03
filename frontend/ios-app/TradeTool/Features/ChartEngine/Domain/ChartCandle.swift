@@ -20,6 +20,34 @@ struct KlineStreamEpoch: Hashable, Sendable {
     }
 }
 
+/// A fixed-size annotation attached to the candle containing an event time.
+struct ChartCandleMarker: Identifiable, Equatable, Sendable {
+    enum Placement: Equatable, Sendable { case above, below }
+    static let sizePoints = 10.0
+    static let gapPoints = 3.0
+
+    let id: String
+    let symbol: String
+    let timestamp: Int64
+    let text: String
+    let placement: Placement
+    let color: ChartColor
+    let accessibilityLabel: String
+
+    func candleIndex(in candles: [ChartCandle]) -> Int? {
+        var lower = 0
+        var upper = candles.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if candles[middle].openTime <= timestamp { lower = middle + 1 }
+            else { upper = middle }
+        }
+        let index = lower - 1
+        guard index >= 0, timestamp <= candles[index].closeTime else { return nil }
+        return index
+    }
+}
+
 enum ChartCandleClosure: Equatable, Sendable {
     case provisional
     case unverifiedClosed

@@ -2838,7 +2838,9 @@ final class WebParityUITests: XCTestCase {
     launch("strategies")
     let row = app.descendants(matching: .any)["strategy.row.1"].firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["strategy.use.1"].label, "使用中")
+    XCTAssertEqual(row.value as? String, "使用中")
+    XCTAssertFalse(app.buttons["strategy.use.1"].exists)
+    XCTAssertFalse(app.buttons["使用"].exists)
     XCTAssertFalse(app.buttons["删除"].exists)
     XCTAssertTrue(app.staticTexts["L1：当 RR≥1，卖出 30%，止损位移动到 0R 处"].exists)
     let edit = app.buttons["strategy.edit.1"]
@@ -2846,9 +2848,11 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(edit.exists)
     XCTAssertGreaterThan(edit.frame.midX, row.frame.midX)
     XCTAssertGreaterThan(edit.frame.minY, summary.frame.maxY)
-    XCTAssertLessThan(app.buttons["strategy.use.1"].frame.maxY, summary.frame.minY)
     XCTAssertGreaterThanOrEqual(app.buttons["strategy.create"].frame.height, 52)
     capture("strategy-list-compact")
+    row.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.2)).tap()
+    XCTAssertFalse(app.buttons["保存策略"].exists, "Selecting a card must not enter the editor")
+    XCTAssertFalse(app.staticTexts["确认选择策略"].exists)
     edit.tap()
     XCTAssertTrue(app.buttons["保存策略"].waitForExistence(timeout: 5))
     app.buttons["返回"].firstMatch.tap()
@@ -2924,7 +2928,7 @@ final class WebParityUITests: XCTestCase {
       let segments = ["positions", "limits", "history"].map { app.buttons["positions.tabs." + $0] }
       XCTAssertTrue(segments[0].waitForExistence(timeout: 5))
       for segment in segments { XCTAssertEqual(segment.frame.width, segments[0].frame.width, accuracy: 1) }
-      XCTAssertGreaterThanOrEqual(segments[0].frame.height, 32)
+      XCTAssertGreaterThanOrEqual(segments[0].frame.height, 44)
       XCTAssertLessThanOrEqual(segments[0].frame.minX,
         app.otherElements["positions.header"].frame.minX + 12)
       segments[2].tap()

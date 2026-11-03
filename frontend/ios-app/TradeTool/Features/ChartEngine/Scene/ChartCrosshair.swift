@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct ChartCrosshairValueDomain: Equatable, Sendable {
     let lower: Double
@@ -158,6 +159,34 @@ struct ChartCrosshairLiveData: Sendable {
     let candle: ChartCandle?
     let indicatorPoints: [ChartIndicatorLivePoint]
     let legends: [ChartIndicatorLegendEntry]
+}
+
+enum ChartCandleMarkerLayout {
+    /// Transform the anchor only; the square and its gap retain their point size when zooming.
+    static func frame(marker: ChartCandleMarker, candle: ChartCandle, baselineX: Double,
+                      plot: ChartPanelRect, domain: ChartCrosshairValueDomain,
+                      transform: ChartTimelineInteractionTransform, displayScale: Double,
+                      boundaryTranslationPoints: Double = 0, avoiding exclusions: [CGRect] = []) -> CGRect? {
+        guard displayScale.isFinite, displayScale > 0, plot.isValid, candle.isValid,
+              candle.openTime <= marker.timestamp, marker.timestamp <= candle.closeTime else { return nil }
+        let x = transform.screenX(baselineX: baselineX) / displayScale + boundaryTranslationPoints
+        let price = marker.placement == .above ? candle.highPrice : candle.lowPrice
+        let anchorY = (Double(plot.top) + (domain.upper - price) / (domain.upper - domain.lower)
+            * Double(plot.height)) / displayScale
+        let size = ChartCandleMarker.sizePoints
+        let centerY = anchorY + (marker.placement == .above ? -1 : 1) * (size / 2 + ChartCandleMarker.gapPoints)
+        guard x.isFinite, centerY.isFinite else { return nil }
+        var result = CGRect(x: CGFloat(x - size / 2), y: CGFloat(centerY - size / 2),
+            width: CGFloat(size), height: CGFloat(size))
+        // Keep the entry badge clear of the read-only price labels above this native layer.
+        for _ in exclusions.indices {
+            guard let obstacle = exclusions.first(where: { result.intersects($0) }) else { break }
+            result.origin.y = marker.placement == .above ? obstacle.minY - result.height - 1 : obstacle.maxY + 1
+        }
+        let visible = CGRect(x: CGFloat(Double(plot.left) / displayScale), y: CGFloat(Double(plot.top) / displayScale),
+            width: CGFloat(Double(plot.width) / displayScale), height: CGFloat(Double(plot.height) / displayScale))
+        return result.intersects(visible) ? result : nil
+    }
 }
 
 struct ChartCrosshairSelection: Equatable, Sendable {

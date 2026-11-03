@@ -107,7 +107,7 @@ struct USDTField: View {
 }
 
 struct WebButtonStyle: ButtonStyle {
-  enum Kind { case primary, secondary, danger, success, text, inactive, charcoal }
+  enum Kind { case primary, secondary, danger, success, longEntry, text, inactive, charcoal }
   var kind: Kind = .primary
   var height: CGFloat = 48
   var radius: CGFloat = 10
@@ -123,7 +123,7 @@ struct WebButtonStyle: ButtonStyle {
           ? WebTheme.muted
           : kind == .primary
             ? Color.black
-            : kind == .danger || kind == .success || kind == .inactive || kind == .charcoal
+            : kind == .danger || kind == .success || kind == .longEntry || kind == .inactive || kind == .charcoal
               ? Color.white : WebTheme.text
       )
       .padding(.horizontal, fullWidth ? 0 : 12).frame(maxWidth: fullWidth ? .infinity : nil).frame(
@@ -140,13 +140,15 @@ struct WebButtonStyle: ButtonStyle {
                   ? WebTheme.danger
                   : kind == .success
                     ? WebTheme.success
-                    : kind == .text
-                      ? Color.clear
-                      : kind == .inactive
-                        ? WebTheme.color(0x4B5563, 0x4B5563)
-                        : kind == .charcoal
-                          ? Color(red: 43 / 255, green: 47 / 255, blue: 54 / 255)
-                          : WebTheme.secondaryButton))
+                    : kind == .longEntry
+                      ? BinanceTheme.positive
+                      : kind == .text
+                        ? Color.clear
+                        : kind == .inactive
+                          ? WebTheme.color(0x4B5563, 0x4B5563)
+                          : kind == .charcoal
+                            ? Color(red: 43 / 255, green: 47 / 255, blue: 54 / 255)
+                            : WebTheme.secondaryButton))
       }.opacity(
         enabled
           ? configuration.isPressed ? 0.8 : 1
@@ -204,26 +206,29 @@ struct WebCheckbox: View {
   }
 }
 
-/// Equal-width rectangular segments keep the position filters aligned.
+/// Position tabs emphasize the selected title with a short rounded underline.
 struct WebTabs: View {
   let tabs: [(String, String)]
   @Binding var selection: String
   var body: some View {
-    HStack(spacing: 2) {
+    HStack(spacing: 0) {
       ForEach(tabs, id: \.0) { key, title in
         Button { selection = key } label: {
-          Text(title).font(.system(size: 14, weight: selection == key ? .semibold : .medium))
-            .lineLimit(1).minimumScaleFactor(0.8)
+          Text(title).font(.system(size: selection == key ? 20 : 15,
+            weight: selection == key ? .bold : .regular))
+            .lineLimit(1).minimumScaleFactor(0.95)
             .foregroundStyle(selection == key ? WebTheme.text : WebTheme.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(selection == key ? WebTheme.surface : Color.clear,
-              in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .bottom) {
+              RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(selection == key ? BinanceTheme.accent : Color.clear)
+                .frame(height: 4).padding(.horizontal, 4).offset(y: 8)
+            }
+            .frame(maxWidth: .infinity).frame(height: 44)
+            .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("positions.tabs." + key)
           .accessibilityAddTraits(selection == key ? .isSelected : [])
       }
-    }.padding(3).background(WebTheme.input, in: RoundedRectangle(cornerRadius: 11))
-      .overlay { RoundedRectangle(cornerRadius: 11).stroke(WebTheme.border, lineWidth: 0.5) }
+    }
       .accessibilityElement(children: .contain).accessibilityIdentifier("positions.tabs")
   }
 }

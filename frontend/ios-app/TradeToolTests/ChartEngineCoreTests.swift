@@ -8030,3 +8030,105 @@ private actor ChartPositionsSuspendedAPI: APIClient {
     }
     func complete(_ value: JSONValue) { pending?.resume(returning: value); pending = nil }
 }
+
+final class ChartPositionEntryMarkerTests: XCTestCase {
+    private func row(_ changes: [String: JSONValue] = [:]) -> JSONValue {
+        .object(["id": .number(42), "symbol": .string("BTCUSDT"), "side": .number(0),
+            "exchange_size": .string("0.1"), "created_at": .string("2026-11-03T10:00:30.125Z")]
+            .merging(changes, uniquingKeysWith: { _, new in new }))
+    }
+
+    private func candle(open: Int64 = 1_000, close: Int64 = 1_999) -> ChartCandle {
+        ChartCandle(openTime: open, closeTime: close, openPrice: 100, highPrice: 110, lowPrice: 90,
+            closePrice: 105, volume: 1, quoteVolume: 100, closure: .closed)
+    }
+
+    private func marker(_ placement: ChartCandleMarker.Placement = .below,
+                        timestamp: Int64 = 1_500) -> ChartCandleMarker {
+        ChartCandleMarker(id: "position", symbol: "BTCUSDT", timestamp: timestamp,
+            text: placement == .below ? "B" : "S", placement: placement,
+            color: placement == .below ? .positive : .negative, accessibilityLabel: "当前持仓")
+    }
+
+    func testOnlyCurrentNonzeroPositionsProduceDirectionMarkers() {
+        let active = [row(), row(["id": .number(43), "side": .number(1)])]
+        let ignored = [row(["symbol": .string("ETHUSDT")]), row(["status": .number(1)]),
+            row(["exchange_size": .string("0")]), row(["exchange_size": .string("NaN")]),
+            row(["side": .number(9)]), row(["created_at": .null])]
+        let result = ChartPositionEntryMarkers.markers(in: active + ignored, symbol: "btcusdt")
+        XCTAssertEqual(result.map(\.text), ["B", "S"])
+        XCTAssertEqual(result.map(\.placement), [.below, .above])
+        XCTAssertEqual(result.map(\.color), [.positive, .negative])
+        XCTAssertEqual(Set(result.map(\.id)).count, 2)
+        XCTAssertTrue(ChartPositionEntryMarkers.markers(in: [], symbol: "BTCUSDT").isEmpty,
+            "Closing the position must remove its marker, rather than retain trade history")
+    }
+
+    func testEntryTimePrefersOpenedAtAndSupportsExistingDateFormats() throws {
+        let first = try XCTUnwrap(ChartPositionEntryMarkers.markers(in: [row()], symbol: "BTCUSDT").first)
+        XCTAssertEqual(first.timestamp, 1_793_700_030_125)
+        for time in ["1793700060", "1793700060000", "2026-11-03T10:01:00Z"] {
+            let result = ChartPositionEntryMarkers.markers(in: [row(["opened_at": .string(time)])], symbol: "BTCUSDT")
+            XCTAssertEqual(result.first?.timestamp, 1_793_700_060_000)
+        }
+        XCTAssertEqual(ChartPositionEntryMarkers.markers(in: [row(["opened_at": .null])], symbol: "BTCUSDT").first?.timestamp,
+            first.timestamp)
+    }
+
+    func testTimeMustBelongToAnActualCandleAndNeverSnapsAcrossGaps() {
+        let candles = [candle(), candle(open: 3_000, close: 3_999)]
+        XCTAssertEqual(marker(timestamp: 1_000).candleIndex(in: candles), 0)
+        XCTAssertEqual(marker(timestamp: 1_999).candleIndex(in: candles), 0)
+        XCTAssertEqual(marker(timestamp: 3_000).candleIndex(in: candles), 1)
+        XCTAssertNil(marker(timestamp: 2_500).candleIndex(in: candles))
+        XCTAssertNil(marker(timestamp: 4_000).candleIndex(in: candles))
+        XCTAssertNil(marker(timestamp: 500).candleIndex(in: candles))
+        XCTAssertNil(marker().candleIndex(in: []))
+    }
+
+    func testMarkersStayAboveOrBelowWicksAndKeepSizeWhilePanningAndZooming() throws {
+        for scale in [2.0, 3.0] {
+            let plot = ChartPanelRect(left: Float(4 * scale), top: Float(30 * scale),
+                right: Float(332 * scale), bottom: Float(350 * scale))
+            let domain = try XCTUnwrap(ChartCrosshairValueDomain(lower: 80, upper: 120))
+            for transform in [ChartTimelineInteractionTransform.identity,
+                .init(translationPixels: -100 * scale, scaleX: 2)] {
+                let lower = try XCTUnwrap(ChartCandleMarkerLayout.frame(marker: marker(), candle: candle(),
+                    baselineX: 120 * scale, plot: plot, domain: domain, transform: transform,
+                    displayScale: scale, boundaryTranslationPoints: 5))
+                let upper = try XCTUnwrap(ChartCandleMarkerLayout.frame(marker: marker(.above), candle: candle(),
+                    baselineX: 120 * scale, plot: plot, domain: domain, transform: transform,
+                    displayScale: scale, boundaryTranslationPoints: 5))
+                XCTAssertEqual(lower.size, CGSize(width: 10, height: 10))
+                XCTAssertEqual(upper.size, lower.size)
+                XCTAssertEqual(lower.midX, transform.screenX(baselineX: 120 * scale) / scale + 5, accuracy: 0.001)
+                XCTAssertEqual(lower.minY, 270 + 3, accuracy: 0.001)
+                XCTAssertEqual(upper.maxY, 110 - 3, accuracy: 0.001)
+            }
+        }
+    }
+
+    func testMarkerAvoidsPositionPriceLabelsWithoutChangingItsCandle() throws {
+        let plot = ChartPanelRect(left: 4, top: 30, right: 332, bottom: 350)
+        let domain = try XCTUnwrap(ChartCrosshairValueDomain(lower: 80, upper: 120))
+        for (placement, obstacle) in [(ChartCandleMarker.Placement.below, CGRect(x: 10, y: 270, width: 120, height: 24)),
+            (.above, CGRect(x: 10, y: 90, width: 120, height: 24))] {
+            let result = try XCTUnwrap(ChartCandleMarkerLayout.frame(marker: marker(placement), candle: candle(),
+                baselineX: 50, plot: plot, domain: domain, transform: .identity, displayScale: 1, avoiding: [obstacle]))
+            XCTAssertFalse(result.intersects(obstacle))
+            XCTAssertEqual(result.midX, 50, accuracy: 0.001)
+            XCTAssertEqual(result.size, CGSize(width: 10, height: 10))
+            if placement == .below { XCTAssertGreaterThan(result.minY, obstacle.maxY) }
+            else { XCTAssertLessThan(result.maxY, obstacle.minY) }
+        }
+    }
+
+    func testOffscreenOrUnrelatedCandleDoesNotCreatePinnedMarker() throws {
+        let plot = ChartPanelRect(left: 4, top: 30, right: 332, bottom: 350)
+        let domain = try XCTUnwrap(ChartCrosshairValueDomain(lower: 80, upper: 120))
+        XCTAssertNil(ChartCandleMarkerLayout.frame(marker: marker(), candle: candle(), baselineX: -50,
+            plot: plot, domain: domain, transform: .identity, displayScale: 1))
+        XCTAssertNil(ChartCandleMarkerLayout.frame(marker: marker(timestamp: 2_000), candle: candle(), baselineX: 120,
+            plot: plot, domain: domain, transform: .identity, displayScale: 1))
+    }
+}

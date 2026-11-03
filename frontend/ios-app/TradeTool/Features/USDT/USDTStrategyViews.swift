@@ -8,7 +8,7 @@ struct USDTStrategiesView: View {
   @EnvironmentObject private var store: USDTStore
   @State private var notice = ""
   @State private var selected: JSONValue = .null
-  @State private var selecting = false
+  @State private var mutating = false
   @State private var deleting = false
   @State private var editingStrategy: JSONValue?
   @State private var editing = false
@@ -16,8 +16,7 @@ struct USDTStrategiesView: View {
     List {
       Group {
         Button {
-          selected = .null
-          selecting = true
+          chooseStrategy(.null)
         } label: {
           HStack(spacing: 12) {
             Image(systemName: "hand.tap").font(.system(size: 20)).foregroundStyle(WebTheme.brand)
@@ -40,62 +39,54 @@ struct USDTStrategiesView: View {
                 lineWidth: store.activeStrategy == nil ? 2 : 1)
             }
             .accessibilityAddTraits(store.activeStrategy == nil ? .isSelected : [])
-        }.buttonStyle(.plain).accessibilityIdentifier("strategy.manual")
+        }.buttonStyle(.plain).disabled(mutating).accessibilityIdentifier("strategy.manual")
         ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
-          VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-              Text(strategy.value("name")).font(.system(size: 18, weight: .medium))
-                .frame(maxWidth: .infinity, alignment: .leading)
-              Button {
-                selected = strategy
-                selecting = true
-              } label: {
-                Group {
+          ZStack(alignment: .bottomTrailing) {
+            Button { chooseStrategy(strategy) } label: {
+              VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                  Text(strategy.value("name")).font(.system(size: 18, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                   if strategy["is_active"]?.flag == true {
                     Image(systemName: "checkmark").font(.system(size: 18, weight: .semibold))
-                  } else {
-                    Text("使用").font(.system(size: 13, weight: .medium))
+                      .foregroundStyle(BinanceTheme.accent)
                   }
-                }.foregroundStyle(BinanceTheme.accent).frame(minWidth: 44, minHeight: 32)
-              }.buttonStyle(.plain)
-                .disabled(strategy["is_active"]?.flag == true)
-                .accessibilityLabel(strategy["is_active"]?.flag == true ? "使用中" : "使用")
-                .accessibilityIdentifier("strategy.use." + strategy.value("id"))
-            }
-            VStack(alignment: .leading, spacing: 6) {
-              ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) { index, level in
-                Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
-                  .foregroundStyle(WebTheme.secondary)
-              }
-            }
-            HStack {
-              Spacer(minLength: 0)
-              Button { editingStrategy = strategy; editing = true } label: {
-                HStack(spacing: 4) {
-                  Text("编辑")
-                  Image(systemName: "chevron.right")
-                }.font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
-                  .frame(minWidth: 60, minHeight: 32).contentShape(Rectangle())
-              }.buttonStyle(.plain).accessibilityLabel("编辑" + strategy.value("name"))
-                .accessibilityIdentifier("strategy.edit." + strategy.value("id"))
-            }
-          }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay {
-              RoundedRectangle(cornerRadius: 16).stroke(
-                strategy["is_active"]?.flag == true ? BinanceTheme.accent : WebTheme.border,
-                lineWidth: strategy["is_active"]?.flag == true ? 2 : 1)
-            }
-            .accessibilityAddTraits(strategy["is_active"]?.flag == true ? .isSelected : [])
-            .contentShape(RoundedRectangle(cornerRadius: 16))
-            .onTapGesture { editingStrategy = strategy; editing = true }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("strategy.row." + strategy.value("id"))
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-              Button(role: .destructive) { selected = strategy; deleting = true } label: {
-                Label("删除", systemImage: "trash")
-              }.buttonStyle(.automatic)
-            }
+                }.frame(minHeight: 32)
+                VStack(alignment: .leading, spacing: 6) {
+                  ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) { index, level in
+                    Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
+                      .foregroundStyle(WebTheme.secondary)
+                  }
+                }
+                Color.clear.frame(height: 32).accessibilityHidden(true)
+              }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay {
+                  RoundedRectangle(cornerRadius: 16).stroke(
+                    strategy["is_active"]?.flag == true ? BinanceTheme.accent : WebTheme.border,
+                    lineWidth: strategy["is_active"]?.flag == true ? 2 : 1)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 16))
+            }.buttonStyle(.plain).disabled(mutating)
+              .foregroundStyle(WebTheme.text)
+              .accessibilityValue(strategy["is_active"]?.flag == true ? "使用中" : "未使用")
+              .accessibilityAddTraits(strategy["is_active"]?.flag == true ? .isSelected : [])
+              .accessibilityIdentifier("strategy.row." + strategy.value("id"))
+            Button { editingStrategy = strategy; editing = true } label: {
+              HStack(spacing: 4) {
+                Text("编辑")
+                Image(systemName: "chevron.right")
+              }.font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+                .frame(minWidth: 60, minHeight: 32).contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(mutating).padding(16)
+              .accessibilityLabel("编辑" + strategy.value("name"))
+              .accessibilityIdentifier("strategy.edit." + strategy.value("id"))
+          }
+          .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) { selected = strategy; deleting = true } label: {
+              Label("删除", systemImage: "trash")
+            }.buttonStyle(.automatic).disabled(mutating)
+          }
         }
         Button { editingStrategy = nil; editing = true } label: {
           HStack(spacing: 8) {
@@ -114,19 +105,6 @@ struct USDTStrategiesView: View {
       .navigationDestination(isPresented: $editing) {
         USDTStrategyEditor(strategy: editingStrategy)
       }
-      .webModal(isPresented: $selecting) {
-        WebModal(title: "确认选择策略") {
-          Text(selected == .null ? "确定选择手动止盈吗？此设置用于后续开仓。" : "确定要选择策略 \(selected.value("name")) 吗？").foregroundStyle(WebTheme.secondary)
-          HStack(spacing: 12) {
-            Button("取消") { selecting = false }.buttonStyle(
-              WebButtonStyle(kind: .secondary, radius: 14))
-            Button("确认选择") {
-              selecting = false
-              mutate("set-active")
-            }.buttonStyle(WebButtonStyle(radius: 14))
-          }
-        }
-      }
       .webModal(isPresented: $deleting) {
         WebModal(title: "确认删除") {
           Text("确定要删除这个策略吗？").foregroundStyle(WebTheme.secondary)
@@ -135,23 +113,43 @@ struct USDTStrategiesView: View {
               WebButtonStyle(kind: .secondary, radius: 14))
             Button("删除") {
               deleting = false
-              mutate("delete")
+              mutate("delete", strategy: selected)
             }.buttonStyle(WebButtonStyle(kind: .danger, radius: 14))
           }
         }
       }
   }
-  private func mutate(_ action: String) {
+  private func chooseStrategy(_ strategy: JSONValue) {
+    guard !mutating else { return }
+    // An empty or still-loading list does not prove that manual mode is active.
+    let alreadySelected = strategy != .null && strategy["is_active"]?.flag == true
+    if alreadySelected {
+      finishSelection(strategy)
+    } else {
+      mutate("set-active", strategy: strategy)
+    }
+  }
+  private func finishSelection(_ strategy: JSONValue) {
+    guard returnAfterSelection else { return }
+    onSelection?(strategy == .null ? nil : strategy)
+    if let onClose { onClose() } else { dismiss() }
+  }
+  private func mutate(_ action: String, strategy: JSONValue) {
+    guard !mutating else { return }
+    mutating = true
+    notice = ""
+    let scope = store.scope
     Task {
+      defer { mutating = false }
+      guard scope == store.scope else { return }
       do {
         _ = try await store.send("/v1/strategy/" + action,
-          selected == .null && action == "set-active" ? ["manual": .bool(true)] : ["strategy_id": selected["id"] ?? .null])
-        await store.refresh()
-        if action == "set-active" && returnAfterSelection {
-          onSelection?(selected == .null ? nil : selected)
-          if let onClose { onClose() } else { dismiss() }
-        }
-      } catch { notice = error.localizedDescription }
+          strategy == .null && action == "set-active" ? ["manual": .bool(true)] : ["strategy_id": strategy["id"] ?? .null])
+        guard scope == store.scope else { return }
+        try await store.reloadStrategies()
+        guard scope == store.scope else { return }
+        if action == "set-active" { finishSelection(strategy) }
+      } catch { if scope == store.scope { notice = error.localizedDescription } }
     }
   }
 }
