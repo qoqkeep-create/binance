@@ -42,9 +42,9 @@ Binance REST 请求预算由 `common/binance_rate_limit.py` 与 settings 管理�
 
 2026-11-02 的后端主链修改复用以上开关及建连参数，没有新增必填配置；设置名称和 Redis 准入键保持兼容。共享预算限制的是建连尝试，并非同时在线连接总量；部署须配套更新 market／worker 代码，仍需盘点同出口其他进程。账户 lease 续租在等待准入期间继续；Redis 不可用时暂缓新增连接，已有健康连接按原生命周期运行，独立交易维护保持原职责。仅本地状态及验证见 [行情实施进度](market-data.md#websocket-优先与多用户容量评估2026-11-02部分已实现)。
 
-仓位事件通知总开关为 `TRADE_NOTIFICATION_ENABLED`（源码默认 true，整合模板显式 false），同时控制内部通知及合作方的 dispatcher／直接发送；`EXTERNAL_TRADE_SIGNAL_ENABLED` 为合作方渠道的独立开关。2026-11-03 16:14 已在 47.80.22.243（首尔服务器）将两者显式设为 false 并加载到 API／scheduler。关闭保留事件及队列状态、不继续投递或重试；重新启用前须检查积压，见 [暂停规则](signals-and-notifications.md#仓位事件通知暂停2026-11-03)。普通信号 APNs 和独立浮盈通知配置不受该开关控制。
+仓位事件通知总开关为 `TRADE_NOTIFICATION_ENABLED`（源码默认 true，整合模板显式 false），同时控制内部通知及合作方的 dispatcher／直接发送；`EXTERNAL_TRADE_SIGNAL_ENABLED` 为合作方渠道的独立开关。2026-11-03 16:14 已在 47.80.22.243（首尔服务器）将两者显式设为 false 并加载到 API／scheduler。关闭保留事件及队列状态、不继续投递或重试；重新启用前须检查积压，见 [暂停规则](signals-and-notifications.md#仓位事件通知暂停2026-11-03)。普通信号 APNs 和独立浮盈通知配置不受该开关控制。内部仓位适配已改为仅移交 App outbox，旧 `TRADE_NOTIFICATION_URL/TOKEN/TIMEOUT_SECONDS` 不再用于普通通知发送；已排队的交易 App 投递也遵守总暂停开关。
 
-SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALERT_*` / `OPS_ALERT_*` 按真实服务地址配置。当前仓库不再包含旧 webhook 容器；`MARKET_ANALYSIS_ALERT_*` 仅为兼容保留，2026-11-03 上线的内部信号扫描不再依赖该出口，保留业务接口不代表外部服务已接通。整合环境尚未配置的能力见 [已知事项](known-issues.md)。
+SMTP 的 `EMAIL_*`、通知的 `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALERT_*` / `OPS_ALERT_*` 按真实服务地址配置。当前仓库不再包含旧 webhook 容器；`MARKET_ANALYSIS_ALERT_*` 仅为兼容保留，2026-11-03 上线的内部信号扫描不再依赖该出口，保留业务接口不代表外部服务已接通。整合环境尚未配置的能力见 [已知事项](known-issues.md)。
 
 交易所凭证经 AES-GCM 加密落库。轮换先发布兼容代码，再配置上一代密钥、迁移并验证当前 API 绑定密文，最后移除上一代密钥。数据库备份应配套保护解密密钥，不能仅替换当前密钥。
 
@@ -74,7 +74,8 @@ SMTP 的 `EMAIL_*`、通知的 `TRADE_NOTIFICATION_*` / `EXTERNAL_TRADE_SIGNAL_*
 
 | 参数 | 用途 |
 | --- | --- |
-| `APNS_ENABLED` | 新内部信号生成 APNs 设备投递，默认 false |
+| `APNS_ENABLED` | 内部信号及普通仓位通知生成 App APNs 投递，默认 false；仓位另受总开关控制 |
+| `EXTERNAL_SIGNAL_INGEST_ENABLED` | 旧 HTTP 信号入站总开关，默认 false；暂停所有自报来源，内部扫描直接入库不受影响 |
 | `APNS_TEAM_ID` / `APNS_KEY_ID` | 原 Apple 团队及 APNs 签名 Key 标识 |
 | `APNS_KEY_PATH` | scheduler 内的受限 p8 路径，模板 `/run/tradetools-secrets/AuthKey.p8` |
 | `APNS_SECRET_DIRECTORY` | Compose 只读挂载来源，模板 `/opt/trade-tools-integrated/secrets` |

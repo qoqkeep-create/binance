@@ -183,19 +183,54 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertEqual(restored, signal)
     }
 
-    func testReferenceTradeNotificationRoutesToReferenceTab() {
+    func testExternalNotificationIsSuppressedWhileAppTradeRoutesToPositions() {
         let remotePayload: [AnyHashable: Any] = [
             "route": "reference.trade.notification",
             "eventId": "trade:open:1001:123456789",
             "type": "OPEN",
         ]
 
-        XCTAssertEqual(
+        XCTAssertNil(
             StrategySignalNotificationManager.destination(
                 from: remotePayload
-            ),
-            .reference
+            )
         )
+        XCTAssertFalse(StrategySignalNotificationManager.allowsPresentation(route: "reference.trade.notification"))
+        XCTAssertTrue(StrategySignalNotificationManager.allowsPresentation(route: "strategy.signal"))
+        XCTAssertTrue(StrategySignalNotificationManager.allowsPresentation(route: "trade.notification"))
+        XCTAssertEqual(StrategySignalNotificationManager.destination(from: ["route": "trade.notification"]), .positions(tradingMode: nil))
+        for mode in ["ordinary", "lead"] {
+            XCTAssertEqual(StrategySignalNotificationManager.destination(from: ["route": "trade.notification", "tradingMode": mode]),
+                .positions(tradingMode: mode), "Trade notifications must open the account mode that generated the event")
+        }
+        let invalidModes: [Any] = ["", "unknown", "LEAD", 1, NSNull()]
+        for invalidMode in invalidModes {
+            XCTAssertEqual(StrategySignalNotificationManager.destination(from: ["route": "trade.notification", "tradingMode": invalidMode]),
+                .positions(tradingMode: nil), "A missing or invalid mode must preserve the current account mode")
+        }
+    }
+
+    func testExternalSourcesCannotShowOrNavigateOrdinaryNotificationRoutes() throws {
+        let ordinarySignal: [AnyHashable: Any] = [
+            "route": "strategy.signal", "id": UUID().uuidString,
+            "symbol": "BTCUSDT", "interval": "1h", "strategyName": "自有信号",
+            "direction": "LONG", "triggerPrice": 100.0, "triggeredAt": 1_786_156_800.0,
+        ]
+        XCTAssertNotNil(StrategySignalNotificationManager.destination(from: ordinarySignal),
+            "Legacy ordinary payloads without a source remain supported")
+        for source in ["external", "tradingview", "tv", " External ", "TRADINGVIEW", " TV "] {
+            for route in ["strategy.signal", "trade.notification"] {
+                var payload = ordinarySignal
+                payload["source"] = source
+                payload["route"] = route
+                XCTAssertFalse(StrategySignalNotificationManager.allowsPresentation(route: route, source: source))
+                XCTAssertNil(StrategySignalNotificationManager.destination(from: payload),
+                    "An external source must not navigate through an ordinary notification route")
+                XCTAssertNil(StrategySignalNotificationManager.signal(from: payload))
+            }
+        }
+        XCTAssertTrue(StrategySignalNotificationManager.allowsPresentation(route: "strategy.signal", source: "internal"))
+        XCTAssertTrue(StrategySignalNotificationManager.allowsPresentation(route: "trade.notification", source: nil))
     }
 
     func testIntegratedTabsKeepMarketFirstAndUSDTBusinessOrder() {

@@ -1617,3 +1617,152 @@ private actor GatedStrategySelectionAPI: APIClient {
         return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
     }
 }
+
+@MainActor
+final class SignalUnreadBadgeTests: XCTestCase {
+    func testUnreadAndReadCursorsSurviveRelaunchWithoutAReadEndpoint() async throws {
+        let (defaults, suite) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let api = SignalBadgeFixtureAPI(id: 100)
+        let store = USDTStore(api: api, signalReadDefaults: defaults)
+        store.prepareSession(userID: "badge-user", signalReadNamespace: "server-a")
+        await store.refreshSignalBadge()
+        XCTAssertTrue(store.hasUnreadSignals)
+        let recordedRequest = await api.lastRequest()
+        let request = try XCTUnwrap(recordedRequest)
+        XCTAssertEqual(request.0, "/v1/trade/tradingview/signals")
+        XCTAssertEqual(request.1, [.init(name: "source", value: "internal"), .init(name: "limit", value: "1")])
+
+        let relaunched = USDTStore(api: api, signalReadDefaults: defaults)
+        relaunched.prepareSession(userID: "badge-user", signalReadNamespace: "server-a")
+        XCTAssertTrue(relaunched.hasUnreadSignals, "An offline relaunch must retain the red dot")
+        relaunched.setSignalPageVisible(true)
+        XCTAssertFalse(relaunched.hasUnreadSignals)
+        relaunched.setSignalPageVisible(false)
+
+        let readAgain = USDTStore(api: api, signalReadDefaults: defaults)
+        readAgain.prepareSession(userID: "badge-user", signalReadNamespace: "server-a")
+        await readAgain.refreshSignalBadge()
+        XCTAssertFalse(readAgain.hasUnreadSignals, "The same message must stay read")
+        await api.setID(101)
+        await readAgain.refreshSignalBadge()
+        XCTAssertTrue(readAgain.hasUnreadSignals)
+    }
+
+    func testVisibleArrivalsAreReadAndOlderSnapshotsDoNotRestoreTheDot() {
+        let (defaults, suite) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = USDTStore(api: SignalBadgeFixtureAPI(), signalReadDefaults: defaults)
+        store.prepareSession(userID: "badge-user")
+        store.recordSignalSnapshot(rows(10))
+        XCTAssertTrue(store.hasUnreadSignals)
+        store.setSignalPageVisible(true)
+        store.recordSignalSnapshot(rows(12))
+        XCTAssertFalse(store.hasUnreadSignals)
+        store.setSignalPageVisible(false)
+        store.recordSignalSnapshot(rows(11))
+        XCTAssertFalse(store.hasUnreadSignals)
+        store.recordSignalSnapshot(rows(13))
+        XCTAssertTrue(store.hasUnreadSignals)
+        store.recordSignalSnapshot(rows(12), markRead: true)
+        XCTAssertFalse(store.hasUnreadSignals, "Reading the page acknowledges arrivals discovered by the badge probe too")
+    }
+
+    func testReadStateIsIsolatedByUserAndServerAndSurvivesLeadMode() {
+        let (defaults, suite) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = USDTStore(api: SignalBadgeFixtureAPI(), signalReadDefaults: defaults)
+        store.prepareSession(userID: "user-a", signalReadNamespace: "server-a")
+        store.recordSignalSnapshot(rows(10), markRead: true)
+        store.prepareSession(userID: "user-b", signalReadNamespace: "server-a")
+        store.recordSignalSnapshot(rows(10))
+        XCTAssertTrue(store.hasUnreadSignals)
+        store.prepareSession(userID: "user-a", signalReadNamespace: "server-b")
+        XCTAssertFalse(store.hasUnreadSignals)
+        store.recordSignalSnapshot(rows(10))
+        XCTAssertTrue(store.hasUnreadSignals)
+        store.prepareSession(userID: "user-a", signalReadNamespace: "server-a")
+        XCTAssertFalse(store.hasUnreadSignals)
+        store.recordSignalSnapshot(rows(11))
+        store.mode = "lead"
+        store.recordSignalSnapshot(rows(12), markRead: true)
+        store.mode = "ordinary"
+        XCTAssertTrue(store.hasUnreadSignals, "Lead mode must not erase the ordinary account's unread cursor")
+        store.setSignalPageVisible(true)
+        store.setSignalPageVisible(false)
+        store.prepareSession(userID: "user-b", signalReadNamespace: "server-a")
+        XCTAssertTrue(store.hasUnreadSignals, "Reading user-a must not acknowledge user-b")
+    }
+
+    func testLateBadgeResponseCannotWriteAnotherAccountOrItsPreviousCursor() async {
+        let (defaults, suite) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let api = GatedSignalBadgeAPI()
+        let store = USDTStore(api: api, signalReadDefaults: defaults)
+        store.prepareSession(userID: "old-user")
+        let pending = Task { await store.refreshSignalBadge() }
+        await api.waitForRead()
+        store.prepareSession(userID: "new-user")
+        await api.completeRead()
+        await pending.value
+        XCTAssertFalse(store.hasUnreadSignals)
+        store.prepareSession(userID: "old-user")
+        XCTAssertFalse(store.hasUnreadSignals, "A response rejected after switching must not persist under either account")
+    }
+
+    func testCancelledAndMalformedReadsDoNotCreateUnreadState() async {
+        let (defaults, suite) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let api = GatedSignalBadgeAPI()
+        let store = USDTStore(api: api, signalReadDefaults: defaults)
+        store.prepareSession(userID: "badge-user")
+        let pending = Task { await store.refreshSignalBadge() }
+        await api.waitForRead()
+        pending.cancel()
+        await api.completeRead()
+        await pending.value
+        store.recordSignalSnapshot([.object(["id": .string("not-an-integer")]),
+            .object(["id": .string("9223372036854775808")]),
+            .object(["id": .number(99), "source": .string("external")])])
+        XCTAssertFalse(store.hasUnreadSignals)
+        store.recordSignalSnapshot([.object(["id": .string("9223372036854775806")])])
+        XCTAssertTrue(store.hasUnreadSignals, "IDs must use Int64 rather than a rounded floating-point cursor")
+    }
+
+    private func rows(_ id: Int) -> [JSONValue] { [.object(["id": .number(Double(id)), "source": .string("internal")])] }
+    private func isolatedDefaults() -> (UserDefaults, String) {
+        let suite = "SignalUnreadBadgeTests." + UUID().uuidString
+        return (UserDefaults(suiteName: suite)!, suite)
+    }
+}
+
+private actor SignalBadgeFixtureAPI: APIClient {
+    private var id: Int
+    private var request: (String, [URLQueryItem])?
+    init(id: Int = 1) { self.id = id }
+    func setID(_ id: Int) { self.id = id }
+    func lastRequest() -> (String, [URLQueryItem])? { request }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        self.request = (request.path, request.queryItems)
+        let value: JSONValue = .array([.object(["id": .number(Double(id)), "source": .string("internal")])])
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}
+
+private actor GatedSignalBadgeAPI: APIClient {
+    private var pending: CheckedContinuation<Void, Never>?
+    private var readStarted: CheckedContinuation<Void, Never>?
+    func waitForRead() async {
+        if pending != nil { return }
+        await withCheckedContinuation { readStarted = $0 }
+    }
+    func completeRead() { pending?.resume(); pending = nil }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        await withCheckedContinuation {
+            pending = $0
+            readStarted?.resume(); readStarted = nil
+        }
+        let value: JSONValue = .array([.object(["id": .number(99), "source": .string("internal")])])
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}

@@ -56,9 +56,14 @@ struct USDTProfileView: View {
             Spacer(minLength: 4)
           }.padding(.bottom, 12)
           Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 4)
-          HStack(spacing: 8) {
-            Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)").font(.system(size: 14, weight: .medium))
-              .foregroundStyle(WebTheme.secondary)
+          HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)")
+                .font(.system(size: 14, weight: .medium)).foregroundStyle(WebTheme.secondary)
+              Text(balance("balance")).font(.system(size: 36, weight: .bold)).tracking(-0.9)
+                .frame(height: 40).foregroundStyle(scheme == .dark ? BinanceTheme.accent : WebTheme.text)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            }.frame(maxWidth: .infinity, alignment: .leading)
             Button {
               Task { await store.refresh(freshBalance: true) }
             } label: {
@@ -71,34 +76,21 @@ struct USDTProfileView: View {
             }.buttonStyle(.plain).disabled(store.isLoading)
               .accessibilityIdentifier("profile.refreshBalance").accessibilityLabel("刷新合约余额")
           }
-          .frame(minHeight: 44).padding(.bottom, 8)
-          HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-              Text(balance("balance")).font(.system(size: 36, weight: .bold)).tracking(-0.9).frame(
-                height: 40
-              ).foregroundStyle(scheme == .dark ? WebTheme.brand : WebTheme.text).lineLimit(1)
-                .minimumScaleFactor(0.6)
-              if !lead {
-                VStack(alignment: .leading, spacing: 6) {
-                  wallet("资金", "funding_balance")
-                  wallet("现货", "spot_balance")
-                }
+          if !lead {
+            HStack(alignment: .bottom, spacing: 16) {
+              VStack(alignment: .leading, spacing: 6) {
+                wallet("资金", "funding_balance")
+                wallet("现货", "spot_balance")
               }
-            }
-            Spacer(minLength: 0)
-            if !lead {
-              VStack {
-                Spacer(minLength: 0)
-                Button {
-                  capitalTab = .move
-                  normalize = true
-                } label: {
-                  WebLabel("归集余额", "wallet.bifold")
-                }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12)).frame(width: 104)
-                  .accessibilityIdentifier("profile.collectBalance").disabled(
-                  !store.isBound)
-              }.frame(height: 80)
-            }
+              Spacer(minLength: 0)
+              Button {
+                capitalTab = .move
+                normalize = true
+              } label: {
+                WebLabel("归集余额", "wallet.bifold")
+              }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12)).frame(width: 104)
+                .accessibilityIdentifier("profile.collectBalance").disabled(!store.isBound)
+            }.padding(.top, 18)
           }
           if lead {
             Text("组合充值、转出请在币安「我的带单」页面操作。此处止损额度仅用于带单交易。").font(.system(size: 12)).foregroundStyle(
@@ -154,7 +146,7 @@ struct USDTProfileView: View {
           } label: {
             menuRow(lead ? "切换合约模式" : "切换带单模式",
               lead ? "chart-candlestick" : "person.2.wave.2.fill",
-              iconColor: lead ? WebTheme.color(0xF0B90B, 0xF0B90B) : WebTheme.color(0x58B9EF, 0x58B9EF))
+              iconColor: WebTheme.brand)
           }.accessibilityIdentifier("profile.switchMode")
             .accessibilityLabel(lead ? "切换合约模式" : "切换带单模式")
         }.background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)).overlay {
@@ -214,16 +206,16 @@ struct USDTProfileView: View {
     Rectangle().fill(WebTheme.border).frame(height: 1).padding(.horizontal, 16)
   }
   private var accountBorder: Color {
-    if scheme == .dark { return WebTheme.brand.opacity(0.2) }
-    return Color(red: 167 / 255, green: 243 / 255, blue: 208 / 255)
+    if scheme == .dark { return BinanceTheme.accent.opacity(0.2) }
+    return Color(red: 246 / 255, green: 220 / 255, blue: 128 / 255)
   }
   private var accountBackground: LinearGradient {
     LinearGradient(
       colors: scheme == .dark
-        ? [WebTheme.brand.opacity(0.10), WebTheme.brand.opacity(0.18)]
+        ? [BinanceTheme.accent.opacity(0.10), BinanceTheme.accent.opacity(0.18)]
         : [
-          Color(red: 236 / 255, green: 253 / 255, blue: 245 / 255),
-          Color(red: 209 / 255, green: 250 / 255, blue: 229 / 255),
+          Color(red: 255 / 255, green: 248 / 255, blue: 214 / 255),
+          Color(red: 255 / 255, green: 238 / 255, blue: 168 / 255),
         ], startPoint: .topLeading, endPoint: .bottomTrailing)
   }
   private func balance(_ key: String) -> String {

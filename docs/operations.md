@@ -2,6 +2,16 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。
 
+## 外部接收暂停与 App 通知分流（2026-11-03）
+
+2026-11-03 21:57（北京时间）核验 **47.80.22.243（首尔服务器）** 当前为 `integrated-20261103-app-notification-routing-5f05a076af1a`。`EXTERNAL_SIGNAL_INGEST_ENABLED=false` 已应用到 API／scheduler；开平仓总开关与合作方发送开关继续 false，APNs 保持 true。普通内部信号走 App；旧外部／Echo 普通信号队列领取时取消，仓位通知以后只移交所属用户 App 队列，暂停期间也不领取已移交记录。浮盈配置和任务编排未变，浮盈自动任务仍未上线。
+
+- 基于上一版 `trade-notifications-off-b14c8dea2898`，限定 314 个源码文件，只有 6 个运行／模板路径与 3 个测试路径变化；scheduler、trend、Compose、全部 migration、交易与保护逻辑逐项哈希保持基线。归档 SHA-256 `66359127ec4d1d366e040a8051adb1fd52617659a29f57bde1140a4201f935c7` 两端一致；完整来源在 release 的 `source-release.json`，不是完整 Git HEAD。限定包 70 项隔离回归通过。
+- 备份目录 `/opt/trade-tools-integrated/backups/integrated-20261103-app-notification-routing-5f05a076af1a/` 为 0700，保存原环境（0600）、前版路径、清单和容器记录。无 schema／数据迁移，仅 `migrate --check`；数据库沿用已核验的 `app-push-d277ad4ed87a` 321659196-byte 备份并保存引用。
+- 仅 API／scheduler 替换，六服务 healthy，其他四个容器 ID／镜像不变，公网 HTTPS 深度健康 200。两个容器分别核对三个 false 开关与 APNs true；内存鉴权替身下，external 及自报 internal 入站均为 503；数据库领取对象替身确认四类旧外部记录取消且尝试为 0、暂停 App 交易投递不改状态。两个仓位 dispatcher 不读队列，直接 sender 拒绝发送。未发送真实通知、创建信号或执行交易／资金动作。
+
+回滚仍使用前版两个 Compose 文件及前版 `INTEGRATED_RELEASE`，仅切回 API／scheduler 和 `current`。保留三个暂停开关，不整份覆盖环境、不反迁移或重放队列；旧代码不认识新入站开关，代码回退会失去本轮接收暂停保护，需同步评估。客户端源码交付、编译与实机边界见 [开发](development.md#信号红点与通知分流回归2026-11-03)；本次不手动上传 TestFlight，iOS 红点／配色待新包验收。
+
 ## 仓位事件通知关闭（2026-11-03）
 
 2026-11-03 16:14（北京时间）核验 **47.80.22.243（首尔服务器）** 当前为 `integrated-20261103-trade-notifications-off-b14c8dea2898`。按用户要求，持久化设置 `TRADE_NOTIFICATION_ENABLED=false`、`EXTERNAL_TRADE_SIGNAL_ENABLED=false` 并应用到 API／scheduler，关闭开仓、平仓、止盈、止损、减仓的内部及合作方通知。原版内部通道无 token、合作方开关为 false，但内部队列仍尝试至 exhausted；新增总开关使暂停期间不领取、不发送、不重试，事件保存保留。普通信号 APNs 仍为 true；浮盈配置未动、自动任务仍未上线。

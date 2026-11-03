@@ -41,6 +41,7 @@ private struct MainAppView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var store: USDTStore
     @EnvironmentObject private var notifications: StrategySignalNotificationManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: AppTab = .markets
     @State private var isShowingMarketSearch = false
     @State private var isShowingMarketSettings = false
@@ -63,7 +64,8 @@ private struct MainAppView: View {
                     case .reference: EmptyView()
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                BottomNavigationBar(selection: $selectedTab)
+                BottomNavigationBar(selection: $selectedTab,
+                    hasUnreadSignals: store.mode == "ordinary" && store.hasUnreadSignals)
             }
             .interactivePopGestureEnabled()
             .navigationDestination(item: $selectedMarket) { market in
@@ -85,17 +87,21 @@ private struct MainAppView: View {
         .task {
             guard let userID = container.authStore.session?.user.id else { return }
             notifications.activateSession()
-            store.prepareSession(userID: userID)
+            store.prepareSession(userID: userID, signalReadNamespace: container.baseURL.absoluteString)
             container.dashboardViewModel.startRealtime(userID: userID)
             container.realtimeClient.subscribe([.tradingAccount, .tradingPosition, .tradingOrder, .tradingFill])
             container.realtimeClient.connect()
             await store.refresh()
         }
         .onChange(of: notifications.navigationRequest, initial: true) { _, request in
-            guard let request else { return }
+            guard let request, let userID = container.authStore.session?.user.id else { return }
+            store.prepareSession(userID: userID, signalReadNamespace: container.baseURL.absoluteString)
             switch request.destination {
             case .strategy(let signal): openChart(signal.symbol, signal.interval)
-            case .reference: selectedTab = .signals
+            case .positions(let tradingMode):
+                if let tradingMode, tradingMode != store.mode { store.switchMode(tradingMode) }
+                selectedMarket = nil
+                selectedTab = .positions
             }
             notifications.consumeNavigationRequest(request.id)
         }
@@ -106,6 +112,16 @@ private struct MainAppView: View {
             if selectedTab == .signals { selectedTab = .markets }
             container.realtimeClient.reconnect()
         }
+        .onChange(of: isSignalPageVisible, initial: true) { _, visible in
+            store.setSignalPageVisible(visible)
+        }
+        .task(id: "\(store.scope):\(scenePhase):\(isSignalPageVisible):\(notifications.signalReceiptRevision)") {
+            guard scenePhase == .active, store.mode == "ordinary", !isSignalPageVisible else { return }
+            while !Task.isCancelled {
+                await store.refreshSignalBadge()
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
         .task(id: store.scope) {
             for await event in container.realtimeClient.events(bufferingPolicy: .bufferingNewest(64)) {
                 guard !Task.isCancelled else { break }
@@ -113,11 +129,15 @@ private struct MainAppView: View {
             }
         }
         .onDisappear {
+            store.setSignalPageVisible(false)
             notifications.deactivateSession()
             store.stopRealtime()
             container.dashboardViewModel.stopRealtime()
             container.realtimeClient.disconnect()
         }
+    }
+    private var isSignalPageVisible: Bool {
+        selectedTab == .signals && selectedMarket == nil && scenePhase == .active
     }
     private func openChart(_ symbol: String, _ interval: String) {
         selectedInterval = MarketKlineInterval(rawValue: interval) ?? .oneHour

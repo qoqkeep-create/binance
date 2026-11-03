@@ -314,6 +314,9 @@ EXTERNAL_TRADE_SIGNAL_URL = os.getenv("EXTERNAL_TRADE_SIGNAL_URL", "").strip()
 EXTERNAL_TRADE_SIGNAL_API_KEY = os.getenv("EXTERNAL_TRADE_SIGNAL_API_KEY", "").strip()
 EXTERNAL_TRADE_SIGNAL_TIMEOUT_SECONDS = float(os.getenv("EXTERNAL_TRADE_SIGNAL_TIMEOUT_SECONDS", "5"))
 TV_WEBHOOK_API_KEY = os.getenv("TV_WEBHOOK_API_KEY", "").strip()
+# Pause the entire legacy HTTP ingress, including caller-supplied source labels.
+# The internal scanner saves its own signals directly and does not use this gate.
+EXTERNAL_SIGNAL_INGEST_ENABLED = os.getenv("EXTERNAL_SIGNAL_INGEST_ENABLED", "False").lower() == "true"
 
 # 资金封顶提醒等系统邮件走 SMTP；凭据只存部署环境的 .env.docker，不进仓库。
 # EMAIL_HOST 未配置时自动降级为控制台后端（仅记日志，不发信）。

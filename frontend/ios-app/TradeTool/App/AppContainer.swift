@@ -150,7 +150,7 @@ final class AppContainer: ObservableObject {
 
 enum SignalNotificationDestination: Equatable, Sendable {
     case strategy(StrategySignal)
-    case reference
+    case positions(tradingMode: String?)
 }
 
 struct SignalNotificationNavigationRequest: Equatable, Sendable {
@@ -168,6 +168,7 @@ final class StrategySignalNotificationManager:
 
     @Published private(set) var navigationRequest:
         SignalNotificationNavigationRequest?
+    @Published private(set) var signalReceiptRevision = 0
 
     private let notificationCenter: UNUserNotificationCenter
     private let userDefaults: UserDefaults
@@ -270,7 +271,13 @@ final class StrategySignalNotificationManager:
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        let userInfo = notification.request.content.userInfo
+        let route = userInfo["route"] as? String
+        guard Self.allowsPresentation(route: route, source: userInfo["source"] as? String) else { return [] }
+        if route == "strategy.signal" {
+            await recordSignalReceipt()
+        }
+        return [.banner, .list, .sound]
     }
 
     nonisolated func userNotificationCenter(
@@ -285,6 +292,7 @@ final class StrategySignalNotificationManager:
         guard let destination else { return }
 
         Task { @MainActor [weak self] in
+            if case .strategy = destination { self?.recordSignalReceipt() }
             self?.navigationRequest = SignalNotificationNavigationRequest(
                 id: UUID(),
                 destination: destination
@@ -295,9 +303,11 @@ final class StrategySignalNotificationManager:
     nonisolated static func destination(
         from userInfo: [AnyHashable: Any]
     ) -> SignalNotificationDestination? {
+        guard allowsPresentation(route: userInfo["route"] as? String, source: userInfo["source"] as? String) else { return nil }
         switch userInfo["route"] as? String {
-        case "reference.trade.notification":
-            return .reference
+        case "trade.notification":
+            let mode = userInfo["tradingMode"] as? String
+            return .positions(tradingMode: mode.flatMap { ["ordinary", "lead"].contains($0) ? $0 : nil })
         case "strategy.signal":
             guard let signal = signal(from: userInfo) else { return nil }
             return .strategy(signal)
@@ -306,10 +316,22 @@ final class StrategySignalNotificationManager:
         }
     }
 
+    nonisolated static func allowsPresentation(route: String?, source: String? = nil) -> Bool {
+        let source = source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return route != "reference.trade.notification"
+            && !["external", "tradingview", "tv"].contains(source ?? "")
+    }
+
+    private func recordSignalReceipt() {
+        guard isSessionActive else { return }
+        signalReceiptRevision += 1
+    }
+
     nonisolated static func signal(
         from userInfo: [AnyHashable: Any]
     ) -> StrategySignal? {
-        guard userInfo["route"] as? String == "strategy.signal",
+        guard allowsPresentation(route: userInfo["route"] as? String, source: userInfo["source"] as? String),
+              userInfo["route"] as? String == "strategy.signal",
               let idValue = userInfo["id"] as? String,
               let id = UUID(uuidString: idValue),
               let symbol = userInfo["symbol"] as? String,

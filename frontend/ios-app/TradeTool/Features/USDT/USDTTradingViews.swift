@@ -743,7 +743,7 @@ struct USDTPositionsView: View {
       HStack(spacing: 8) {
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
-          .frame(maxWidth: 280).frame(height: 44)
+          .frame(maxWidth: 248).frame(height: 44)
         Spacer(minLength: 0)
         Button { floatingPositions.toggle() } label: {
           Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")

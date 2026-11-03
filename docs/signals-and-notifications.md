@@ -4,7 +4,13 @@
 
 本主题维护数据流、模块隔离和消息口径；请求字段和响应协议以两份独立 [接入](api/external-signals.md) / [推送](api/trade-notifications.md) 文档为准。
 
-投递语义核对日期：2026-11-03。普通自有信号只走 App APNs，只有浮盈提醒走 Echobell。App 注册和派发已限定发布，三条测试通知已获苹果接受且用户确认手机全部收到；浮盈自动任务仍未启用。
+投递语义核对日期：2026-11-03。普通自有信号及仓位事件的内部渠道统一走 App APNs，只有浮盈提醒走 Echobell；不再使用企微或 Echo 发送普通通知。外部 HTTP 信号接收默认暂停，旧外部 App 待发记录取消，历史记录保留。开平仓等仓位通知总开关继续关闭，未因本次路由调整恢复。App 注册和派发此前已限定发布并完成三条通知实机测试；本轮源码、部署及验收范围见最新变更记录，浮盈自动任务仍未启用。
+
+## 本地未读红点与外部接收暂停（2026-11-03）
+
+iOS 信号底栏以红点提示未读。`USDTStore` 将最新消息 ID 与已读至 ID 按服务器地址／用户保存在本机 UserDefaults；重启可恢复，不新增服务端已读接口。进入信号页清除红点，页内新记录记已读，离开后出现新 ID 才重新提示。普通模式前台每 30 秒读取最新一条 `source=internal` 消息，信号页可见时复用原有列表读取；后台、带单停止探测。前台信号 APNs 到达触发校对，网络失败保留游标，取消或旧账户响应不得写回。
+
+`EXTERNAL_SIGNAL_INGEST_ENABLED=false` 时，鉴权后的整个旧 HTTP ingest 入口返回 503，不保存消息、不转发、不生成 App 投递；请求自报 `source=internal` 也不能绕过。内部扫描直接事务入库，不使用此 HTTP 入口，继续正常保存和生成 App 信号通知。重新接入需显式开启配置，不删除外部历史或更换凭据。`enqueue_signal` 也拒绝非 internal 来源；旧 `reference.trade.notification` 或明确 external／tradingview 来源的 App 队列在领取前取消，不消耗发送尝试、不回退 Echobell。iOS 对旧外部路由以及 external／tradingview／tv 来源载荷不展示前台通知、不处理点击导航。
 
 ## 普通通知真机测试（2026-11-03）
 
@@ -34,9 +40,9 @@ Apple 开发者后台只读核对确认：首轮使用的生产 APNs 密钥为 T
 
 | 链路 | 数据源与去向 | 是否交易 |
 | --- | --- | --- |
-| 外部指标信号 | 合作方 JSON -> webhook 翻译 -> 数据库；新增消息尽力转发企业微信，当前 iOS 不展示该来源 | 否，不读取交易账户、不自动开平仓 |
+| 外部指标信号 | HTTP 接收默认暂停；已有历史保留，iOS 不展示该来源，旧外部 App 待发投递取消 | 否，不读取交易账户、不自动开平仓 |
 | 内部指标信号 | 自有趋势扫描 -> 数据库 -> iOS 信号页与 App APNs | 扫描 / 通知本身不自动下单 |
-| 五类仓位事件 | 真实交易状态 -> 通知事件 -> 企业微信等已配置通道 + 独立对方服务器投递 | 只通知既有事件，不因投递而再次交易 |
+| 五类仓位事件 | 真实交易状态 -> 通知事件 -> 所属用户 App 队列；当前总开关与合作方渠道均关闭 | 只通知既有事件，不因投递而再次交易 |
 
 入站 `EXTERNAL_SIGNAL_API_KEY`、出站 `EXTERNAL_TRADE_SIGNAL_API_KEY`、内部服务 token 和 Binance Key 均不是同一凭证。完整入站链接属于敏感写入凭证，不能放公开日志。
 
@@ -46,13 +52,13 @@ Apple 开发者后台只读核对确认：首轮使用的生产 APNs 密钥为 T
 
 合作方不必改成固定内部字段。当前实现是有界的嵌套字段 / 别名识别与文本推断，不是调用 AI、也不是对任意语义保证准确。保留原始 JSON，输出统一格式和 `mapped` / `partial` / `unmapped` 状态；无法识别仍接收，拿真实脱敏样例再扩展独立映射。
 
-消息先入库，再对新增事件转发企业微信；重复事件不重复展示，也不会重复发送企业微信。未给事件 ID 时用原始请求字节的 SHA-256 去重，因此正文空格或键顺序变化也可能变成新事件。建议合作方提供带自身系统前缀的稳定 ID。
+上述翻译器仅为来源协议说明，整合版当前没有运行该独立服务，HTTP 接收也已默认暂停。历史设计为先入库再尽力转发；重启接入前应按当前 App 通知规则重新核对，不能恢复普通通知到企微／Echobell。未给事件 ID 时用原始请求字节的 SHA-256 去重，因此正文空格或键顺序变化也可能变成新事件。建议合作方提供带自身系统前缀的稳定 ID。
 
-入站企微转发是尽力一次，没有持久化失败重试队列。`wecom_forwarded=false` 不代表接收失败，重发同一 ID 也不会补发。这与五类交易通知的持久化投递不能混为一谈。
+历史入站企微转发是尽力一次，没有持久化失败重试队列；当前接收已暂停。`wecom_forwarded=false` 不代表接收失败，重发同一 ID 也不会补发。这与五类交易通知的持久化投递不能混为一谈。
 
 ## 内部信号和保留期
 
-[trend.py](../server/market_analysis/trend.py) 每 60 秒扫描已收盘 K 线，周期为 15m / 1h / 4h / 1d，按交易对、周期、收盘时间避免重复信号。SuperTrend 方向翻转只静默建立对应方向的等待状态，不入库、不推送；后续已收盘 K 线满足原有 EMA 过滤、K 线方向及 EMA55 / EMA144 触碰条件时才提醒。EMA55 与 EMA144 仍分别消耗等待状态；同一根 K 线同时触发时合并为一条提醒。原生 [信号页面](../frontend/ios-app/TradeTool/Features/USDT/USDTRecordsViews.swift) 在普通模式提供入口，统一标题为“信号”，仅请求 `source=internal`，不再显示来源页签；规则说明保留。此界面调整不移除外部入站接口和转发能力。
+[trend.py](../server/market_analysis/trend.py) 每 60 秒扫描已收盘 K 线，周期为 15m / 1h / 4h / 1d，按交易对、周期、收盘时间避免重复信号。SuperTrend 方向翻转只静默建立对应方向的等待状态，不入库、不推送；后续已收盘 K 线满足原有 EMA 过滤、K 线方向及 EMA55 / EMA144 触碰条件时才提醒。EMA55 与 EMA144 仍分别消耗等待状态；同一根 K 线同时触发时合并为一条提醒。原生 [信号页面](../frontend/ios-app/TradeTool/Features/USDT/USDTRecordsViews.swift) 在普通模式提供入口，统一标题为“信号”，仅请求 `source=internal`，不再显示来源页签；规则说明保留。外部入站接口代码保留，但按本轮独立开关暂停接收。
 
 `TradingViewMessage` 为历史模型名，实际有 external / internal / tradingview 来源；旧 tradingview 数据不能自动归成 external。统一消息按 3 天保留、每 10 分钟清理，不是长期信号档案。清理后仅依赖该表的去重记录也不再永久存在，合作方应避免任意重放历史。
 
@@ -84,7 +90,7 @@ APNs 开关只对开启时新入队事件生成设备投递，关闭时仍保存
 
 带单订单仍走同一事件和渠道投递逻辑；标题增加 `【带单】`，正文首行增加 `交易账户：带单组合`，平仓归因升级和最终渲染保留标识。普通订单格式不变，JSON 顶层协议不变，不能通过消息发送驱动另一模式交易。
 
-所有消息标题为“类型图标 + 货币对 + 多单 / 空单 + 动作”。标题和正文共享 [notifications.py](../server/positions/notifications.py) 的格式化逻辑，不分别维护企微版和合作方版交易计算。
+所有消息标题为“类型图标 + 货币对 + 多单 / 空单 + 动作”。标题和正文共享 [notifications.py](../server/positions/notifications.py) 的格式化逻辑，不分别维护 App 版和合作方版交易计算。
 
 | 事件 | 标题动作 | 正文必备业务项，所有类型均含币种和订单方向 |
 | --- | --- | --- |
@@ -98,16 +104,16 @@ APNs 开关只对开启时新入队事件生成设备投递，关闭时仍保存
 
 ## 低耦合投递与移除
 
-`TradeNotificationEvent` 保存通用事件与企业微信链路投递状态；[external_trade_signals.py](../server/positions/external_trade_signals.py) 使用 `ExternalTradeSignalDelivery` 独立投递给另一台服务器。两个适配器消费同一份 `eventId / type / title / content / occurredAt` 载荷，调度任务派发，网络请求在短事务领取之后、数据库锁之外执行。
+`TradeNotificationEvent` 保存通用事件及向 App 队列移交的状态；[external_trade_signals.py](../server/positions/external_trade_signals.py) 使用 `ExternalTradeSignalDelivery` 独立投递给另一台服务器。两个适配器消费同一份 `eventId / type / title / content / occurredAt` 载荷，调度任务派发，网络请求在短事务领取之后、数据库锁之外执行。
 
-两类投递均有租约恢复、尝试次数和下次重试时间；租约 60 秒，最多尝试 8 次，耗尽后停止自动尝试并触发带冷却的运维告警。内部企微中转将已成功的 `eventId` 保存在独立持久卷并对重复请求直接确认；外部服务器仍必须按同一稳定 `eventId` 幂等。中转进程若恰好在企微成功后、幂等账本落盘前崩溃，仍存在极小重复窗口，这是非事务型第三方 webhook 无法完全消除的边界。
+两类投递均有租约恢复、尝试次数和下次重试时间；租约 60 秒，最多尝试 8 次，耗尽后停止自动尝试并触发带冷却的运维告警。内部适配器按稳定 `eventId` 幂等创建 `mobile.NotificationEvent`，只给订单所属用户当前有效 App 设备生成投递；源事件 `sent` 表示已移交 App 队列，不等于苹果或手机已收到。实际状态以 `NotificationDelivery` 为准；没有有效设备不会广播给其他用户，也不自动补历史。外部服务器协议保留且独立开关关闭，恢复前仍需评估幂等与积压。
 
-仓位事件总开关 `TRADE_NOTIFICATION_ENABLED` 同时拦截两类网络投递及直接发送，关闭后不领取或消耗队列尝试；事件与外部投递意图仍可保存。外部独立开关 `EXTERNAL_TRADE_SIGNAL_ENABLED` 同时控制该渠道入队和派发。关闭不删除历史记录，重新开启可能发送已有待投递事件，不承诺自动补发所有历史交易。暂停 / 移除前应核对 pending / sending / exhausted 状态和接收方期望。
+仓位事件总开关 `TRADE_NOTIFICATION_ENABLED` 同时拦截源事件、已移交的 `trade.notification` App 投递及合作方发送，关闭后不领取或消耗尝试，保留状态、重试时间与租约；事件与外部投递意图仍可保存。外部独立开关 `EXTERNAL_TRADE_SIGNAL_ENABLED` 同时控制该渠道入队和派发。关闭不删除历史记录，重新开启可能发送已有待投递事件，不承诺自动补发所有历史交易。暂停 / 移除前应核对 pending / sending / exhausted 状态和接收方期望。
 
-未来移除外部服务器渠道时优先关闭独立开关，再删除渠道适配、调度调用及相应配置；保留核心交易与企微事件，投递审计数据按单独保留策略处理。不要为移除渠道改动开平仓、止损或结算算法。
+当前外部服务器渠道保持关闭；未来移除时再删除渠道适配、调度调用及相应配置，保留核心交易与 App 事件，投递审计数据按单独保留策略处理。不要为移除渠道改动开平仓、止损或结算算法。
 
 ## 模板测试
 
-命令 [send_trade_notification_templates](../server/positions/management/commands/send_trade_notification_templates.py) 与 [send_external_trade_notification_templates](../server/positions/management/commands/send_external_trade_notification_templates.py) 分别面向内部通知通道和对方服务器；通过各自 `--help` 确认参数，显式 `--confirm` 才发送。
+命令 [send_trade_notification_templates](../server/positions/management/commands/send_trade_notification_templates.py) 面向 App 队列，要求显式 `--user-id`，避免广播；[send_external_trade_notification_templates](../server/positions/management/commands/send_external_trade_notification_templates.py) 仍为已暂停的合作方渠道工具；通过各自 `--help` 确认参数，显式 `--confirm` 才发送。
 
 模板覆盖五种类型，标题有测试标记，内容不对应真实交易。它们仍会发送真实外部消息，仅在任务明确要求时执行；默认验证应使用 [单测](../server/positions/test_notifications.py) 和 webhook 测试，不重复通知用户。

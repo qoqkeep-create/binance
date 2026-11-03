@@ -113,6 +113,48 @@ class PushNotificationTests(TestCase):
         self.assertEqual(NotificationEvent.objects.count(), 1)
         self.assertFalse(NotificationDelivery.objects.exists())
 
+    @patch('positions.profit_alerts.send_echobell')
+    @patch('mobile.push.send_apns')
+    def test_external_sources_cannot_enter_the_app_signal_outbox(self, apns, echo):
+        for source in ['external', 'tradingview']:
+            with self.subTest(source=source):
+                self.message.source = source
+                self.assertIsNone(enqueue_signal(self.message))
+        self.assertFalse(NotificationEvent.objects.exists())
+        self.assertFalse(NotificationDelivery.objects.exists())
+        self.assertEqual(dispatch_notifications(), 0)
+        apns.assert_not_called()
+        echo.assert_not_called()
+
+    @patch('positions.profit_alerts.send_echobell')
+    @patch('mobile.push.send_apns')
+    def test_legacy_external_app_notifications_are_cancelled_without_attempts(self, apns, echo):
+        for payload in [
+            {'route': 'reference.trade.notification'},
+            {'route': 'strategy.signal', 'source': 'external'},
+            {'source': 'tradingview'},
+        ]:
+            event = NotificationEvent.objects.create(event_key=str(uuid.uuid4()), payload=payload)
+            for status, attempts in [('pending', 0), ('failed', 1), ('sending', 8)]:
+                with self.subTest(payload=payload, status=status):
+                    item = NotificationDelivery.objects.create(event=event, device=self.device,
+                        user_id_snapshot=self.user.id, target=f'apns:{self.device.id}',
+                        status=status, attempts=attempts, lease_until=timezone.now()-timedelta(seconds=1))
+                    try:
+                        self.assertEqual(dispatch_notifications(), 0)
+                        item.refresh_from_db()
+                        self.assertEqual(item.status, 'cancelled')
+                        self.assertEqual(item.attempts, attempts)
+                    finally:
+                        item.delete()
+            sent = NotificationDelivery.objects.create(event=event, device=self.device,
+                user_id_snapshot=self.user.id, target=f'apns:{self.device.id}', status='sent', attempts=1)
+            self.assertEqual(dispatch_notifications(), 0)
+            sent.refresh_from_db()
+            self.assertEqual(sent.status, 'sent')
+        apns.assert_not_called()
+        echo.assert_not_called()
+
     @patch('mobile.push.send_apns',side_effect=RuntimeError('no delivery'))
     @patch('positions.profit_alerts.send_echobell')
     def test_attempt_limit_is_terminal_and_errors_do_not_persist_sensitive_text(self, echo, apns):
@@ -149,3 +191,106 @@ class PushNotificationTests(TestCase):
         apns.assert_not_called();echo.assert_not_called()
         self.assertEqual(NotificationDelivery.objects.get(device=self.device).status,'exhausted')
         self.assertFalse(NotificationDelivery.objects.filter(target='echobell:signals').exists())
+
+
+@override_settings(APNS_ENABLED=True, TRADE_NOTIFICATION_ENABLED=True,
+    EXTERNAL_TRADE_SIGNAL_ENABLED=False,
+    TRADE_NOTIFICATION_URL='https://hook.echobell.one/t/test-only-legacy',
+    TRADE_NOTIFICATION_TOKEN='test-only-token')
+class TradeNotificationAppRoutingTests(TestCase):
+    def setUp(self):
+        from positions.models import Order
+        self.user = User.objects.create(email='trade-push@example.invalid')
+        self.other = User.objects.create(email='unrelated-push@example.invalid')
+        self.device = PushDevice.objects.create(user=self.user, installation_id=uuid.uuid4(),
+            token='c'*64, environment='production', bundle_id='com.waibao2025.trade.integrated')
+        PushDevice.objects.create(user=self.other, installation_id=uuid.uuid4(),
+            token='d'*64, environment='production', bundle_id='com.waibao2025.trade.integrated')
+        PushDevice.objects.create(user=self.user, installation_id=uuid.uuid4(),
+            token='e'*64, environment='production', bundle_id='com.waibao2025.trade.integrated', active=False)
+        PushDevice.objects.create(user=self.user, installation_id=uuid.uuid4(),
+            token='f'*64, environment='production', bundle_id='unrelated.old.app')
+        self.order = Order.objects.create(user=self.user, symbol='BTCUSDT', side=0,
+            open_price=100, stop_loss_price=90, stop_loss_amount=10, size=1, leverage=10)
+
+    def _enqueue(self):
+        from positions.notifications import enqueue_open_notification
+        with self.captureOnCommitCallbacks(execute=True):
+            enqueue_open_notification(self.order)
+
+    @patch('urllib.request.urlopen')
+    @patch('positions.profit_alerts.send_echobell')
+    @patch('mobile.push.send_apns')
+    def test_trade_event_enters_only_owners_app_outbox_and_dispatches_once(self, apns, echo, http):
+        from positions.notifications import dispatch_pending_trade_notifications, enqueue_open_notification
+        from positions.models import TradeNotificationEvent
+        self._enqueue()
+        self.assertEqual(dispatch_pending_trade_notifications(), 1)
+        self.assertEqual(dispatch_pending_trade_notifications(), 0)
+        event = TradeNotificationEvent.objects.get()
+        item = NotificationDelivery.objects.get()
+        self.assertEqual(item.device, self.device)
+        self.assertEqual(item.user_id_snapshot, self.user.id)
+        self.assertEqual(item.event.payload['route'], 'trade.notification')
+        self.assertEqual(item.event.payload['aps']['alert'], {'title': event.title, 'body': event.content})
+        self.assertEqual(item.event.payload['orderId'], self.order.id)
+        self.assertEqual(item.event.payload['tradingMode'], self.order.trading_mode)
+        self.assertEqual(dispatch_notifications(), 1)
+        apns.assert_called_once()
+        echo.assert_not_called()
+        http.assert_not_called()
+
+    @override_settings(TRADE_NOTIFICATION_ENABLED=False)
+    def test_paused_trade_notifications_keep_source_event_without_app_delivery(self):
+        from positions.notifications import dispatch_pending_trade_notifications, enqueue_open_notification
+        from positions.models import TradeNotificationEvent
+        self._enqueue()
+        self.assertEqual(dispatch_pending_trade_notifications(), 0)
+        event = TradeNotificationEvent.objects.get()
+        self.assertEqual(event.status, 'pending')
+        self.assertEqual(event.attempt_count, 0)
+        self.assertFalse(NotificationEvent.objects.exists())
+
+    @patch('mobile.push.send_apns')
+    def test_existing_trade_app_queue_pauses_without_attempts_and_resumes_once(self, apns):
+        from positions.notifications import dispatch_pending_trade_notifications
+        PushDevice.objects.exclude(pk=self.device.id).update(active=False)
+        self._enqueue()
+        self.assertEqual(dispatch_pending_trade_notifications(), 1)
+        item = NotificationDelivery.objects.get()
+        with override_settings(TRADE_NOTIFICATION_ENABLED=False):
+            for status, attempts in [('pending', 0), ('failed', 3), ('sending', 3)]:
+                with self.subTest(status=status):
+                    item.status = status
+                    item.attempts = attempts
+                    item.retry_at = timezone.now() - timedelta(seconds=1)
+                    item.lease_until = timezone.now() - timedelta(seconds=1) if status == 'sending' else None
+                    item.save()
+                    before = (item.status, item.attempts, item.retry_at, item.lease_until)
+                    self.assertEqual(dispatch_notifications(), 0)
+                    item.refresh_from_db()
+                    self.assertEqual((item.status, item.attempts, item.retry_at, item.lease_until), before)
+            apns.assert_not_called()
+            # Even an older paused trade row must not occupy the signal batch.
+            signal = TradingViewMessage.objects.create(source='internal', event_id='trend:new-signal',
+                normalized_payload={'symbol': 'BTCUSDT', 'signal': 'BUY', 'interval': '1h',
+                    'strategy': 'SuperTrend+EMA', 'price': 100, 'timestamp': 1000, 'comment': 'test'})
+            enqueue_signal(signal)
+            self.assertEqual(dispatch_notifications(limit=1), 1)
+            self.assertEqual(apns.call_args.args[1]['route'], 'strategy.signal')
+            item.refresh_from_db()
+            self.assertEqual(item.attempts, 3)
+        self.assertEqual(dispatch_notifications(), 1)
+        self.assertEqual(dispatch_notifications(), 0)
+        self.assertEqual(apns.call_count, 2)
+
+    @override_settings(APNS_ENABLED=False)
+    def test_disabled_app_push_does_not_consume_source_attempts_or_fallback(self):
+        from positions.notifications import dispatch_pending_trade_notifications, enqueue_open_notification
+        from positions.models import TradeNotificationEvent
+        self._enqueue()
+        self.assertEqual(dispatch_pending_trade_notifications(), 0)
+        event = TradeNotificationEvent.objects.get()
+        self.assertEqual(event.status, 'pending')
+        self.assertEqual(event.attempt_count, 0)
+        self.assertFalse(NotificationEvent.objects.exists())

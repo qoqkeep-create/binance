@@ -125,6 +125,9 @@ struct USDTSignalsView: View {
     await model.load(
       store, path: "/v1/trade/tradingview/signals", query: [.init(name: "source", value: "internal")])
     guard !Task.isCancelled, scope == store.scope else { return }
+    if model.error.isEmpty {
+      store.recordSignalSnapshot(model.items, markRead: isVisible && scenePhase == .active)
+    }
     nextRefreshAt = .now.addingTimeInterval(30)
   }
 }

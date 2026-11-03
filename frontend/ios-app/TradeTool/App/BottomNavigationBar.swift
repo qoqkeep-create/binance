@@ -64,13 +64,16 @@ enum AppTab: Hashable, CaseIterable, Identifiable {
 struct BottomNavigationBar: View {
   @Binding var selection: AppTab
   let tabs: [AppTab]
+  let hasUnreadSignals: Bool
 
   init(
     selection: Binding<AppTab>,
-    tabs: [AppTab] = AppTab.availableTabs(canViewReferenceNotifications: false)
+    tabs: [AppTab] = AppTab.availableTabs(canViewReferenceNotifications: false),
+    hasUnreadSignals: Bool = false
   ) {
     _selection = selection
     self.tabs = tabs
+    self.hasUnreadSignals = hasUnreadSignals
   }
 
   var body: some View {
@@ -121,6 +124,14 @@ struct BottomNavigationBar: View {
         spacing: 2
       ) {
         WebNavigationIcon(tab: tab).frame(width: 29, height: 29)
+          .overlay(alignment: .topTrailing) {
+            if tab == .signals && hasUnreadSignals {
+              Circle().fill(Color.red).frame(width: 8, height: 8)
+                .overlay { Circle().stroke(WebTheme.color(0xFFFFFF, 0x212731), lineWidth: 1.5) }
+                .offset(x: 3, y: -1)
+                .accessibilityHidden(true)
+            }
+          }
 
         Text(tab.title)
           .font(
@@ -141,6 +152,7 @@ struct BottomNavigationBar: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(tab.title)
+    .accessibilityValue(tab == .signals && hasUnreadSignals ? "有未读信号" : "")
     .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }

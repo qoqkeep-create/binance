@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import html
-import json
 import logging
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
-from urllib import request
-from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import connection, transaction
@@ -213,29 +210,31 @@ def trade_notification_payload(event: TradeNotificationEvent) -> dict[str, Any]:
     )
 
 
-def send_trade_notification(payload: dict[str, Any]) -> dict[str, Any]:
+def send_trade_notification(payload: dict[str, Any], *, recipient_user_id: Optional[int] = None) -> dict[str, Any]:
+    """Hand off to the independent App outbox; never call a third-party channel."""
     if not getattr(settings, "TRADE_NOTIFICATION_ENABLED", True):
         raise RuntimeError("trade notifications are disabled")
-    url = str(getattr(settings, "TRADE_NOTIFICATION_URL", "") or "").strip()
-    token = str(getattr(settings, "TRADE_NOTIFICATION_TOKEN", "") or "").strip()
-    if not url or not token:
-        raise RuntimeError("trade notification channel is not configured")
-    parsed = urlsplit(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
-        raise RuntimeError("trade notification URL is invalid")
-    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    req = request.Request(
-        url=url,
-        data=body,
-        headers={"Content-Type": "application/json", "X-API-Key": token},
-        method="POST",
-    )
-    timeout = max(1.0, float(getattr(settings, "TRADE_NOTIFICATION_TIMEOUT_SECONDS", 5)))
-    with request.urlopen(req, timeout=timeout) as response:
-        result = json.loads(response.read(64 * 1024).decode("utf-8") or "{}")
-    if not isinstance(result, dict) or not result.get("ok"):
-        raise RuntimeError("trade notification endpoint rejected the message")
-    return result
+    if not settings.APNS_ENABLED:
+        raise RuntimeError("App notifications are disabled")
+    from mobile.push import enqueue_app_notification
+
+    event_key = str(payload.get("eventId") or "")
+    if recipient_user_id is None:
+        event = TradeNotificationEvent.objects.select_related("order").get(event_key=event_key)
+        recipient_user_id = event.order.user_id
+        payload = trade_notification_payload(event)
+        context = {"orderId": event.order_id, "symbol": event.order.symbol,
+            "tradingMode": event.order.trading_mode}
+    else:
+        # Template tests require an explicit account; never broadcast trade data.
+        if not event_key.startswith("template:"):
+            raise ValueError("explicit recipients are limited to notification templates")
+        context = {}
+    app_payload = {"aps": {"alert": {"title": payload["title"], "body": payload["content"]},
+            "sound": "default"}, "route": "trade.notification",
+        "eventId": event_key, "type": payload["type"], **context}
+    enqueue_app_notification(event_key=event_key, payload=app_payload, user_id=recipient_user_id)
+    return {"ok": True, "queued": True}
 
 
 def _create_notification(
@@ -801,6 +800,8 @@ def _record_trade_notification_result(
 
 def dispatch_pending_trade_notifications(limit: int = 20) -> int:
     if not getattr(settings, "TRADE_NOTIFICATION_ENABLED", True):
+        return 0
+    if not settings.APNS_ENABLED:
         return 0
     now = timezone.now()
     claimable = (

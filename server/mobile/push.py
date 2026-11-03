@@ -55,6 +55,8 @@ class PushUnregisterView(APIView):
 
 def enqueue_signal(message):
     """Called in the signal transaction: retries never depend on scan cache state."""
+    if message.source != 'internal':
+        return None
     data = message.normalized_payload
     event_key = message.event_id
     signal_id = str(uuid.uuid5(uuid.NAMESPACE_URL, event_key))
@@ -69,6 +71,20 @@ def enqueue_signal(message):
         for device in PushDevice.objects.filter(active=True, user__is_active=True).iterator():
             NotificationDelivery.objects.get_or_create(event=event, target=f'apns:{device.pk}',
                 defaults={'device': device, 'user_id_snapshot': device.user_id})
+    return event
+
+
+def enqueue_app_notification(*, event_key, payload, user_id):
+    """Persist owner-scoped App delivery, without performing network I/O."""
+    if not settings.APNS_ENABLED:
+        raise RuntimeError('App notifications are disabled')
+    with transaction.atomic():
+        event, _ = NotificationEvent.objects.get_or_create(
+            event_key=event_key, defaults={'payload': payload})
+        for device in PushDevice.objects.filter(user_id=user_id, active=True,
+                user__is_active=True, bundle_id=settings.APNS_BUNDLE_ID).iterator():
+            NotificationDelivery.objects.get_or_create(event=event, target=f'apns:{device.pk}',
+                defaults={'device': device, 'user_id_snapshot': user_id})
     return event
 
 
@@ -110,10 +126,16 @@ def _claim(delivery_id, now):
             return None
         # Ordinary signals belong to the App. Retire queued legacy Echo records
         # even if an older environment still enables SIGNAL_ECHOBELL_ENABLED.
-        if not item.target.startswith('apns:'):
+        payload = item.event.payload or {}
+        external_source = str(payload.get('source') or '').strip().lower() in {'external', 'tradingview', 'tv'}
+        if (not item.target.startswith('apns:')
+                or payload.get('route') == 'reference.trade.notification' or external_source):
             item.status = 'cancelled'
             item.lease_until = None
             item.save(update_fields=['status', 'lease_until'])
+            return None
+        if (payload.get('route') == 'trade.notification'
+                and not getattr(settings, 'TRADE_NOTIFICATION_ENABLED', True)):
             return None
         if item.attempts >= 8:
             if expired:
@@ -137,6 +159,9 @@ def dispatch_notifications(limit=100):
     now = timezone.now()
     due = Q(status__in=['pending', 'failed']) & (Q(retry_at__isnull=True) | Q(retry_at__lte=now))
     due |= Q(status='sending', lease_until__lte=now)
+    if not getattr(settings, 'TRADE_NOTIFICATION_ENABLED', True):
+        # Paused trade entries must not fill the batch and starve live signals.
+        due &= ~Q(event__payload__route='trade.notification') | Q(event__payload__route__isnull=True)
     ids = list(NotificationDelivery.objects.filter(due & (Q(attempts__lt=8) | Q(status="sending"))).order_by('id').values_list('id', flat=True)[:limit])
     sent = 0
     for delivery_id in ids:

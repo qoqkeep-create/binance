@@ -28,6 +28,7 @@ from trading.services import _sync_order_exchange_size
 from users.models import User
 
 
+@override_settings(APNS_ENABLED=True)
 class TradeNotificationTemplateTests(SimpleTestCase):
     @override_settings(TRADE_NOTIFICATION_ENABLED=False, EXTERNAL_TRADE_SIGNAL_ENABLED=True)
     @patch("positions.notifications.send_trade_notification")
@@ -45,7 +46,7 @@ class TradeNotificationTemplateTests(SimpleTestCase):
         EXTERNAL_TRADE_SIGNAL_URL="https://notify.example.invalid/external",
         EXTERNAL_TRADE_SIGNAL_API_KEY="test-key",
     )
-    @patch("positions.notifications.request.urlopen")
+    @patch("urllib.request.urlopen")
     @patch("positions.external_trade_signals.request.build_opener")
     def test_disabled_trade_notifications_also_block_direct_senders(self, opener, urlopen):
         for sender in [send_trade_notification, send_external_trade_signal]:
@@ -80,29 +81,26 @@ class TradeNotificationTemplateTests(SimpleTestCase):
         TRADE_NOTIFICATION_TOKEN="header-only-token",
         TRADE_NOTIFICATION_TIMEOUT_SECONDS=5,
     )
-    @patch("positions.notifications.request.urlopen")
-    def test_sender_uses_internal_header_and_does_not_put_token_in_url(self, urlopen):
-        response = MagicMock()
-        response.read.return_value = b'{"ok":true}'
-        urlopen.return_value.__enter__.return_value = response
-
+    @patch("urllib.request.urlopen")
+    @patch("mobile.push.enqueue_app_notification")
+    def test_template_sender_uses_app_outbox_with_explicit_recipient_and_no_http(self, enqueue, urlopen):
         notification = {
             "schemaVersion": 1,
-            "eventId": "trade:open:123",
+            "eventId": "template:OPEN:test-only-123",
             "type": "OPEN",
             "title": "开单成功",
             "content": "> **交易对**：BTCUSDT",
             "occurredAt": "2026-09-04T12:00:00+08:00",
         }
 
-        result = send_trade_notification(notification)
+        result = send_trade_notification(notification, recipient_user_id=42)
 
         self.assertTrue(result["ok"])
-        req = urlopen.call_args.args[0]
-        self.assertEqual(req.full_url, "http://tradingview-webhook:3000/internal/trade-notification")
-        self.assertNotIn("header-only-token", req.full_url)
-        self.assertEqual(req.get_header("X-api-key"), "header-only-token")
-        self.assertEqual(json.loads(req.data.decode("utf-8")), notification)
+        enqueue.assert_called_once()
+        self.assertEqual(enqueue.call_args.kwargs["user_id"], 42)
+        self.assertEqual(enqueue.call_args.kwargs["payload"]["route"], "trade.notification")
+        self.assertEqual(enqueue.call_args.kwargs["payload"]["aps"]["alert"]["title"], "开单成功")
+        urlopen.assert_not_called()
 
     @override_settings(
         EXTERNAL_TRADE_SIGNAL_URL="https://signals.example.com/api/external/messages",
@@ -147,9 +145,10 @@ class TradeNotificationTemplateTests(SimpleTestCase):
     def test_template_command_sends_all_five_categories(self, send):
         output = StringIO()
 
-        call_command("send_trade_notification_templates", confirm=True, stdout=output)
+        call_command("send_trade_notification_templates", confirm=True, user_id=42, stdout=output)
 
         self.assertEqual(send.call_count, 5)
+        self.assertTrue(all(item.kwargs["recipient_user_id"] == 42 for item in send.call_args_list))
         titles = [item.args[0]["title"] for item in send.call_args_list]
         self.assertEqual(
             titles,
@@ -213,6 +212,7 @@ class TradeNotificationTemplateTests(SimpleTestCase):
         self.assertEqual(send.call_count, 5)
 
 
+@override_settings(APNS_ENABLED=True)
 class TradeNotificationEventTests(TransactionTestCase):
     reset_sequences = True
 

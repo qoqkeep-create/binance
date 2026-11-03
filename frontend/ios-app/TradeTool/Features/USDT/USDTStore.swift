@@ -27,6 +27,13 @@ enum NativeTradingMode {
     }
 }
 
+/// List IDs are the server's monotonically increasing message IDs, not APNs UUIDs.
+private struct LocalSignalReadCursor: Codable, Equatable {
+    var latestID: Int64 = 0
+    var readThroughID: Int64 = 0
+    var hasUnread: Bool { latestID > readThroughID }
+}
+
 @MainActor
 final class USDTStore: ObservableObject {
     let api: any APIClient
@@ -57,7 +64,12 @@ final class USDTStore: ObservableObject {
     @Published var notice = ""
     @Published var isLoading = false
     @Published var liveRevision = 0
+    @Published private(set) var hasUnreadSignals = false
     private var userID = ""
+    private let signalReadDefaults: UserDefaults
+    private var signalReadNamespace = "default"
+    private var signalReadCursor = LocalSignalReadCursor()
+    private var signalPageVisible = false
     private var refreshScope = ""
     private var strategyReadRevision = 0
     private var eventRefresh: Task<Void, Never>?
@@ -66,18 +78,69 @@ final class USDTStore: ObservableObject {
     var riskAmount: String { account.value("stop_loss_amount", fallback: "") }
     var activeStrategy: JSONValue? { strategies.first { $0["is_active"]?.flag == true } }
 
-    init(api: any APIClient) { self.api = api }
+    init(api: any APIClient, signalReadDefaults: UserDefaults = .standard) {
+        self.api = api
+        self.signalReadDefaults = signalReadDefaults
+    }
 
     func begin(userID: String) async {
         prepareSession(userID: userID)
         await refresh()
     }
 
-    func prepareSession(userID: String) {
-        if self.userID != userID { invalidate() }
+    func prepareSession(userID: String, signalReadNamespace: String = "default") {
+        let identityChanged = self.userID != userID || self.signalReadNamespace != signalReadNamespace
+        if identityChanged { invalidate() }
         self.userID = userID
+        self.signalReadNamespace = signalReadNamespace
         NativeTradingMode.userID = userID
         mode = NativeTradingMode.current
+        if identityChanged {
+            signalReadCursor = signalReadDefaults.data(forKey: signalReadStorageKey)
+                .flatMap { try? JSONDecoder().decode(LocalSignalReadCursor.self, from: $0) }
+                ?? LocalSignalReadCursor()
+            hasUnreadSignals = signalReadCursor.hasUnread
+        }
+    }
+
+    /// Only the latest record is needed for the tab badge; the retained page owns its list.
+    func refreshSignalBadge() async {
+        guard !userID.isEmpty, mode == "ordinary" else { return }
+        let requestScope = scope
+        do {
+            let result = try await get("/v1/trade/tradingview/signals", query: [
+                .init(name: "source", value: "internal"), .init(name: "limit", value: "1"),
+            ])
+            guard requestScope == scope, !Task.isCancelled else { return }
+            recordSignalSnapshot(result.rows)
+        } catch { }
+    }
+
+    func setSignalPageVisible(_ visible: Bool) {
+        signalPageVisible = visible
+        if visible { recordSignalSnapshot([], markRead: true) }
+    }
+
+    func recordSignalSnapshot(_ rows: [JSONValue], markRead: Bool = false) {
+        guard !userID.isEmpty, mode == "ordinary" else { return }
+        let previous = signalReadCursor
+        let newestID = rows.compactMap { row -> Int64? in
+            guard row.value("source", fallback: "internal") == "internal" else { return nil }
+            return Int64(row.value("id"))
+        }.max() ?? 0
+        signalReadCursor.latestID = max(signalReadCursor.latestID, newestID)
+        if markRead || signalPageVisible {
+            signalReadCursor.readThroughID = signalReadCursor.latestID
+        }
+        hasUnreadSignals = signalReadCursor.hasUnread
+        if previous != signalReadCursor, let data = try? JSONEncoder().encode(signalReadCursor) {
+            signalReadDefaults.set(data, forKey: signalReadStorageKey)
+        }
+    }
+
+    private var signalReadStorageKey: String {
+        let identity = Data((signalReadNamespace + "|" + userID).utf8).base64EncodedString()
+        return "integrated.signalRead.v1." + identity
     }
 
     func switchMode(_ value: String) {

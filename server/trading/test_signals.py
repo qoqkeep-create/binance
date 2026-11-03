@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.apps import apps
 from django.db import IntegrityError, transaction
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from trading.models import TradingViewMessage
@@ -66,6 +67,7 @@ class SignalListTests(APITestCase):
         self.assertEqual(row["symbol"], "Unknown")
 
 
+@override_settings(EXTERNAL_SIGNAL_INGEST_ENABLED=True)
 class ExternalSignalIngestTests(APITestCase):
     @patch("trading.views.TV_MESSAGE_API_TOKEN", "test-ingest-token")
     def test_internal_message_token_is_accepted_only_from_header(self):
@@ -164,6 +166,44 @@ class ExternalSignalIngestTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        self.assertFalse(TradingViewMessage.objects.exists())
+
+
+@override_settings(EXTERNAL_SIGNAL_INGEST_ENABLED=False)
+class PausedExternalSignalIngestTests(APITestCase):
+    @patch("trading.views.TV_MESSAGE_API_TOKEN", "test-ingest-token")
+    def test_paused_external_sources_are_rejected_without_touching_history_or_push(self):
+        historical = TradingViewMessage.objects.create(
+            source="external", event_id="existing-external", raw_payload={}, normalized_payload={}
+        )
+        self.client.credentials(HTTP_X_TV_MESSAGE_TOKEN="test-ingest-token")
+        for source in ["external", "tradingview", "tv", "", "unrecognized"]:
+            with self.subTest(source=source):
+                response = self.client.post(
+                    "/v1/trade/tradingview/messages/ingest",
+                    {"raw_payload": {"source": source}, "normalized_payload": {
+                        "source": source, "event_id": f"paused-{source}",
+                        "symbol": "BTCUSDT", "signal": "BUY",
+                    }}, format="json",
+                )
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.data["message"], "外部信号接收已暂停")
+        self.assertEqual(list(TradingViewMessage.objects.values_list("id", flat=True)), [historical.id])
+        from mobile.models import NotificationDelivery, NotificationEvent
+        self.assertFalse(NotificationEvent.objects.exists())
+        self.assertFalse(NotificationDelivery.objects.exists())
+
+    @patch("trading.views.TV_MESSAGE_API_TOKEN", "test-ingest-token")
+    def test_http_caller_cannot_bypass_pause_by_claiming_internal_source(self):
+        self.client.credentials(HTTP_X_TV_MESSAGE_TOKEN="test-ingest-token")
+        response = self.client.post(
+            "/v1/trade/tradingview/messages/ingest",
+            {"raw_payload": {"source": "internal"}, "normalized_payload": {
+                "source": "internal", "event_id": "internal-still-accepted",
+                "symbol": "BTCUSDT", "signal": "BUY",
+            }}, format="json",
+        )
+        self.assertEqual(response.status_code, 503)
         self.assertFalse(TradingViewMessage.objects.exists())
 
 

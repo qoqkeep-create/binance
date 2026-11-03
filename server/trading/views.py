@@ -14,6 +14,7 @@ from uuid import uuid4
 from typing import Optional
 from urllib import request
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -3083,6 +3084,9 @@ class TradingViewMessageIngestView(APIView):
         token_error = _check_tv_message_token(request)
         if token_error:
             return token_error
+
+        if not settings.EXTERNAL_SIGNAL_INGEST_ENABLED:
+            return fail("外部信号接收已暂停", code=503, status=503)
 
         serializer = TradingViewMessageIngestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
