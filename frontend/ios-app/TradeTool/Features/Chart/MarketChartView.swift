@@ -122,6 +122,7 @@ private struct MarketChartDetailView: View {
     @State private var selectedStopPrice: Double?
     @State private var showsIntervalSettings = false
     @AppStorage(ChartIntervalPreferences.storageKey) private var favoriteIntervals = ChartIntervalPreferences.defaultValue
+    @AppStorage("integrated.chart.autoFitPrice") private var automaticallyFitsPrice = true
     @StateObject private var viewModel: MarketChartViewModel
     let availableMarkets: [MarketSnapshot]
     let onSelectMarket: (MarketSnapshot, MarketKlineInterval) -> Void
@@ -336,6 +337,7 @@ private struct MarketChartDetailView: View {
         ZStack {
             KlineChartSceneView(
                 frame: viewModel.chartDataFrame,
+                automaticallyFitsPrice: automaticallyFitsPrice,
                 diagnostics: viewModel.loadDiagnostics,
                 onFirstFramePresented: { epoch, time in
                     viewModel.chartFirstFramePresented(epoch: epoch, at: time)
@@ -372,7 +374,8 @@ private struct MarketChartDetailView: View {
                     ),
                     projection: projection,
                     formatPrice: formatPrice,
-                    showsSummary: false
+                    showsSummary: false,
+                    allowsOffscreenStopLoss: !automaticallyFitsPrice
                 )
                 .transition(.opacity)
             }
@@ -415,14 +418,21 @@ private struct MarketChartDetailView: View {
                                         Rectangle().fill(BinanceTheme.accent).frame(height: 2).offset(y: 5)
                                     }
                                 }
-                                .padding(.horizontal, 10).frame(height: 38).contentShape(Rectangle())
+                                .padding(.horizontal, 6).frame(height: 38).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("chart-interval." + interval.rawValue)
                     }
+                    Button { showsIntervalSettings = true } label: {
+                        Image(systemName: "slider.horizontal.3").font(.system(size: 13)).frame(width: 30, height: 38)
+                    }.buttonStyle(.plain).accessibilityLabel("编辑时间周期").accessibilityIdentifier("chart-interval.edit")
                 }
             }
-            Button { showsIntervalSettings = true } label: {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 14)).frame(width: 44, height: 38)
-            }.buttonStyle(.plain).accessibilityLabel("编辑时间周期").accessibilityIdentifier("chart-interval.edit")
+            Toggle(isOn: $automaticallyFitsPrice) {
+                Text("auto").font(.system(size: 11, weight: .medium))
+            }
+            .toggleStyle(ChartAutoFitToggleStyle())
+            .accessibilityLabel("auto 自动适配")
+            .accessibilityIdentifier("chart-interval.auto")
+            .padding(.leading, 4).padding(.trailing, 8)
         }.padding(.leading, 4).background(BinanceTheme.background)
     }
 
@@ -1311,13 +1321,19 @@ private enum MarketDisplayFormatter {
 enum ChartIntervalPreferences {
     static let storageKey = "integrated.chart.favoriteIntervals"
     static let defaultValue = "3m,5m,15m,1h,4h,1d"
+    static let maximumCount = 6
     static func favorites(_ value: String) -> [MarketKlineInterval] {
         let enabled = Set(value.split(separator: ",").compactMap { MarketKlineInterval(rawValue: String($0)) })
         if enabled.isEmpty, value != defaultValue { return favorites(defaultValue) }
-        return MarketKlineInterval.allCases.filter { enabled.contains($0) }
+        return Array(MarketKlineInterval.allCases.filter { enabled.contains($0) }.prefix(maximumCount))
     }
     static func visible(_ value: String, selected: MarketKlineInterval) -> [MarketKlineInterval] {
-        let enabled = Set(favorites(value) + [selected])
+        var shortcuts = favorites(value)
+        if !shortcuts.contains(selected) {
+            if shortcuts.count == maximumCount { shortcuts.removeLast() }
+            shortcuts.append(selected)
+        }
+        let enabled = Set(shortcuts)
         return MarketKlineInterval.allCases.filter { enabled.contains($0) }
     }
     static func toggling(_ interval: MarketKlineInterval, in value: String) -> String {
@@ -1325,8 +1341,30 @@ enum ChartIntervalPreferences {
         if enabled.contains(interval) {
             guard enabled.count > 1 else { return value }
             enabled.remove(interval)
-        } else { enabled.insert(interval) }
+        } else {
+            guard enabled.count < maximumCount else { return value }
+            enabled.insert(interval)
+        }
         return MarketKlineInterval.allCases.filter { enabled.contains($0) }.map(\.rawValue).joined(separator: ",")
+    }
+}
+
+private struct ChartAutoFitToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 4) {
+                configuration.label
+                    .foregroundStyle(BinanceTheme.secondaryText)
+                Capsule()
+                    .fill(configuration.isOn ? BinanceTheme.positive : BinanceTheme.border)
+                    .frame(width: 28, height: 17)
+                    .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                        Circle().fill(.white).frame(width: 13, height: 13).padding(2)
+                    }
+            }.frame(height: 38).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+            .accessibilityValue(configuration.isOn ? "1" : "0")
+            .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -1345,21 +1383,32 @@ private struct ChartIntervalSettingsView: View {
                     Image(systemName: "xmark").frame(width: 44, height: 44)
                 }.buttonStyle(.plain).accessibilityLabel("关闭")
             }.padding(.horizontal, 20).padding(.top, 12)
-            Text("点击周期切换图表；星标周期显示在快捷栏，至少保留一个。")
+            Text("点击周期切换图表；星标管理快捷栏，保留 1–6 个。")
                 .font(.system(size: 12)).foregroundStyle(BinanceTheme.secondaryText)
                 .padding(.horizontal, 20).padding(.bottom, 12)
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 8)], spacing: 4) {
-                    ForEach(MarketKlineInterval.allCases) { interval in
-                        intervalOption(interval)
-                    }
-                }.padding(.horizontal, 20)
+                VStack(alignment: .leading, spacing: 12) {
+                    intervalSection("图表周期", intervals: visibleIntervals)
+                    intervalSection("备选周期", intervals: MarketKlineInterval.allCases.filter { !visibleIntervals.contains($0) })
+                    Button("恢复默认周期") { favorites = ChartIntervalPreferences.defaultValue }
+                        .font(.system(size: 12))
+                        .buttonStyle(.plain).foregroundStyle(BinanceTheme.accentText)
+                        .frame(maxWidth: .infinity, minHeight: 32).padding(.top, 2)
+                }.padding(.horizontal, 20).padding(.bottom, 12)
             }.scrollIndicators(.hidden)
-            Button("恢复默认周期") { favorites = ChartIntervalPreferences.defaultValue }
-                .buttonStyle(.plain).foregroundStyle(BinanceTheme.accentText)
-                .frame(minHeight: 44).padding(.bottom, 12)
         }.foregroundStyle(BinanceTheme.primaryText).background(BinanceTheme.background)
 
+    }
+    private var visibleIntervals: [MarketKlineInterval] {
+        ChartIntervalPreferences.visible(favorites, selected: selection)
+    }
+    private func intervalSection(_ title: String, intervals: [MarketKlineInterval]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(BinanceTheme.secondaryText)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 4) {
+                ForEach(intervals) { intervalOption($0) }
+            }
+        }
     }
     private func intervalOption(_ interval: MarketKlineInterval) -> some View {
         let selected = interval == selection
@@ -1380,6 +1429,7 @@ private struct ChartIntervalSettingsView: View {
                     .frame(width: 28, height: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel(interval.title + (enabled ? "停用快捷周期" : "启用快捷周期"))
                 .accessibilityIdentifier("interval-settings.favorite." + interval.rawValue)
+                .disabled(!enabled && ChartIntervalPreferences.favorites(favorites).count >= ChartIntervalPreferences.maximumCount)
         }.background {
             RoundedRectangle(cornerRadius: 8)
                 .fill(selected ? WebTheme.color(0xFFF5CC, 0x51451F) : BinanceTheme.surface)

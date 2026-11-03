@@ -45,9 +45,9 @@ struct ChartPriceProjection: Equatable, Sendable {
     return y.isFinite ? y : nil
   }
 
-  func price(atScreenY y: Double) -> Double? {
+  func price(atScreenY y: Double, clampsToPlot: Bool = true) -> Double? {
     guard y.isFinite else { return nil }
-    let clampedY = min(plotBottom, max(plotTop, y))
+    let clampedY = clampsToPlot ? min(plotBottom, max(plotTop, y)) : y
     let ratio = (clampedY - plotTop) / (plotBottom - plotTop)
     let price = upperBound - ratio * (upperBound - lowerBound)
     return price.isFinite ? price : nil
@@ -74,6 +74,17 @@ final class KlineChartSceneController: ObservableObject {
   private var viewportOwner: ViewportOwner?
   private var viewportOwnerSlotCount = 0
   private var viewportOwnerNewestOpenTime: Int64?
+  private var automaticallyFitsPrice = true
+
+  func setAutomaticPriceFitting(_ enabled: Bool) {
+    automaticallyFitsPrice = enabled
+    if enabled {
+      updatePriceViewport(.automatic)
+    } else if let projection = priceProjection,
+      let fixed = ChartPriceViewport(fixedRange: projection.priceRange) {
+      updatePriceViewport(fixed)
+    }
+  }
 
   private struct ViewportOwner: Equatable {
     let stream: ChartStreamKey
@@ -244,6 +255,11 @@ final class KlineChartSceneController: ObservableObject {
       if priceProjection != projection {
         priceProjection = projection
       }
+      // Also capture the first domain after changing symbol/interval or opening with auto off.
+      if !automaticallyFitsPrice, resolvedPriceViewport.fixedRange == nil,
+        let projection, let fixed = ChartPriceViewport(fixedRange: projection.priceRange) {
+        updatePriceViewport(fixed)
+      }
     } catch is CancellationError {
       return
     } catch {
@@ -358,6 +374,7 @@ final class KlineChartSceneController: ObservableObject {
 
 struct KlineChartSceneView: View {
   let frame: ChartDataFrame?
+  var automaticallyFitsPrice = true
   var diagnostics: ChartLoadDiagnostics? = nil
   var onFirstFramePresented: (KlineStreamEpoch, TimeInterval) -> Void = { _, _ in }
   var onNeedsOlderHistory: () -> Void = {}
@@ -418,6 +435,7 @@ struct KlineChartSceneView: View {
             onPriceViewportChange: { next in
               controller.updatePriceViewport(next)
             },
+            automaticallyFitsPrice: automaticallyFitsPrice,
             onFirstFramePresented: { time in
               if let epoch = frame?.epoch { onFirstFramePresented(epoch, time) }
             },
@@ -441,6 +459,9 @@ struct KlineChartSceneView: View {
       }
       .onDisappear {
         controller.cancelPendingRenders()
+      }
+      .onChange(of: automaticallyFitsPrice, initial: true) { _, enabled in
+        controller.setAutomaticPriceFitting(enabled)
       }
       .onChange(
         of: controller.priceProjection,

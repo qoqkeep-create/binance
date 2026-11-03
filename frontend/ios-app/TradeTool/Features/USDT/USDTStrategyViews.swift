@@ -22,26 +22,44 @@ struct USDTStrategiesView: View {
           HStack(spacing: 12) {
             Image(systemName: "hand.tap").font(.system(size: 20)).foregroundStyle(WebTheme.brand)
             VStack(alignment: .leading, spacing: 6) {
-              Text("手动止盈").font(.system(size: 18, weight: .medium)).foregroundStyle(WebTheme.text)
+              HStack {
+                Text("手动止盈").font(.system(size: 18, weight: .medium)).foregroundStyle(WebTheme.text)
+                Spacer(minLength: 0)
+                if store.activeStrategy == nil {
+                  Image(systemName: "checkmark").font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(BinanceTheme.accent)
+                }
+              }
               Text("自行决定止盈时机，保留止损保护").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
             }
-            Spacer(minLength: 0)
-            if store.activeStrategy == nil { Image(systemName: "checkmark").foregroundStyle(WebTheme.brand) }
           }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+            .overlay {
+              RoundedRectangle(cornerRadius: 16).stroke(
+                store.activeStrategy == nil ? BinanceTheme.accent : WebTheme.border,
+                lineWidth: store.activeStrategy == nil ? 2 : 1)
+            }
+            .accessibilityAddTraits(store.activeStrategy == nil ? .isSelected : [])
         }.buttonStyle(.plain).accessibilityIdentifier("strategy.manual")
         ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
           VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
               Text(strategy.value("name")).font(.system(size: 18, weight: .medium))
                 .frame(maxWidth: .infinity, alignment: .leading)
-              Button(strategy["is_active"]?.flag == true ? "使用中" : "使用") {
+              Button {
                 selected = strategy
                 selecting = true
-              }.buttonStyle(WebButtonStyle(kind: strategy["is_active"]?.flag == true ? .secondary : .primary,
-                height: 32, fontSize: 13, fullWidth: false))
+              } label: {
+                Group {
+                  if strategy["is_active"]?.flag == true {
+                    Image(systemName: "checkmark").font(.system(size: 18, weight: .semibold))
+                  } else {
+                    Text("使用").font(.system(size: 13, weight: .medium))
+                  }
+                }.foregroundStyle(BinanceTheme.accent).frame(minWidth: 44, minHeight: 32)
+              }.buttonStyle(.plain)
                 .disabled(strategy["is_active"]?.flag == true)
+                .accessibilityLabel(strategy["is_active"]?.flag == true ? "使用中" : "使用")
                 .accessibilityIdentifier("strategy.use." + strategy.value("id"))
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -50,9 +68,25 @@ struct USDTStrategiesView: View {
                   .foregroundStyle(WebTheme.secondary)
               }
             }
+            HStack {
+              Spacer(minLength: 0)
+              Button { editingStrategy = strategy; editing = true } label: {
+                HStack(spacing: 4) {
+                  Text("编辑")
+                  Image(systemName: "chevron.right")
+                }.font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+                  .frame(minWidth: 60, minHeight: 32).contentShape(Rectangle())
+              }.buttonStyle(.plain).accessibilityLabel("编辑" + strategy.value("name"))
+                .accessibilityIdentifier("strategy.edit." + strategy.value("id"))
+            }
           }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+            .overlay {
+              RoundedRectangle(cornerRadius: 16).stroke(
+                strategy["is_active"]?.flag == true ? BinanceTheme.accent : WebTheme.border,
+                lineWidth: strategy["is_active"]?.flag == true ? 2 : 1)
+            }
+            .accessibilityAddTraits(strategy["is_active"]?.flag == true ? .isSelected : [])
             .contentShape(RoundedRectangle(cornerRadius: 16))
             .onTapGesture { editingStrategy = strategy; editing = true }
             .accessibilityElement(children: .contain)
@@ -63,11 +97,15 @@ struct USDTStrategiesView: View {
               }.buttonStyle(.automatic)
             }
         }
-        NavigationLink {
-          USDTStrategyEditor(strategy: nil)
-        } label: {
-          Text("新建策略")
-        }.buttonStyle(WebButtonStyle(height: 52, radius: 14))
+        Button { editingStrategy = nil; editing = true } label: {
+          HStack(spacing: 8) {
+            Image(systemName: "plus")
+            Text("新建策略")
+          }.font(.system(size: 16, weight: .semibold)).foregroundStyle(.black)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(BinanceTheme.accent, in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain).accessibilityIdentifier("strategy.create")
         USDTNotice(text: notice)
       }.listRowSeparator(.hidden).listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

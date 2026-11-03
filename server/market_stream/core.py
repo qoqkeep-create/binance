@@ -2,8 +2,18 @@
 from decimal import Decimal, InvalidOperation
 import re
 
-INTERVAL_MS = {"1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000}
+INTERVAL_MS = {"1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+               "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "8h": 28_800_000,
+               "16h": 57_600_000, "1d": 86_400_000, "3d": 259_200_000, "1w": 604_800_000}
+# Preserve the existing startup repair/warmup budget. Additional periods load on demand.
+PREWARM_INTERVALS = ("1m", "3m", "5m", "15m", "1h", "4h", "1d")
 PRICE_FIELDS = ("openPrice", "highPrice", "lowPrice", "closePrice", "volume", "quoteVolume")
+
+
+def bucket_open_time(timestamp, interval):
+    offset = 345_600_000 if interval == "1w" else 0  # Monday 00:00 UTC
+    width = INTERVAL_MS[interval]
+    return (timestamp - offset) // width * width + offset
 
 
 def number(value):
@@ -49,15 +59,24 @@ def wire_candle(candle):
     return {**candle, **{key: float(candle[key]) for key in PRICE_FIELDS}}
 
 
-def aggregate_complete(minutes, interval):
-    """Only complete, contiguous, closed 1m buckets become persisted candles."""
+def aggregate_complete(minutes, interval, source_interval="1m"):
+    """Only complete, contiguous, closed source buckets become persisted candles."""
+    return aggregate_bucket(minutes, interval, source_interval=source_interval)
+
+
+def aggregate_bucket(rows, interval, *, source_interval="1m", partial=False):
     width = INTERVAL_MS[interval]
-    if not minutes:
+    step = INTERVAL_MS[source_interval]
+    if not rows or width % step:
         return None
-    ordered = sorted(minutes, key=lambda row: row["openTime"])
-    start = ordered[0]["openTime"] // width * width
-    expected = list(range(start, start + width, 60_000))
-    if [row["openTime"] for row in ordered] != expected or not all(row["closed"] for row in ordered):
+    ordered = sorted(rows, key=lambda row: row["openTime"])
+    start = bucket_open_time(ordered[0]["openTime"], interval)
+    end = ordered[-1]["openTime"] + step if partial else start + width
+    expected = list(range(start, end, step))
+    if end > start + width or [row["openTime"] for row in ordered] != expected:
+        return None
+    # The last forming source candle may be partial; earlier sources must be closed.
+    if not all(row["closed"] for row in (ordered[:-1] if partial else ordered)):
         return None
     return {**ordered[-1], "interval": interval, "openTime": start, "closeTime": start + width - 1,
             "openPrice": ordered[0]["openPrice"],
@@ -65,4 +84,4 @@ def aggregate_complete(minutes, interval):
             "lowPrice": str(min(number(row["lowPrice"]) for row in ordered)),
             "closePrice": ordered[-1]["closePrice"],
             "volume": str(sum((number(row["volume"]) for row in ordered), Decimal(0))),
-            "quoteVolume": str(sum((number(row["quoteVolume"]) for row in ordered), Decimal(0))), "closed": True}
+            "quoteVolume": str(sum((number(row["quoteVolume"]) for row in ordered), Decimal(0))), "closed": not partial}

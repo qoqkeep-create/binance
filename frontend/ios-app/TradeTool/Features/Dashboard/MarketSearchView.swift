@@ -126,10 +126,12 @@ struct MarketSearchView: View {
 
 /// Trading panels share the existing attached presenter at 80% height.
 extension View {
-    func largeTradingSheet<Panel: View>(isPresented: Binding<Bool>, background: Color = BinanceTheme.background, onDismiss: (() -> Void)? = nil,
+    func largeTradingSheet<Panel: View>(isPresented: Binding<Bool>, background: Color = BinanceTheme.background,
+        showsDragIndicator: Bool = true, onDismiss: (() -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Panel) -> some View {
         webModal(isPresented: isPresented, motion: .slide, onDismiss: onDismiss) {
-            WebSheet(heightFraction: 0.8, protectsBottomSafeArea: true, panelBackground: background, content: content)
+            WebSheet(heightFraction: 0.8, protectsBottomSafeArea: true, panelBackground: background,
+                showsDragIndicator: showsDragIndicator, content: content)
         }
     }
     func largeTradingSheet<Item: Identifiable, Panel: View>(item: Binding<Item?>,

@@ -397,3 +397,22 @@ generic iOS Release 未签名构建及 generic iOS Simulator 的 `build-for-test
 同一 iPhone 模拟器（`3E685E56-9767-43E7-81DD-35972DE7FAD7`）下，4 项不同 UI 流程最终分别通过：交易对自选／选币（27.709 秒）、信号保留与退后台（15.269 秒）、浮窗空仓／未绑定／带单深色（42.658 秒）、指标保存／模式双向切换／居中页签的浅深色（72.126 秒）。原生 XCTest 滑杆拖到最右端可能落在 99%，UI 断言容许一个原生步长，精确 100% 到 alpha 0 由单测覆盖。已打开最终浅深色截图核对模式图标、星标、透明度滑杆、页签及浮窗入口。generic iOS Release 无签名编译通过。
 
 证据在忽略目录 `.integration-runtime/PageStateReview/`：旧实现 `Before.xcresult`、`CoreFinal.xcresult`、`UI.xcresult` 中的两个通过流程、`UIFinal.xcresult` 中的浮窗通过流程、`MenuUI.xcresult`、`release-final.log` 及截图目录。失败的早期整组结果保留，不能称为整组通过；上述为修正后的独立流程结果。本轮没有服务端发布、真实交易／资金动作，源码和文档留本地，未提交、推送或上传 TestFlight，手机显示仍待新包验收。
+
+## 快捷周期与 auto 回归（2026-11-03）
+
+先按用户要求将本轮开始时全部安全改动提交为 `df77ba2` 并成功推送 GitHub `codex/integrated-ios`；此后新增的周期、auto、限价线和间距调整仍为本地未提交内容。实现规则见 [行情](market-data.md#快捷周期与自动价格视窗2026-11-03)，页面尺寸见 [原生界面](ios-web-parity.md#当前实现)。
+
+- 六周期上限回归先在旧代码产生 3 个失败断言（`ChartAutoRed.xcresult`）；新增后端周期目录回归先产生 6 个缺失周期失败（`ChartIntervalsBackendRed.log`）。随后实现快捷栏分区和最多六项、固定手动价格域、主图上下平移／手指锚点缩放、auto 恢复、跨 stream 重建价格域、限价止损正价格越界和右侧画布贯通。扩展六种周期，16h 由 8h 连续聚合，周线在后端和客户端按 UTC 周一对齐。
+- `ChartEngineCoreTests`／`ChartOrderTicketTests` 首批 161 项通过（`ChartAutoCoreFixed.xcresult`）。加入周线与完整行情校对后，183 项运行中 182 项通过，一项快捷切换顺序断言仍按旧七周期编写（3 个失败断言，`ChartAutoFinalCore.xcresult`）；同步 30m／2h 邻接及新回绕位置后，与手动 pan＋pinch 和新增跨 stream 回归一同 3 项通过（`ChartAutoSupplement.xcresult`）。最终源码的 156 项核心、7 项开仓、21 项行情用例共 184 项已有分批通过记录，未把重复运行累计为新增用例。
+- 后端完整 `market_stream` 共 91 项，84 项通过、7 项需独立 Redis 的用例未启用（5.852 秒，`ChartIntervalsBackendFinal.log`）。覆盖新 HTTP／WSS 目录、全部周期内部缺口补全、16h 两页有界 8h 聚合及缺首桶拒绝、形成中尾线、周线小时＋当前分钟合并、无效统计请求不排队；种子仍为原七周期。首轮形成中尾线测试在退出模拟时钟后读取已过期缓存，已将断言移入同一时钟范围再通过。
+- 模拟器 `3E685E56-9767-43E7-81DD-35972DE7FAD7`、Debug-Seoul：`ChartCalibrationUITests.testChartIntervalShortcutsAndSettings` 和 `WebParityUITests.testChartAutoIntervalPanelAndLimitLinesInBothAppearances` 两项通过（59.457 秒，`ChartAutoUIExpanded.xcresult`）。覆盖分区、六项增减、设置按钮紧随尾项、auto 开关、上下拖动、六种新增入口、浅深色绿底白字、限价线到画布右端及视窗外止损草稿。首轮两处 UI 断言分别受文字可访问区域的外侧留白及偏好更新时序影响，已按实际点击区域／异步偏好更新修正；最终截图已导出并检查。
+- generic iOS、无签名 Release 构建通过（`ChartAutoRelease.log`）。全部日志、xcresult 和截图位于忽略目录 `.integration-runtime/`。本轮未执行真实交易、划转、撤保护单，未部署后端或上传 TestFlight；实机手感、新周期线上补全和长稳仍待新版配套验收。
+
+
+## 主题填充与账户策略界面回归（2026-11-03）
+
+Super 滑杆保留同一偏好值，深色映射实际 80–100%、浅色 40–60% 透明度，历史和实时填充在 Metal 配色编码层按主题解析。MACD 空心柱从约 0.5 pt 加粗到 1 pt，受窄柱尺寸限制时保留空心区域，边框取整为物理像素。“我的”账户卡间距收紧，模式入口移至设置下方最后一项；持仓页签改左对齐。止损面板隐藏灰色控制柄并统一表面色，金额最多 3 位小数／去尾零、百分比整数。策略列表恢复 52 pt 满宽黄色新建按钮，选中项黄框与标题行黄勾，独立“编辑 ›”位于摘要下方右下角。当前规则见 [界面](ios-web-parity.md#策略编辑与指标设置2026-11-03) 和 [行情](market-data.md#拖动一致性当前价与尾线修复2026-11-03)。
+
+先将真实生产场景的 Super 历史／实时主题断言和 MACD 边框覆盖断言放入 host Swift Package，在旧代码下两项均失败：浅色仍为 alpha 0.16；3 倍屏边框为 1.5 像素，分数像素平移时左右分别覆盖 1／2 个像素。修正后复用生产测试方法、实际图表数据／指标／场景／配色和 Decimal 格式代码，最终 **8 项通过，0 失败／跳过（0.063 秒）**。范围包括红绿双主题滑杆全程、历史及实时默认值、偏好兼容／持久化、MACD 强弱及正负柱／实时边框、分数像素平移覆盖、止损 3 位四舍五入／进位／去尾零、大额 Decimal 和原向上取整步长，以及既有其他图表颜色／坐标标签对比。网络依赖使用替身，没有调用真实交易。
+
+`TradeTool Release` 的 generic iOS 无签名构建、`TradeTool Chart Calibration` 和 `TradeTool` 的 generic iOS Simulator `build-for-testing` 均通过。更新 UI 断言覆盖右下角编辑入口、标题行选择标识、满宽新建按钮、模式菜单顺序、左对齐页签、止损无灰柄／整数百分比和去尾零金额；本轮按用户偏好没有启动模拟器或执行 iOS XCTest／UI，也没有新增截图或实机验收。host 结果验证生产场景和物理像素覆盖计算，不代表 GPU 像素截图验证。证据在忽略目录 `.integration-runtime/ThemePolish/` 的 `before.log`、`final.log`、`release.log`、`test-build.log` 和 `unit-build.log`。本轮保留本地，未提交／推送、部署或上传 TestFlight，实机布局、点击及观感待新包确认。

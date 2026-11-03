@@ -92,11 +92,11 @@ struct DashboardView: View {
 
                 marketHeader
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 8)
 
                 marketTableHeader
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 2)
 
                 ScrollView {
                     LazyVStack(spacing: 0) {

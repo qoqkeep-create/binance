@@ -979,6 +979,7 @@ struct WebSheet<Content: View>: View {
   var heightFraction: CGFloat = 0.96
   var protectsBottomSafeArea = false
   var panelBackground: Color = BinanceTheme.background
+  var showsDragIndicator = true
   @ViewBuilder var content: Content
   private var containerBottomInset: CGFloat {
     UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -989,9 +990,11 @@ struct WebSheet<Content: View>: View {
       ZStack(alignment: .bottom) {
         WebModalBackdrop(opacity: 0.45)
         VStack(spacing: 0) {
-          Capsule().fill(WebTheme.muted.opacity(0.5)).frame(width: 36, height: 5)
-            .padding(.vertical, 10).accessibilityHidden(!protectsBottomSafeArea)
-            .accessibilityLabel("表单控制柄").accessibilityAddTraits(.isButton)
+          if showsDragIndicator {
+            Capsule().fill(WebTheme.muted.opacity(0.5)).frame(width: 36, height: 5)
+              .padding(.vertical, 10).accessibilityHidden(!protectsBottomSafeArea)
+              .accessibilityLabel("表单控制柄").accessibilityAddTraits(.isButton)
+          }
           content.frame(maxWidth: .infinity, maxHeight: .infinity)
             // Geometry's bottom inset also includes the keyboard; reserve only
             // the window's home-indicator inset so a focused list can still scroll.

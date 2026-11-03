@@ -7,7 +7,7 @@ import random
 from django.core.cache import cache
 from django.db import close_old_connections, transaction
 
-from market_stream.core import INTERVAL_MS, rest_candle
+from market_stream.core import INTERVAL_MS, PREWARM_INTERVALS, aggregate_bucket, bucket_open_time, rest_candle
 from market_stream.models import MarketCandle, MarketHistoryTask
 
 log = logging.getLogger(__name__)
@@ -35,22 +35,41 @@ def seed(symbols):
     MarketHistoryTask.objects.exclude(symbol__in=symbols).delete()
     MarketHistoryTask.objects.exclude(kind="maintenance").filter(completed_at__gt=0, completed_at__lt=time.time()-86400).delete()
     for symbol in symbols:
-        for interval in INTERVAL_MS:
+        for interval in PREWARM_INTERVALS:
             schedule(symbol, interval, kind="maintenance", priority=10)
 
 
 def _fetch(task, *, start=None, end=None):
     from market_stream import service
     now = int(time.time() * 1000)
-    params = {"pair": task.symbol, "contractType": "PERPETUAL", "interval": task.interval, "limit": 1500}
+    source_interval = "8h" if task.interval == "16h" else task.interval
+    params = {"pair": task.symbol, "contractType": "PERPETUAL", "interval": source_interval, "limit": 1500}
     if start is not None:
         params["startTime"] = start
     if end is not None:
         params["endTime"] = end
     raw = service.public_request("/fapi/v1/continuousKlines", params)
-    cutoff = (now - service.RETENTION_DAYS[task.interval] * 86400000) // INTERVAL_MS[task.interval] * INTERVAL_MS[task.interval]
-    rows = [rest_candle(task.symbol, task.interval, row, now) for row in raw
-            if row[0] >= cutoff and (start is None or row[0] >= start) and (end is None or row[0] <= end)]
+    if task.interval == "16h":
+        # Binance has no native 16h interval. Two bounded 8h pages produce up to 1500 16h bars.
+        if len(raw) == 1500 and (start is None or min(row[0] for row in raw) > start):
+            older = service.public_request("/fapi/v1/continuousKlines",
+                {**params, "endTime": min(row[0] for row in raw) - 1})
+            raw = older + raw
+        sources = {int(row[0]): rest_candle(task.symbol, source_interval, row, now) for row in raw}
+        groups = {}
+        for row in sources.values():
+            groups.setdefault(bucket_open_time(row["openTime"], "16h"), []).append(row)
+        rows = []
+        for at, group in sorted(groups.items()):
+            row = aggregate_bucket(group, "16h", source_interval="8h",
+                partial=at == bucket_open_time(now, "16h"))
+            if row is not None:
+                rows.append(row)
+    else:
+        rows = [rest_candle(task.symbol, task.interval, row, now) for row in raw]
+    cutoff = bucket_open_time(now - service.RETENTION_DAYS[task.interval] * 86400000, task.interval)
+    rows = [row for row in rows if row["openTime"] >= cutoff
+            and (start is None or row["openTime"] >= start) and (end is None or row["openTime"] <= end)]
     with transaction.atomic():
         service.persist(rows)
     # HTTP readers see a repaired snapshot immediately, without replaying old
@@ -63,10 +82,10 @@ def repair_history(task):
     from market_stream.service import RETENTION_DAYS
     width = INTERVAL_MS[task.interval]
     now = int(time.time() * 1000)
-    cutoff = (now - RETENTION_DAYS[task.interval] * 86400000) // width * width
+    cutoff = bucket_open_time(now - RETENTION_DAYS[task.interval] * 86400000, task.interval)
     onboard = cache.get("market:onboard", {}).get(task.symbol, 0)
     if onboard > 0:
-        cutoff = max(cutoff, (onboard + width - 1) // width * width)
+        cutoff = max(cutoff, bucket_open_time(onboard - 1, task.interval) + width)
     if task.kind != "maintenance":
         if task.before and task.before <= cutoff:
             return True, 3600
@@ -75,10 +94,10 @@ def repair_history(task):
 
     query = MarketCandle.objects.filter(symbol=task.symbol, interval=task.interval, open_time__gte=cutoff)
     latest = query.order_by("-open_time").values_list("open_time", flat=True).first()
-    if latest is None or latest < now // width * width - width:
+    if latest is None or latest < bucket_open_time(now, task.interval) - width:
         # No startTime: ask for the newest page first, then grow backwards.
         rows = _fetch(task)
-        advanced = any(row["closed"] and row["openTime"] >= now // width * width - width for row in rows)
+        advanced = any(row["closed"] and row["openTime"] >= bucket_open_time(now, task.interval) - width for row in rows)
         return False, 1 if advanced else 60
     previous = None
     earliest = None

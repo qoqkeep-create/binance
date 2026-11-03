@@ -116,7 +116,8 @@ struct ChartOrderDrawingState: Equatable {
     mutating func move(
         _ line: ChartOrderLineKind,
         to proposedPrice: Double,
-        within range: ClosedRange<Double>
+        within range: ClosedRange<Double>,
+        allowsOffscreenStopLoss: Bool = false
     ) {
         guard proposedPrice.isFinite,
               range.lowerBound.isFinite,
@@ -128,6 +129,18 @@ struct ChartOrderDrawingState: Equatable {
             referencePrice * 0.0001,
             (range.upperBound - range.lowerBound) * 0.001
         )
+        if allowsOffscreenStopLoss, line == .stopLoss, entryOrderType != .market {
+            guard proposedPrice > 0 else { return }
+            if allowsSideChange {
+                stopLossPrice = proposedPrice
+            } else {
+                let entry = effectiveEntryPrice
+                let candidate = side == .long ? min(proposedPrice, entry - minimumGap)
+                    : max(proposedPrice, entry + minimumGap)
+                if candidate > 0, candidate.isFinite { stopLossPrice = candidate }
+            }
+            return
+        }
         if allowsSideChange {
             let price = clamp(proposedPrice, range)
             if line == .entry, entryPrice != nil { entryPrice = price }
@@ -328,20 +341,22 @@ struct ChartOrderDrawingOverlay: View {
     let projection: ChartPriceProjection
     let formatPrice: (Double) -> String
     var showsSummary = true
+    var allowsOffscreenStopLoss = false
 
     private let coordinateSpaceName = "chart-order-drawing-overlay"
 
     var body: some View {
-        GeometryReader { _ in
+        GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                riskArea
+                riskArea(canvasRight: proxy.size.width)
 
                 if let entryPrice = drawing.entryPrice {
                     orderLine(
                         kind: .entry,
                         title: drawing.entryLineTitle,
                         price: entryPrice,
-                        color: BinanceTheme.accentText
+                        color: BinanceTheme.accentText,
+                        canvasRight: proxy.size.width
                     )
                 }
 
@@ -349,18 +364,23 @@ struct ChartOrderDrawingOverlay: View {
                     kind: .stopLoss,
                     title: "止损价",
                     price: drawing.stopLossPrice,
-                    color: BinanceTheme.negative
+                    color: BinanceTheme.negative,
+                    canvasRight: proxy.size.width
                 )
 
                 if showsSummary { modeBadge }
             }
             .coordinateSpace(name: coordinateSpaceName)
+            .mask(alignment: .topLeading) {
+                Rectangle().frame(height: projection.plotBottom - projection.plotTop)
+                    .offset(y: projection.plotTop)
+            }
         }
         .clipped()
     }
 
     @ViewBuilder
-    private var riskArea: some View {
+    private func riskArea(canvasRight: Double) -> some View {
         if let entryY = projectedY(drawing.effectiveEntryPrice),
            let stopY = projectedY(drawing.stopLossPrice) {
             let top = min(entryY, stopY)
@@ -368,11 +388,11 @@ struct ChartOrderDrawingOverlay: View {
             Rectangle()
                 .fill(BinanceTheme.negative.opacity(0.075))
                 .frame(
-                    width: projection.plotRight - projection.plotLeft,
+                    width: max(projection.plotRight, canvasRight) - projection.plotLeft,
                     height: height
                 )
                 .position(
-                    x: (projection.plotLeft + projection.plotRight) / 2,
+                    x: (projection.plotLeft + max(projection.plotRight, canvasRight)) / 2,
                     y: top + height / 2
                 )
                 .allowsHitTesting(false)
@@ -432,11 +452,14 @@ struct ChartOrderDrawingOverlay: View {
         kind: ChartOrderLineKind,
         title: String,
         price: Double,
-        color: Color
+        color: Color,
+        canvasRight: Double
     ) -> some View {
-        let plotWidth = projection.plotRight - projection.plotLeft
+        let plotWidth = max(projection.plotRight, canvasRight) - projection.plotLeft
         let label = ChartPriceLineLabelLayout(projection: projection, texts: [drawing.entryLineTitle, "止损价"], draggable: true)
         let y = projectedY(price) ?? projection.plotTop
+        let labelY = allowsOffscreenStopLoss ? y
+            : min(projection.plotBottom - 12, max(projection.plotTop + 12, y))
         return ZStack {
             Path { path in
                 path.move(to: CGPoint(x: 0, y: 18))
@@ -452,9 +475,9 @@ struct ChartOrderDrawingOverlay: View {
 
             ChartPriceLineLabel(title: title, price: "", color: color,
                 width: label.width, draggable: true)
-                .position(x: label.centerX - projection.plotLeft, y: 18)
+                .position(x: label.centerX - projection.plotLeft, y: 18 + labelY - y)
         }
-        .frame(width: plotWidth, height: 36).clipped()
+        .frame(width: plotWidth, height: 36)
         .contentShape(Rectangle())
         .position(
             x: projection.plotLeft + plotWidth / 2,
@@ -467,14 +490,16 @@ struct ChartOrderDrawingOverlay: View {
             )
             .onChanged { value in
                 guard let price = projection.price(
-                    atScreenY: Double(value.location.y)
+                    atScreenY: Double(value.location.y),
+                    clampsToPlot: !allowsOffscreenStopLoss || kind != .stopLoss
                 ) else {
                     return
                 }
                 drawing.move(
                     kind,
                     to: price,
-                    within: projection.priceRange
+                    within: projection.priceRange,
+                    allowsOffscreenStopLoss: allowsOffscreenStopLoss
                 )
             }
         )
@@ -495,6 +520,6 @@ struct ChartOrderDrawingOverlay: View {
         guard let y = projection.screenY(for: price) else {
             return nil
         }
-        return min(projection.plotBottom, max(projection.plotTop, y))
+        return allowsOffscreenStopLoss ? y : min(projection.plotBottom, max(projection.plotTop, y))
     }
 }

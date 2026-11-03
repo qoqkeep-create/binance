@@ -8,6 +8,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
     let totalSlotCount: Int
     let onTimelineViewportChange: (ChartTimelineViewport) -> Void
     let onPriceViewportChange: (ChartPriceViewport) -> Void
+    var automaticallyFitsPrice = true
     var onFirstFramePresented: (TimeInterval) -> Void = { _ in }
     var onCrosshairSelection: (ChartCrosshairSelection) -> Void = { _ in }
     var onCrosshairDismiss: () -> Void = {}
@@ -33,6 +34,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
         )
         view.configurePriceInteraction(
             viewport: priceViewport,
+            automaticallyFitsPrice: automaticallyFitsPrice,
             onChange: onPriceViewportChange
         )
         view.submit(renderState)

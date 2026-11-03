@@ -9,12 +9,14 @@ from django.db import close_old_connections, connection, transaction
 
 from common.binance import BinanceCredentials, BinanceFuturesClient
 from market_stream import bus, history_cache
-from market_stream.core import INTERVAL_MS, PRICE_FIELDS, aggregate_complete, rest_candle, wire_candle
+from market_stream.core import INTERVAL_MS, PRICE_FIELDS, aggregate_bucket, aggregate_complete, bucket_open_time, rest_candle, wire_candle
 from market_stream.models import MarketCandle, MarketSymbol
 
 log = logging.getLogger(__name__)
 FIELD_MAP = dict(zip(PRICE_FIELDS, ("open_price", "high_price", "low_price", "close_price", "volume", "quote_volume")))
-RETENTION_DAYS = {"1m": 7, "3m": 7, "5m": 14, "15m": 30, "1h": 90, "4h": 180, "1d": 365}
+RETENTION_DAYS = {"1m": 7, "3m": 7, "5m": 14, "15m": 30, "30m": 60, "1h": 90, "2h": 120,
+                  "4h": 180, "8h": 365, "16h": 730, "1d": 365, "3d": 2190, "1w": 3650}
+HOURLY_AGGREGATED_INTERVALS = {"2h", "8h", "16h", "3d", "1w"}
 # Every HTTP page is capped at 1500. Older history has a separate boundary key;
 # materializing 3000 here only doubled cold reads and cache serialization work.
 HOT_WINDOW_SIZE = {interval: 1500 for interval in INTERVAL_MS}
@@ -129,26 +131,22 @@ def warm_history(symbol, interval, before=None, *, prewarm=False):
 
 def partial_bucket(symbol, interval, now):
     width = INTERVAL_MS[interval]
-    start = now // width * width
+    start = bucket_open_time(now, interval)
+    source_interval = "1h" if interval in HOURLY_AGGREGATED_INTERVALS else "1m"
     # Like USDC's selectClosedInRange: only read this forming bucket.
     # Warming 3000 unrelated minutes here made a cache miss delay first paint.
-    source = MarketCandle.objects.filter(symbol=symbol, interval="1m",
+    source = MarketCandle.objects.filter(symbol=symbol, interval=source_interval,
         open_time__gte=start, open_time__lt=start + width).order_by("open_time")
     minutes = {row.open_time: from_model(row) for row in source}
-    live = cache.get(f"market:live:{symbol}:1m")
+    live = cache.get(f"market:live:{symbol}:{source_interval}")
+    if source_interval != "1m" and (not live or live["openTime"] < bucket_open_time(now, source_interval)):
+        live = partial_bucket(symbol, source_interval, now)
     if live and start <= live["openTime"] <= now:
         minutes[live["openTime"]] = live
     ordered = sorted(minutes.values(), key=lambda row: row["openTime"])
-    # Match USDC's local partial bucket without inventing missing minutes.
-    if not ordered or [row["openTime"] for row in ordered] != list(range(start, ordered[-1]["openTime"] + 60000, 60000)):
+    if not ordered or ordered[0]["openTime"] != start:
         return None
-    from market_stream.core import number
-    return {**ordered[-1], "interval": interval, "openTime": start, "closeTime": start + width - 1,
-            "openPrice": ordered[0]["openPrice"], "closed": False,
-            "highPrice": str(max(number(row["highPrice"]) for row in ordered)),
-            "lowPrice": str(min(number(row["lowPrice"]) for row in ordered)),
-            "volume": str(sum((number(row["volume"]) for row in ordered), number(0))),
-            "quoteVolume": str(sum((number(row["quoteVolume"]) for row in ordered), number(0)))}
+    return aggregate_bucket(ordered, interval, source_interval=source_interval, partial=True)
 
 
 def load_history(symbol, interval, limit=300, before=None, *, schedule_repair=True):
@@ -157,7 +155,8 @@ def load_history(symbol, interval, limit=300, before=None, *, schedule_repair=Tr
     now = int(time.time() * 1000)
     width = INTERVAL_MS[interval]
     stored = warm_history(symbol, interval, before)[-limit:]
-    latest_closed_open = now // width * width - width
+    current_open = bucket_open_time(now, interval)
+    latest_closed_open = current_open - width
     stale = before is None and (not stored or stored[-1]["openTime"] < latest_closed_open)
     gaps = any(b["openTime"] - a["openTime"] != width for a, b in zip(stored, stored[1:]))
     pending = False
@@ -168,9 +167,9 @@ def load_history(symbol, interval, limit=300, before=None, *, schedule_repair=Tr
             pending = True
     if before is None:
         live = cache.get(f"market:live:{symbol}:{interval}")
-        if (not live or live["openTime"] < now // width * width) and interval != "1m":
+        if (not live or live["openTime"] < current_open) and interval != "1m":
             live = partial_bucket(symbol, interval, now)
-        if live and live["openTime"] >= now // width * width:
+        if live and live["openTime"] >= current_open:
             merged = {row["openTime"]: row for row in stored}
             merged[live["openTime"]] = live
             stored = sorted(merged.values(), key=lambda row: row["openTime"])[-limit:]
@@ -266,11 +265,12 @@ def consume_batch(rows):
 def aggregate_closed(last):
     end = last["openTime"] + 60000
     for interval, width in INTERVAL_MS.items():
-        if interval == "1m" or end % width:
+        if interval == "1m" or bucket_open_time(end, interval) != end:
             continue
-        minutes = MarketCandle.objects.filter(symbol=last["symbol"], interval="1m",
+        source_interval = "1h" if interval in HOURLY_AGGREGATED_INTERVALS else "1m"
+        minutes = MarketCandle.objects.filter(symbol=last["symbol"], interval=source_interval,
                                                open_time__gte=end-width, open_time__lt=end).order_by("open_time")
-        result = aggregate_complete([from_model(row) for row in minutes], interval)
+        result = aggregate_complete([from_model(row) for row in minutes], interval, source_interval=source_interval)
         if result:
             with transaction.atomic():
                 persist([result])

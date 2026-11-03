@@ -5,9 +5,15 @@ enum MarketKlineInterval: String, CaseIterable, Identifiable, Codable {
     case threeMinutes = "3m"
     case fiveMinutes = "5m"
     case fifteenMinutes = "15m"
+    case thirtyMinutes = "30m"
     case oneHour = "1h"
+    case twoHours = "2h"
     case fourHours = "4h"
+    case eightHours = "8h"
+    case sixteenHours = "16h"
     case oneDay = "1d"
+    case threeDays = "3d"
+    case oneWeek = "1w"
 
     var id: String { rawValue }
 
@@ -21,12 +27,24 @@ enum MarketKlineInterval: String, CaseIterable, Identifiable, Codable {
             return "5分"
         case .fifteenMinutes:
             return "15分"
+        case .thirtyMinutes:
+            return "30分"
         case .oneHour:
             return "1小时"
+        case .twoHours:
+            return "2小时"
         case .fourHours:
             return "4小时"
+        case .eightHours:
+            return "8小时"
+        case .sixteenHours:
+            return "16小时"
         case .oneDay:
             return "1天"
+        case .threeDays:
+            return "3天"
+        case .oneWeek:
+            return "1周"
         }
     }
 
@@ -40,12 +58,24 @@ enum MarketKlineInterval: String, CaseIterable, Identifiable, Codable {
             return 5 * 60
         case .fifteenMinutes:
             return 15 * 60
+        case .thirtyMinutes:
+            return 30 * 60
         case .oneHour:
             return 60 * 60
+        case .twoHours:
+            return 2 * 60 * 60
         case .fourHours:
             return 4 * 60 * 60
+        case .eightHours:
+            return 8 * 60 * 60
+        case .sixteenHours:
+            return 16 * 60 * 60
         case .oneDay:
             return 24 * 60 * 60
+        case .threeDays:
+            return 3 * 24 * 60 * 60
+        case .oneWeek:
+            return 7 * 24 * 60 * 60
         }
     }
 }

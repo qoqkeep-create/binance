@@ -233,7 +233,7 @@ struct USDTTradeView: View {
           store.selectedSymbol = symbol
         }
       }
-      .largeTradingSheet(isPresented: $showStopLoss, background: WebTheme.page) {
+      .largeTradingSheet(isPresented: $showStopLoss, background: WebTheme.surface, showsDragIndicator: false) {
         USDTStopLossView()
       }
       .webModal(isPresented: $confirm) {
@@ -566,8 +566,8 @@ struct USDTTradeView: View {
             .lineLimit(1).minimumScaleFactor(0.75)
           if hasPosition { Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)) }
           }.frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(hasPosition ? BinanceTheme.onAccent : inputValid ? BinanceTheme.onTradeAction : BinanceTheme.positive)
-            .background(hasPosition ? BinanceTheme.accent : inputValid ? chartActionColor : BinanceTheme.elevated,
+            .foregroundStyle(hasPosition ? BinanceTheme.onAccent : inputValid ? BinanceTheme.onTradeAction : Color.white)
+            .background(hasPosition ? BinanceTheme.accent : inputValid ? chartActionColor : BinanceTheme.positive,
               in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(ChartTicketActionStyle(showsSelectionHint: !inputValid && !hasPosition)).disabled(entryDisabled)
           .accessibilityIdentifier("chart-ticket.submit")
@@ -740,8 +740,6 @@ struct USDTPositionsView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 8) {
-        Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
-        Spacer(minLength: 0)
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
           .frame(maxWidth: 280).frame(height: 38)

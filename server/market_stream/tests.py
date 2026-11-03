@@ -3,6 +3,41 @@ from market_stream.core import aggregate_complete, normalize_kline, number, rest
 
 
 class MarketCoreTests(SimpleTestCase):
+    def test_chart_interval_catalog_accepts_all_alternate_periods(self):
+        from market_stream.core import INTERVAL_MS
+        from market_stream.websocket import validate_subscription
+        for interval in ("30m", "2h", "8h", "16h", "3d", "1w"):
+            with self.subTest(interval=interval):
+                self.assertIn(interval, INTERVAL_MS)
+                channel, filters = validate_subscription({"channel": "market.history", "filters": {"intervals": [interval]}})
+                self.assertEqual(filters["intervals"], {interval})
+
+    def test_weekly_and_sixteen_hour_buckets_reject_incomplete_sources(self):
+        from market_stream.core import INTERVAL_MS, aggregate_bucket, bucket_open_time
+        monday = 345_600_000
+        self.assertEqual(bucket_open_time(monday + 6 * 86_400_000, "1w"), monday)
+        self.assertEqual(bucket_open_time(monday + INTERVAL_MS["1w"], "1w"), monday + INTERVAL_MS["1w"])
+        rows = [{**self.minute(at), "closeTime": at + INTERVAL_MS["8h"] - 1}
+                for at in (0, INTERVAL_MS["8h"])]
+        result = aggregate_complete(rows, "16h", source_interval="8h")
+        self.assertEqual(result["closeTime"], INTERVAL_MS["16h"] - 1)
+        self.assertEqual(result["volume"], "0.2")
+        self.assertIsNone(aggregate_complete(rows[1:], "16h", source_interval="8h"))
+        self.assertIsNone(aggregate_bucket(rows[1:], "16h", source_interval="8h", partial=True))
+        forming = aggregate_bucket(rows[:1], "16h", source_interval="8h", partial=True)
+        self.assertFalse(forming["closed"])
+
+    def test_non_native_statistics_periods_never_schedule_rest(self):
+        from market_stream.trading_data import attach, load_series
+        from unittest.mock import patch
+        with patch("market_stream.repair.schedule") as schedule, patch("market_stream.trading_data.public_request") as request:
+            for interval in ("8h", "16h", "3d", "1w"):
+                result = {"symbol": "BTCUSDT", "interval": interval, "items": [self.minute(0)]}
+                self.assertEqual(attach(result, {"openInterest"}), result)
+                load_series(result, "openInterest")
+            schedule.assert_not_called()
+            request.assert_not_called()
+
     def test_three_minute_bucket_is_aligned_and_complete(self):
         rows = [self.minute(i * 60000) for i in range(3, 6)]
         result = aggregate_complete(rows[::-1], "3m")
@@ -78,6 +113,26 @@ class MarketHistoryTests(TestCase):
 
     def rows(self, count=5):
         return [[i*60000, "1", "2", "1", "1.5", "3", i*60000+59999, "4.5"] for i in range(count)]
+
+    def test_weekly_partial_uses_closed_hours_and_current_minutes(self):
+        from market_stream.core import INTERVAL_MS
+        monday, hour = 345_600_000, INTERVAL_MS["1h"]
+        now = monday + 2 * hour + 150_000
+        hours = [[at, "100", "102", "99", "101", "1", at + hour - 1, "100"]
+                 for at in (monday, monday + hour)]
+        minutes = [[at, "101", "103", "100", "102", "0.1", at + 59_999, "10"]
+                   for at in (monday + 2 * hour, monday + 2 * hour + 60_000)]
+        service.persist([rest_candle("BTCUSDT", "1h", row, now) for row in hours])
+        service.persist([rest_candle("BTCUSDT", "1m", row, now) for row in minutes])
+        live_at = monday + 2 * hour + 120_000
+        cache.set("market:live:BTCUSDT:1m", rest_candle("BTCUSDT", "1m",
+            [live_at, "102", "104", "100", "103", "0.1", live_at + 59_999, "10"], now))
+        row = service.partial_bucket("BTCUSDT", "1w", now)
+        self.assertEqual(row["openTime"], monday)
+        self.assertEqual(row["closeTime"], monday + INTERVAL_MS["1w"] - 1)
+        self.assertEqual(row["closePrice"], "103")
+        self.assertEqual(float(row["volume"]), 2.3)
+        self.assertFalse(row["closed"])
 
     @patch("market_stream.service.time.time", return_value=600)
     @patch("market_stream.service.public_request")
@@ -207,21 +262,60 @@ class BackgroundRepairTests(TestCase):
         self.assertEqual(MarketCandle.objects.count(), 3)
 
     def test_every_supported_interval_repairs_its_own_gap(self):
-        from market_stream.core import INTERVAL_MS
+        from market_stream.core import INTERVAL_MS, bucket_open_time
         from market_stream.models import MarketHistoryTask
         for interval, width in INTERVAL_MS.items():
             with self.subTest(interval=interval):
-                now = width * 10
+                base = bucket_open_time(width * 7, interval)
+                now = base + width * 3
                 def row(at):
                     return [at, "1", "2", "1", "1.5", "3", at+width-1, "4.5"]
-                service.persist([rest_candle("BTCUSDT", interval, row(width*i), now) for i in [7, 9]])
+                service.persist([rest_candle("BTCUSDT", interval, row(base + width*i), now) for i in [0, 2]])
                 task = MarketHistoryTask(symbol="BTCUSDT", interval=interval, kind="maintenance")
+                repaired = [row(base + width)]
+                if interval == "16h":
+                    repaired = [[at, "1", "2", "1", "1.5", "3", at + width // 2 - 1, "4.5"]
+                                for at in (base + width, base + width + width // 2)]
                 with patch("market_stream.service.time.time", return_value=now/1000), patch(
-                        "market_stream.service.public_request", return_value=[row(width*8)]) as request:
+                        "market_stream.service.public_request", return_value=repaired) as request:
                     repair.repair_history(task)
-                self.assertEqual(request.call_args.args[1]["startTime"], width*8)
-                self.assertEqual(request.call_args.args[1]["endTime"], width*9-1)
+                self.assertEqual(request.call_args.args[1]["startTime"], base + width)
+                self.assertEqual(request.call_args.args[1]["endTime"], base + width*2-1)
                 self.assertEqual(MarketCandle.objects.filter(interval=interval).count(), 3)
+
+    def test_sixteen_hour_history_uses_bounded_eight_hour_pages(self):
+        from market_stream.core import INTERVAL_MS
+        from market_stream.models import MarketHistoryTask
+        step = INTERVAL_MS["8h"]
+        def row(index):
+            at = index * step
+            return [at, "100", "102", "99", "101", "0.1", at + step - 1, "10"]
+        task = MarketHistoryTask(symbol="BTCUSDT", interval="16h")
+        with patch("market_stream.service.time.time", return_value=(1600 * step + 1000) / 1000), patch(
+                "market_stream.service.public_request", side_effect=[[row(i) for i in range(100, 1600)], [row(98), row(99)]]) as request:
+            rows = repair._fetch(task)
+        self.assertEqual(request.call_count, 2)
+        for call in request.call_args_list:
+            self.assertEqual(call.args[1]["interval"], "8h")
+            self.assertEqual(call.args[1]["limit"], 1500)
+        self.assertEqual(request.call_args.args[1]["endTime"], 100 * step - 1)
+        self.assertEqual(len(rows), 751)
+        self.assertEqual(float(rows[0]["volume"]), 0.2)
+        self.assertTrue(all(row["closed"] for row in rows))
+
+    def test_sixteen_hour_repair_keeps_forming_tail_and_skips_missing_open(self):
+        from market_stream.core import INTERVAL_MS
+        from market_stream.models import MarketHistoryTask
+        step = INTERVAL_MS["8h"]
+        def row(index):
+            at = index * step
+            return [at, "100", "102", "99", "101", "0.1", at + step - 1, "10"]
+        with patch("market_stream.service.time.time", return_value=(10 * step + 1000) / 1000), patch(
+                "market_stream.service.public_request", return_value=[row(i) for i in (0, 1, 2, 3, 5, 10)]):
+            rows = repair._fetch(MarketHistoryTask(symbol="BTCUSDT", interval="16h"))
+            self.assertEqual(cache.get("market:live:BTCUSDT:16h")["openTime"], 10 * step)
+        self.assertEqual([row["openTime"] for row in rows], [0, 2 * step, 10 * step])
+        self.assertFalse(rows[-1]["closed"])
 
     @patch("market_stream.service.time.time", return_value=600)
     @patch("market_stream.service.public_request", return_value=[])

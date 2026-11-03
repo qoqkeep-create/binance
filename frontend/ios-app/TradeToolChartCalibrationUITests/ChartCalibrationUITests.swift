@@ -1005,11 +1005,29 @@ final class ChartCalibrationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["chart-interval.edit"].waitForExistence(timeout: 10))
         app.buttons["chart-interval.edit"].tap()
         app.buttons["恢复默认周期"].tap()
+        XCTAssertTrue(app.staticTexts["图表周期"].exists)
+        XCTAssertTrue(app.staticTexts["备选周期"].exists)
         XCTAssertTrue(app.buttons["interval-settings.favorite.3m"].exists)
+        XCTAssertFalse(app.buttons["interval-settings.favorite.1m"].isEnabled)
+        app.buttons["interval-settings.favorite.1d"].tap()
         app.buttons["interval-settings.favorite.1m"].tap()
+        attachScreenshot(named: "chart-interval-sections")
         app.buttons["interval-settings.select.3m"].tap()
         XCTAssertTrue(app.buttons["chart-interval.3m"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["chart-interval.1m"].exists)
+        XCTAssertLessThanOrEqual(app.buttons["chart-interval.edit"].frame.minX
+            - app.buttons["chart-interval.4h"].frame.maxX, 14)
+        let auto = app.descendants(matching: .any)["chart-interval.auto"].firstMatch
+        XCTAssertTrue(auto.exists)
+        if auto.value as? String != "1" { auto.tap() }
+        auto.tap()
+        XCTAssertEqual(auto.value as? String, "0")
+        let plot = app.descendants(matching: .any)["market-chart-plot"].firstMatch
+        let start = plot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 65)))
+        attachScreenshot(named: "chart-auto-off-manual-pan")
+        auto.tap()
+        XCTAssertEqual(auto.value as? String, "1")
         app.buttons["chart-interval.4h"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["market-chart-plot"].exists)
         attachScreenshot(named: "chart-configurable-intervals")
@@ -2823,8 +2841,15 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(app.buttons["strategy.use.1"].label, "使用中")
     XCTAssertFalse(app.buttons["删除"].exists)
     XCTAssertTrue(app.staticTexts["L1：当 RR≥1，卖出 30%，止损位移动到 0R 处"].exists)
+    let edit = app.buttons["strategy.edit.1"]
+    let summary = app.staticTexts["L1：当 RR≥1，卖出 30%，止损位移动到 0R 处"]
+    XCTAssertTrue(edit.exists)
+    XCTAssertGreaterThan(edit.frame.midX, row.frame.midX)
+    XCTAssertGreaterThan(edit.frame.minY, summary.frame.maxY)
+    XCTAssertLessThan(app.buttons["strategy.use.1"].frame.maxY, summary.frame.minY)
+    XCTAssertGreaterThanOrEqual(app.buttons["strategy.create"].frame.height, 52)
     capture("strategy-list-compact")
-    row.tap()
+    edit.tap()
     XCTAssertTrue(app.buttons["保存策略"].waitForExistence(timeout: 5))
     app.buttons["返回"].firstMatch.tap()
     XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -2836,7 +2861,7 @@ final class WebParityUITests: XCTestCase {
     app.buttons["取消"].tap()
   }
 
-  func testIndicatorCardsSuperOpacityAndCenteredProfileMenu() {
+  func testIndicatorCardsSuperOpacityAndProfileMenu() {
     for (options, appearance) in [([String](), "light"), (["--fixture-dark"], "dark")] {
       launch("market", options + ["--fixture-entry-ready"])
       app.buttons["搜索币种、币对或合约"].tap()
@@ -2882,6 +2907,8 @@ final class WebParityUITests: XCTestCase {
       XCTAssertTrue(collect.waitForExistence(timeout: 5))
       XCTAssertTrue(mode.exists)
       XCTAssertEqual(mode.label, "切换带单模式")
+      let settings = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "设置")).firstMatch
+      XCTAssertGreaterThan(mode.frame.minY, settings.frame.maxY)
       XCTAssertGreaterThan(mode.frame.width, collect.frame.width)
       XCTAssertFalse(app.buttons["profile.floatingPositions"].exists)
       capture("profile-mode-menu-" + appearance)
@@ -2898,8 +2925,8 @@ final class WebParityUITests: XCTestCase {
       XCTAssertTrue(segments[0].waitForExistence(timeout: 5))
       for segment in segments { XCTAssertEqual(segment.frame.width, segments[0].frame.width, accuracy: 1) }
       XCTAssertGreaterThanOrEqual(segments[0].frame.height, 32)
-      XCTAssertEqual((segments[0].frame.minX + segments[2].frame.maxX) / 2,
-        app.otherElements["positions.header"].frame.midX, accuracy: 1)
+      XCTAssertLessThanOrEqual(segments[0].frame.minX,
+        app.otherElements["positions.header"].frame.minX + 12)
       segments[2].tap()
       capture("positions-equal-segments-" + appearance)
     }
@@ -2971,6 +2998,57 @@ final class WebParityUITests: XCTestCase {
     launch("signals")
     XCTAssertTrue(app.staticTexts["自有"].waitForExistence(timeout: 5))
     capture("feedback-signals")
+  }
+
+  func testChartAutoIntervalPanelAndLimitLinesInBothAppearances() {
+    for (options, appearance) in [([String](), "light"), (["--fixture-dark"], "dark")] {
+      launch("market", options + ["--fixture-entry-ready"])
+      capture("compact-market-" + appearance)
+      app.buttons["搜索币种、币对或合约"].tap()
+      app.buttons["pairs.select.BTCUSDT"].tap()
+      let ticket = app.buttons["chart-ticket.submit"]
+      XCTAssertTrue(ticket.waitForExistence(timeout: 10))
+      XCTAssertEqual(ticket.label, "在 K 线图上选择止损价开仓")
+      XCTAssertFalse(ticket.isEnabled)
+      let auto = app.descendants(matching: .any)["chart-interval.auto"].firstMatch
+      XCTAssertTrue(auto.exists)
+      if auto.value as? String != "1" { auto.tap() }
+      capture("green-stop-prompt-" + appearance)
+      app.buttons["chart-interval.edit"].tap()
+      app.buttons["恢复默认周期"].tap()
+      let defaultRestored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"),
+        object: app.buttons["interval-settings.favorite.1m"])
+      XCTAssertEqual(XCTWaiter.wait(for: [defaultRestored], timeout: 3), .completed)
+      let shown = app.staticTexts["图表周期"]
+      let alternatives = app.staticTexts["备选周期"]
+      XCTAssertTrue(shown.exists)
+      XCTAssertTrue(alternatives.exists)
+      XCTAssertLessThan(shown.frame.minY, alternatives.frame.minY)
+      XCTAssertLessThan(app.buttons["interval-settings.select.3m"].frame.minY,
+        app.buttons["interval-settings.select.1w"].frame.minY)
+      for key in ["30m", "2h", "8h", "16h", "3d", "1w"] {
+        XCTAssertTrue(app.buttons["interval-settings.select." + key].exists)
+      }
+      capture("interval-options-" + appearance)
+      app.buttons["关闭"].firstMatch.tap()
+      auto.tap()
+      XCTAssertEqual(auto.value as? String, "0")
+      app.segmentedControls["chart-ticket.order-type"].buttons["限价"].tap()
+      let stop = app.descendants(matching: .any)["chart-order-line.stopLoss"].firstMatch
+      XCTAssertTrue(stop.waitForExistence(timeout: 5))
+      let chart = app.descendants(matching: .any)["market-chart-plot"].firstMatch
+      XCTAssertEqual(stop.frame.maxX, chart.frame.maxX, accuracy: 1)
+      let before = stop.value as? String
+      // Drag into the indicator area. This only edits a local draft; no submit is tapped.
+      let start = stop.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      let outside = chart.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+      start.press(forDuration: 0.05, thenDragTo: outside)
+      XCTAssertNotEqual(stop.value as? String, before)
+      capture("manual-limit-offscreen-" + appearance)
+      auto.tap()
+      XCTAssertEqual(auto.value as? String, "1")
+      capture("auto-limit-axis-" + appearance)
+    }
   }
 
   func testSharedTradingPairSheetMembershipAndTradeSelection() {
@@ -3301,6 +3379,9 @@ final class WebParityUITests: XCTestCase {
       let footerY = submit.frame.maxY
       let slider = app.sliders["stop-loss.percentage"]
       XCTAssertTrue(slider.waitForExistence(timeout: 5))
+      XCTAssertEqual(app.staticTexts["stop-loss.percentageText"].label, "10%")
+      XCTAssertEqual(app.staticTexts["stop-loss.amount"].label, "10 USDT")
+      XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "表单控制柄")).firstMatch.exists)
       slider.adjust(toNormalizedSliderPosition: 0.7)
       XCTAssertEqual(submit.frame.maxY, footerY, accuracy: 1)
       XCTAssertTrue(submit.isEnabled)

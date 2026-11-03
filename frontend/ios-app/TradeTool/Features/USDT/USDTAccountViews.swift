@@ -39,9 +39,9 @@ struct USDTProfileView: View {
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(WebTheme.brand.opacity(0.1), in: Capsule()).fixedSize()
                     .accessibilityIdentifier("profile.accountType")
-                }.frame(minHeight: 24).padding(.bottom, 4)
+                }.frame(minHeight: 20)
                 Button("解除 API 绑定") { binding = true }.font(.system(size: 12)).underline()
-                  .foregroundStyle(WebTheme.danger).frame(height: 32)
+                  .foregroundStyle(WebTheme.danger).frame(height: 28)
               }
             }
             if !store.isBound {
@@ -54,8 +54,8 @@ struct USDTProfileView: View {
               }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
             }
             Spacer(minLength: 4)
-          }.padding(.bottom, 20)
-          Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 16)
+          }.padding(.bottom, 12)
+          Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 4)
           HStack(spacing: 8) {
             Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)").font(.system(size: 14, weight: .medium))
               .foregroundStyle(WebTheme.secondary)
@@ -105,7 +105,8 @@ struct USDTProfileView: View {
               WebTheme.secondary
             ).lineSpacing(4).padding(.top, 16)
           }
-        }.padding(24).background(accountBackground, in: RoundedRectangle(cornerRadius: 16)).overlay
+        }.padding(.horizontal, 20).padding(.vertical, 16)
+          .background(accountBackground, in: RoundedRectangle(cornerRadius: 16)).overlay
         {
           RoundedRectangle(cornerRadius: 16).stroke(accountBorder, lineWidth: 1)
         }.shadow(color: scheme == .dark ? .clear : .black.opacity(0.1), radius: 3, y: 3)
@@ -142,6 +143,12 @@ struct USDTProfileView: View {
             }
           }
           separator
+          NavigationLink {
+            USDTSettingsView()
+          } label: {
+            menuRow("设置", "gearshape")
+          }
+          separator
           Button {
             modeConfirm = true
           } label: {
@@ -150,12 +157,6 @@ struct USDTProfileView: View {
               iconColor: lead ? WebTheme.color(0xF0B90B, 0xF0B90B) : WebTheme.color(0x58B9EF, 0x58B9EF))
           }.accessibilityIdentifier("profile.switchMode")
             .accessibilityLabel(lead ? "切换合约模式" : "切换带单模式")
-          separator
-          NavigationLink {
-            USDTSettingsView()
-          } label: {
-            menuRow("设置", "gearshape")
-          }
         }.background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)).overlay {
           RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1)
         }.clipShape(RoundedRectangle(cornerRadius: 16)).shadow(
@@ -172,7 +173,7 @@ struct USDTProfileView: View {
             .background(WebTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain).accessibilityIdentifier("profile.logout")
-      }.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 32).frame(maxWidth: 448).frame(
+      }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 32).frame(maxWidth: 448).frame(
         maxWidth: .infinity)
     }.scrollIndicators(.hidden).usdtPage("我的")
       .task(id: store.scope) {
@@ -180,7 +181,7 @@ struct USDTProfileView: View {
         collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
       }.refreshable { await store.refresh(freshBalance: true) }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
-      .largeTradingSheet(isPresented: $stopLoss, background: WebTheme.page) { USDTStopLossView() }
+      .largeTradingSheet(isPresented: $stopLoss, background: WebTheme.surface, showsDragIndicator: false) { USDTStopLossView() }
       .largeTradingSheet(isPresented: $normalize, background: WebTheme.page) { USDTCapitalView(initialTab: capitalTab) }
       .webModal(isPresented: $logout) {
         WebModal(title: "确认退出登录") {
@@ -383,8 +384,9 @@ struct USDTStopLossView: View {
             HStack {
               Text("单笔止损占账户总资产百分比").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
               Spacer()
-              Text("\(DisplayNumber.text(Decimal(percentage)))%").font(.system(size: 24, weight: .bold)).foregroundStyle(
+              Text("\(percentage)%").font(.system(size: 24, weight: .bold)).foregroundStyle(
                 WebTheme.brand)
+                .accessibilityIdentifier("stop-loss.percentageText")
               Text(percentage <= 4 ? "低风险" : percentage <= 10 ? "中风险" : "高风险").font(.system(size: 14))
                 .foregroundStyle(
                   percentage <= 4
@@ -393,10 +395,11 @@ struct USDTStopLossView: View {
             VStack(alignment: .leading, spacing: 4) {
               (Text("单笔止损额：").font(.system(size: 14))
                 + Text(
-                  " (\(money(balance))*\(DisplayNumber.text(Decimal(percentage)))%=\(money(balance * Decimal(percentage) / 100)) USDT 向上取整)"
+                  " (\(money(balance))*\(percentage)%=\(money(balance * Decimal(percentage) / 100)) USDT 向上取整)"
                 ).font(.system(size: 12))).foregroundStyle(WebTheme.secondary)
               HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(money(target)) USDT").font(.system(size: 24, weight: .bold))
+                  .accessibilityIdentifier("stop-loss.amount")
                 if !loading && target == value["current_amount"]?.decimal {
                   Text("当前").font(.system(size: 11))
                 }
@@ -422,7 +425,7 @@ struct USDTStopLossView: View {
           if let pending = value["pending_amount"], pending != .null {
             HStack {
               TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                Text("您已调整止损金额\(DisplayNumber.text(value.value("pending_from_amount"))) → \(DisplayNumber.text(pending.text))，\(countdownText(at: timeline.date))后生效")
+                Text("您已调整止损金额\(money(value["pending_from_amount"]?.decimal ?? 0)) → \(money(pending.decimal ?? 0))，\(countdownText(at: timeline.date))后生效")
                   .font(.system(size: 14))
               }
               Spacer()
@@ -480,7 +483,7 @@ struct USDTStopLossView: View {
         Text(
           cancelPending
             ? "确认取消调整止损金额？"
-            : "您将调整止损金额由\(DisplayNumber.text(value.value("current_amount")))调整到\(money(target))，确认后立即生效，是否确认？"
+            : "您将调整止损金额由\(money(value["current_amount"]?.decimal ?? 0))调整到\(money(target))，确认后立即生效，是否确认？"
         ).font(.system(size: 16)).lineSpacing(4)
         HStack(spacing: 12) {
           Button("取消") { confirm = false }.buttonStyle(WebButtonStyle(kind: .secondary))
@@ -505,7 +508,7 @@ struct USDTStopLossView: View {
   }
   private var target: Decimal { WebStopLossAmount.roundUp(balance * Decimal(percentage) / 100) }
   private func money(_ value: Decimal) -> String {
-    DisplayNumber.text(value)
+    WebStopLossAmount.text(value)
   }
   private func update(cancel: Bool) {
     guard !saving else { return }
@@ -1295,6 +1298,15 @@ struct USDTCapitalReminderView: View {
 
 /// Same 1 / 5 / 10 USDT steps as the Web stop-loss preview; all arithmetic stays decimal.
 enum WebStopLossAmount {
+  /// Display only; the risk calculation and submitted percentage keep their original precision.
+  static func text(_ value: Decimal) -> String {
+    guard !value.isNaN else { return "--" }
+    var source = value
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &source, 3, .plain)
+    return NSDecimalNumber(decimal: rounded).stringValue
+  }
+
   static func roundUp(_ value: Decimal) -> Decimal {
     let step: Decimal = value < 20 ? 1 : value < 100 ? 5 : 10
     var units = value / step

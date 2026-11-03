@@ -1,6 +1,7 @@
 import Foundation
 
-/// The full slider travel adjusts only the useful 80–100% transparency range.
+/// One saved slider value maps to the useful transparency range for each theme.
+/// The stored alpha remains the dark-theme value for compatibility with existing preferences.
 enum SuperTrendFillTransparency {
   static let maximumAlpha = 0.2
 
@@ -9,9 +10,19 @@ enum SuperTrendFillTransparency {
     return min(1, max(0, 1 - alpha / maximumAlpha))
   }
 
-  static func alpha(sliderValue: Double) -> Double {
+  static func alpha(sliderValue: Double, appearance: ChartAppearance = .dark) -> Double {
     guard sliderValue.isFinite else { return 0 }
-    return maximumAlpha * (1 - min(1, max(0, sliderValue)))
+    let value = min(1, max(0, sliderValue))
+    switch appearance {
+    case .dark: return maximumAlpha * (1 - value)
+    case .light: return 0.6 - maximumAlpha * value
+    }
+  }
+
+  static func color(_ base: ChartColor, storedAlpha: Float) -> ChartColor {
+    let value = sliderValue(alpha: Double(storedAlpha))
+    return base.withAlpha(light: Float(alpha(sliderValue: value, appearance: .light)),
+        dark: Float(alpha(sliderValue: value, appearance: .dark)))
   }
 }
 

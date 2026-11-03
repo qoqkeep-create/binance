@@ -10,7 +10,7 @@ from django.core.cache import cache
 from websockets.asyncio.client import connect
 
 from market_stream import repair, service, upstream
-from market_stream.core import INTERVAL_MS, normalize_kline
+from market_stream.core import PREWARM_INTERVALS, normalize_kline
 
 log = logging.getLogger(__name__)
 MAX_PENDING_CLOSED = 10000
@@ -146,7 +146,7 @@ class MarketCollector:
             tickers = await asyncio.to_thread(cache.get, "market:tickers", {})
             ranked = sorted(self.symbols, key=lambda symbol: tickers.get(symbol, {}).get("quoteVolume24h", 0), reverse=True)
             for symbol in ranked:
-                for interval in INTERVAL_MS:
+                for interval in PREWARM_INTERVALS:
                     try:
                         await asyncio.to_thread(service.warm_history, symbol, interval, prewarm=True)
                     except Exception as exc:

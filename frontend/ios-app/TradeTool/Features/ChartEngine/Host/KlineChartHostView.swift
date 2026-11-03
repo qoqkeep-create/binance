@@ -41,6 +41,7 @@ final class KlineChartHostView: UIView {
     private var timelineMotion = ChartTimelineMotion()
     private var timelineViewport: ChartTimelineViewport?
     private var priceViewport: ChartPriceViewport = .automatic
+    private var automaticallyFitsPrice = false
     private var priceViewportBaseline: ChartPriceViewport?
     private var lastPublishedPriceViewport: ChartPriceViewport?
     private var isPriceScaleGestureActive = false
@@ -56,6 +57,7 @@ final class KlineChartHostView: UIView {
     private var boundaryTranslationPoints: Double = 0
     private var lastInteractionFrameTimestamp: CFTimeInterval?
     private var pinchAnchorFraction: Double = 0.5
+    private var pricePinchAnchorFraction: Double = 0.5
     private var currentCrosshair: CrosshairSnapshot? {
         didSet {
             if oldValue != nil, currentCrosshair == nil {
@@ -226,14 +228,16 @@ final class KlineChartHostView: UIView {
             }
             let velocity = priceScalePanGesture.velocity(in: self)
             let location = priceScalePanGesture.location(in: self)
-            shouldBegin = isPriceScaleAxisLocation(location)
+            shouldBegin = !automaticallyFitsPrice && isPriceScaleAxisLocation(location)
                 && abs(velocity.y) > abs(velocity.x)
         } else if gestureRecognizer === timelinePanGesture {
             guard interactionState.state != .trackingCrosshair else { return false }
             let velocity = timelinePanGesture.velocity(in: self)
             let location = timelinePanGesture.location(in: self)
             let translation = timelinePanGesture.translation(in: self)
-            shouldBegin = ChartPanDirectionResolver.ownership(
+            let initialLocation = CGPoint(x: location.x - translation.x, y: location.y - translation.y)
+            shouldBegin = (!automaticallyFitsPrice && isManualPricePlotLocation(initialLocation))
+                || ChartPanDirectionResolver.ownership(
                 velocityX: Double(velocity.x),
                 velocityY: Double(velocity.y),
                 initialX: Double(location.x - translation.x),
@@ -301,10 +305,12 @@ final class KlineChartHostView: UIView {
 
     func configurePriceInteraction(
         viewport: ChartPriceViewport,
+        automaticallyFitsPrice: Bool = false,
         onChange: @escaping (ChartPriceViewport) -> Void
     ) {
         onPriceViewportChange = onChange
-        if !isPriceScaleGestureActive {
+        self.automaticallyFitsPrice = automaticallyFitsPrice
+        if !isPriceScaleGestureActive && priceViewportBaseline == nil {
             priceViewport = viewport
         }
     }
@@ -709,9 +715,17 @@ final class KlineChartHostView: UIView {
                 recognizer.isEnabled = true
                 return
             }
+            if !automaticallyFitsPrice, priceViewport.fixedRange != nil,
+               isManualPricePlotLocation(recognizer.location(in: self)) {
+                priceViewportBaseline = priceViewport
+            }
         case .changed:
+            updateManualPricePan(recognizer, force: false)
             updateTimelinePan(translationPoints: Double(recognizer.translation(in: self).x))
         case .ended:
+            updateManualPricePan(recognizer, force: true)
+            priceViewportBaseline = nil
+            lastPublishedPriceViewport = nil
             finishPanInteraction(
                 velocityPointsPerSecond: Double(
                     recognizer.velocity(in: self).x
@@ -719,6 +733,8 @@ final class KlineChartHostView: UIView {
                 allowsInertia: true
             )
         case .cancelled, .failed:
+            priceViewportBaseline = nil
+            lastPublishedPriceViewport = nil
             finishPanInteraction(
                 velocityPointsPerSecond: 0,
                 allowsInertia: false
@@ -726,6 +742,17 @@ final class KlineChartHostView: UIView {
         default:
             break
         }
+    }
+
+    private func updateManualPricePan(_ recognizer: UIPanGestureRecognizer, force: Bool) {
+        guard !automaticallyFitsPrice, let baseline = priceViewportBaseline,
+              let plot = baseRenderState?.staticScene.crosshairData?.panelLayout.pricePanel?.plot,
+              let scale = baseRenderState?.staticScene.crosshairData?.displayScale,
+              scale > 0 else { return }
+        publishPriceViewport(baseline.panned(
+            verticalTranslationPoints: Double(recognizer.translation(in: self).y),
+            plotHeightPoints: Double(plot.height) / Double(scale)
+        ), force: force)
     }
 
     @objc
@@ -764,6 +791,13 @@ final class KlineChartHostView: UIView {
                         / plotWidth
                 )
             )
+            if !automaticallyFitsPrice, priceViewport.fixedRange != nil,
+               let data = baseRenderState?.staticScene.crosshairData,
+               let plot = data.panelLayout.pricePanel?.plot {
+                priceViewportBaseline = priceViewport
+                pricePinchAnchorFraction = (Double(recognizer.location(in: self).y)
+                    * Double(data.displayScale) - Double(plot.top)) / Double(plot.height)
+            }
             startInteractionFrames()
         case .changed:
             guard interactionState.state == .pinchingTimeline,
@@ -771,6 +805,11 @@ final class KlineChartHostView: UIView {
                 return
             }
             boundaryTranslationPoints = 0
+            if let priceBaseline = priceViewportBaseline, !automaticallyFitsPrice {
+                publishPriceViewport(priceBaseline.pinched(
+                    scale: Double(recognizer.scale), anchorFraction: pricePinchAnchorFraction
+                ), force: false)
+            }
             updateInteractiveTimelineViewport(
                 baseline.pinched(
                     scale: Double(recognizer.scale),
@@ -780,6 +819,8 @@ final class KlineChartHostView: UIView {
                 )
             )
         case .ended, .cancelled, .failed:
+            priceViewportBaseline = nil
+            lastPublishedPriceViewport = nil
             finishGestureWithoutMotion()
         default:
             break
@@ -843,6 +884,16 @@ final class KlineChartHostView: UIView {
             && x <= CGFloat(data.widthPixels)
             && y >= CGFloat(pricePanel.plot.top)
             && y <= CGFloat(pricePanel.plot.bottom)
+    }
+
+    private func isManualPricePlotLocation(_ location: CGPoint) -> Bool {
+        guard Double(location.x) > interactionMetrics.systemNavigationEdgeWidthPoints,
+              let data = baseRenderState?.staticScene.crosshairData,
+              let plot = data.panelLayout.pricePanel?.plot else { return false }
+        let x = Double(location.x) * Double(data.displayScale)
+        let y = Double(location.y) * Double(data.displayScale)
+        return x >= Double(plot.left) && x < Double(plot.right)
+            && y >= Double(plot.top) && y <= Double(plot.bottom)
     }
 
     private func isLatestPriceReturnHit(

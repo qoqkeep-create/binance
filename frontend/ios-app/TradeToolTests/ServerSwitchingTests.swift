@@ -1492,6 +1492,23 @@ final class ChartOrderTicketTests: XCTestCase {
         XCTAssertFalse(ChartIntervalPreferences.favorites("").isEmpty)
         XCTAssertEqual(MarketKlineInterval.threeMinutes.duration, 180)
     }
+
+    func testIntervalShortcutsNeverExceedSixIncludingAnAlternateSelection() {
+        let defaults = ChartIntervalPreferences.defaultValue
+        let visible = ChartIntervalPreferences.visible(defaults, selected: .oneMinute)
+        XCTAssertEqual(visible.count, 6)
+        XCTAssertTrue(visible.contains(.oneMinute))
+        XCTAssertEqual(ChartIntervalPreferences.toggling(.oneMinute, in: defaults), defaults)
+        let legacy = MarketKlineInterval.allCases.map(\.rawValue).joined(separator: ",")
+        XCTAssertEqual(ChartIntervalPreferences.favorites(legacy).count, 6)
+        for (interval, seconds) in [(MarketKlineInterval.thirtyMinutes, 1800), (.twoHours, 7200),
+            (.eightHours, 28800), (.sixteenHours, 57600), (.threeDays, 259200), (.oneWeek, 604800)] {
+            XCTAssertEqual(interval.duration, Double(seconds))
+            let visible = ChartIntervalPreferences.visible(defaults, selected: interval)
+            XCTAssertEqual(visible.count, 6)
+            XCTAssertTrue(visible.contains(interval))
+        }
+    }
 }
 
 final class StrategyDraftEditingTests: XCTestCase {

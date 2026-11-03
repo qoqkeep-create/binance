@@ -48,6 +48,8 @@ struct ChartPriceViewport: Hashable, Sendable {
   static let dragSensitivityPoints = 120.0
 
   let magnification: Double
+  /// A captured price domain keeps manual navigation independent of visible candles.
+  let fixedRange: ClosedRange<Double>?
 
   init?(magnification: Double) {
     guard magnification.isFinite,
@@ -57,6 +59,17 @@ struct ChartPriceViewport: Hashable, Sendable {
       return nil
     }
     self.magnification = magnification
+    fixedRange = nil
+  }
+
+  init?(fixedRange: ClosedRange<Double>) {
+    guard fixedRange.lowerBound.isFinite,
+      fixedRange.upperBound.isFinite,
+      fixedRange.upperBound > fixedRange.lowerBound,
+      (fixedRange.upperBound - fixedRange.lowerBound).isFinite
+    else { return nil }
+    magnification = 1
+    self.fixedRange = fixedRange
   }
 
   func adjusted(
@@ -77,12 +90,39 @@ struct ChartPriceViewport: Hashable, Sendable {
       )
     )
     return ChartPriceViewport(
-      validatedMagnification: next
+      validatedMagnification: next,
+      fixedRange: fixedRange
     )
   }
 
-  private init(validatedMagnification: Double) {
+  func panned(verticalTranslationPoints: Double, plotHeightPoints: Double) -> ChartPriceViewport {
+    guard let fixedRange, verticalTranslationPoints.isFinite,
+      plotHeightPoints.isFinite, plotHeightPoints > 0 else { return self }
+    let shift = (fixedRange.upperBound - fixedRange.lowerBound) / magnification
+      * verticalTranslationPoints / plotHeightPoints
+    let lower = fixedRange.lowerBound + shift
+    let upper = fixedRange.upperBound + shift
+    guard lower.isFinite, upper.isFinite, upper > lower else { return self }
+    return ChartPriceViewport(validatedMagnification: magnification, fixedRange: lower...upper)
+  }
+
+  func pinched(scale: Double, anchorFraction: Double) -> ChartPriceViewport {
+    guard let fixedRange, scale.isFinite, scale > 0, anchorFraction.isFinite else { return self }
+    let next = min(Self.maximumMagnification, max(Self.minimumMagnification, magnification * scale))
+    let span = fixedRange.upperBound - fixedRange.lowerBound
+    let center = fixedRange.lowerBound + span / 2
+    let anchor = min(1, max(0, anchorFraction))
+    let price = center + (0.5 - anchor) * span / magnification
+    let nextCenter = price + (anchor - 0.5) * span / next
+    let lower = nextCenter - span / 2
+    let upper = nextCenter + span / 2
+    guard lower.isFinite, upper.isFinite, upper > lower else { return self }
+    return ChartPriceViewport(validatedMagnification: next, fixedRange: lower...upper)
+  }
+
+  private init(validatedMagnification: Double, fixedRange: ClosedRange<Double>? = nil) {
     magnification = validatedMagnification
+    self.fixedRange = fixedRange
   }
 }
 
@@ -165,8 +205,11 @@ actor ChartSceneBuilder {
       _ viewport: ChartPriceViewport,
       verticalSpaceScale: Double
     ) -> PriceDomain? {
-      let center = (lower + upper) / 2
-      let adjustedSpan = span * verticalSpaceScale / viewport.magnification
+      let baseLower = viewport.fixedRange?.lowerBound ?? lower
+      let baseUpper = viewport.fixedRange?.upperBound ?? upper
+      let baseSpan = baseUpper - baseLower
+      let center = baseLower + baseSpan / 2
+      let adjustedSpan = baseSpan * verticalSpaceScale / viewport.magnification
       guard center.isFinite,
         adjustedSpan.isFinite,
         adjustedSpan > 0
@@ -697,7 +740,7 @@ actor ChartSceneBuilder {
             top: geometry.plotTop,
             bottom: geometry.plotBottom,
             halfSlotWidth: geometry.slotWidth / 2,
-            color: series.colorToken.color.withAlpha(fillAlpha)
+            color: SuperTrendFillTransparency.color(series.colorToken.color, storedAlpha: fillAlpha)
           ))
         lines.append(
           contentsOf: indicatorSegments(
@@ -1077,7 +1120,7 @@ actor ChartSceneBuilder {
             anchor: cache.anchors[livePoint.key], previousCandle: frame.candles.history.candles.last,
             x: liveX, domain: target.domain, top: target.top, bottom: target.bottom,
             halfSlotWidth: geometry.slotWidth / 2,
-            color: style.colorToken.color.withAlpha(fillAlpha), bars: &bars)
+            color: SuperTrendFillTransparency.color(style.colorToken.color, storedAlpha: fillAlpha), bars: &bars)
         }
       case .hollowSquareMarker(let sizePoints):
         if let marker = liveIndicatorHollowSquareMarker(
@@ -1855,7 +1898,10 @@ actor ChartSceneBuilder {
     strategy: ChartIndicatorHistogramColorStrategy, scale: Float) -> [ChartBarInstance] {
     guard strategy == .valueSign, let value, let previous,
       abs(value) < abs(previous) else { return [bar] }
-    let border = min(max(1, scale * 0.5), (bar.right - bar.left) / 2, (bar.bottom - bar.top) / 2)
+    // Whole physical pixels give both sides equal coverage even at fractional pan offsets.
+    // Keep at least one pixel of hollow interior when narrow candles limit the 1pt stroke.
+    let border = min(max(1, scale.rounded()),
+      floor((bar.right - bar.left - 1) / 2), floor((bar.bottom - bar.top - 1) / 2))
     guard border > 0 else { return [bar] }
     return [
       ChartBarInstance(left: bar.left, top: bar.top, right: bar.right, bottom: bar.top + border, color: bar.color),

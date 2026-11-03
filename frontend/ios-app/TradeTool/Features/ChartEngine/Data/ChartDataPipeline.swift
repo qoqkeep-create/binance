@@ -236,8 +236,12 @@ actor ChartDataPipeline {
             )
         }
 
-        let bucketOpenTime = eventTimeMilliseconds
-            - eventTimeMilliseconds % intervalMilliseconds
+        // Binance weekly candles begin Monday 00:00 UTC, four days after the Unix epoch.
+        let offset: Int64 = stream.interval == "1w" ? 345_600_000 : 0
+        let shifted = eventTimeMilliseconds - offset
+        let rawRemainder = shifted % intervalMilliseconds
+        let remainder = rawRemainder < 0 ? rawRemainder + intervalMilliseconds : rawRemainder
+        let bucketOpenTime = eventTimeMilliseconds - remainder
         let (bucketCloseTime, closeTimeOverflow) =
             bucketOpenTime.addingReportingOverflow(
                 intervalMilliseconds - 1

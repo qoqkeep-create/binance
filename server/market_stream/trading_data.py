@@ -15,6 +15,8 @@ SERIES = {
     "basis": ("basis", {"basis": "basis", "basisRate": "basisRate", "futuresPrice": "futuresPrice", "indexPrice": "indexPrice"}),
 }
 
+STATISTICS_INTERVALS = {"5m", "15m", "30m", "1h", "2h", "4h", "1d"}
+
 
 def series_key(result, name):
     # Aligned to the selected candle, rather than the volatile live close time.
@@ -24,7 +26,7 @@ def series_key(result, name):
 
 def load_series(result, name):
     """Collector-only public REST request; never called in an HTTP read."""
-    if not result["items"] or result["interval"] in {"1m", "3m"}:
+    if not result["items"] or result["interval"] not in STATISTICS_INTERVALS:
         return
     endpoint, _ = SERIES[name]
     params = {"period": result["interval"], "limit": 500,
@@ -38,7 +40,7 @@ def load_series(result, name):
 
 def attach(result, requested):
     from market_stream import repair
-    if not requested or result["interval"] in {"1m", "3m"} or not result["items"]:
+    if not requested or result["interval"] not in STATISTICS_INTERVALS or not result["items"]:
         return result
     by_time = {}
     pending = False

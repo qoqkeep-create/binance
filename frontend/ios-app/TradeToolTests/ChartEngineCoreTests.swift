@@ -61,14 +61,14 @@ final class ChartEngineCoreTests: XCTestCase {
 
         XCTAssertEqual(
             sequence.item(offsetFromSelection: -1),
-            .fifteenMinutes
+            .thirtyMinutes
         )
         XCTAssertEqual(
             sequence.item(offsetFromSelection: 1),
-            .fourHours
+            .twoHours
         )
         XCTAssertEqual(
-            sequence.item(offsetFromSelection: 3),
+            sequence.item(offsetFromSelection: 8),
             .oneMinute
         )
     }
@@ -466,6 +466,32 @@ final class ChartEngineCoreTests: XCTestCase {
             long.stopLossPrice,
             try XCTUnwrap(long.entryPrice)
         )
+    }
+
+    func testOffscreenStopDragRequiresManualLimitModeAndKeepsPriceValid() throws {
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 80, upperBound: 120,
+            plotLeft: 0, plotTop: 20, plotRight: 320, plotBottom: 220))
+        XCTAssertEqual(projection.price(atScreenY: 320), 80)
+        XCTAssertEqual(projection.price(atScreenY: 320, clampsToPlot: false), 60)
+        for side in [ChartOrderSide.long, .short] {
+            var drawing = try XCTUnwrap(ChartOrderDrawingState.make(side: side,
+                entryOrderType: .limit, referencePrice: 100))
+            let outside = side == .long ? 60.0 : 140.0
+            drawing.move(.stopLoss, to: outside, within: 80...120)
+            XCTAssertTrue((80...120).contains(drawing.stopLossPrice))
+            drawing.move(.stopLoss, to: outside, within: 80...120, allowsOffscreenStopLoss: true)
+            XCTAssertEqual(drawing.stopLossPrice, outside)
+            drawing.move(.stopLoss, to: -10, within: 80...120, allowsOffscreenStopLoss: true)
+            XCTAssertEqual(drawing.stopLossPrice, outside)
+            drawing.move(.stopLoss, to: .infinity, within: 80...120, allowsOffscreenStopLoss: true)
+            XCTAssertEqual(drawing.stopLossPrice, outside)
+            drawing.move(.entry, to: 140, within: 80...120, allowsOffscreenStopLoss: true)
+            XCTAssertTrue((80...120).contains(try XCTUnwrap(drawing.entryPrice)))
+        }
+        var market = try XCTUnwrap(ChartOrderDrawingState.make(side: .long,
+            entryOrderType: .market, referencePrice: 100))
+        market.move(.stopLoss, to: 60, within: 80...120, allowsOffscreenStopLoss: true)
+        XCTAssertEqual(market.stopLossPrice, 80)
     }
 
     func testOrderDrawingUpdatesPositionAndStopDrawdownFromR() throws {
@@ -1857,6 +1883,24 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertEqual(live.openPrice, 60_199, "A quote-only tail must start from the adjacent closed candle")
         XCTAssertEqual(live.lowPrice, 60_199)
         XCTAssertEqual(live.closure, .provisional)
+    }
+
+    func testWeeklyQuoteTailUsesMondayBucketAndKeepsSnapshotOHLC() async throws {
+        let epoch = KlineStreamEpoch(generation: 1)
+        let width: Int64 = 604_800_000
+        let monday: Int64 = 1_793_577_600_000 // 2026-11-02 00:00 UTC
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: ChartStreamKey(symbol: "BTCUSDT", interval: "1w"),
+            intervalMilliseconds: width, epoch: epoch))
+        let history = MarketCandle(openTime: monday - width, closeTime: monday - 1,
+            openPrice: 100, highPrice: 105, lowPrice: 99, closePrice: 102, volume: 10, quoteVolume: 1000)
+        _ = await pipeline.installSnapshot([history], fetchedAtMilliseconds: monday + 1, epoch: epoch)
+        let result = await pipeline.mergeLatestPrice(103,
+            eventTimeMilliseconds: monday + 86_400_000, epoch: epoch)
+        let live = try XCTUnwrap(result.frame?.candles.liveTail)
+        XCTAssertEqual(live.openTime, monday)
+        XCTAssertEqual(live.closeTime, monday + width - 1)
+        XCTAssertEqual(live.openPrice, 102)
+        XCTAssertEqual(live.closePrice, 103)
     }
 
     func testRepairSnapshotCorrectsQuoteOnlyOpenWithoutLosingLatestClose() async throws {
@@ -3777,6 +3821,137 @@ final class ChartEngineCoreTests: XCTestCase {
             baseline.renderState.liveTail.latestPriceMarker?
                 .returnsToLatest == false
         )
+    }
+
+    func testManualPriceDomainSurvivesHorizontalNavigationAndAnchoredZoom() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let builder = ChartSceneBuilder()
+        let timeline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 20, trailingOffsetSlots: 20))
+        let first = try await builder.build(frame: fixture.frame, viewport: viewport, timelineViewport: timeline)
+        let manual = try XCTUnwrap(ChartPriceViewport(fixedRange: first.priceLowerBound...first.priceUpperBound))
+        let otherTimeline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 80, trailingOffsetSlots: 100))
+        let moved = try await builder.build(frame: fixture.frame, viewport: viewport,
+            timelineViewport: otherTimeline, priceViewport: manual)
+        XCTAssertEqual(moved.priceLowerBound, first.priceLowerBound, accuracy: 0.000001)
+        XCTAssertEqual(moved.priceUpperBound, first.priceUpperBound, accuracy: 0.000001)
+        let span = first.priceUpperBound - first.priceLowerBound
+        let panned = manual.panned(verticalTranslationPoints: 50, plotHeightPoints: 200)
+        let pannedScene = try await builder.build(frame: fixture.frame, viewport: viewport,
+            timelineViewport: otherTimeline, priceViewport: panned)
+        XCTAssertEqual(pannedScene.priceUpperBound, first.priceUpperBound + span / 4, accuracy: 0.000001)
+        XCTAssertEqual(pannedScene.priceUpperBound - pannedScene.priceLowerBound, span, accuracy: 0.000001)
+        let zoomed = manual.pinched(scale: 2, anchorFraction: 0.25)
+        let zoomedScene = try await builder.build(frame: fixture.frame, viewport: viewport,
+            timelineViewport: otherTimeline, priceViewport: zoomed)
+        XCTAssertEqual(zoomedScene.priceUpperBound - zoomedScene.priceLowerBound, span / 2, accuracy: 0.000001)
+        XCTAssertEqual(zoomedScene.priceUpperBound - span / 2 * 0.25,
+            first.priceUpperBound - span * 0.25, accuracy: 0.000001)
+        XCTAssertEqual(manual.panned(verticalTranslationPoints: .nan, plotHeightPoints: 200), manual)
+        XCTAssertEqual(manual.pinched(scale: .infinity, anchorFraction: 0.5), manual)
+    }
+
+    @MainActor
+    func testAutoPriceSwitchCapturesCurrentDomainAndRestoresFitting() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let controller = KlineChartSceneController()
+        controller.setAutomaticPriceFitting(false)
+        controller.requestRender(frame: fixture.frame, viewport: viewport,
+            proposedTimelineViewport: nil, proposedPriceViewport: controller.priceViewport)
+        await controller.diagnosticWaitForRenderIdle()
+        let initial = try XCTUnwrap(controller.priceProjection)
+        XCTAssertEqual(controller.priceViewport.fixedRange, initial.priceRange,
+            "Opening with auto disabled must capture the first valid domain")
+        let manual = controller.priceViewport.panned(verticalTranslationPoints: 80, plotHeightPoints: 200)
+        controller.updatePriceViewport(manual)
+        controller.requestRender(frame: fixture.frame, viewport: viewport,
+            proposedTimelineViewport: controller.timelineViewport, proposedPriceViewport: manual)
+        await controller.diagnosticWaitForRenderIdle()
+        XCTAssertNotEqual(controller.priceProjection?.priceRange, initial.priceRange)
+        controller.setAutomaticPriceFitting(true)
+        XCTAssertEqual(controller.priceViewport, .automatic)
+        controller.requestRender(frame: fixture.frame, viewport: viewport,
+            proposedTimelineViewport: controller.timelineViewport, proposedPriceViewport: controller.priceViewport)
+        await controller.diagnosticWaitForRenderIdle()
+        XCTAssertEqual(controller.priceProjection, initial)
+        controller.setAutomaticPriceFitting(false)
+        XCTAssertEqual(controller.priceViewport.fixedRange, initial.priceRange)
+    }
+
+    @MainActor
+    func testManualPriceDomainIsRecapturedForAnotherStream() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let controller = KlineChartSceneController()
+        controller.setAutomaticPriceFitting(false)
+        controller.requestRender(frame: fixture.frame, viewport: viewport,
+            proposedTimelineViewport: nil, proposedPriceViewport: .automatic)
+        await controller.diagnosticWaitForRenderIdle()
+        let first = try XCTUnwrap(controller.priceProjection)
+        let displaced = controller.priceViewport.panned(verticalTranslationPoints: 120, plotHeightPoints: 200)
+        controller.updatePriceViewport(displaced)
+        let other = ChartDataFrame(stream: ChartStreamKey(symbol: "ETHUSDT", interval: "4h"),
+            epoch: KlineStreamEpoch(generation: 50), candles: fixture.frame.candles,
+            indicators: fixture.frame.indicators, recoveryRequest: nil, readyTime: fixture.frame.readyTime)
+        controller.requestRender(frame: other, viewport: viewport,
+            proposedTimelineViewport: controller.timelineViewport, proposedPriceViewport: displaced)
+        await controller.diagnosticWaitForRenderIdle()
+        XCTAssertEqual(controller.priceViewport.fixedRange, first.priceRange)
+        XCTAssertEqual(controller.priceProjection, first)
+        XCTAssertNotEqual(controller.priceViewport, displaced)
+    }
+
+    @MainActor
+    func testManualChartPanAndPinchUpdatePriceWhileAutoLeavesItAutomatic() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let timeline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 20, trailingOffsetSlots: 20))
+        let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport, timelineViewport: timeline)
+        let manual = try XCTUnwrap(ChartPriceViewport(fixedRange: output.priceLowerBound...output.priceUpperBound))
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        var changes: [ChartPriceViewport] = []
+        host.configureTimelineInteraction(viewport: timeline, totalSlotCount: 221) { _ in }
+        host.configurePriceInteraction(viewport: manual, automaticallyFitsPrice: false) { changes.append($0) }
+        host.submit(output.renderState)
+        let pan = ContinuousScaleTestPan()
+        pan.point = CGPoint(x: 168, y: 120)
+        pan.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+        pan.translationY = 60
+        pan.phase = .changed
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+        let plot = try XCTUnwrap(output.panelLayout.pricePanel?.plot)
+        XCTAssertEqual(changes.last, manual.panned(verticalTranslationPoints: 60,
+            plotHeightPoints: Double(plot.height) / 3))
+        pan.phase = .ended
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+        let panned = try XCTUnwrap(changes.last)
+        let pinch = ContinuousScaleTestPinch()
+        pinch.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
+        pinch.scale = 2
+        pinch.phase = .changed
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
+        XCTAssertEqual(changes.last, panned.pinched(scale: 2,
+            anchorFraction: (120 * 3 - Double(plot.top)) / Double(plot.height)))
+        pinch.phase = .ended
+        host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
+
+        let autoHost = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { autoHost.dispose() }
+        autoHost.configureTimelineInteraction(viewport: timeline, totalSlotCount: 221) { _ in }
+        autoHost.configurePriceInteraction(viewport: .automatic, automaticallyFitsPrice: true) { changes.append($0) }
+        autoHost.submit(output.renderState)
+        let count = changes.count
+        pan.phase = .began
+        autoHost.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+        pan.phase = .changed
+        autoHost.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+        pan.phase = .ended
+        autoHost.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+        XCTAssertEqual(changes.count, count, "Auto mode must not install a manual price domain")
     }
 
     func testTallerPricePlotUsesAvailableHeightAndPreservesZoom() async throws {
@@ -6005,6 +6180,9 @@ final class ChartEngineCoreTests: XCTestCase {
     }
 
     func testSuperTransparencySliderSpansOnlyEightyToOneHundredPercent() {
+        XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 0, appearance: .light), 0.6, accuracy: 0.000001)
+        XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 0.5, appearance: .light), 0.5, accuracy: 0.000001)
+        XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 1, appearance: .light), 0.4, accuracy: 0.000001)
         XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 0), 0.2, accuracy: 0.000001)
         XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 0.5), 0.1, accuracy: 0.000001)
         XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 1), 0, accuracy: 0.000001)
@@ -6015,6 +6193,26 @@ final class ChartEngineCoreTests: XCTestCase {
             let alpha = SuperTrendFillTransparency.alpha(sliderValue: value)
             XCTAssertTrue((0...0.2).contains(alpha))
             XCTAssertEqual(SuperTrendFillTransparency.sliderValue(alpha: alpha), value, accuracy: 0.000001)
+            for color in [ChartColor.positive, .negative] {
+                let fill = SuperTrendFillTransparency.color(color, storedAlpha: Float(alpha))
+                XCTAssertEqual(fill.resolved(for: .dark).alpha, Float(alpha), accuracy: 0.000001)
+                XCTAssertEqual(fill.resolved(for: .light).alpha, Float(0.6 - 0.2 * value), accuracy: 0.000001)
+                XCTAssertEqual(color.resolved(for: .light).alpha, 1, "Only Super fills use the theme alpha range")
+            }
+        }
+    }
+
+    func testSuperFillUsesThemeRangesForHistoryAndLive() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 396, displayScale: 3))
+        let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+        for batches in [output.renderState.staticScene.batches, output.renderState.liveTail.batches] {
+            let fills = batches.flatMap { $0.storage.barInstances }.filter { abs($0.color.alpha - 0.16) < 0.0001 }
+            XCTAssertFalse(fills.isEmpty)
+            for fill in fills {
+                XCTAssertEqual(fill.color.resolved(for: .light).alpha, 0.56, accuracy: 0.00001)
+                XCTAssertEqual(fill.color.resolved(for: .dark).alpha, 0.16, accuracy: 0.00001)
+            }
         }
     }
 
@@ -7288,6 +7486,30 @@ final class ChartEngineCoreTests: XCTestCase {
             let expectedHollow = global > 0 && abs(values[global % 6]) < abs(values[(global - 1) % 6])
             XCTAssertEqual(coversCenter, !expectedHollow)
             XCTAssertEqual(bars.count, expectedHollow ? 2 : 1)
+            if expectedHollow, all.count == 4 {
+                let sides = all.filter { $0.top > top && $0.bottom < bottom }.sorted { $0.left < $1.left }
+                XCTAssertEqual(sides.count, 2)
+                guard sides.count == 2 else { continue }
+                let thickness = sides[0].right - sides[0].left
+                XCTAssertEqual(thickness, sides[1].right - sides[1].left, accuracy: 0.0001)
+                XCTAssertEqual(thickness, thickness.rounded(), accuracy: 0.0001,
+                    "MACD borders must use whole physical pixels, including on 3x screens")
+                if all.map(\.right).max()! - all.map(\.left).min()! >= 7 {
+                    XCTAssertGreaterThanOrEqual(thickness, 3, "Use a 1pt border when there is room")
+                }
+                for translation: Float in [0, 0.25, 0.5, 0.75, 1.25] {
+                    func coveredPixels(_ bar: ChartBarInstance) -> Int {
+                        let lower = Int(floor(bar.left + translation)) - 1
+                        let upper = Int(ceil(bar.right + translation)) + 1
+                        return (lower...upper).filter {
+                            let x = Float($0) + 0.5
+                            return x >= bar.left + translation && x < bar.right + translation
+                        }.count
+                    }
+                    XCTAssertEqual(coveredPixels(sides[0]), coveredPixels(sides[1]),
+                        "Both sides must cover the same number of pixels during fractional pans")
+                }
+            }
         }
         let liveBars = try XCTUnwrap(output.renderState.liveTail.batches.first { $0.coordinateSpace == .timeline }).storage.barInstances
         XCTAssertEqual(liveBars.count, 4)
@@ -7618,17 +7840,20 @@ private final class ContinuousScaleTestLongPress: UILongPressGestureRecognizer {
 private final class ContinuousScaleTestPan: UIPanGestureRecognizer {
     var phase: UIGestureRecognizer.State = .possible
     var translationX: CGFloat = 0
+    var translationY: CGFloat = 0
     var velocityX: CGFloat = 0
+    var point = CGPoint(x: 168, y: 120)
     override var state: UIGestureRecognizer.State {
         get { phase }
         set { phase = newValue }
     }
     override func translation(in view: UIView?) -> CGPoint {
-        CGPoint(x: translationX, y: 0)
+        CGPoint(x: translationX, y: translationY)
     }
     override func velocity(in view: UIView?) -> CGPoint {
         CGPoint(x: velocityX, y: 0)
     }
+    override func location(in view: UIView?) -> CGPoint { point }
 }
 
 final class ChartPositionContextTests: XCTestCase {

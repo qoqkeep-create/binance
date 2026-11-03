@@ -424,6 +424,17 @@ private final class LatencySocketPeer: @unchecked Sendable {
 }
 
 final class WebParityFormattingTests: XCTestCase {
+  func testStopLossDisplayRoundsToThreeDecimalsWithoutPaddingZeros() {
+    for (input, expected) in [
+      ("10", "10"), ("10.5000", "10.5"), ("123.4565", "123.457"),
+      ("0.12349", "0.123"), ("0.0005", "0.001"), ("0.0004", "0"),
+      ("999.9995", "1000"), ("1234567890123.4565", "1234567890123.457"),
+    ] {
+      XCTAssertEqual(WebStopLossAmount.text(Decimal(string: input)!), expected, input)
+    }
+    XCTAssertEqual(WebStopLossAmount.text(.nan), "--")
+  }
+
   func testStopLossPreviewRoundsAcrossWebStepBoundaries() {
     let examples = [
       ("0", "1"), ("19.01", "20"), ("20", "20"), ("20.01", "25"), ("99.01", "100"), ("100", "100"),

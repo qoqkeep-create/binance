@@ -10,6 +10,7 @@ struct ChartColor: Equatable, Sendable {
     let green: Float
     let blue: Float
     let alpha: Float
+    private let lightModeAlpha: Float?
 
     init?(
         red: Float,
@@ -27,18 +28,21 @@ struct ChartColor: Equatable, Sendable {
         self.green = green
         self.blue = blue
         self.alpha = alpha
+        lightModeAlpha = nil
     }
 
     private init(
         uncheckedRed red: Float,
         green: Float,
         blue: Float,
-        alpha: Float = 1
+        alpha: Float = 1,
+        lightModeAlpha: Float? = nil
     ) {
         self.red = red
         self.green = green
         self.blue = blue
         self.alpha = alpha
+        self.lightModeAlpha = lightModeAlpha
     }
 
     var linearRGBA: SIMD4<Float> {
@@ -59,10 +63,15 @@ struct ChartColor: Equatable, Sendable {
         )
     }
 
+    func withAlpha(light: Float, dark: Float) -> ChartColor {
+        ChartColor(uncheckedRed: red, green: green, blue: blue,
+            alpha: min(1, max(0, dark)), lightModeAlpha: min(1, max(0, light)))
+    }
+
     /// Resolve semantic scene colors at encoding time so theme changes can
     /// reuse history, geometry and glyph atlases without rebuilding the scene.
     func resolved(for appearance: ChartAppearance) -> ChartColor {
-        guard appearance == .light else { return self }
+        guard appearance == .light else { return withAlpha(alpha) }
         let opaque = withAlpha(1)
         let color: ChartColor = switch opaque {
         case Self.chartBackground: Self.rgb(0xFFFFFF)
@@ -78,7 +87,7 @@ struct ChartColor: Equatable, Sendable {
         case Self.ema21: Self.rgb(0x9C7400)
         default: self
         }
-        return color.withAlpha(alpha)
+        return color.withAlpha(lightModeAlpha ?? alpha)
     }
 
     private static func rgb(_ hex: UInt32) -> ChartColor {
