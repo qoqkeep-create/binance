@@ -14,6 +14,18 @@
 
 2026-11-01 随后的延迟刷新与止损入场优化另作本地验证：`NetworkLatencyAndModalTests` 9 项通过（2.273 秒），包含真实回环 WebSocket 上的手动重测保留读数、匹配 pong 结束进度，以及下拉刷新保留健康连接。专用 `TradeTools Web Review` 模拟器上的两项定向 UI 最终通过，覆盖点击／下拉刷新中间状态、浅深色绑定按钮、原生止损滑杆／底部按钮位置、确认取消、关闭与系统把手下拉；测试仅使用 DEBUG 替身。generic iOS Release 未签名编译通过，入场录屏未见明显闪烁，但没有真机帧耗时或 TestFlight 结果。初次 UI 失败及最终证据见 [变更记录](changes.md#2026-11-01延迟保留读数绑定按钮配色与原生止损面板仅本地)。本轮没有提交、推送、部署或平台上传。
 
+## 仓位通知暂停回归（2026-11-03）
+
+新增三个回归先复现旧版在总开关关闭时仍领取投递／调用 sender：覆盖无数据库访问的 dispatcher 拦截、有效凭据下直接 sender 拦截，以及真实事件／外部投递在暂停期间保留 status、attempt_count、next_retry_at 并在恢复后各发送一次。实现为 `TRADE_NOTIFICATION_ENABLED` 对两个 dispatcher／直接 sender 的前置保护，原事件保存和订单逻辑保持原样。
+
+以 47.80.22.243（首尔服务器）实际 `app-push-privacy` 为基线，仅叠加三个通知／配置文件、回归和环境模板，`positions.test_notifications` 在 SQLite／LocMem、禁止外部 socket、网络替身下 **39 项通过（5.408 秒）**。313 个发布文件逐项核对，允许差异仅五个路径；证据在忽略目录 `.integration-runtime/TradeNotificationsOff/`。发布后 API 和 scheduler 分别用 HTTP 替身调用实际入口确认返回／拦截、零 HTTP 请求、队列状态不变；没有发送测试通知或执行交易。线上配置及版本见 [运维](operations.md#仓位事件通知关闭2026-11-03)。
+
+## App 通知限定包验证（2026-11-03）
+
+为用户要求的普通通知实测，以实际运行的信号／杠杆限定包为基线，只增加 App 注册／注销、登出停用、HTTP/2 依赖、普通信号派发任务和私钥挂载。新增任务移除后，scheduler AST 与原版完全一致；本机另验证任务间隔为 10 秒且只调用 `dispatch_notifications`，不启动浮盈任务。
+
+在限定源码快照上复用当前 `mobile.test_push` 及基线的连接／信号独立性测试，SQLite／LocMem、禁止外部 socket，Echo 作为独立外发边界替身：**16 项通过（0.063 秒）**。覆盖鉴权注册、账号隔离注销、登出停用、topic／环境／HTTP2、失效 token、重试和租约上限、普通信号仅 App、旧 Echo 队列取消及信号保存独立性。来源 313 个文件哈希逐项核对，仅六个允许路径变化；证据在忽略目录 `.integration-runtime/SignalPushTest/`。实测又复现 HTTPX 默认日志向 root 输出 APNs 请求路径；新增真实 logging 调用回归，httpx／httpcore 改为 NullHandler 且不传播后，限定包最终 **17 项通过（0.063 秒）**，证据为 `tests-final.log`。这些是隔离回归，真实发布与发送结果分别见 [运维](operations.md#app-普通信号通知限定发布2026-11-03) 和 [通知](signals-and-notifications.md#普通通知真机测试2026-11-03)，不等同于手机已收到。
+
 ## 策略编辑、指标设置与触摸归属（2026-11-03）
 
 本轮将默认杠杆接到既有只读最大倍数接口；Super 默认填充调为 16%，用连续四边形贴合趋势线，增加持久化透明度；同次长按始终移动十字线，抬手后的新拖动才平移。策略草稿、名称焦点、紧凑数字、列表整行编辑／左滑删除和独立使用按钮已调整，账户按钮与归集按钮同尺寸并对齐，持仓筛选等宽。普通信号只生成 App APNs 投递，浮盈继续独立走 Echobell。实现口径见 [行情](market-data.md#拖动一致性当前价与尾线修复2026-11-03)、[策略与指标界面](ios-web-parity.md#策略编辑与指标设置2026-11-03) 和 [通知](signals-and-notifications.md#ios-信号-app-通知2026-11-03源码规则)。
@@ -373,3 +385,15 @@ generic iOS Release 未签名构建及 generic iOS Simulator 的 `build-for-test
 实际 `DisplayNumber.swift` 与 `MarketSnapshot.swift` 在本机临时 Swift Package 运行 5 项测试通过；将同样断言放回前版格式器可复现 8 个失败，修复后通过，涵盖用户给出的两个小数示例与尾零、零值、进位。iOS 增加服务器自选恢复与离线重试测试，更新当前价全宽线／轴内标记及 UI 入口断言。
 
 本轮 generic iOS Release 未签名构建、单测工程与 UI 工程 `build-for-testing` 通过，证据在忽略目录 `.integration-runtime/InterfaceRefinement/`。按既有用户偏好未启动模拟器、未执行 iOS XCTest／UI 测试，iPhone 16 Pro Max 底部贴边及真机触摸仍待手机新版确认；没有上传 TestFlight。线上后端与公共数据结果见 [变更](changes.md)，不能用本地测试代替生产验证。
+
+## 页面保留、模式菜单与 Super 范围（2026-11-03）
+
+本轮将 Super 滑杆显示值 0–100% 映射为实际 80–100% 透明度，保留 alpha 存储格式；“我的”移除顶部模式按钮及重复浮窗入口，切换模式改为下方菜单和目标模式蓝／黄图标。持仓三项选择器居中，共用交易对列表改用与 K 线一致的星标。持仓报价跨切页／重连保留，信号列表及滚动状态由生产根容器保留；账户 scope 变化、解绑和旧响应仍隔离。当前实现见 [界面](ios-web-parity.md#信号列表保留2026-11-03本地)、[行情](market-data.md#持仓市价与浮盈推送限流边界2026-11-02) 与 [浮窗入口](ios-floating-positions.md)。
+
+先在旧实现运行新增报价保留回归，10 项中出现 3 个预期失败断言（重订阅／结束订阅清空报价、暂停和 ready 后盈亏为空）。修复后 `TradeTool`／`Debug-Seoul` 的 `PositionLiveValuationTests` 11 项、`PositionPageReuseTests` 6 项及 Super 映射／持久化 2 项，共 **19 项通过**，0 失败／跳过。验证包含默认滑杆 20%、完整滑程 alpha 0.20→0、旧 alpha 边界、历史／实时样式、过期包拒绝、旧会话清理不能影响新会话及账户变化清空。
+
+模拟器 UI 使用 `RetainedTradingPages` 生产容器和无网络替身，`--fixture-page-state` 提供带读取次数的 20 条信号；已确认切页／退后台后继续显示同一列表及滚动位置，30 秒内没有重复读取。交易对新增／删除二次确认及开仓选币流程通过。首轮发现旧模拟器偏好使默认滑杆断言不成立，改为验证端点与保存后重开；同时为持仓顶栏增加独立辅助功能容器，避免父标识覆盖浮窗按钮标识。
+
+同一 iPhone 模拟器（`3E685E56-9767-43E7-81DD-35972DE7FAD7`）下，4 项不同 UI 流程最终分别通过：交易对自选／选币（27.709 秒）、信号保留与退后台（15.269 秒）、浮窗空仓／未绑定／带单深色（42.658 秒）、指标保存／模式双向切换／居中页签的浅深色（72.126 秒）。原生 XCTest 滑杆拖到最右端可能落在 99%，UI 断言容许一个原生步长，精确 100% 到 alpha 0 由单测覆盖。已打开最终浅深色截图核对模式图标、星标、透明度滑杆、页签及浮窗入口。generic iOS Release 无签名编译通过。
+
+证据在忽略目录 `.integration-runtime/PageStateReview/`：旧实现 `Before.xcresult`、`CoreFinal.xcresult`、`UI.xcresult` 中的两个通过流程、`UIFinal.xcresult` 中的浮窗通过流程、`MenuUI.xcresult`、`release-final.log` 及截图目录。失败的早期整组结果保留，不能称为整组通过；上述为修正后的独立流程结果。本轮没有服务端发布、真实交易／资金动作，源码和文档留本地，未提交、推送或上传 TestFlight，手机显示仍待新包验收。

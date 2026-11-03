@@ -6004,6 +6004,20 @@ final class ChartEngineCoreTests: XCTestCase {
         }
     }
 
+    func testSuperTransparencySliderSpansOnlyEightyToOneHundredPercent() {
+        XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 0), 0.2, accuracy: 0.000001)
+        XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 0.5), 0.1, accuracy: 0.000001)
+        XCTAssertEqual(SuperTrendFillTransparency.alpha(sliderValue: 1), 0, accuracy: 0.000001)
+        XCTAssertEqual(SuperTrendFillTransparency.sliderValue(alpha: 0.16), 0.2, accuracy: 0.000001)
+        XCTAssertEqual(SuperTrendFillTransparency.sliderValue(alpha: 0.8), 0, accuracy: 0.000001)
+        for step in 0...100 {
+            let value = Double(step) / 100
+            let alpha = SuperTrendFillTransparency.alpha(sliderValue: value)
+            XCTAssertTrue((0...0.2).contains(alpha))
+            XCTAssertEqual(SuperTrendFillTransparency.sliderValue(alpha: alpha), value, accuracy: 0.000001)
+        }
+    }
+
     func testSuperOpacityPersistsAndReachesHistoryAndLiveStyles() async throws {
         let standard = ChartIndicatorParameters.standard
         let parameters = try XCTUnwrap(ChartIndicatorParameters(emaPeriods: standard.emaPeriods,

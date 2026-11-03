@@ -8,7 +8,7 @@
 
 Super 的历史填充改为连接相邻蜡烛中心的四边形，两侧端点分别取同一趋势线和收盘价；实时填充从最后历史锚点延伸至实时线，并在右侧闭合。价格轴放大时先按主图上下边界交点切分再裁剪，避免填充越界或简单截断端点导致斜率偏离。Metal 在原有矩形实例的 flags 中传递右侧上下端点差值，不新增 pipeline 或逐列矩形拼接；填充沿趋势折线贴合，不再以整槽的水平边缘对着斜线。矩形的默认差值为零，MACD 空心边框和其他矩形保持原覆盖。
 
-`ChartIndicatorParameters.superTrendFillAlpha` 保存 0–1 的不透明度，默认 0.16；设置页滑杆以 `1 − alpha` 显示透明度。偏好 schema 5 兼容旧版 1–4，缺少该字段时使用 0.16；历史与实时 series 共用配置值，0 表示隐藏填充但保留线条。指标页的四列入口见 [界面](ios-web-parity.md#策略编辑与指标设置2026-11-03)，端点／GPU 像素和持久化回归见 [开发](development.md#策略编辑指标设置与触摸归属2026-11-03)。
+`ChartIndicatorParameters.superTrendFillAlpha` 保存 0–1 的不透明度，默认 0.16；设置页滑杆显示 0–100%，实际仅调整 80–100% 透明度：`alpha = 0.2 × (1 − slider)`，默认 0.16 对应滑杆 20%；每 1% 滑杆步长等于 0.2 个百分点的实际透明度。旧值仍可兼容读取，打开设置时将大于 0.2 的 alpha 限制到 0.2，点击应用后保存；不改变 schema 或已有历史数据。偏好 schema 5 兼容旧版 1–4，缺少该字段时使用 0.16；历史与实时 series 共用配置值，0 表示隐藏填充但保留线条。指标页的四列入口见 [界面](ios-web-parity.md#策略编辑与指标设置2026-11-03)，端点／GPU 像素和持久化回归见 [开发](development.md#策略编辑指标设置与触摸归属2026-11-03)。
 
 当前价标签在历史、实时及右侧空白视口均固定于右侧价格轴，横向范围为绘图区右边加 2 pt 至画布右边减 1 pt；虚线覆盖完整主绘图区。交互帧不再因最新槽位离屏而移除价格图层，重建场景沿用同一轴锚点；离屏仍可点标签返回最新。生成十字线的同一次长按移动始终跟踪十字线，直到抬手；抬手保留十字线后，下一次水平拖动直接取消十字线并平移，不需要额外点击。长按正在跟踪时不允许时间轴 pan 接管。
 
@@ -54,7 +54,7 @@ iOS 持仓页现在直接消费现有 `/ws/v1` 的 `market.ticker` 事件；持�
 
 行情采集仍由共享 `market` 进程负责：每组最多 80 个 1m continuousKline 流，另有一条 `!ticker@arr`；客户端订阅仅调整 Redis 路由，不按手机或持仓增加币安连接。卡片每次价格和浮盈变化不请求持仓接口或 Binance REST；仓位均价、数量、保护与订单状态继续由首次读取、账户事件和用户刷新同步。持仓接口本身仍可能查询交易所，因此这里不等于整个 App 已实现零 REST；独立浮窗的现有数据机制见 [持仓浮窗](ios-floating-positions.md#数据和生命周期)。
 
-按本日 [Binance 官方行情流](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market)，当前 `!ticker@arr` 约每 1000 ms 推送变化币种，`c` 是最新成交价；客户端随实际到达的事件刷新，不能承诺固定端到端延迟。无变化时保留已接收报价；未连接、重连 ready、离开前台持仓、打开图表或账户范围切换时清空报价，新会话拒绝旧响应，事件时间倒退和到达时已延迟超过 30 秒／超前超过 5 秒的包被忽略。当前按成交价计算的浮盈可能与标记价格口径不同；官方 markPrice 流默认 3 秒／可选 1 秒，目前不是本卡片的价格来源。
+按本日 [Binance 官方行情流](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market)，当前 `!ticker@arr` 约每 1000 ms 推送变化币种，`c` 是最新成交价；客户端随实际到达的事件刷新，不能承诺固定端到端延迟。无变化时保留已接收报价；普通切页、后台、打开图表、重订阅及重连 ready 保留同账户最后报价，暂停时不接收旧会话事件，重新订阅后用较新 ticker 原位更新。账户 scope（用户／模式／绑定代际）变化或解绑清空报价，新会话拒绝旧响应，事件时间倒退和到达时已延迟超过 30 秒／超前超过 5 秒的包被忽略。当前按成交价计算的浮盈可能与标记价格口径不同；官方 markPrice 流默认 3 秒／可选 1 秒，目前不是本卡片的价格来源。
 
 **公共市场推送不需要为每次界面刷新新增 REST 查询，但不能称为完全不限流。** [官方连接规则](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Connect) 规定连接有效期 24 小时、每连接每秒最多 10 条传入消息、最多 1024 个 streams；超限断开，反复断开可能封 IP。“传入”指发往 Binance 的消息，不是每秒最多接收 10 个报价。共享准入、重连退避及 429／418 冷却继续适用，不套用现货文档的连接次数数字。另一个请求／响应产品 `ws-fapi` 仍有独立 IP 权重和订单限额，不能把 [WebSocket API](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-api-general-info#websocket-api-rate-limits) 与被动市场数据流混为一谈。
 

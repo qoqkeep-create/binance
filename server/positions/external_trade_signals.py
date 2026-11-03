@@ -71,6 +71,8 @@ def _wire_payload(delivery: ExternalTradeSignalDelivery) -> dict[str, Any]:
 
 
 def send_external_trade_signal(payload: dict[str, Any]) -> dict[str, Any]:
+    if not getattr(settings, "TRADE_NOTIFICATION_ENABLED", True):
+        raise RuntimeError("trade notifications are disabled")
     url = str(getattr(settings, "EXTERNAL_TRADE_SIGNAL_URL", "") or "").strip()
     api_key = str(getattr(settings, "EXTERNAL_TRADE_SIGNAL_API_KEY", "") or "").strip()
     parsed = urlsplit(url)
@@ -187,6 +189,8 @@ def _record_external_delivery_result(
 
 
 def dispatch_pending_external_trade_signals(limit: int = 20) -> int:
+    if not getattr(settings, "TRADE_NOTIFICATION_ENABLED", True):
+        return 0
     if not bool(getattr(settings, "EXTERNAL_TRADE_SIGNAL_ENABLED", False)):
         return 0
 

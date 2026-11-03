@@ -340,6 +340,17 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-open") {
         value = .object(["open_registration": .bool(true)])
       }
+      if request.path == "/v1/trade/tradingview/signals",
+        ProcessInfo.processInfo.arguments.contains("--fixture-page-state"),
+        let sample = value.rows.first {
+        let read = await requests.next(request.path)
+        value = .array((1...20).map { index in
+          var fields = sample.fields
+          fields["id"] = .number(Double(index))
+          fields["comment"] = .string("读取 \(read) · 测试信号 \(index)")
+          return .object(fields)
+        })
+      }
       if Self.empty
         && [
           "/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list",
@@ -826,17 +837,19 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       case "reminder": USDTCapitalReminderView()
       case "trade": USDTTradeView()
       default:
-        switch tab {
-        case .markets:
-          DashboardView(viewModel: dashboard, apiClient: WebParityFixtureAPI(),
-            realtimeClient: container.realtimeClient, isShowingMarketSearch: $fixtureMarketSearch,
-            isShowingMarketSettings: $fixtureMarketSettings, selectedMarket: $fixtureSelectedMarket)
-        case .positions: USDTPositionsView(onOpenChart: { symbol, _ in
-          fixtureSelectedMarket = dashboard.marketSnapshot(forSymbol: symbol)
-        })
-        case .signals: USDTSignalsView(openChart: { _, _ in })
-        case .settings: USDTProfileView()
-        default: USDTTradeView()
+        RetainedTradingPages(selectedTab: tab, isChartOpen: fixtureSelectedMarket != nil,
+          openChart: { symbol, _ in
+            fixtureSelectedMarket = dashboard.marketSnapshot(forSymbol: symbol)
+          }) {
+          switch tab {
+          case .markets:
+            DashboardView(viewModel: dashboard, apiClient: WebParityFixtureAPI(),
+              realtimeClient: container.realtimeClient, isShowingMarketSearch: $fixtureMarketSearch,
+              isShowingMarketSettings: $fixtureMarketSettings, selectedMarket: $fixtureSelectedMarket)
+          case .positions, .signals: Color.clear
+          case .settings: USDTProfileView()
+          default: USDTTradeView()
+          }
         }
       }
     }

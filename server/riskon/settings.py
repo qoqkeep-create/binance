@@ -257,7 +257,14 @@ LOGGING = {
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-        }
+        },
+        "null": {"class": "logging.NullHandler"},
+    },
+    # APNs device tokens are part of request URLs. Keep transport diagnostics
+    # out of application logs; notification adapters report safe error types.
+    "loggers": {
+        "httpx": {"handlers": ["null"], "level": "WARNING", "propagate": False},
+        "httpcore": {"handlers": ["null"], "level": "WARNING", "propagate": False},
     },
     "root": {
         "handlers": ["console"],
@@ -295,6 +302,7 @@ OPS_ALERT_URL = os.getenv(
 ).strip()
 OPS_ALERT_TOKEN = os.getenv("OPS_ALERT_TOKEN", "").strip() or MARKET_ANALYSIS_ALERT_TOKEN
 OPS_ALERT_TIMEOUT_SECONDS = float(os.getenv("OPS_ALERT_TIMEOUT_SECONDS", "5"))
+TRADE_NOTIFICATION_ENABLED = os.getenv("TRADE_NOTIFICATION_ENABLED", "True").lower() == "true"
 TRADE_NOTIFICATION_URL = os.getenv(
     "TRADE_NOTIFICATION_URL",
     "http://tradingview-webhook:3000/internal/trade-notification",

@@ -3,8 +3,6 @@ import SwiftUI
 struct USDTProfileView: View {
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var auth: AuthStore
-  @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
-  private var floatingPositions = false
   @State private var logout = false
   @State private var more = false
   @State private var binding = false
@@ -56,12 +54,6 @@ struct USDTProfileView: View {
               }.buttonStyle(.plain).accessibilityIdentifier("profile.bind")
             }
             Spacer(minLength: 4)
-            Button { modeConfirm = true } label: {
-              WebLabel(lead ? "转合约" : "带单", "arrow.left.arrow.right")
-            }.buttonStyle(WebButtonStyle(height: 36, fontSize: 12))
-              .frame(width: 104)
-              .accessibilityLabel(lead ? "切换合约模式" : "切换带单模式")
-              .accessibilityIdentifier("profile.switchMode")
           }.padding(.bottom, 20)
           Rectangle().fill(accountBorder.opacity(0.5)).frame(height: 1).padding(.bottom, 16)
           HStack(spacing: 8) {
@@ -151,11 +143,13 @@ struct USDTProfileView: View {
           }
           separator
           Button {
-            floatingPositions.toggle()
+            modeConfirm = true
           } label: {
-            menuRow("持仓浮窗", "rectangle.on.rectangle", value: floatingPositions ? "已开启" : "未开启")
-          }.accessibilityIdentifier("profile.floatingPositions")
-            .accessibilityValue(floatingPositions ? "已开启" : "未开启")
+            menuRow(lead ? "切换合约模式" : "切换带单模式",
+              lead ? "chart-candlestick" : "person.2.wave.2.fill",
+              iconColor: lead ? WebTheme.color(0xF0B90B, 0xF0B90B) : WebTheme.color(0x58B9EF, 0x58B9EF))
+          }.accessibilityIdentifier("profile.switchMode")
+            .accessibilityLabel(lead ? "切换合约模式" : "切换带单模式")
           separator
           NavigationLink {
             USDTSettingsView()
@@ -256,15 +250,15 @@ struct USDTProfileView: View {
   }
   private func menuRow(
     _ title: String, _ icon: String, value: String = "", amount: Bool = false, small: Bool = false,
-    arrow: String = "chevron.right"
+    arrow: String = "chevron.right", iconColor: Color? = nil
   ) -> some View {
     HStack(spacing: 12) {
       RoundedRectangle(cornerRadius: small ? 10 : 14).fill(
         small
-          ? WebTheme.secondary.opacity(0.1) : WebTheme.brand.opacity(scheme == .dark ? 0.1 : 0.15)
+          ? WebTheme.secondary.opacity(0.1) : (iconColor ?? WebTheme.brand).opacity(scheme == .dark ? 0.1 : 0.15)
       ).frame(width: small ? 32 : 40, height: small ? 32 : 40).overlay {
         WebIcon(icon, size: small ? 16 : 20).foregroundStyle(
-          small ? WebTheme.secondary : WebTheme.brand)
+          small ? WebTheme.secondary : (iconColor ?? WebTheme.brand))
       }
       Text(title).font(.system(size: small ? 14 : 16, weight: small ? .regular : .medium))
         .foregroundStyle(small ? WebTheme.secondary : WebTheme.text)

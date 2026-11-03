@@ -1,9 +1,12 @@
 import SwiftUI
 
 struct USDTSignalsView: View {
+  var isVisible = true
   @EnvironmentObject private var store: USDTStore
   @StateObject private var model = USDTPageModel()
   @State private var rules = false
+  @State private var modelScope = ""
+  @State private var nextRefreshAt = Date.distantPast
   @Environment(\.scenePhase) private var scenePhase
   let openChart: (String, String) -> Void
   var body: some View {
@@ -19,12 +22,12 @@ struct USDTSignalsView: View {
       }).accessibilityIdentifier("signals.header")
       ScrollView {
         VStack(spacing: 10) {
-          ForEach(Array(model.items.enumerated()), id: \.offset) { _, row in
+          ForEach(model.items, id: \.signalIdentity) { row in
             Button {
               openChart(row.value("symbol"), row.value("interval"))
             } label: {
               signalCard(row)
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).accessibilityIdentifier("signals.card.\(row.signalIdentity)")
           }
           if model.items.isEmpty {
             Text(
@@ -36,12 +39,21 @@ struct USDTSignalsView: View {
               .padding(.top, 64)
           }
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-      }.scrollIndicators(.hidden).refreshable { await load() }
-    }.usdtPage("信号").task(id: "\(store.scope):\(scenePhase)") {
-      guard scenePhase == .active, store.mode == "ordinary" else { model.reset(); return }
+      }.scrollIndicators(.hidden).accessibilityIdentifier("signals.list")
+        .refreshable { await load() }
+    }.usdtPage("信号").task(id: "\(store.scope):\(scenePhase):\(isVisible)") {
+      if modelScope != store.scope {
+        model.reset(); modelScope = store.scope; nextRefreshAt = .distantPast
+      }
+      guard store.mode == "ordinary" else { model.reset(); return }
+      guard isVisible, scenePhase == .active else { return }
       while !Task.isCancelled {
+        let delay = nextRefreshAt.timeIntervalSinceNow
+        if delay > 0 {
+          do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+        }
+        guard !Task.isCancelled else { return }
         await load()
-        do { try await Task.sleep(for: .seconds(30)) } catch { return }
       }
     }
       .webModal(isPresented: $rules) {
@@ -109,8 +121,17 @@ struct USDTSignalsView: View {
   }
   private func load() async {
     guard store.mode == "ordinary" else { model.reset(); return }
+    let scope = store.scope
     await model.load(
       store, path: "/v1/trade/tradingview/signals", query: [.init(name: "source", value: "internal")])
+    guard !Task.isCancelled, scope == store.scope else { return }
+    nextRefreshAt = .now.addingTimeInterval(30)
+  }
+}
+
+private extension JSONValue {
+  var signalIdentity: String {
+    value("id", fallback: value("symbol") + ":" + value("interval") + ":" + value("signal_time"))
   }
 }
 

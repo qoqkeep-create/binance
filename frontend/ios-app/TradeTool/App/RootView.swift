@@ -46,12 +46,11 @@ private struct MainAppView: View {
     @State private var isShowingMarketSettings = false
     @State private var selectedMarket: MarketSnapshot?
     @State private var selectedInterval: MarketKlineInterval = .oneHour
-    @State private var hasVisitedPositions = false
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ZStack {
-                  Group {
+                RetainedTradingPages(selectedTab: selectedTab, isChartOpen: selectedMarket != nil,
+                    openChart: openChart) {
                     switch selectedTab {
                     case .markets:
                         DashboardView(viewModel: container.dashboardViewModel,
@@ -59,17 +58,10 @@ private struct MainAppView: View {
                             isShowingMarketSearch: $isShowingMarketSearch,
                             isShowingMarketSettings: $isShowingMarketSettings,
                             selectedMarket: $selectedMarket)
-                    case .positions: Color.clear
-                    case .signals: USDTSignalsView(openChart: openChart)
+                    case .positions, .signals: Color.clear
                     case .settings: USDTProfileView()
                     case .reference: EmptyView()
                     }
-                  }
-                  if hasVisitedPositions || selectedTab == .positions {
-                    USDTPositionsView(isVisible: selectedTab == .positions && selectedMarket == nil,
-                        onOpenChart: openChart)
-                        .rootPageVisibility(isVisible: selectedTab == .positions)
-                  }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 BottomNavigationBar(selection: $selectedTab)
             }
@@ -114,9 +106,6 @@ private struct MainAppView: View {
             if selectedTab == .signals { selectedTab = .markets }
             container.realtimeClient.reconnect()
         }
-        .onChange(of: selectedTab, initial: true) { _, tab in
-            if tab == .positions { hasVisitedPositions = true }
-        }
         .task(id: store.scope) {
             for await event in container.realtimeClient.events(bufferingPolicy: .bufferingNewest(64)) {
                 guard !Task.isCancelled else { break }
@@ -134,6 +123,36 @@ private struct MainAppView: View {
         selectedInterval = MarketKlineInterval(rawValue: interval) ?? .oneHour
         selectedMarket = container.dashboardViewModel.markets(onlyVisible: false).first { $0.symbol == symbol }
             ?? MarketSnapshot(symbol: symbol, quoteAsset: "USDT", price: 0, changePercent24h: 0, updatedAt: .now)
+    }
+}
+
+/// Retain list and scroll state across root tabs while pausing hidden-page work.
+struct RetainedTradingPages<Foreground: View>: View {
+    let selectedTab: AppTab
+    var isChartOpen = false
+    let openChart: (String, String) -> Void
+    @ViewBuilder let foreground: () -> Foreground
+    @State private var hasVisitedPositions = false
+    @State private var hasVisitedSignals = false
+
+    var body: some View {
+        ZStack {
+            foreground()
+            if hasVisitedPositions || selectedTab == .positions {
+                USDTPositionsView(isVisible: selectedTab == .positions && !isChartOpen,
+                    onOpenChart: openChart)
+                    .rootPageVisibility(isVisible: selectedTab == .positions)
+            }
+            if hasVisitedSignals || selectedTab == .signals {
+                USDTSignalsView(isVisible: selectedTab == .signals && !isChartOpen,
+                    openChart: openChart)
+                    .rootPageVisibility(isVisible: selectedTab == .signals)
+            }
+        }
+        .onChange(of: selectedTab, initial: true) { _, tab in
+            if tab == .positions { hasVisitedPositions = true }
+            if tab == .signals { hasVisitedSignals = true }
+        }
     }
 }
 

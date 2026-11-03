@@ -29,6 +29,31 @@ from users.models import User
 
 
 class TradeNotificationTemplateTests(SimpleTestCase):
+    @override_settings(TRADE_NOTIFICATION_ENABLED=False, EXTERNAL_TRADE_SIGNAL_ENABLED=True)
+    @patch("positions.notifications.send_trade_notification")
+    @patch("positions.external_trade_signals.send_external_trade_signal")
+    def test_disabled_trade_notifications_skip_both_queues(self, external, internal):
+        self.assertEqual(dispatch_pending_trade_notifications(), 0)
+        self.assertEqual(dispatch_pending_external_trade_signals(), 0)
+        internal.assert_not_called()
+        external.assert_not_called()
+
+    @override_settings(
+        TRADE_NOTIFICATION_ENABLED=False,
+        TRADE_NOTIFICATION_URL="https://notify.example.invalid/trade",
+        TRADE_NOTIFICATION_TOKEN="test-token",
+        EXTERNAL_TRADE_SIGNAL_URL="https://notify.example.invalid/external",
+        EXTERNAL_TRADE_SIGNAL_API_KEY="test-key",
+    )
+    @patch("positions.notifications.request.urlopen")
+    @patch("positions.external_trade_signals.request.build_opener")
+    def test_disabled_trade_notifications_also_block_direct_senders(self, opener, urlopen):
+        for sender in [send_trade_notification, send_external_trade_signal]:
+            with self.subTest(sender=sender.__name__), self.assertRaisesRegex(RuntimeError, "disabled"):
+                sender({"type": "OPEN"})
+        urlopen.assert_not_called()
+        opener.assert_not_called()
+
     @staticmethod
     def _labels(content):
         return [line.removeprefix("> **").split("**：", 1)[0] for line in content.splitlines()]
@@ -244,6 +269,37 @@ class TradeNotificationEventTests(TransactionTestCase):
         self.assertIn(f"订单编号**：{self.order.id}", event.content)
         self.assertNotIn("open-notify-1", event.content)
         self.assertEqual(TradeNotificationEvent.objects.count(), 1)
+
+    @override_settings(EXTERNAL_TRADE_SIGNAL_ENABLED=True)
+    @patch("positions.notifications.send_trade_notification", return_value={"ok": True})
+    @patch("positions.external_trade_signals.send_external_trade_signal", return_value={"code": 202})
+    def test_pause_preserves_event_and_retry_state_until_resumed(self, external, internal):
+        enqueue_open_notification(self.order)
+        event = TradeNotificationEvent.objects.get()
+        delivery = ExternalTradeSignalDelivery.objects.get(event=event)
+        retry_at = timezone.now() - timedelta(seconds=1)
+        event.status = "failed"
+        event.attempt_count = 3
+        event.next_retry_at = retry_at
+        event.save()
+        delivery.status = "failed"
+        delivery.attempt_count = 2
+        delivery.next_retry_at = retry_at
+        delivery.save()
+        with override_settings(TRADE_NOTIFICATION_ENABLED=False):
+            self.assertEqual(dispatch_pending_trade_notifications(), 0)
+            self.assertEqual(dispatch_pending_external_trade_signals(), 0)
+        event.refresh_from_db()
+        delivery.refresh_from_db()
+        self.assertEqual((event.status, event.attempt_count, event.next_retry_at), ("failed", 3, retry_at))
+        self.assertEqual((delivery.status, delivery.attempt_count, delivery.next_retry_at), ("failed", 2, retry_at))
+        internal.assert_not_called()
+        external.assert_not_called()
+        with override_settings(TRADE_NOTIFICATION_ENABLED=True):
+            self.assertEqual(dispatch_pending_trade_notifications(), 1)
+            self.assertEqual(dispatch_pending_external_trade_signals(), 1)
+        internal.assert_called_once()
+        external.assert_called_once()
 
     @override_settings(EXTERNAL_TRADE_SIGNAL_ENABLED=True)
     @patch("positions.external_trade_signals.send_external_trade_signal", return_value={"code": 202})

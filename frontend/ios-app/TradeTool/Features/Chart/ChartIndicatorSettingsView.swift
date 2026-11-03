@@ -50,7 +50,8 @@ struct ChartIndicatorSettingsView: View {
         parameters: ChartIndicatorParameters,
         onApply: @escaping (ChartIndicatorParameters) -> Void
     ) {
-        _superTrendFillAlpha = State(initialValue: parameters.superTrendFillAlpha)
+        _superTrendFillAlpha = State(initialValue: min(
+            SuperTrendFillTransparency.maximumAlpha, parameters.superTrendFillAlpha))
         _movingAverageFast = State(
             initialValue: String(parameters.movingAveragePeriods[0])
         )
@@ -205,11 +206,13 @@ struct ChartIndicatorSettingsView: View {
                                 HStack {
                                     Text("填充透明度").font(.system(size: 14))
                                     Spacer()
-                                    Text("\(Int(((1 - superTrendFillAlpha) * 100).rounded()))%")
+                                    Text("\(Int((SuperTrendFillTransparency.sliderValue(alpha: superTrendFillAlpha) * 100).rounded()))%")
                                         .font(.system(size: 13, weight: .medium)).monospacedDigit()
                                 }
-                                Slider(value: Binding(get: { 1 - superTrendFillAlpha },
-                                    set: { superTrendFillAlpha = 1 - $0 }), in: 0...1, step: 0.01)
+                                Slider(value: Binding(
+                                    get: { SuperTrendFillTransparency.sliderValue(alpha: superTrendFillAlpha) },
+                                    set: { superTrendFillAlpha = SuperTrendFillTransparency.alpha(sliderValue: $0) }
+                                ), in: 0...1, step: 0.01)
                                     .tint(IndicatorSettingsPalette.accent)
                                     .accessibilityLabel("Super 填充透明度")
                                     .accessibilityIdentifier("indicator-settings.super-opacity")

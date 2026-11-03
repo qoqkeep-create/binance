@@ -103,9 +103,9 @@ struct MarketSearchView: View {
             }.buttonStyle(.plain).accessibilityIdentifier("pairs.select.\(symbol)")
             Button { toggleFavorite(symbol) } label: {
                 VStack(spacing: 3) {
-                    Image(systemName: isFavorite ? "trash" : "plus")
+                    Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(isFavorite ? BinanceTheme.secondaryText : BinanceTheme.accentText)
+                        .foregroundStyle(isFavorite ? BinanceTheme.accent : BinanceTheme.secondaryText)
                     Text("自选").font(.system(size: 9))
                         .foregroundStyle(BinanceTheme.secondaryText)
                 }.frame(width: 44, height: 48).contentShape(Rectangle())

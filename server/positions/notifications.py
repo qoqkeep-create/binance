@@ -214,6 +214,8 @@ def trade_notification_payload(event: TradeNotificationEvent) -> dict[str, Any]:
 
 
 def send_trade_notification(payload: dict[str, Any]) -> dict[str, Any]:
+    if not getattr(settings, "TRADE_NOTIFICATION_ENABLED", True):
+        raise RuntimeError("trade notifications are disabled")
     url = str(getattr(settings, "TRADE_NOTIFICATION_URL", "") or "").strip()
     token = str(getattr(settings, "TRADE_NOTIFICATION_TOKEN", "") or "").strip()
     if not url or not token:
@@ -798,6 +800,8 @@ def _record_trade_notification_result(
 
 
 def dispatch_pending_trade_notifications(limit: int = 20) -> int:
+    if not getattr(settings, "TRADE_NOTIFICATION_ENABLED", True):
+        return 0
     now = timezone.now()
     claimable = (
         Q(

@@ -7,7 +7,7 @@ final class PositionLiveValuationTests: XCTestCase {
 
   func testEveryTickerUpdatesPriceAndProfitWithoutUsingApiFinancialValues() throws {
     let quotes = PositionLiveQuotes()
-    let session = quotes.begin(symbols: ["BTCUSDT"])
+    let session = quotes.begin(scope: "account", symbols: ["BTCUSDT"])
     quotes.receive(ticker("101", time: 1_000_000), session: session, now: now)
     let first = try XCTUnwrap(PositionLiveValuation(row: row(), quote: quotes.quotes["BTCUSDT"]))
     XCTAssertEqual(first.price, Decimal(101))
@@ -69,7 +69,7 @@ final class PositionLiveValuationTests: XCTestCase {
 
   func testOutOfOrderUnrelatedAndInvalidTicksCannotOverwriteLatestPrice() {
     let quotes = PositionLiveQuotes()
-    let session = quotes.begin(symbols: ["BTCUSDT"])
+    let session = quotes.begin(scope: "account", symbols: ["BTCUSDT"])
     quotes.receive(ticker("101", time: 1_000_000), session: session, now: now)
     quotes.receive(ticker("50", time: 999_999), session: session, now: now)
     quotes.receive(ticker("200", time: 1_000_001, symbol: "ETHUSDT"), session: session, now: now)
@@ -81,34 +81,51 @@ final class PositionLiveValuationTests: XCTestCase {
 
   func testOldSessionAndOldCleanupCannotModifyNewSession() {
     let quotes = PositionLiveQuotes()
-    let old = quotes.begin(symbols: ["BTCUSDT"])
+    let old = quotes.begin(scope: "account", symbols: ["BTCUSDT"])
     quotes.receive(ticker("101", time: 1_000_000), session: old, now: now)
-    let current = quotes.begin(symbols: ["BTCUSDT"])
-    XCTAssertTrue(quotes.quotes.isEmpty)
+    let current = quotes.begin(scope: "account", symbols: ["BTCUSDT"])
+    XCTAssertEqual(quotes.quotes["BTCUSDT"]?.price, Decimal(101))
     quotes.receive(ticker("102", time: 1_000_001), session: current, now: now)
     quotes.receive(ticker("999", time: 1_000_002), session: old, now: now)
     XCTAssertFalse(quotes.end(old))
     XCTAssertEqual(quotes.quotes["BTCUSDT"]?.price, Decimal(102))
     XCTAssertTrue(quotes.end(current))
-    XCTAssertTrue(quotes.quotes.isEmpty)
+    XCTAssertEqual(quotes.quotes["BTCUSDT"]?.price, Decimal(102))
   }
 
-  func testDisconnectOrReconnectClearsPricesButUnchangedSymbolRetainsLastTick() {
+  func testPausingAndReconnectingKeepLastPriceUntilANewerTickArrives() {
     let quotes = PositionLiveQuotes()
-    let session = quotes.begin(symbols: ["BTCUSDT"])
-    quotes.receive(ticker("101", time: 1_000_000), session: session, now: now)
-    XCTAssertEqual(PositionLiveValuation(row: row(), quote: quotes.quotes["BTCUSDT"])?.profit, Decimal(2))
-    quotes.clear()
-    XCTAssertNil(PositionLiveValuation(row: row(), quote: quotes.quotes["BTCUSDT"]))
-    quotes.receive(ticker("102", time: 1_000_001), session: session, now: now)
+    let first = quotes.begin(scope: "account", symbols: ["BTCUSDT"])
+    quotes.receive(ticker("101", time: 1_000_000), session: first, now: now)
+    quotes.end(first)
+    let paused = quotes.begin(scope: "account", symbols: [])
+    quotes.end(paused)
+    let resumed = quotes.begin(scope: "account", symbols: ["BTCUSDT"])
     quotes.receive(RealtimeServerMessage(version: 1, type: "ready", requestId: nil, channel: nil,
-      event: nil, key: nil, sequence: nil, timestamp: 0, data: nil, error: nil), session: session, now: now)
+      event: nil, key: nil, sequence: nil, timestamp: 0, data: nil, error: nil), session: resumed, now: now)
+    XCTAssertEqual(PositionLiveValuation(row: row(), quote: quotes.quotes["BTCUSDT"])?.profit, Decimal(2))
+    quotes.receive(ticker("103", time: 1_000_001), session: resumed, now: now)
+    XCTAssertEqual(PositionLiveValuation(row: row(), quote: quotes.quotes["BTCUSDT"])?.profit, Decimal(6))
+  }
+
+  func testAccountOrBindingChangeClearsSnapshotAndRejectsPreviousSession() {
+    let quotes = PositionLiveQuotes()
+    let old = quotes.begin(scope: "user:ordinary:1", symbols: ["BTCUSDT"])
+    quotes.receive(ticker("101", time: 1_000_000), session: old, now: now)
+    let current = quotes.begin(scope: "user:lead:2", symbols: ["BTCUSDT"])
+    XCTAssertTrue(quotes.quotes.isEmpty)
+    quotes.receive(ticker("999", time: 1_000_002), session: old, now: now)
+    XCTAssertTrue(quotes.quotes.isEmpty)
+    quotes.receive(ticker("102", time: 1_000_001), session: current, now: now)
+    quotes.reset()
+    XCTAssertTrue(quotes.quotes.isEmpty)
+    quotes.receive(ticker("999", time: 1_000_002), session: current, now: now)
     XCTAssertTrue(quotes.quotes.isEmpty)
   }
 
   func testDelayedAndFuturePacketsAreIgnoredOnArrival() {
     let quotes = PositionLiveQuotes()
-    let session = quotes.begin(symbols: ["BTCUSDT"])
+    let session = quotes.begin(scope: "account", symbols: ["BTCUSDT"])
     quotes.receive(ticker("100", time: 900_000), session: session, now: now)
     quotes.receive(ticker("100", time: 1_100_000), session: session, now: now)
     XCTAssertTrue(quotes.quotes.isEmpty)

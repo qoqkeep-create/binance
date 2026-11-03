@@ -2,6 +2,35 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。
 
+## 仓位事件通知关闭（2026-11-03）
+
+2026-11-03 16:14（北京时间）核验 **47.80.22.243（首尔服务器）** 当前为 `integrated-20261103-trade-notifications-off-b14c8dea2898`。按用户要求，持久化设置 `TRADE_NOTIFICATION_ENABLED=false`、`EXTERNAL_TRADE_SIGNAL_ENABLED=false` 并应用到 API／scheduler，关闭开仓、平仓、止盈、止损、减仓的内部及合作方通知。原版内部通道无 token、合作方开关为 false，但内部队列仍尝试至 exhausted；新增总开关使暂停期间不领取、不发送、不重试，事件保存保留。普通信号 APNs 仍为 true；浮盈配置未动、自动任务仍未上线。
+
+- 基于紧接下方的 `app-push-privacy-2c242c254dcb`，逐项核对 313 个文件，只改变 `riskon/settings.py`、两个通知适配器、通知回归和环境模板；没有改变交易、持仓保护、结算或任务编排。归档 SHA-256 `98e50d37a29c8d216adb52d77be12070ceb45a86d4774c5af031ff4939be3bad` 两端一致，完整清单在 release 的 `source-release.json`，不是完整 Git HEAD。
+- 备份 `/opt/trade-tools-integrated/backups/integrated-20261103-trade-notifications-off-b14c8dea2898/` 为 0700，保存修改前 0600 环境文件、来源和容器记录；数据库沿用已验证的 `app-push-d277ad4ed87a` 备份并保存引用。本轮无 schema／数据迁移，只执行 `migrate --check`，不恢复数据库或重放事件。
+- 仅重建 API／scheduler，六服务 healthy，其余四个容器 ID／镜像不变；HTTPS 健康 200。两个实际进程的开关均为 false；使用网络替身核对两个 dispatcher 及两个直接 sender 均不访问 HTTP，队列状态前后相同（4 条 exhausted、外部 0 条）。没有真实开平仓、划转、撤保护单或测试通知发送。本地 39 项隔离回归见 [开发](development.md#仓位通知暂停回归2026-11-03)。
+
+沿用 `compose.integrated.yaml`＋`compose.signal-leverage.yaml` 及本版 `INTEGRATED_RELEASE`。旧版代码不认识总开关，回退代码会失去本次暂停保护，必须同步评估用户的暂停要求；不得直接恢复整份旧环境覆盖后续配置。恢复通知须明确修改对应开关并重新加载 API／scheduler，先核对积压队列及历史 exhausted 记录，不自动重置尝试。源码和记录保留本地，未追加提交／推送或上传 TestFlight。
+
+## APNs 拒绝定位与请求日志修正（2026-11-03）
+
+**47.80.22.243（首尔服务器）** 当前已更新为 `integrated-20261103-app-push-privacy-2c242c254dcb`。相对下方 App 通知限定版，仅修改 `riskon/settings.py` 的 HTTPX／HTTPCore 传输日志配置，防止 APNs 路径中的设备标识进入应用日志；既有交易源码与任务编排未改变。归档 SHA-256 为 `bf0d084fd568b8b9000aa0a78465aa8a079fa90eaa39ff7aa695faaca918365e`，两端校验一致，来源 313 个文件逐项核对。安全回归先复现路径泄露，修正后的限定包 **17 项通过（0.063 秒）**，线上验证两个 transport logger 均为 NullHandler 且不传播。
+
+仅重建 API／scheduler，六服务 healthy、另外四个容器 ID／镜像不变，没有 migration 或交易／资金操作；本轮日志修正复用前一限定版已经验证的数据库备份，不以代码回滚还原数据库。备份目录 `/opt/trade-tools-integrated/backups/integrated-20261103-app-push-privacy-2c242c254dcb/` 保存前版路径、来源、容器记录及备份引用；Compose 文件及仅恢复 API／scheduler 的回滚方式与下方相同。完整源码未提交／推送，未上传 TestFlight。
+
+手机已在 15:26 注册 production 设备，三条测试通知均被苹果拒绝；安全诊断为 HTTP 400／TopicDisallowed。后台确认现有 APNs key 只允许旧 App。用户明确允许后，15:42 在 Apple 后台保留旧 topic 并新增整合 topic，页面确认 key updated、2 Topics / Production，没有更换密钥或撤销旧权限。恢复原三条测试后苹果均返回 200／sent，15:44 用户确认手机 **3 条全部收到**；本次 App 通知实测通过。浮盈任务仍未启用，自然信号触发与长稳不据此验收，详见 [通知](signals-and-notifications.md#普通通知真机测试2026-11-03)。
+
+## App 普通信号通知限定发布（2026-11-03）
+
+2026-11-03 15:21～15:22（北京时间），**47.80.22.243（首尔服务器）** 已更新为 `integrated-20261103-app-push-d277ad4ed87a`。用户要求发送三条普通信号测试通知；实查旧运行版本没有设备注册路由、没有 HTTP/2 依赖且设备表为空，因此先补齐 App 通知链路。
+
+- 以紧接下方的信号／杠杆运行包为基线，逐一核对 313 个来源文件；仅叠加已有提交 `9151efa` 的 `mobile/urls.py`、`auth.py`、`push.py` 和 `requirements.txt`，以及仅含 App 派发任务的 scheduler 局部变更、scheduler 私钥只读挂载 override。既有 scheduler 的所有函数和任务编排在移除新增 App 任务后 AST 完全一致；未带入浮盈任务、交易执行或新 migration。完整清单在 release 的 `source-release.json`，此包不是完整 Git HEAD。
+- 归档 SHA-256 为 `4c60ca9424e14c4c5fd74afca3b177269432731350728cce5af08e958abdc970`，两端一致。备份目录 `/opt/trade-tools-integrated/backups/integrated-20261103-app-push-d277ad4ed87a/` 保存前版路径、来源、容器记录及 321659196 bytes 的数据库 gzip，完整性通过；目录 0700、文件 0600。仅执行 `migrate --check`，没有迁移或初始化。
+- 仅替换 API／scheduler，六服务 healthy，其余四个容器 ID／镜像不变；HTTPS 健康 200，匿名设备注册 POST 401（路由存在且要求鉴权），scheduler 可读受限 p8。普通 App 信号每 10 秒派发，旧队列两条 Echo 信号记录已取消，尝试次数均为 0；浮盈外发仍未启用。发布前后本地库活动仓位、待成交限价、待提交开仓请求和未决命令计数均为 0。
+- 限定包在本机通过 16 项隔离回归，见 [开发](development.md#app-通知限定包验证2026-11-03)。15:22 核对仍无设备，三条测试通知尚未发送；需要手机重新打开 App 完成鉴权注册，再通过独立测试通知事件投递。苹果接受和手机收到分别记录在 [通知](signals-and-notifications.md#普通通知真机测试2026-11-03)，不能互相替代。
+
+本版沿用 `-f compose.integrated.yaml -f compose.signal-leverage.yaml` 和对应 `INTEGRATED_RELEASE`。回滚读取本版备份的 `previous-release`，在前版使用相同两个 Compose 文件及前版版本值，仅恢复 API／scheduler、恢复 `current` 并验证健康；不反迁移、不恢复数据库、不重放已尝试通知。此次发布不上传 TestFlight、不执行交易或资金操作。
+
 ## 信号入库与杠杆金额限定发布（2026-11-03）
 
 2026-11-03 12:23（北京时间）核验 **47.80.22.243（首尔服务器）** 当前为 **`integrated-20261103-signal-leverage-0ead6851a38e`**。旧版扫描入口因 `MARKET_ANALYSIS_ALERT_TOKEN` 未配置而整轮跳过，信号库为空；旧杠杆路由只返回标准名义档位。本次更新独立信号入库及每次读取真实可用保证金后的前三档金额，未改变信号触发规则或交易执行。

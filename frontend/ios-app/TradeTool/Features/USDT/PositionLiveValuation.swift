@@ -28,11 +28,14 @@ final class PositionLiveQuotes: ObservableObject {
   @Published private(set) var quotes: [String: PositionMarketQuote] = [:]
   private var symbols: Set<String> = []
   private var generation = UUID()
+  private var scope: String?
 
-  func begin(symbols: [String]) -> UUID {
+  func begin(scope: String, symbols: [String]) -> UUID {
+    if self.scope != scope { clear(); self.scope = scope }
     generation = UUID()
     self.symbols = Set(symbols.map { $0.uppercased() })
-    clear()
+    // An empty subscription pauses updates; it must not erase the visible snapshot.
+    if !self.symbols.isEmpty { quotes = quotes.filter { self.symbols.contains($0.key) } }
     return generation
   }
 
@@ -41,17 +44,22 @@ final class PositionLiveQuotes: ObservableObject {
     guard session == generation else { return false }
     generation = UUID()
     symbols = []
-    clear()
     return true
   }
 
-  func clear() {
+  func reset() {
+    generation = UUID()
+    symbols = []
+    scope = nil
+    clear()
+  }
+
+  private func clear() {
     if !quotes.isEmpty { quotes = [:] }
   }
 
   func receive(_ message: RealtimeServerMessage, session: UUID, now: Date = .now) {
     guard session == generation else { return }
-    if message.type == "ready" { clear(); return }
     guard message.type == "event", message.channel == "market.ticker",
       let data = message.data,
       let symbol = data["symbol"]?.text.uppercased(), symbols.contains(symbol),

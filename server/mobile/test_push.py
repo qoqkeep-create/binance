@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,14 @@ from users.models import User
 
 @override_settings(APNS_ENABLED=True, SIGNAL_ECHOBELL_ENABLED=True)
 class PushNotificationTests(TestCase):
+    def test_transport_logging_does_not_expose_apns_device_urls(self):
+        with patch.object(logging.getLogger(), 'handle') as root_handler:
+            for name in ['httpx', 'httpcore.http2']:
+                logger = logging.getLogger(name)
+                logger.info('POST /3/device/test-only-token')
+                logger.warning('POST /3/device/test-only-token')
+        root_handler.assert_not_called()
+
     def setUp(self):
         self.user = User.objects.create(email='push@example.invalid')
         self.other = User.objects.create(email='other@example.invalid')

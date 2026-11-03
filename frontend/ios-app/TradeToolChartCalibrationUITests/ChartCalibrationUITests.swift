@@ -2836,10 +2836,13 @@ final class WebParityUITests: XCTestCase {
     app.buttons["取消"].tap()
   }
 
-  func testIndicatorCardsSuperOpacityAndAlignedProfileControls() {
+  func testIndicatorCardsSuperOpacityAndCenteredProfileMenu() {
     for (options, appearance) in [([String](), "light"), (["--fixture-dark"], "dark")] {
       launch("market", options + ["--fixture-entry-ready"])
       app.buttons["搜索币种、币对或合约"].tap()
+      XCTAssertEqual(app.buttons["pairs.favorite.BTCUSDT"].value as? String, "已自选")
+      XCTAssertEqual(app.buttons["pairs.favorite.ADAUSDT"].value as? String, "未自选")
+      capture("pair-stars-" + appearance)
       app.buttons["pairs.select.BTCUSDT"].tap()
       let leverage = app.buttons["market-chart-leverage"]
       XCTAssertTrue(leverage.waitForExistence(timeout: 10))
@@ -2853,10 +2856,16 @@ final class WebParityUITests: XCTestCase {
       let opacity = app.sliders["indicator-settings.super-opacity"]
       XCTAssertTrue(opacity.waitForExistence(timeout: 5))
       let initialOpacity = opacity.value as? String
+      XCTAssertNotNil(initialOpacity)
+      opacity.adjust(toNormalizedSliderPosition: 0)
+      XCTAssertEqual(opacity.value as? String, "0%")
+      opacity.adjust(toNormalizedSliderPosition: 1)
+      // XCTest drags can land one native slider step short of the endpoint.
+      let upperValue = Int((opacity.value as? String ?? "").replacingOccurrences(of: "%", with: ""))
+      XCTAssertGreaterThanOrEqual(upperValue ?? 0, 99)
       opacity.adjust(toNormalizedSliderPosition: 0.65)
       let savedOpacity = opacity.value as? String
       XCTAssertNotNil(savedOpacity)
-      XCTAssertNotEqual(savedOpacity, initialOpacity)
       XCTAssertTrue(app.staticTexts[savedOpacity!].exists)
       capture("indicator-super-opacity-" + appearance)
       app.buttons["应用"].tap()
@@ -2871,21 +2880,56 @@ final class WebParityUITests: XCTestCase {
       app.buttons["我的"].firstMatch.tap()
       let mode = app.buttons["profile.switchMode"], collect = app.buttons["profile.collectBalance"]
       XCTAssertTrue(collect.waitForExistence(timeout: 5))
-      XCTAssertEqual(mode.frame.width, collect.frame.width, accuracy: 1)
-      XCTAssertEqual(mode.frame.height, collect.frame.height, accuracy: 1)
-      XCTAssertEqual(mode.frame.minX, collect.frame.minX, accuracy: 1)
-      capture("profile-matching-controls-" + appearance)
+      XCTAssertTrue(mode.exists)
+      XCTAssertEqual(mode.label, "切换带单模式")
+      XCTAssertGreaterThan(mode.frame.width, collect.frame.width)
+      XCTAssertFalse(app.buttons["profile.floatingPositions"].exists)
+      capture("profile-mode-menu-" + appearance)
+      mode.tap()
+      app.buttons["确认切换"].tap()
+      XCTAssertTrue(app.staticTexts["带单组合可用余额 (USDT)"].waitForExistence(timeout: 5))
+      XCTAssertEqual(mode.label, "切换合约模式")
+      capture("profile-contract-menu-" + appearance)
+      mode.tap()
+      app.buttons["确认切换"].tap()
+      XCTAssertTrue(app.staticTexts["合约余额 (USDT)"].waitForExistence(timeout: 5))
       app.buttons["持仓"].firstMatch.tap()
       let segments = ["positions", "limits", "history"].map { app.buttons["positions.tabs." + $0] }
       XCTAssertTrue(segments[0].waitForExistence(timeout: 5))
       for segment in segments { XCTAssertEqual(segment.frame.width, segments[0].frame.width, accuracy: 1) }
       XCTAssertGreaterThanOrEqual(segments[0].frame.height, 32)
+      XCTAssertEqual((segments[0].frame.minX + segments[2].frame.maxX) / 2,
+        app.otherElements["positions.header"].frame.midX, accuracy: 1)
       segments[2].tap()
       capture("positions-equal-segments-" + appearance)
     }
     launch("signals")
     XCTAssertTrue(app.staticTexts["自有"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.staticTexts["85分"].exists)
+  }
+
+  func testSignalListKeepsSnapshotAndScrollPositionAcrossTabsAndBackground() {
+    launch("signals", ["--fixture-page-state"])
+    let first = app.buttons["signals.card.1"]
+    XCTAssertTrue(first.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["读取 1 · 测试信号 1"].exists)
+    app.scrollViews["signals.list"].swipeUp()
+    let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "signals.card."))
+    let visible = cards.allElementsBoundByIndex.first { $0.isHittable && $0.frame.minY > 120 }!
+    let id = visible.identifier
+    let previousY = visible.frame.minY
+    app.buttons["我的"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["profile.switchMode"].waitForExistence(timeout: 5))
+    app.buttons["信号"].firstMatch.tap()
+    let retained = app.buttons[id]
+    XCTAssertTrue(retained.waitForExistence(timeout: 5))
+    XCTAssertEqual(retained.frame.minY, previousY, accuracy: 2)
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "读取 2 ·")).firstMatch.exists)
+    XCUIDevice.shared.press(.home)
+    app.activate()
+    XCTAssertTrue(retained.waitForExistence(timeout: 5))
+    XCTAssertEqual(retained.frame.minY, previousY, accuracy: 2)
+    capture("signals-retained-scroll")
   }
 
   func testChartAccountFeedbackInBothAppearances() {
@@ -3169,10 +3213,9 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(mode.exists)
     XCTAssertEqual(bind.frame.minX - avatar.frame.maxX, 8, accuracy: 1)
     XCTAssertEqual(bind.frame.midY, avatar.frame.midY, accuracy: 1)
-    XCTAssertEqual(mode.frame.midY, avatar.frame.midY, accuracy: 1)
+    XCTAssertGreaterThan(mode.frame.minY, avatar.frame.maxY)
     XCTAssertEqual(bind.frame.height, 36, accuracy: 1)
-    XCTAssertEqual(mode.frame.height, bind.frame.height, accuracy: 1)
-    XCTAssertLessThan(bind.frame.maxX, mode.frame.minX)
+    XCTAssertGreaterThanOrEqual(mode.frame.height, 44)
     XCTAssertLessThan(bind.frame.width, 150)
     capture("profile-compact-bind-with-avatar")
     app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止损额设置")).firstMatch.tap()
@@ -3380,14 +3423,14 @@ final class WebParityUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["我的策略"].firstMatch.waitForExistence(timeout: 5))
       }
       rightSwipe()
-      XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["profile.switchMode"].waitForExistence(timeout: 5))
     }
     profileLink("更多功能")
     for (label, title) in [("日志", "日志"), ("交易命令", "交易命令")] {
       profileLink(label)
       XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 5), title)
       rightSwipe()
-      XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5), label)
+      XCTAssertTrue(app.buttons["profile.switchMode"].waitForExistence(timeout: 5), label)
     }
   }
   func testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage() {
@@ -3397,13 +3440,13 @@ final class WebParityUITests: XCTestCase {
     rightSwipe(toX: 85)
     XCTAssertTrue(app.staticTexts["颜色模式"].exists)
     rightSwipe()
-    XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["profile.switchMode"].waitForExistence(timeout: 5))
     app.swipeDown()
     profileLink("止损额设置")
     XCTAssertTrue(app.buttons["关闭"].firstMatch.waitForExistence(timeout: 5))
     capture("dark-stop-loss-independent-backdrop")
     app.buttons["关闭"].firstMatch.tap()
-    XCTAssertTrue(app.buttons["profile.floatingPositions"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["profile.switchMode"].waitForExistence(timeout: 5))
     profileLink("止损额设置")
     XCTAssertTrue(app.buttons["关闭"].firstMatch.waitForExistence(timeout: 5))
     let close = app.buttons["关闭"].firstMatch
@@ -3419,8 +3462,8 @@ final class WebParityUITests: XCTestCase {
   }
 
   func testFloatingPositionsAcrossPagesAndDragging() {
-    launch("profile", ["--fixture-multiple", "--fixture-inline-floating"])
-    let toggle = app.buttons["profile.floatingPositions"]
+    launch("positions", ["--fixture-multiple", "--fixture-inline-floating"])
+    let toggle = app.buttons["positions.floatingPositions"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     if !toggle.isHittable { app.swipeUp() }
     toggle.tap()
@@ -3454,13 +3497,14 @@ final class WebParityUITests: XCTestCase {
     app.buttons["floating.positions.close"].tap()
     XCTAssertFalse(panel.exists)
     app.buttons["返回"].firstMatch.tap()
+    app.buttons["持仓"].firstMatch.tap()
     XCTAssertTrue(toggle.waitForExistence(timeout: 5))
     XCTAssertEqual(toggle.value as? String, "未开启")
   }
 
   func testFloatingPositionsPictureInPictureAcrossApps() throws {
-    launch("profile", ["--fixture-multiple", "--fixture-live-floating"])
-    let toggle = app.buttons["profile.floatingPositions"]
+    launch("positions", ["--fixture-multiple", "--fixture-live-floating"])
+    let toggle = app.buttons["positions.floatingPositions"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     if !toggle.isHittable { app.swipeUp() }
     toggle.tap()
@@ -3515,8 +3559,8 @@ final class WebParityUITests: XCTestCase {
       (["--fixture-unbound"], "请先绑定 API", "floating-unbound"),
       (["--fixture-dark", "--fixture-lead"], "+25.000 U", "floating-lead-dark"),
     ] {
-      launch("profile", options + ["--fixture-inline-floating"])
-      let toggle = app.buttons["profile.floatingPositions"]
+      launch("positions", options + ["--fixture-inline-floating"])
+      let toggle = app.buttons["positions.floatingPositions"]
       XCTAssertTrue(toggle.waitForExistence(timeout: 10))
       if !toggle.isHittable { app.swipeUp() }
       toggle.tap()

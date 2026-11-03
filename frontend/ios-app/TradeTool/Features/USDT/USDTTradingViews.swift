@@ -740,6 +740,8 @@ struct USDTPositionsView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 8) {
+        Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
+        Spacer(minLength: 0)
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
           .frame(maxWidth: 280).frame(height: 38)
@@ -751,10 +753,10 @@ struct USDTPositionsView: View {
             .frame(width: 44, height: 44).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("positions.floatingPositions")
           .accessibilityLabel("持仓浮窗").accessibilityValue(floatingPositions ? "已开启" : "未开启")
-      }.padding(.leading, 16).padding(.trailing, 8).frame(height: WebTheme.rootHeaderHeight)
+      }.padding(.horizontal, 8).frame(height: WebTheme.rootHeaderHeight)
         .background(WebTheme.surface).overlay(alignment: .bottom) {
           Rectangle().fill(WebTheme.border).frame(height: 1)
-        }.accessibilityIdentifier("positions.header")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("positions.header")
       GeometryReader { geometry in
       ScrollView {
         VStack(spacing: 10) {
@@ -837,9 +839,14 @@ struct USDTPositionsView: View {
         }
       }
     }.usdtPage("持仓")
-      .task(id: "quotes:\(store.scope):\(trendSymbols.joined(separator: ","))") {
+      .task(id: "quotes:\(store.scope):\(store.isBound):\(trendSymbols.joined(separator: ","))") {
+        guard store.isBound else {
+          liveQuotes.reset()
+          dashboard.trackPositionTickerSymbols([])
+          return
+        }
         let symbols = trendSymbols
-        let session = liveQuotes.begin(symbols: symbols)
+        let session = liveQuotes.begin(scope: store.scope, symbols: symbols)
         dashboard.trackPositionTickerSymbols(symbols)
         defer {
           if liveQuotes.end(session) { dashboard.trackPositionTickerSymbols([]) }
@@ -849,9 +856,6 @@ struct USDTPositionsView: View {
           guard !Task.isCancelled else { break }
           if container.realtimeClient.state == .connected { liveQuotes.receive(event, session: session) }
         }
-      }
-      .onReceive(container.realtimeClient.$state) { state in
-        if state != .connected { liveQuotes.clear() }
       }
       .task(id: "\(store.scope):\(segment):\(trendSymbols.joined(separator: ","))") {
         await trendAdvice.monitor(symbols: trendSymbols, api: container.apiClient)

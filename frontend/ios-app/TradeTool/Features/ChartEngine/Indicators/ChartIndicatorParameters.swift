@@ -1,5 +1,20 @@
 import Foundation
 
+/// The full slider travel adjusts only the useful 80–100% transparency range.
+enum SuperTrendFillTransparency {
+  static let maximumAlpha = 0.2
+
+  static func sliderValue(alpha: Double) -> Double {
+    guard alpha.isFinite else { return 1 }
+    return min(1, max(0, 1 - alpha / maximumAlpha))
+  }
+
+  static func alpha(sliderValue: Double) -> Double {
+    guard sliderValue.isFinite else { return 0 }
+    return maximumAlpha * (1 - min(1, max(0, sliderValue)))
+  }
+}
+
 struct ChartIndicatorParameters: Equatable, Sendable {
   static let movingAveragePeriodRange = 1...500
   static let emaPeriodRange = 1...500
