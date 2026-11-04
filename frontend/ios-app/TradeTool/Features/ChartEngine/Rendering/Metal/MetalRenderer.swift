@@ -365,7 +365,8 @@ final class MetalRenderer {
         guard let liveLayout = makeLayout(
             batches: dynamicBatches,
             overlayBatchCount:
-                state.interaction.crosshair?.batches.count ?? 0
+                state.interaction.crosshair?.batches.count ?? 0,
+            separatesLatestPrice: !state.axisPriceLabels.isEmpty
         ) else {
             health.recordBufferCapacityRejection()
             return .skipped
@@ -529,6 +530,7 @@ final class MetalRenderer {
                 batches: Self.dynamicBatches(for: state),
                 overlayBatchCount:
                     state.interaction.crosshair?.batches.count ?? 0,
+                separatesLatestPrice: !state.axisPriceLabels.isEmpty,
                 label: "Chart offscreen live",
                 appearance: state.appearance
               ) else {
@@ -704,7 +706,13 @@ final class MetalRenderer {
                     != .hiddenWhileCrosshairIsActive
             }
         }
-        return liveBatches
+        var ordered = liveBatches
+        if let data = state.staticScene.crosshairData, !state.axisPriceLabels.isEmpty {
+            let labels = ChartAxisPriceLabelBuilder.batches(for: state.axisPriceLabels, data: data)
+            let index = ordered.firstIndex { $0.coordinateSpace == .latestPrice } ?? ordered.endIndex
+            ordered.insert(contentsOf: labels, at: index)
+        }
+        return ordered
             + (state.interaction.crosshair?.batches ?? [])
     }
 
@@ -735,12 +743,14 @@ final class MetalRenderer {
     private func makePackedBuffer(
         batches: [ChartRenderBatch],
         overlayBatchCount: Int = 0,
+        separatesLatestPrice: Bool = false,
         label: String,
         appearance: ChartAppearance
     ) -> (buffer: MTLBuffer, layout: MetalSceneLayout)? {
         guard let layout = makeLayout(
                 batches: batches,
-                overlayBatchCount: overlayBatchCount
+                overlayBatchCount: overlayBatchCount,
+                separatesLatestPrice: separatesLatestPrice
               ),
               let buffer = device.makeBuffer(
                 length: max(1, layout.requiredBytes),
@@ -755,20 +765,34 @@ final class MetalRenderer {
 
     private func makeLayout(
         batches: [ChartRenderBatch],
-        overlayBatchCount: Int = 0
+        overlayBatchCount: Int = 0,
+        separatesLatestPrice: Bool = false
     ) -> MetalSceneLayout? {
         var candleCount = 0
         var lineCount = 0
         var barCount = 0
         var glyphCount = 0
         var glyphAtlas: ChartGlyphAtlasSnapshot?
-        var contentCounts = (candles: 0, lines: 0, bars: 0, glyphs: 0)
+        var rangeStart = (candles: 0, lines: 0, bars: 0, glyphs: 0)
+        var drawRanges: [MetalSceneDrawRange] = []
+
+        func finishRange() {
+            guard rangeStart != (candleCount, lineCount, barCount, glyphCount) else { return }
+            drawRanges.append(MetalSceneDrawRange(
+                candles: rangeStart.candles..<candleCount,
+                lines: rangeStart.lines..<lineCount,
+                bars: rangeStart.bars..<barCount,
+                glyphs: rangeStart.glyphs..<glyphCount
+            ))
+            rangeStart = (candleCount, lineCount, barCount, glyphCount)
+        }
 
         for (index, batch) in batches.enumerated() {
-            if index == batches.count - overlayBatchCount {
-                contentCounts = (
-                    candleCount, lineCount, barCount, glyphCount
-                )
+            if index == batches.count - overlayBatchCount
+                || (separatesLatestPrice && batch.coordinateSpace == .latestPrice) {
+                // Finish order-price fills and text before the latest-price frame,
+                // then finish the complete content before drawing the crosshair.
+                finishRange()
             }
             guard Self.accumulate(
                 &candleCount,
@@ -801,25 +825,7 @@ final class MetalRenderer {
             }
         }
 
-        if overlayBatchCount == 0 {
-            contentCounts = (candleCount, lineCount, barCount, glyphCount)
-        }
-        var drawRanges = [MetalSceneDrawRange(
-            candles: 0..<contentCounts.candles,
-            lines: 0..<contentCounts.lines,
-            bars: 0..<contentCounts.bars,
-            glyphs: 0..<contentCounts.glyphs
-        )]
-        if overlayBatchCount > 0 {
-            // Finish every content primitive before painting the crosshair.
-            // Its white labels must also cover latest-price lines and glyphs.
-            drawRanges.append(MetalSceneDrawRange(
-                candles: contentCounts.candles..<candleCount,
-                lines: contentCounts.lines..<lineCount,
-                bars: contentCounts.bars..<barCount,
-                glyphs: contentCounts.glyphs..<glyphCount
-            ))
-        }
+        finishRange()
 
         guard candleCount <= Self.maximumCandleInstances,
               lineCount <= Self.maximumLineInstances,
@@ -1207,5 +1213,70 @@ final class MetalRenderer {
             alignment - remainder
         )
         return overflow ? nil : result
+    }
+}
+
+enum ChartAxisPriceLabelBuilder {
+    static func batches(
+        for labels: [ChartAxisPriceLabel],
+        data: ChartCrosshairDataSnapshot
+    ) -> [ChartRenderBatch] {
+        guard let plot = data.panelLayout.pricePanel?.plot else { return [] }
+        let scale = data.displayScale
+        let left = plot.right + 2 * scale
+        let right = data.widthPixels - scale
+        let height = min(18 * scale, plot.height)
+        let border = max(1, 0.7 * scale)
+        let radius = min(3 * scale, height / 2)
+        let white = ChartColor(red: 1, green: 1, blue: 1)!
+        guard right - left > border * 2, height > border * 2 else { return [] }
+
+        return labels.compactMap { label in
+            guard label.price.isFinite, label.price > 0, !label.text.isEmpty,
+                  label.price >= data.priceDomain.lower,
+                  label.price <= data.priceDomain.upper else { return nil }
+            let fraction = (data.priceDomain.upper - label.price)
+                / (data.priceDomain.upper - data.priceDomain.lower)
+            let y = plot.top + Float(fraction) * plot.height
+            let top = min(plot.bottom - height, max(plot.top, y - height / 2))
+            let centerY = top + height / 2
+            let outer = ChartBarInstance(left: left, top: top, right: right,
+                bottom: top + height, color: label.color, cornerRadius: radius)
+            let inner = ChartBarInstance(left: left + border, top: top + border,
+                right: right - border, bottom: top + height - border,
+                color: white, cornerRadius: max(0, radius - border))
+            let measured = MetalTextLayouter.layout(text: label.text, atlas: data.glyphAtlas,
+                originX: 0, baselineY: 0, color: label.color)
+            let glyphs: [ChartGlyphInstance]
+            if let minX = measured.instances.map(\.left).min(),
+               let maxX = measured.instances.map(\.right).max(),
+               let minY = measured.instances.map(\.top).min(),
+               let maxY = measured.instances.map(\.bottom).max() {
+                let textScale = min(1, (right - left - 6 * scale) / max(1, maxX - minX),
+                    (height - 4 * scale) / max(1, maxY - minY))
+                let anchorX = right - 3 * scale
+                let center = (minY + maxY) / 2
+                glyphs = measured.instances.map { glyph in
+                    ChartGlyphInstance(
+                        left: anchorX + (glyph.left - maxX) * textScale,
+                        top: centerY + (glyph.top - center) * textScale,
+                        right: anchorX + (glyph.right - maxX) * textScale,
+                        bottom: centerY + (glyph.bottom - center) * textScale,
+                        uvLeft: glyph.uvLeft, uvTop: glyph.uvTop,
+                        uvRight: glyph.uvRight, uvBottom: glyph.uvBottom, color: glyph.color
+                    )
+                }
+            } else {
+                glyphs = []
+            }
+            let extensionLine = ChartLineSegmentInstance(
+                start: ChartPolylinePoint(x: plot.right, y: y),
+                end: ChartPolylinePoint(x: data.widthPixels, y: y),
+                width: max(1, 0.5 * scale), dashLength: 4 * scale,
+                gapLength: 4 * scale, dashPhase: 0, color: label.color
+            )
+            return ChartRenderBatch(lineSegments: [extensionLine], barInstances: [outer, inner], glyphInstances: glyphs,
+                glyphAtlas: data.glyphAtlas, coordinateSpace: .fixed)
+        }
     }
 }

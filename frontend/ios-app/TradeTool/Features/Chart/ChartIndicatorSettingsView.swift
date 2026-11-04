@@ -14,7 +14,8 @@ private enum IndicatorSettingsPalette {
 struct ChartIndicatorSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedIndicator = "MA"
+    @AppStorage("integrated.chart.indicatorSettings.lastViewed")
+    private var lastViewedIndicator = "MA"
     @State private var superTrendFillAlpha: Double
     @State private var movingAverageFast: String
     @State private var movingAverageMiddle: String
@@ -45,6 +46,15 @@ struct ChartIndicatorSettingsView: View {
     @State private var atrPeriod: String
 
     private let onApply: (ChartIndicatorParameters) -> Void
+
+    private static let indicatorTitles = [
+        "MA", "EMA", "BOLL", "SAR", "AVL", "Super", "VOL", "MACD",
+        "RSI", "KDJ", "OBV", "WR", "StochRSI", "ATR", "合约数据"
+    ]
+
+    private var selectedIndicator: String {
+        Self.indicatorTitles.contains(lastViewedIndicator) ? lastViewedIndicator : "MA"
+    }
 
     init(
         parameters: ChartIndicatorParameters,
@@ -364,8 +374,8 @@ struct ChartIndicatorSettingsView: View {
 
     private var indicatorSelector: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-            ForEach(["MA", "EMA", "BOLL", "SAR", "AVL", "Super", "VOL", "MACD", "RSI", "KDJ", "OBV", "WR", "StochRSI", "ATR", "合约数据"], id: \.self) { title in
-                Button { selectedIndicator = title } label: {
+            ForEach(Self.indicatorTitles, id: \.self) { title in
+                Button { lastViewedIndicator = title } label: {
                     Text(title).font(.system(size: 12, weight: .medium))
                         .lineLimit(1).minimumScaleFactor(0.7)
                         .foregroundStyle(selectedIndicator == title ? BinanceTheme.onAccent : IndicatorSettingsPalette.primaryText)

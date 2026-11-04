@@ -314,6 +314,8 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 2026-11-04 用户授权“完成后全部提交推送”，以 `194d1e7` 为基线交付当前全部安全源码和文档，包含待提交的 iOS 调整与鸿蒙前三批复刻。沿用下方独立 Git 元数据及 `codex/integrated-ios`，父 Gitee、凭证／签名和构建产物不参与。本次只做源码推送，不追加 **47.80.22.243（首尔服务器）** 部署或手动 TestFlight 上传；范围及验证见 [交付记录](changes.md#2026-11-04图表顶部归集筛选与全部待提交源码交付)。
 
+2026-11-04 后续用户授权将自适应高度浮窗与上轮未提交的图表标签／费用／持仓细调一起提交推送；本批基线为 `9a8e545`，继续沿用同一独立 Git 元数据与 `codex/integrated-ios`。只交付 iOS 源码、回归及主题文档，原有 `.build/` 产物不纳入；不追加 47.80.22.243（首尔服务器）部署或手动 TestFlight 上传。范围与验证见 [本批记录](changes.md#2026-11-04浮窗自适应高度与图表细调源码交付)。
+
 整合版仓库为 `https://github.com/qoqkeep-create/binance.git`，分支 `codex/integrated-ios`。有两种本地工作副本，操作前先核对 Git 元数据和 origin，不能仅凭相同目录名判断：
 
 - 正常独立 clone：根目录有 `.git`，使用普通 `git` 命令，以 `git rev-parse --show-toplevel` / `git remote -v` 核对范围与仓库。Apple / Cloud 准备任务使用过这种副本。

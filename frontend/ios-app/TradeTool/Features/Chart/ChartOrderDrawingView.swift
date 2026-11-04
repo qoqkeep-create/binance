@@ -239,7 +239,7 @@ struct ChartPositionLine: Identifiable, Equatable {
             func detail(_ kind: Kind) -> String {
                 if kind == .entry {
                     guard let profit else { return "-" }
-                    return DisplayNumber.amount(profit, maximumFractionDigits: 2, signed: true) + " U"
+                    return DisplayNumber.amount(profit, maximumFractionDigits: 1, signed: true) + " U"
                 }
                 if kind == .stopLoss {
                     return row["stop_loss_amount"]?.decimal.map {
@@ -261,6 +261,17 @@ struct ChartPositionLine: Identifiable, Equatable {
                 append(.takeProfit, valid("manual_take_profit_price"), "止盈")
             }
             return result
+        }
+    }
+
+    func color(neutral: ChartColor) -> ChartColor {
+        switch kind {
+        case .entry:
+            if let profit, profit > 0 { .rgb(0x0ECB81) }
+            else if let profit, profit < 0 { .rgb(0xF6465D) }
+            else { neutral }
+        case .stopLoss: .rgb(0xF6465D)
+        case .takeProfit: .rgb(0x0ECB81)
         }
     }
 }
@@ -294,12 +305,13 @@ struct ChartPositionLinesOverlay: View {
             guard let y = projection.screenY(for: NSDecimalNumber(decimal: line.price).doubleValue),
                   y >= projection.plotTop, y <= projection.plotBottom else { return nil }
             let label = labelLayout(for: line, projection: projection)
-            return CGRect(x: label.centerX - label.width / 2, y: y - 12, width: label.width, height: 24)
+            let height = line.kind == .takeProfit ? 24.0 : 20.0
+            return CGRect(x: label.centerX - label.width / 2, y: y - height / 2, width: label.width, height: height)
         }
     }
 
     private static func labelLayout(for line: ChartPositionLine, projection: ChartPriceProjection) -> ChartPriceLineLabelLayout {
-        ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: line.kind == .takeProfit ? 120 : 96)
+        ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: line.kind == .takeProfit ? 120 : 80)
     }
 
     var body: some View {
@@ -312,10 +324,12 @@ struct ChartPositionLinesOverlay: View {
                        y >= projection.plotTop, y <= projection.plotBottom {
                         Path { path in
                             path.move(to: CGPoint(x: projection.plotLeft, y: y))
-                            path.addLine(to: CGPoint(x: max(projection.plotRight, geometry.size.width), y: y))
+                            let right = line.kind == .takeProfit ? max(projection.plotRight, geometry.size.width) : projection.plotRight
+                            path.addLine(to: CGPoint(x: right, y: y))
                         }.stroke(color(line), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                         ChartPriceLineLabel(title: line.title, price: line.detail,
-                            color: color(line), width: label.width, filled: line.kind != .takeProfit)
+                            color: color(line), width: label.width, filled: line.kind != .takeProfit,
+                            compact: line.kind != .takeProfit)
                             .position(x: label.centerX, y: y)
                             .accessibilityIdentifier("position-line." + line.id)
                             .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))
@@ -356,16 +370,19 @@ private struct ChartPriceLineLabel: View {
     let width: Double
     var draggable = false
     var filled = false
+    var compact = false
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: compact ? 3 : 5) {
             if draggable {
                 Image(systemName: "line.3.horizontal").font(.system(size: 9, weight: .medium))
             }
-            Text(title).layoutPriority(1)
-            if !price.isEmpty { Text(price).monospacedDigit() }
-        }.font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.6)
-            .foregroundStyle(filled ? Color.white : color).padding(.horizontal, 7).frame(width: width, height: 24)
+            Text(title).fixedSize().layoutPriority(1)
+            if !price.isEmpty { Text(price).monospacedDigit().truncationMode(.middle) }
+        }.font(.system(size: compact ? 9 : 10, weight: .medium)).lineLimit(1)
+            .minimumScaleFactor(compact ? 1 : 0.6)
+            .foregroundStyle(filled ? Color.white : color).padding(.horizontal, compact ? 5 : 7)
+            .frame(width: width, height: compact ? 20 : 24)
             .background(filled ? color : BinanceTheme.background.opacity(0.98), in: RoundedRectangle(cornerRadius: 4))
             .overlay {
                 if !filled { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.8), lineWidth: 0.5) }
@@ -386,7 +403,7 @@ struct ChartOrderDrawingOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                riskArea(canvasRight: proxy.size.width)
+                riskArea(canvasRight: projection.plotRight)
 
                 if let entryPrice = drawing.entryPrice {
                     orderLine(
@@ -494,14 +511,14 @@ struct ChartOrderDrawingOverlay: View {
         canvasRight: Double
     ) -> some View {
         let plotWidth = max(projection.plotRight, canvasRight) - projection.plotLeft
-        let label = ChartPriceLineLabelLayout(projection: projection, texts: [drawing.entryLineTitle, "止损价"], draggable: true)
+        let label = ChartPriceLineLabelLayout(projection: projection, texts: [], draggable: true, fixedWidth: 72)
         let y = projectedY(price) ?? projection.plotTop
         let labelY = allowsOffscreenStopLoss ? y
-            : min(projection.plotBottom - 12, max(projection.plotTop + 12, y))
+            : min(projection.plotBottom - 10, max(projection.plotTop + 10, y))
         return ZStack {
             Path { path in
                 path.move(to: CGPoint(x: 0, y: 18))
-                path.addLine(to: CGPoint(x: plotWidth, y: 18))
+                path.addLine(to: CGPoint(x: projection.plotRight - projection.plotLeft, y: 18))
             }
             .stroke(
                 color.opacity(0.95),
@@ -512,7 +529,7 @@ struct ChartOrderDrawingOverlay: View {
             )
 
             ChartPriceLineLabel(title: title, price: "", color: color,
-                width: label.width, draggable: true)
+                width: label.width, draggable: true, filled: true, compact: true)
                 .position(x: label.centerX - projection.plotLeft, y: 18 + labelY - y)
         }
         .frame(width: plotWidth, height: 36)

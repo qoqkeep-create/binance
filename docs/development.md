@@ -2,6 +2,31 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 浮窗自适应高度与源码交付（2026-11-04）
+
+画中画每页最多 3 笔，保留 5 秒整组轮播；视频高度及被遮挡源视图比例按当前页实际行数共同更新，尾页不足 3 笔也缩高。共享 `FloatingPiPFrameLayout` 统一分页上限、视频宽高、源视图和页脚位置；源尺寸只随实际成功入队的画面更新，背压等待时不提前变成另一页比例。没有为尺寸变化重建控制器、强制 flush 或把播放状态失效接口当作尺寸 API。尺寸及系统边界见 [浮窗](ios-floating-positions.md#使用与范围)。
+
+`python3 frontend/ios-app/scripts/test_floating_positions.py .integration-runtime/AdaptivePiP/Host` 共 41 项通过。脚本现在以 AppKit 字体／绘图上下文适配，编译实际视频渲染器，真实生成 CVPixelBuffer、CMVideoFormatDescription 和 IOSurface；新增尺寸回归覆盖 0／1／2／3 行、640×240／322／404、同比源尺寸，并验证分页 3／3／1、尾页缩高及持仓减少。旧实现重放出现 10 处断言失败，证明回归可复现。日志为 `.integration-runtime/AdaptivePiP-{baseline,tests}.log`，输入 SHA 清单位于 Host 下。
+
+最终主 App＋Widget Release `build`、arm64 `build-for-testing` 均成功，日志为 `.integration-runtime/AdaptivePiP-{release,test-compile}.log`；后者仅编译测试目标，未启动模拟器。下节图表／金额／费用验证结果继续适用于未再修改的上轮代码。文档链接、敏感字面量及 `git diff --check` 检查通过。系统外窗真实收缩动画、用户缩放与长期后台行为仍待签名包 iPhone 验收；本轮没有真实交易、资金操作或通知发送。
+
+按用户本轮授权，与下节尚未提交的图表／持仓细调一起提交推送；基线、范围和发布边界见 [变更记录](changes.md#2026-11-04浮窗自适应高度与图表细调源码交付)。不含原 `.build/` 产物、凭证、签名、日志或 IDE 状态。
+
+## 图表价格标签与持仓细调（2026-11-04，本地）
+
+图内持仓开仓／止损标签改为 80×20 pt、待开仓为 72×20 pt，9 pt 固定字号，开仓盈亏最多一位小数。新增右轴订单价格框，使用独立显示数据与原价格域、字形图集；右轴虚线和框均在 Metal 内绘制，避免 SwiftUI 叠盖最新价。动态批次在最新价和十字线之前分别完成各类图元，交互帧与主题切换保留订单标签。布局与金额口径见 [行情](market-data.md#价格轴与图内订单标签2026-11-02)。
+
+实际及预估手续费最多两位小数并去尾零，已持仓止盈改为正文色只读标签；当前代码已无“开仓绑定策略”提示行。持仓 K 线入口改为红绿实心蜡烛，黄条上移 3 pt；指标详情项本机持久化，非法旧值回退 MA。只调整展示，不改金额计算、订单载荷、策略选择或保护单。
+
+本地验证：
+
+- 真实 SwiftUI 持仓标签／投影／金额 Host 8 项通过，覆盖 80×20 pt 固定宽高、浅深主题、2×／3×、正负及极小负值、图内线不覆盖右轴。
+- 费用等显示 Host 15 项通过，含实际 `USDTEntryDraft` 4 项、金额格式 6 项、费用 2 项及既有刷新 3 项；覆盖 1.254→1.25、1.255→1.26、零及原价格精度。
+- 真实 Metal Host 3 项通过，包含新增右轴 2 项与原十字线覆盖 1 项，验证完整长价格、非法／离屏过滤、轴内延伸、浅深主题和 2×／3× 遮挡；恢复旧图元分组会出现 56 处像素失败，确认层级回归可复现。
+- `scripts/check_chart_lines.py` 5 项通过；Release 主 App＋Widget 无签名构建和 arm64 `build-for-testing` 成功。后者仅编译测试目标，未启动模拟器。
+
+证据位于忽略目录 `.integration-runtime/ChartLabelPolish/HostTests/`、`.integration-runtime/TicketPolish/Host/`、`.integration-runtime/AxisPriceLabels/`，最终构建日志为 `.integration-runtime/ChartLabelPolish-{release,test-compile}.log`。未进行实机、真实交易、资金操作或通知测试。本批验证结束时保留本地；后续随上方自适应浮窗整批交付，见 [本批记录](changes.md#2026-11-04浮窗自适应高度与图表细调源码交付)。手机上的字号与拖动体感待签名包验收。
+
 ## 图表顶部、归集页签与整批源码交付（2026-11-04）
 
 K 线顶部移除独立设置按钮，指标／杠杆靠右，自选星标增加 9 pt 标题和统一 44 pt 点击区；行情标题改为“合约自选”。原设置视图代码保留，收藏与杠杆逻辑不变。资金页签即时选中、只让背景平移，预检读取与提交状态分离；旧动作在进入记录后仍相同，之前迟到的 pending 响应可能切回划转，现按请求 UUID／页签／动作／scope 及取消状态保护成功、错误和清理。

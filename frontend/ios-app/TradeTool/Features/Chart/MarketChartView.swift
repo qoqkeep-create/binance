@@ -124,6 +124,7 @@ private struct MarketChartDetailView: View {
     @EnvironmentObject private var toastCenter: AppToastCenter
     @EnvironmentObject private var usdt: USDTStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     @State private var nativeOrderType = "market"
     @StateObject private var positions = USDTChartPositionsModel()
     @State private var showsLeverage = false
@@ -344,6 +345,7 @@ private struct MarketChartDetailView: View {
                 automaticallyFitsPrice: automaticallyFitsPrice,
                 candleMarkers: ChartPositionEntryMarkers.markers(in: heldPositions, symbol: viewModel.market.symbol),
                 candleMarkerExclusions: positionMarkerExclusions,
+                axisPriceLabels: axisPriceLabels,
                 diagnostics: viewModel.loadDiagnostics,
                 onFirstFramePresented: { epoch, time in
                     viewModel.chartFirstFramePresented(epoch: epoch, at: time)
@@ -394,6 +396,29 @@ private struct MarketChartDetailView: View {
         guard let projection = chartPriceProjection else { return [] }
         return ChartPositionLinesOverlay.labelFrames(lines: ChartPositionLine.lines(in: heldPositions,
             symbol: viewModel.market.symbol), projection: projection)
+    }
+
+    private var axisPriceLabels: [ChartAxisPriceLabel] {
+        if !heldPositions.isEmpty {
+            let neutral = ChartColor.rgb(NativeTradingMode.current == "lead" ? 0x58B9EF : 0xF0B90B)
+            return ChartPositionLine.lines(in: heldPositions, symbol: viewModel.market.symbol,
+                currentPrice: Decimal(string: priceString(viewModel.currentPrice)))
+                .filter { $0.kind != .takeProfit }
+                .map { line in
+                    ChartAxisPriceLabel(id: line.id, price: NSDecimalNumber(decimal: line.price).doubleValue,
+                        text: DisplayNumber.text(line.price), color: line.color(neutral: neutral))
+                }
+        }
+        guard nativeOrderType == "limit", let drawing = orderDrawing else { return [] }
+        var labels: [ChartAxisPriceLabel] = []
+        if let price = drawing.entryPrice {
+            labels.append(ChartAxisPriceLabel(id: "draft.entry", price: price, text: formatPrice(price),
+                color: .rgb(colorScheme == .light ? 0x8D6E00 : 0xFCD535)))
+        }
+        labels.append(ChartAxisPriceLabel(id: "draft.stopLoss", price: drawing.stopLossPrice,
+            text: formatPrice(drawing.stopLossPrice),
+            color: .rgb(colorScheme == .light ? 0xD92D4C : 0xFF4D67)))
+        return labels
     }
 
     private var indicatorSettingsIcon: some View {

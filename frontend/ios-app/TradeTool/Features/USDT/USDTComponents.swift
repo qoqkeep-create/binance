@@ -238,7 +238,7 @@ struct WebTabs: View {
       }
       RoundedRectangle(cornerRadius: 2, style: .continuous)
         .fill(BinanceTheme.accent).frame(width: lineWidth, height: 4)
-        .offset(x: slotWidth * (CGFloat(selectedIndex) + 0.5) - lineWidth / 2, y: 38)
+        .offset(x: slotWidth * (CGFloat(selectedIndex) + 0.5) - lineWidth / 2, y: 35)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selection)
         .allowsHitTesting(false).accessibilityHidden(true)
     }

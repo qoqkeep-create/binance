@@ -7628,6 +7628,97 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertEqual(liveBars.count, 4)
     }
 
+    func testOrderPriceAxisLabelsKeepCompletePricesInsideTheFixedAxis() async throws {
+        let fixture = try await makeChartSceneFixture()
+        for width in [320.0, 390.0] {
+            for scale in [2.0, 3.0] {
+                let viewport = try XCTUnwrap(ChartSceneViewport(
+                    widthPoints: width, heightPoints: 396, displayScale: scale))
+                let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+                let data = try XCTUnwrap(output.renderState.staticScene.crosshairData)
+                let plot = try XCTUnwrap(data.panelLayout.pricePanel?.plot)
+                let midpoint = (data.priceDomain.lower + data.priceDomain.upper) / 2
+                let labels = [
+                    ChartAxisPriceLabel(id: "entry", price: midpoint, text: "60220.12345678", color: .positive),
+                    ChartAxisPriceLabel(id: "stop", price: data.priceDomain.lower, text: "0.00000123456", color: .negative),
+                    ChartAxisPriceLabel(id: "outside", price: data.priceDomain.upper + 1, text: "1", color: .negative),
+                    ChartAxisPriceLabel(id: "invalid", price: .nan, text: "1", color: .negative)
+                ]
+                let batches = ChartAxisPriceLabelBuilder.batches(for: labels, data: data)
+                XCTAssertEqual(batches.count, 2, "Offscreen and invalid prices must not stick to a chart edge")
+                for (index, batch) in batches.enumerated() {
+                    XCTAssertEqual(batch.coordinateSpace, .fixed)
+                    let frame = try XCTUnwrap(batch.storage.barInstances.first)
+                    XCTAssertEqual(frame.left, plot.right + Float(2 * scale))
+                    XCTAssertEqual(frame.right, data.widthPixels - Float(scale))
+                    XCTAssertGreaterThanOrEqual(frame.top, plot.top)
+                    XCTAssertLessThanOrEqual(frame.bottom, plot.bottom)
+                    XCTAssertEqual(frame.bottom - frame.top, Float(18 * scale))
+                    let fill = try XCTUnwrap(batch.storage.barInstances.last)
+                    for appearance in [ChartAppearance.light, .dark] {
+                        let color = fill.color.resolved(for: appearance)
+                        XCTAssertEqual([color.red, color.green, color.blue, color.alpha], [1, 1, 1, 1])
+                    }
+                    let original = MetalTextLayouter.layout(text: labels[index].text, atlas: data.glyphAtlas,
+                        originX: 0, baselineY: 0, color: labels[index].color)
+                    XCTAssertFalse(original.instances.isEmpty)
+                    XCTAssertEqual(batch.storage.glyphInstances.count, original.instances.count,
+                        "Long prices must fit as a complete row, without dropping digits")
+                    XCTAssertTrue(batch.storage.glyphInstances.allSatisfy {
+                        $0.left >= frame.left && $0.right <= frame.right
+                            && $0.top >= frame.top && $0.bottom <= frame.bottom
+                    })
+                    let line = try XCTUnwrap(batch.storage.lineSegments.first)
+                    XCTAssertEqual(line.start.x, plot.right)
+                    XCTAssertEqual(line.end.x, data.widthPixels)
+                }
+                let state = output.renderState.withAxisPriceLabels(labels).withAppearance(.light)
+                XCTAssertEqual(state.axisPriceLabels.map(\.id), labels.map(\.id))
+            }
+        }
+    }
+
+    @MainActor
+    func testOrderPriceAxisLabelsStayBelowLatestPriceAndCrosshairPixels() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let renderer = try MetalRenderer(device: XCTUnwrap(MTLCreateSystemDefaultDevice()),
+            pixelFormat: .bgra8Unorm_srgb)
+        for scale in [2, 3] {
+            let viewport = try XCTUnwrap(ChartSceneViewport(
+                widthPoints: 390, heightPoints: 396, displayScale: Double(scale)))
+            let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+            let data = try XCTUnwrap(output.renderState.staticScene.crosshairData)
+            let marker = try XCTUnwrap(output.renderState.liveTail.latestPriceMarker)
+            let label = ChartAxisPriceLabel(id: "entry", price: try XCTUnwrap(output.renderState.liveTail.latestPrice),
+                text: "999999999999.9", color: .negative)
+            let hit = try XCTUnwrap(ChartCrosshairResolver.resolve(
+                screenX: Double(data.panelLayout.plotLeft + 180),
+                screenY: Double((marker.top + marker.bottom) / 2), transform: .identity,
+                data: data, liveData: output.renderState.liveTail.crosshairLiveData, clampsToPlot: true))
+            let crosshair = ChartCrosshairOverlayBuilder().makeSnapshot(
+                hit: hit, data: data, latestPrice: output.renderState.liveTail.latestPrice)
+            for appearance in [ChartAppearance.light, .dark] {
+                for selection in [CrosshairSnapshot?.none, crosshair] {
+                    let referenceState = RenderState(
+                        staticScene: output.renderState.staticScene, liveTail: output.renderState.liveTail,
+                        interaction: InteractionSnapshot(revision: 999, translationX: 0, scaleX: 1, crosshair: selection),
+                        invalidation: .full, appearance: appearance)
+                    let actual = try XCTUnwrap(renderer.renderOffscreen(
+                        state: referenceState.withAxisPriceLabels([label]), width: 390 * scale, height: 396 * scale))
+                    let reference = try XCTUnwrap(renderer.renderOffscreen(
+                        state: referenceState, width: actual.width, height: actual.height))
+                    // Opaque interiors must be identical to rendering without any order label.
+                    for y in Int(marker.top) + 3 * scale..<Int(marker.bottom) - 3 * scale {
+                        let start = y * actual.bytesPerRow + (Int(marker.left) + 5 * scale) * 4
+                        let end = y * actual.bytesPerRow + (Int(marker.right) - 5 * scale) * 4
+                        XCTAssertEqual(actual.bgra8UnormSRGB[start..<end], reference.bgra8UnormSRGB[start..<end],
+                            "Order-price fill or digits covered a higher price frame")
+                    }
+                }
+            }
+        }
+    }
+
     private func makeChartSceneFixture()
         async throws -> (
             pipeline: ChartDataPipeline,
@@ -8026,7 +8117,7 @@ final class ChartPositionContextTests: XCTestCase {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "stop_loss_amount": .string("10.55")])
         let profit = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: Decimal(string: "105.617")!)
-        XCTAssertEqual(profit[0].detail, "+11.23 U")
+        XCTAssertEqual(profit[0].detail, "+11.2 U")
         XCTAssertEqual(profit[1].detail, "-10.6 U")
         let loss = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: Decimal(string: "99.999")!)
         XCTAssertEqual(loss[0].detail, "0 U")
@@ -8036,7 +8127,7 @@ final class ChartPositionContextTests: XCTestCase {
     }
 
     @MainActor
-    func testPositionLabelsAreCompactSolidWhiteTextAndReachPriceGutter() throws {
+    func testPositionLabelsAreCompactSolidWhiteTextAndLeaveAxisToMetal() throws {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "market_stop_price": .string("60"), "stop_loss_amount": .string("10")])
         let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
@@ -8047,7 +8138,8 @@ final class ChartPositionContextTests: XCTestCase {
                     let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: quote)
                     let frames = ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection)
                     XCTAssertEqual(frames.count, 2)
-                    XCTAssertEqual(frames.map(\.width), [96, 96])
+                    XCTAssertEqual(frames.map(\.width), [80, 80])
+                    XCTAssertEqual(frames.map(\.height), [20, 20])
                     XCTAssertEqual(frames.map(\.minX), [10, 10])
                     let image = try renderPositionLines(lines, projection: projection, scheme: scheme, scale: scale)
                     func pixel(_ x: Int, _ y: Int) -> (Int, Int, Int, Int) {
@@ -8067,7 +8159,7 @@ final class ChartPositionContextTests: XCTestCase {
                         XCTAssertEqual(fill.3, 255)
                         var whiteGlyphs = 0
                         for y in Int(Double(centerY - 8) * scale)..<Int(Double(centerY + 8) * scale) {
-                            for x in Int(18 * scale)..<Int(98 * scale) {
+                            for x in Int(18 * scale)..<Int(86 * scale) {
                                 let p = pixel(x, y)
                                 if min(p.0, p.1, p.2) > 235 && p.3 > 240 { whiteGlyphs += 1 }
                             }
@@ -8083,8 +8175,8 @@ final class ChartPositionContextTests: XCTestCase {
                                 }
                             }
                         }
-                        XCTAssertGreaterThan(gutterColorPixels, 10, "Read-only lines must cross the right price gutter")
-                        XCTAssertGreaterThan(farEdgeColorPixels, 0, "The line must reach the canvas edge beyond the price-axis text")
+                        XCTAssertEqual(gutterColorPixels, 0, "Metal continues the line below its axis markers; SwiftUI must not overpaint latest price")
+                        XCTAssertEqual(farEdgeColorPixels, 0)
                     }
                 }
             }

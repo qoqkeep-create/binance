@@ -2,7 +2,7 @@ import AVKit
 import SwiftUI
 
 struct FloatingPiPSnapshot: Equatable {
-  static let pageSize = 4
+  static let pageSize = FloatingPiPFrameLayout.maximumRows
   var positions: [FloatingPosition] = []
   var updatedAt: Date?
   var status = "正在同步…"
@@ -51,6 +51,23 @@ struct FloatingPiPPresentation: Equatable {
   let totalCount: Int
   let page: String
   let footer: String
+}
+
+/// One geometry drives both the video format and the covered AVKit source.
+struct FloatingPiPFrameLayout {
+  static let maximumRows = 3
+  static let videoWidth = 640
+  static let firstRowTop = 80
+  static let rowStride = 82
+  let rowCount: Int
+
+  init(rowCount: Int) { self.rowCount = min(Self.maximumRows, max(0, rowCount)) }
+
+  // Empty/loading snapshots retain one compact status area, never a zero-size source.
+  var videoHeight: Int { 158 + max(1, rowCount) * Self.rowStride }
+  var sourceSize: CGSize { CGSize(width: 160, height: Double(videoHeight) / 4) }
+  var footerTop: CGFloat { CGFloat(videoHeight - 42) }
+  var emptyStatusTop: CGFloat { CGFloat(Self.firstRowTop) + CGFloat(videoHeight - Self.firstRowTop - 54) / 2 }
 }
 
 /// Retains only the newest presentation while AVKit applies backpressure.
@@ -117,6 +134,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   var isActive: Bool { lifecycle.isActive }
   var isStarting: Bool { lifecycle.isStarting }
   @Published private(set) var isPaused = false
+  @Published private(set) var sourceSize = FloatingPanelPlacement.sourceSize(forRowCount: 0)
   @Published var notice: String?
   var onSystemClose: (() -> Void)?
   var keepsUpdating: Bool { (isActive || isStarting) && !isPaused }
@@ -143,8 +161,12 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
       request: { ready in
         layer.requestMediaDataWhenReady(on: .main) { MainActor.assumeIsolated { ready() } }
       }, stop: { layer.stopRequestingMediaData() },
-      enqueue: { content in
-        if let sample = FloatingPiPFrameRenderer.sample(content) { layer.enqueue(sample) }
+      enqueue: { [weak self] content in
+        if let sample = FloatingPiPFrameRenderer.sample(content) {
+          layer.enqueue(sample)
+          let size = FloatingPanelPlacement.sourceSize(forRowCount: content.rows.count)
+          if self?.sourceSize != size { self?.sourceSize = size }
+        }
       })
     guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
     let source = AVPictureInPictureController.ContentSource(
@@ -354,7 +376,8 @@ struct FloatingPiPSource: UIViewRepresentable {
 
 enum FloatingPiPFrameRenderer {
   static func sample(_ content: FloatingPiPPresentation) -> CMSampleBuffer? {
-    let width = 640, height = 480
+    let layout = FloatingPiPFrameLayout(rowCount: content.rows.count)
+    let width = FloatingPiPFrameLayout.videoWidth, height = layout.videoHeight
     var buffer: CVPixelBuffer?
     let attributes: [CFString: Any] = [kCVPixelBufferCGImageCompatibilityKey: true,
       kCVPixelBufferCGBitmapContextCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:]]
@@ -376,10 +399,10 @@ enum FloatingPiPFrameRenderer {
       size: 30, color: .white, bold: true)
     text(content.page, in: CGRect(x: 524, y: 25, width: 92, height: 35), size: 26, color: muted)
     if content.rows.isEmpty {
-      text(content.footer, in: CGRect(x: 24, y: 194, width: 592, height: 54), size: 34, color: muted)
+      text(content.footer, in: CGRect(x: 24, y: layout.emptyStatusTop, width: 592, height: 54), size: 34, color: muted)
     }
-    for (index, row) in content.rows.enumerated() {
-      let y = CGFloat(80 + index * 82)
+    for (index, row) in content.rows.prefix(FloatingPiPFrameLayout.maximumRows).enumerated() {
+      let y = CGFloat(FloatingPiPFrameLayout.firstRowTop + index * FloatingPiPFrameLayout.rowStride)
       let color = row.stale ? muted : row.loss ? UIColor(red: 0.96, green: 0.27, blue: 0.36, alpha: 1)
         : UIColor(red: 0.05, green: 0.8, blue: 0.5, alpha: 1)
       text(row.symbol + " " + row.side, in: CGRect(x: 24, y: y, width: 336, height: 39),
@@ -388,7 +411,7 @@ enum FloatingPiPFrameRenderer {
       text("市价 " + row.price, in: CGRect(x: 24, y: y + 39, width: 592, height: 29), size: 23, color: muted)
     }
     if !content.rows.isEmpty {
-      text(content.footer, in: CGRect(x: 24, y: 438, width: 592, height: 29), size: 22, color: muted)
+      text(content.footer, in: CGRect(x: 24, y: layout.footerTop, width: 592, height: 29), size: 22, color: muted)
     }
     var description: CMVideoFormatDescription?
     guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer,

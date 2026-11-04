@@ -377,6 +377,7 @@ struct KlineChartSceneView: View {
   var automaticallyFitsPrice = true
   var candleMarkers: [ChartCandleMarker] = []
   var candleMarkerExclusions: [CGRect] = []
+  var axisPriceLabels: [ChartAxisPriceLabel] = []
   var diagnostics: ChartLoadDiagnostics? = nil
   var onFirstFramePresented: (KlineStreamEpoch, TimeInterval) -> Void = { _, _ in }
   var onNeedsOlderHistory: () -> Void = {}
@@ -440,6 +441,7 @@ struct KlineChartSceneView: View {
             automaticallyFitsPrice: automaticallyFitsPrice,
             candleMarkers: candleMarkers,
             candleMarkerExclusions: candleMarkerExclusions,
+            axisPriceLabels: axisPriceLabels,
             onFirstFramePresented: { time in
               if let epoch = frame?.epoch { onFirstFramePresented(epoch, time) }
             },

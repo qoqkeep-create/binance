@@ -1176,6 +1176,7 @@ final class KlineChartHostView: UIView {
             ),
             invalidation: .interaction,
             appearance: appearance,
+            axisPriceLabels: state.axisPriceLabels,
             readyTime: state.readyTime
         ))
     }

@@ -145,6 +145,7 @@ final class InteractionSnapshot: @unchecked Sendable {
 
 struct RenderState: Sendable {
     let appearance: ChartAppearance
+    let axisPriceLabels: [ChartAxisPriceLabel]
     let staticScene: StaticSceneSnapshot
     let liveTail: LiveTailSnapshot
     let interaction: InteractionSnapshot
@@ -157,10 +158,12 @@ struct RenderState: Sendable {
         interaction: InteractionSnapshot,
         invalidation: ChartInvalidation,
         appearance: ChartAppearance = .dark,
+        axisPriceLabels: [ChartAxisPriceLabel] = [],
         readyTime: TimeInterval =
             ProcessInfo.processInfo.systemUptime
     ) {
         self.appearance = appearance
+        self.axisPriceLabels = axisPriceLabels
         self.staticScene = staticScene
         self.liveTail = liveTail
         self.interaction = interaction
@@ -175,6 +178,19 @@ struct RenderState: Sendable {
             interaction: interaction,
             invalidation: invalidation,
             appearance: appearance,
+            axisPriceLabels: axisPriceLabels,
+            readyTime: readyTime
+        )
+    }
+
+    func withAxisPriceLabels(_ labels: [ChartAxisPriceLabel]) -> RenderState {
+        RenderState(
+            staticScene: staticScene,
+            liveTail: liveTail,
+            interaction: interaction,
+            invalidation: invalidation,
+            appearance: appearance,
+            axisPriceLabels: labels,
             readyTime: readyTime
         )
     }

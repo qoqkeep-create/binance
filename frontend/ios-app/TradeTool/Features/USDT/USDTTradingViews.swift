@@ -5,7 +5,7 @@ enum PositionEntryFeePresentation {
   static func text(_ row: JSONValue) -> String {
     guard row.value("entry_fee_status") == "confirmed",
       let fee = row["entry_realized_fee"]?.decimal, !fee.isNaN else { return "待核对" }
-    return NSDecimalNumber(decimal: fee).stringValue + " " + row.value("entry_fee_asset", fallback: "USDT")
+    return DisplayNumber.amount(fee, maximumFractionDigits: 2) + " " + row.value("entry_fee_asset", fallback: "USDT")
   }
 }
 
@@ -441,12 +441,17 @@ struct USDTTradeView: View {
           }.frame(maxWidth: .infinity, alignment: .leading)
           VStack(alignment: .leading, spacing: 5) {
             chartMetricLabel("止盈").frame(height: 24, alignment: .leading)
-            NavigationLink {
-              USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
-            } label: {
+            if hasPosition {
               takeProfitSelectionLabel
-            }.buttonStyle(.plain).disabled(hasPosition || busy || submitted || confirm)
-              .accessibilityIdentifier("chart-ticket.strategy")
+                .accessibilityIdentifier("chart-ticket.strategy")
+            } else {
+              NavigationLink {
+                USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
+              } label: {
+                takeProfitSelectionLabel
+              }.buttonStyle(.plain).disabled(busy || submitted || confirm)
+                .accessibilityIdentifier("chart-ticket.strategy")
+            }
           }.frame(maxWidth: .infinity, alignment: .leading)
         }
       }.monospacedDigit().padding(.horizontal, 10).padding(.vertical, 12)
@@ -560,7 +565,7 @@ struct USDTEntryDraft: Equatable {
     return (Decimal(string: riskAmount) ?? 0) / (ratio + (includeFee ? Self.feeRate : 0))
   }
   var positionText: String { Self.amount(positionEstimate) }
-  var feeText: String { Self.amount(positionEstimate * Self.feeRate) }
+  var feeText: String { DisplayNumber.amount(positionEstimate * Self.feeRate, maximumFractionDigits: 2) }
   static func amount(_ value: Decimal) -> String { DisplayNumber.text(value) }
   func matchesIntent(_ other: Self) -> Bool {
     symbol == other.symbol && orderType == other.orderType && stopLossPrice == other.stopLossPrice
@@ -946,7 +951,7 @@ struct USDTPositionsView: View {
         Button {
           openChart(row, valuation: valuation)
         } label: {
-          WebIcon("candlesticks", size: 20).foregroundStyle(WebTheme.text)
+          PositionCandlestickIcon()
             .frame(width: 32, height: 32)
             .background(WebTheme.secondaryButton, in: RoundedRectangle(cornerRadius: 8))
             .frame(width: 44, height: 44).contentShape(Rectangle())
@@ -1153,6 +1158,26 @@ struct USDTPositionsView: View {
 private struct WebCloseTarget: Codable {
   let positionID: JSONValue
   let key: String
+}
+
+private struct PositionCandlestickIcon: View {
+  var body: some View {
+    HStack(spacing: 4) {
+      candle(color: WebTheme.success, bodyOffset: 2)
+      candle(color: WebTheme.danger, bodyOffset: -3)
+    }
+    .frame(width: 20, height: 20)
+    .accessibilityHidden(true)
+  }
+
+  private func candle(color: Color, bodyOffset: CGFloat) -> some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 0.5).fill(color).frame(width: 1.4, height: 18)
+      RoundedRectangle(cornerRadius: 0.6).fill(color).frame(width: 6, height: 9)
+        .offset(y: bodyOffset)
+    }
+    .frame(width: 6, height: 20)
+  }
 }
 
 private struct WebPositionOperation: Identifiable {

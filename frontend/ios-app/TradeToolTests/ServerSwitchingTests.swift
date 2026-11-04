@@ -1431,7 +1431,7 @@ final class ChartOrderTicketTests: XCTestCase {
         let long = draft()
         XCTAssertTrue(long.isLong)
         XCTAssertEqual(long.positionEstimate, 1000)
-        XCTAssertEqual(long.feeText, "1.000")
+        XCTAssertEqual(long.feeText, "1")
         let short = draft(stop: "101")
         XCTAssertFalse(short.isLong)
         XCTAssertEqual(short.positionEstimate, long.positionEstimate)

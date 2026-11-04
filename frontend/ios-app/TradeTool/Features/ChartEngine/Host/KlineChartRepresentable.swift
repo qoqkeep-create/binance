@@ -11,6 +11,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
     var automaticallyFitsPrice = true
     var candleMarkers: [ChartCandleMarker] = []
     var candleMarkerExclusions: [CGRect] = []
+    var axisPriceLabels: [ChartAxisPriceLabel] = []
     var onFirstFramePresented: (TimeInterval) -> Void = { _ in }
     var onCrosshairSelection: (ChartCrosshairSelection) -> Void = { _ in }
     var onCrosshairDismiss: () -> Void = {}
@@ -40,7 +41,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
             automaticallyFitsPrice: automaticallyFitsPrice,
             onChange: onPriceViewportChange
         )
-        view.submit(renderState)
+        view.submit(renderState.withAxisPriceLabels(axisPriceLabels))
     }
 
     static func dismantleUIView(

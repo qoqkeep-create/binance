@@ -69,7 +69,7 @@ final class FloatingPositionsTests: XCTestCase {
     XCTAssertFalse(lifecycle.isActive)
   }
 
-  func testPiPShowsAllPositionsTogetherWhenThereAreAtMostFour() throws {
+  func testPiPShowsAllPositionsTogetherWhenThereAreAtMostThree() throws {
     let now = Date(timeIntervalSince1970: 1_000)
     let positions = [try XCTUnwrap(floating(row())),
       try XCTUnwrap(floating(row(symbol: "ETHUSDT", profit: "-3.50", side: 1)))]
@@ -85,14 +85,14 @@ final class FloatingPositionsTests: XCTestCase {
     XCTAssertEqual(next.rows.map(\.id), first.rows.map(\.id), "A short list must never rotate one coin at a time")
   }
 
-  func testPiPGroupsAllPositionsIntoPagesOfFourAndWrapsWithoutOmittingRows() throws {
+  func testPiPGroupsAllPositionsIntoPagesOfThreeAndWrapsWithoutOmittingRows() throws {
     let now = Date(timeIntervalSince1970: 1_000)
-    let positions = try (0..<9).map { try XCTUnwrap(floating(row(symbol: "COIN\($0)USDT"))) }
+    let positions = try (0..<7).map { try XCTUnwrap(floating(row(symbol: "COIN\($0)USDT"))) }
     let snapshot = FloatingPiPSnapshot(positions: positions, updatedAt: now)
     let pages = (0..<3).map { snapshot.presentation(at: now.addingTimeInterval(Double($0 * 5)), cyclingSince: now, paused: false) }
-    XCTAssertEqual(pages.map { $0.rows.count }, [4, 4, 1])
+    XCTAssertEqual(pages.map { $0.rows.count }, [3, 3, 1])
     XCTAssertEqual(pages.map(\.page), ["1/3", "2/3", "3/3"])
-    XCTAssertTrue(pages.allSatisfy { $0.totalCount == 9 })
+    XCTAssertTrue(pages.allSatisfy { $0.totalCount == 7 })
     XCTAssertEqual(pages.flatMap { $0.rows.map(\.id) }, positions.map(\.id))
     let wrapped = snapshot.presentation(at: now.addingTimeInterval(15), cyclingSince: now, paused: false)
     XCTAssertEqual(wrapped.rows.map(\.id), pages[0].rows.map(\.id))
@@ -126,13 +126,45 @@ final class FloatingPositionsTests: XCTestCase {
   }
 
   @MainActor
+  func testPiPVideoFrameHeightFollowsVisibleRowsIncludingShortLastPageAndClosingPositions() throws {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let positions = try (0..<7).map { try XCTUnwrap(floating(row(symbol: "COIN\($0)USDT"))) }
+    func height(_ content: FloatingPiPPresentation) throws -> Int {
+      let sample = try XCTUnwrap(FloatingPiPFrameRenderer.sample(content))
+      XCTAssertTrue(CMSampleBufferDataIsReady(sample))
+      let buffer = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
+      XCTAssertEqual(CVPixelBufferGetWidth(buffer), 640)
+      XCTAssertNotNil(CVPixelBufferGetIOSurface(buffer))
+      let description = try XCTUnwrap(CMSampleBufferGetFormatDescription(sample))
+      let dimensions = CMVideoFormatDescriptionGetDimensions(description)
+      XCTAssertEqual(Int(dimensions.width), CVPixelBufferGetWidth(buffer))
+      XCTAssertEqual(Int(dimensions.height), CVPixelBufferGetHeight(buffer))
+      return CVPixelBufferGetHeight(buffer)
+    }
+    for (count, expected) in [(0, 240), (1, 240), (2, 322), (3, 404)] {
+      let content = FloatingPiPSnapshot(positions: Array(positions.prefix(count)), updatedAt: now)
+        .presentation(at: now, cyclingSince: now, paused: false)
+      XCTAssertEqual(try height(content), expected)
+      let source = FloatingPanelPlacement.sourceSize(forRowCount: content.rows.count)
+      XCTAssertEqual(source.width, 160)
+      XCTAssertEqual(source.height, CGFloat(expected) / 4)
+    }
+    let snapshot = FloatingPiPSnapshot(positions: positions, updatedAt: now)
+    let pages = (0..<3).map { snapshot.presentation(at: now.addingTimeInterval(Double($0 * 5)), cyclingSince: now, paused: false) }
+    XCTAssertEqual(try pages.map(height), [404, 404, 240])
+    let reduced = FloatingPiPSnapshot(positions: Array(positions.prefix(1)), updatedAt: now)
+      .presentation(at: now.addingTimeInterval(10), cyclingSince: now, paused: false)
+    XCTAssertEqual(try height(reduced), 240, "Closing positions must shrink the next video frame immediately")
+  }
+
+  @MainActor
   func testPictureInPictureProducesReadyVideoFrameFromSnapshot() throws {
     let snapshot = FloatingPiPSnapshot(positions: [try XCTUnwrap(floating(row()))], updatedAt: Date())
     let sample = try XCTUnwrap(FloatingPiPFrameRenderer.sample(snapshot.presentation(at: Date(), cyclingSince: nil, paused: false)))
     XCTAssertTrue(CMSampleBufferDataIsReady(sample))
     let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
     XCTAssertEqual(CVPixelBufferGetWidth(image), 640)
-    XCTAssertEqual(CVPixelBufferGetHeight(image), 480)
+    XCTAssertEqual(CVPixelBufferGetHeight(image), 240)
     XCTAssertNotNil(CVPixelBufferGetIOSurface(image))
     let bitmap = CIImage(cvPixelBuffer: image)
     let context = CIContext(options: [.useSoftwareRenderer: true])

@@ -158,8 +158,10 @@ final class FloatingPositionsModel: ObservableObject {
 }
 
 enum FloatingPanelPlacement {
-  // The covered source needs stable, nonzero geometry for AVKit readiness.
-  static let sourceSize = CGSize(width: 160, height: 120)
+  // The covered source stays nonzero and matches the currently displayed video format.
+  static func sourceSize(forRowCount rowCount: Int) -> CGSize {
+    FloatingPiPFrameLayout(rowCount: rowCount).sourceSize
+  }
 }
 
 private struct FloatingPositionsOverlay: ViewModifier {
@@ -203,7 +205,7 @@ private struct FloatingPositionsOverlay: ViewModifier {
       ZStack {
         FloatingPiPSource(controller: pip)
         BinanceTheme.navigationBackground
-      }.frame(width: FloatingPanelPlacement.sourceSize.width, height: FloatingPanelPlacement.sourceSize.height)
+      }.frame(width: pip.sourceSize.width, height: pip.sourceSize.height)
         .allowsHitTesting(false).accessibilityHidden(true)
     }
     .task(id: "\(context):\(refreshing)") {

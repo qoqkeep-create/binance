@@ -94,9 +94,12 @@ final class WebRefreshInteractionTests: XCTestCase {
 final class PositionEntryFeePresentationTests: XCTestCase {
   func testConfirmedFeeIsDisplayedWithoutAnEstimateIncludingZero() {
     XCTAssertEqual(PositionEntryFeePresentation.text(.object([
-      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("1.25"),
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("1.254"),
       "entry_fee_asset": .string("USDT"), "estimated_total_fee": .string("9")
     ])), "1.25 USDT")
+    XCTAssertEqual(PositionEntryFeePresentation.text(.object([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("1.255")
+    ])), "1.26 USDT")
     XCTAssertEqual(PositionEntryFeePresentation.text(.object([
       "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("0")
     ])), "0 USDT")

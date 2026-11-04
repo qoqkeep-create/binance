@@ -158,3 +158,11 @@ enum ChartGlyphRowLayout {
         }
     }
 }
+
+/// Read-only order prices, independent of the timeline's horizontal transform.
+struct ChartAxisPriceLabel: Equatable, Sendable {
+    let id: String
+    let price: Double
+    let text: String
+    let color: ChartColor
+}

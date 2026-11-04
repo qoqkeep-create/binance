@@ -90,7 +90,7 @@ struct ChartColor: Equatable, Sendable {
         return color.withAlpha(lightModeAlpha ?? alpha)
     }
 
-    private static func rgb(_ hex: UInt32) -> ChartColor {
+    static func rgb(_ hex: UInt32) -> ChartColor {
         ChartColor(
             uncheckedRed: Float((hex >> 16) & 0xFF) / 255,
             green: Float((hex >> 8) & 0xFF) / 255,

@@ -2,8 +2,9 @@
 """Run real shared-position, valuation, and PiP scheduling tests without a simulator.
 
 Production Store, API request/JSON, snapshot, quote ownership, presentation, and
-frame-delivery code are extracted unchanged. UIKit frame rendering is excluded;
-all API calls are served by an in-memory fixture and no network request occurs.
+frame-delivery code are extracted unchanged. Video buffers use the production
+renderer with AppKit font/context adapters on macOS; all API calls use in-memory
+fixtures and no network request occurs.
 """
 import hashlib
 import json
@@ -28,11 +29,19 @@ def generate(destination):
     pip = pip_path.read_text()
     pure = pip[pip.index("struct FloatingPiPSnapshot:"):pip.index("/// The system owns the external window;")]
     (destination / "Sources/PiPScheduling.swift").write_text("import Foundation\n" + pure)
+    renderer = pip[pip.index("enum FloatingPiPFrameRenderer {"):]
+    renderer = renderer.replace("UIColor", "NSColor").replace("UIFont.", "NSFont.")
+    (destination / "Sources/PiPFrameRenderer.swift").write_text(
+        "import AppKit\nimport AVFoundation\n" +
+        "func UIGraphicsPushContext(_ context: CGContext) {\n"
+        "  NSGraphicsContext.saveGraphicsState()\n"
+        "  NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)\n}\n"
+        "func UIGraphicsPopContext() { NSGraphicsContext.restoreGraphicsState() }\n" + renderer)
     number_path = APP / "Core/Presentation/DisplayNumber.swift"
     (destination / "Sources/DisplayNumber.swift").write_text(number_path.read_text())
     fixture_paths = [IOS / "TradeToolTests/FloatingPositionsTests.swift", IOS / "TradeToolTests/PositionLiveValuationTests.swift"]
     tests = fixture_paths[0].read_text()
-    tests = tests.replace("import AVFoundation\n", "").replace("import CoreImage\n", "").replace("import UIKit\n", "")
+    tests = tests.replace("import UIKit\n", "")
     begin = tests.index("  @MainActor\n  func testPictureInPictureProducesReadyVideoFrameFromSnapshot")
     end = tests.index("  func testDecimalSnapshotPreservesSmallPriceAndSignedProfit", begin)
     tests = tests[:begin] + tests[end:]
