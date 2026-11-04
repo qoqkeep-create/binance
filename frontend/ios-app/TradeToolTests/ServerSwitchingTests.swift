@@ -1496,30 +1496,53 @@ final class ChartOrderTicketTests: XCTestCase {
             }
         }
     }
-    func testIntervalFavoritesKeepAtLeastOneAndRetainCurrentSelection() {
+    func testIntervalFavoritesKeepDefaultsAndNormalizeStoredValues() {
         XCTAssertEqual(ChartIntervalPreferences.favorites(ChartIntervalPreferences.defaultValue).map(\.rawValue), ["3m", "5m", "15m", "1h", "4h", "1d"])
-        XCTAssertEqual(ChartIntervalPreferences.toggling(.oneHour, in: "1h"), "1h")
         XCTAssertEqual(ChartIntervalPreferences.toggling(.oneMinute, in: "1h"), "1m,1h")
-        XCTAssertEqual(ChartIntervalPreferences.visible("1h", selected: .threeMinutes).map(\.rawValue), ["3m", "1h"])
         XCTAssertEqual(ChartIntervalPreferences.favorites("bad,1h,1h"), [.oneHour])
-        XCTAssertFalse(ChartIntervalPreferences.favorites("").isEmpty)
+        XCTAssertEqual(ChartIntervalPreferences.favorites("bad"), ChartIntervalPreferences.favorites(ChartIntervalPreferences.defaultValue))
         XCTAssertEqual(MarketKlineInterval.threeMinutes.duration, 180)
     }
 
-    func testIntervalShortcutsNeverExceedSixIncludingAnAlternateSelection() {
+    func testIntervalFavoritesCanRemoveTheLastShortcutWithoutRestoringDefaults() {
+        XCTAssertEqual(ChartIntervalPreferences.toggling(.oneHour, in: "1h"), "")
+        XCTAssertTrue(ChartIntervalPreferences.favorites("").isEmpty)
+        XCTAssertEqual(ChartIntervalPreferences.toggling(.oneMinute, in: ""), "1m")
+    }
+
+    func testIntervalShortcutsAllowSevenAndRejectTheEighth() {
         let defaults = ChartIntervalPreferences.defaultValue
-        let visible = ChartIntervalPreferences.visible(defaults, selected: .oneMinute)
-        XCTAssertEqual(visible.count, 6)
-        XCTAssertTrue(visible.contains(.oneMinute))
-        XCTAssertEqual(ChartIntervalPreferences.toggling(.oneMinute, in: defaults), defaults)
+        let seven = ChartIntervalPreferences.toggling(.oneMinute, in: defaults)
+        XCTAssertEqual(ChartIntervalPreferences.favorites(seven).count, 7)
+        XCTAssertTrue(ChartIntervalPreferences.favorites(seven).contains(.oneMinute))
+        XCTAssertEqual(ChartIntervalPreferences.toggling(.thirtyMinutes, in: seven), seven)
+        let removed = ChartIntervalPreferences.toggling(.oneDay, in: seven)
+        let replaced = ChartIntervalPreferences.toggling(.thirtyMinutes, in: removed)
+        XCTAssertEqual(ChartIntervalPreferences.favorites(replaced).count, 7)
+        XCTAssertTrue(ChartIntervalPreferences.favorites(replaced).contains(.thirtyMinutes))
+        XCTAssertFalse(ChartIntervalPreferences.favorites(replaced).contains(.oneDay))
+    }
+
+    func testIntervalFavoriteAndAlternativeGroupsMoveTogether() {
+        let before = "3m,1h"
+        let added = ChartIntervalPreferences.toggling(.oneMinute, in: before)
+        let shown = ChartIntervalPreferences.favorites(added)
+        let alternatives = MarketKlineInterval.allCases.filter { !shown.contains($0) }
+        XCTAssertEqual(shown, [.oneMinute, .threeMinutes, .oneHour])
+        XCTAssertFalse(alternatives.contains(.oneMinute))
+        XCTAssertEqual(Set(shown).union(alternatives), Set(MarketKlineInterval.allCases))
+        XCTAssertTrue(Set(shown).isDisjoint(with: alternatives))
+        let removed = ChartIntervalPreferences.toggling(.threeMinutes, in: added)
+        XCTAssertEqual(ChartIntervalPreferences.favorites(removed), [.oneMinute, .oneHour])
+        XCTAssertFalse(ChartIntervalPreferences.favorites(removed).contains(.threeMinutes), "The current chart interval must not be silently inserted back into its shortcut list")
+    }
+
+    func testLegacyIntervalShortcutsAreLimitedToSevenWithoutLosingSupportedIntervals() {
         let legacy = MarketKlineInterval.allCases.map(\.rawValue).joined(separator: ",")
-        XCTAssertEqual(ChartIntervalPreferences.favorites(legacy).count, 6)
+        XCTAssertEqual(ChartIntervalPreferences.favorites(legacy), Array(MarketKlineInterval.allCases.prefix(7)))
         for (interval, seconds) in [(MarketKlineInterval.thirtyMinutes, 1800), (.twoHours, 7200),
             (.eightHours, 28800), (.sixteenHours, 57600), (.threeDays, 259200), (.oneWeek, 604800)] {
             XCTAssertEqual(interval.duration, Double(seconds))
-            let visible = ChartIntervalPreferences.visible(defaults, selected: interval)
-            XCTAssertEqual(visible.count, 6)
-            XCTAssertTrue(visible.contains(interval))
         }
     }
 }

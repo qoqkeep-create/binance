@@ -2,10 +2,12 @@ import SwiftUI
 
 /// A completed entry's charged fee must never fall back to a round-trip estimate.
 enum PositionEntryFeePresentation {
-  static func text(_ row: JSONValue) -> String {
+  static func text(_ row: JSONValue, abbreviatedUnit: Bool = false) -> String {
     guard row.value("entry_fee_status") == "confirmed",
       let fee = row["entry_realized_fee"]?.decimal, !fee.isNaN else { return "待核对" }
-    return DisplayNumber.amount(fee, maximumFractionDigits: 2) + " " + row.value("entry_fee_asset", fallback: "USDT")
+    let asset = row.value("entry_fee_asset", fallback: "USDT")
+    let unit = abbreviatedUnit && asset.uppercased() == "USDT" ? "U" : asset
+    return DisplayNumber.amount(fee, maximumFractionDigits: 2) + " " + unit
   }
 }
 
@@ -390,7 +392,7 @@ struct USDTTradeView: View {
   }
   private var heldFee: String {
     guard let row = heldRow else { return "-" }
-    return PositionEntryFeePresentation.text(row)
+    return PositionEntryFeePresentation.text(row, abbreviatedUnit: true)
   }
   private var chartTicket: some View {
     VStack(spacing: 14) {

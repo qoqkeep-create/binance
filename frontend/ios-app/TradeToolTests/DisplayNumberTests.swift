@@ -99,10 +99,10 @@ final class PositionEntryFeePresentationTests: XCTestCase {
     ])), "1.25 USDT")
     XCTAssertEqual(PositionEntryFeePresentation.text(.object([
       "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("1.255")
-    ])), "1.26 USDT")
+    ]), abbreviatedUnit: true), "1.26 U")
     XCTAssertEqual(PositionEntryFeePresentation.text(.object([
       "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("0")
-    ])), "0 USDT")
+    ]), abbreviatedUnit: true), "0 U")
   }
 
   func testUnknownActualFeeDoesNotPretendAnEstimateHasBeenCharged() {

@@ -1008,11 +1008,20 @@ final class ChartCalibrationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["图表周期"].exists)
         XCTAssertTrue(app.staticTexts["备选周期"].exists)
         XCTAssertTrue(app.buttons["interval-settings.favorite.3m"].exists)
-        XCTAssertFalse(app.buttons["interval-settings.favorite.1m"].isEnabled)
-        app.buttons["interval-settings.favorite.1d"].tap()
+        XCTAssertTrue(app.buttons["interval-settings.favorite.1m"].isEnabled)
+        XCTAssertEqual(app.buttons["interval-settings.favorite.1m"].value as? String, "0")
         app.buttons["interval-settings.favorite.1m"].tap()
+        XCTAssertEqual(app.buttons["interval-settings.favorite.1m"].value as? String, "1")
+        app.buttons["interval-settings.favorite.30m"].tap()
+        XCTAssertTrue(app.staticTexts["最多可选 7 个周期"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.buttons["interval-settings.favorite.30m"].value as? String, "0")
+        app.buttons["interval-settings.favorite.1d"].tap()
         attachScreenshot(named: "chart-interval-sections")
         app.buttons["interval-settings.select.3m"].tap()
+        XCTAssertTrue(app.staticTexts["图表周期"].exists, "Editing a shortcut must keep the settings open")
+        XCTAssertEqual(app.buttons["interval-settings.favorite.3m"].value as? String, "0")
+        app.buttons["interval-settings.select.3m"].tap()
+        app.buttons["关闭"].firstMatch.tap()
         XCTAssertTrue(app.buttons["chart-interval.3m"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["chart-interval.1m"].exists)
         XCTAssertLessThanOrEqual(app.buttons["chart-interval.edit"].frame.minX
@@ -2131,11 +2140,16 @@ final class ChartCalibrationUITests: XCTestCase {
     ) {
         let intervals = ["1分": "1m", "3分": "3m", "5分": "5m", "15分": "15m", "1小时": "1h", "4小时": "4h", "1天": "1d"]
         guard let key = intervals[title] else { XCTFail("Unknown interval " + title); return }
-        app.buttons["chart-interval.edit"].tap()
-        let button = app.buttons["interval-settings.select." + key]
-        XCTAssertTrue(button.waitForExistence(timeout: 5))
-        button.tap()
+        if !app.buttons["chart-interval." + key].exists {
+            app.buttons["chart-interval.edit"].tap()
+            app.buttons["恢复默认周期"].tap()
+            let favorite = app.buttons["interval-settings.favorite." + key]
+            XCTAssertTrue(favorite.waitForExistence(timeout: 5))
+            if favorite.value as? String != "1" { favorite.tap() }
+            app.buttons["关闭"].firstMatch.tap()
+        }
         XCTAssertTrue(app.buttons["chart-interval." + key].waitForExistence(timeout: 5))
+        app.buttons["chart-interval." + key].tap()
     }
 
     private func resetToOneHour(
@@ -3022,7 +3036,7 @@ final class WebParityUITests: XCTestCase {
       capture("green-stop-prompt-" + appearance)
       app.buttons["chart-interval.edit"].tap()
       app.buttons["恢复默认周期"].tap()
-      let defaultRestored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"),
+      let defaultRestored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"),
         object: app.buttons["interval-settings.favorite.1m"])
       XCTAssertEqual(XCTWaiter.wait(for: [defaultRestored], timeout: 3), .completed)
       let shown = app.staticTexts["图表周期"]

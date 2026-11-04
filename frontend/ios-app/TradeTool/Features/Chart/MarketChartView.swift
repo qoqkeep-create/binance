@@ -257,8 +257,7 @@ private struct MarketChartDetailView: View {
             USDTChartOrderSettingsView()
         }
         .largeTradingSheet(isPresented: $showsIntervalSettings) {
-            ChartIntervalSettingsView(selection: viewModel.interval,
-                favorites: $favoriteIntervals, onSelect: viewModel.selectInterval)
+            ChartIntervalSettingsView(favorites: $favoriteIntervals)
         }
         .largeTradingSheet(isPresented: $showsLeverage, background: WebTheme.page) {
             USDTLeverageBracketsView(symbol: viewModel.market.symbol)
@@ -445,7 +444,7 @@ private struct MarketChartDetailView: View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
-                    ForEach(ChartIntervalPreferences.visible(favoriteIntervals, selected: viewModel.interval)) { interval in
+                    ForEach(ChartIntervalPreferences.favorites(favoriteIntervals)) { interval in
                         Button { viewModel.selectInterval(interval) } label: {
                             Text(interval.title).font(.system(size: ChartToolbarMetrics.textSize,
                                 weight: interval == viewModel.interval ? .semibold : .medium))
@@ -1364,25 +1363,15 @@ private enum MarketDisplayFormatter {
 enum ChartIntervalPreferences {
     static let storageKey = "integrated.chart.favoriteIntervals"
     static let defaultValue = "3m,5m,15m,1h,4h,1d"
-    static let maximumCount = 6
+    static let maximumCount = 7
     static func favorites(_ value: String) -> [MarketKlineInterval] {
         let enabled = Set(value.split(separator: ",").compactMap { MarketKlineInterval(rawValue: String($0)) })
-        if enabled.isEmpty, value != defaultValue { return favorites(defaultValue) }
+        if enabled.isEmpty, !value.isEmpty, value != defaultValue { return favorites(defaultValue) }
         return Array(MarketKlineInterval.allCases.filter { enabled.contains($0) }.prefix(maximumCount))
-    }
-    static func visible(_ value: String, selected: MarketKlineInterval) -> [MarketKlineInterval] {
-        var shortcuts = favorites(value)
-        if !shortcuts.contains(selected) {
-            if shortcuts.count == maximumCount { shortcuts.removeLast() }
-            shortcuts.append(selected)
-        }
-        let enabled = Set(shortcuts)
-        return MarketKlineInterval.allCases.filter { enabled.contains($0) }
     }
     static func toggling(_ interval: MarketKlineInterval, in value: String) -> String {
         var enabled = Set(favorites(value))
         if enabled.contains(interval) {
-            guard enabled.count > 1 else { return value }
             enabled.remove(interval)
         } else {
             guard enabled.count < maximumCount else { return value }
@@ -1413,10 +1402,9 @@ private struct ChartAutoFitToggleStyle: ToggleStyle {
 }
 
 private struct ChartIntervalSettingsView: View {
-    let selection: MarketKlineInterval
     @Binding var favorites: String
-    let onSelect: (MarketKlineInterval) -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var toastCenter: AppToastCenter
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1427,9 +1415,6 @@ private struct ChartIntervalSettingsView: View {
                     Image(systemName: "xmark").frame(width: 44, height: 44)
                 }.buttonStyle(.plain).accessibilityLabel("关闭")
             }.padding(.horizontal, 20).padding(.top, 12)
-            Text("点击周期切换图表；星标管理快捷栏，保留 1–6 个。")
-                .font(.system(size: 12)).foregroundStyle(BinanceTheme.secondaryText)
-                .padding(.horizontal, 20).padding(.bottom, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     intervalSection("图表周期", intervals: visibleIntervals)
@@ -1441,10 +1426,11 @@ private struct ChartIntervalSettingsView: View {
                 }.padding(.horizontal, 20).padding(.bottom, 12)
             }.scrollIndicators(.hidden)
         }.foregroundStyle(BinanceTheme.primaryText).background(BinanceTheme.background)
+            .globalAPIToasts(using: toastCenter)
 
     }
     private var visibleIntervals: [MarketKlineInterval] {
-        ChartIntervalPreferences.visible(favorites, selected: selection)
+        ChartIntervalPreferences.favorites(favorites)
     }
     private func intervalSection(_ title: String, intervals: [MarketKlineInterval]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1455,32 +1441,40 @@ private struct ChartIntervalSettingsView: View {
         }
     }
     private func intervalOption(_ interval: MarketKlineInterval) -> some View {
-        let selected = interval == selection
         let enabled = ChartIntervalPreferences.favorites(favorites).contains(interval)
         return HStack(spacing: 0) {
-            Button {
-                onSelect(interval); dismiss()
-            } label: {
+            Button { toggle(interval) } label: {
                 Text(interval.title).font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(selected ? WebTheme.color(0x735500, 0xFFE58A) : BinanceTheme.secondaryText)
+                    .foregroundStyle(enabled ? WebTheme.color(0x735500, 0xFFE58A) : BinanceTheme.secondaryText)
                     .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("interval-settings.select." + interval.rawValue)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            Button { favorites = ChartIntervalPreferences.toggling(interval, in: favorites) } label: {
+                .accessibilityValue(enabled ? "1" : "0")
+                .accessibilityAddTraits(enabled ? .isSelected : [])
+            Button { toggle(interval) } label: {
                 Image(systemName: enabled ? "star.fill" : "star")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(enabled ? Color(red: 0.86, green: 0.62, blue: 0) : BinanceTheme.secondaryText)
+                    .foregroundStyle(enabled ? BinanceTheme.accent : BinanceTheme.secondaryText)
                     .frame(width: 28, height: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel(interval.title + (enabled ? "停用快捷周期" : "启用快捷周期"))
                 .accessibilityIdentifier("interval-settings.favorite." + interval.rawValue)
-                .disabled(!enabled && ChartIntervalPreferences.favorites(favorites).count >= ChartIntervalPreferences.maximumCount)
+                .accessibilityValue(enabled ? "1" : "0")
+                .accessibilityAddTraits(enabled ? .isSelected : [])
         }.background {
             RoundedRectangle(cornerRadius: 8)
-                .fill(selected ? WebTheme.color(0xFFF5CC, 0x51451F) : BinanceTheme.surface)
+                .fill(enabled ? WebTheme.color(0xFFF5CC, 0x51451F) : BinanceTheme.surface)
                 .overlay {
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(selected ? BinanceTheme.accent : BinanceTheme.border, lineWidth: 1)
+                        .stroke(enabled ? BinanceTheme.accent : BinanceTheme.border, lineWidth: 1)
                 }.frame(height: 32)
         }
+    }
+
+    private func toggle(_ interval: MarketKlineInterval) {
+        let current = ChartIntervalPreferences.favorites(favorites)
+        guard current.contains(interval) || current.count < ChartIntervalPreferences.maximumCount else {
+            toastCenter.warning("最多可选 7 个周期")
+            return
+        }
+        favorites = ChartIntervalPreferences.toggling(interval, in: favorites)
     }
 }
