@@ -7657,7 +7657,8 @@ final class ChartEngineCoreTests: XCTestCase {
                     let fill = try XCTUnwrap(batch.storage.barInstances.last)
                     for appearance in [ChartAppearance.light, .dark] {
                         let color = fill.color.resolved(for: appearance)
-                        XCTAssertEqual([color.red, color.green, color.blue, color.alpha], [1, 1, 1, 1])
+                        XCTAssertEqual(color, ChartColor.chartBackground.resolved(for: appearance),
+                            "Order prices must have opaque white/light and gray-black/dark interiors")
                     }
                     let original = MetalTextLayouter.layout(text: labels[index].text, atlas: data.glyphAtlas,
                         originX: 0, baselineY: 0, color: labels[index].color)
@@ -7670,10 +7671,75 @@ final class ChartEngineCoreTests: XCTestCase {
                     })
                     let line = try XCTUnwrap(batch.storage.lineSegments.first)
                     XCTAssertEqual(line.start.x, plot.right)
-                    XCTAssertEqual(line.end.x, data.widthPixels)
+                    XCTAssertEqual(line.end.x, frame.left,
+                        "The price line must end at the frame border, without passing through its interior")
+                    XCTAssertGreaterThanOrEqual(line.end.y, frame.top + frame.cornerRadius)
+                    XCTAssertLessThanOrEqual(line.end.y, frame.bottom - frame.cornerRadius)
+                    XCTAssertEqual(line.dashLength, 0, "The short axis connector must reach the frame without a dash gap")
                 }
                 let state = output.renderState.withAxisPriceLabels(labels).withAppearance(.light)
                 XCTAssertEqual(state.axisPriceLabels.map(\.id), labels.map(\.id))
+            }
+        }
+    }
+
+    @MainActor
+    func testOrderPriceAxisLabelsUseThemeFillAndConnectedLinesDuringPan() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let renderer = try MetalRenderer(device: XCTUnwrap(MTLCreateSystemDefaultDevice()),
+            pixelFormat: .bgra8Unorm_srgb)
+        for scale in [2, 3] {
+            let viewport = try XCTUnwrap(ChartSceneViewport(
+                widthPoints: 390, heightPoints: 396, displayScale: Double(scale)))
+            let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+            let data = try XCTUnwrap(output.renderState.staticScene.crosshairData)
+            let label = ChartAxisPriceLabel(id: "stop", price: data.priceDomain.lower
+                + (data.priceDomain.upper - data.priceDomain.lower) * 0.2, text: "1", color: .negative)
+            let batch = try XCTUnwrap(ChartAxisPriceLabelBuilder.batches(for: [label], data: data).first)
+            let frame = try XCTUnwrap(batch.storage.barInstances.first)
+            let line = try XCTUnwrap(batch.storage.lineSegments.first)
+            for appearance in [ChartAppearance.light, .dark] {
+                var reference: MetalOffscreenImage?
+                for translation: Double in [0, -43 * Double(scale)] {
+                    let state = RenderState(staticScene: output.renderState.staticScene,
+                        liveTail: output.renderState.liveTail,
+                        interaction: InteractionSnapshot(revision: 999, translationX: translation,
+                            scaleX: translation == 0 ? 1 : 1.4, crosshair: nil),
+                        invalidation: .full, appearance: appearance).withAxisPriceLabels([label])
+                    let image = try XCTUnwrap(renderer.renderOffscreen(
+                        state: state, width: 390 * scale, height: 396 * scale))
+                    let fill = ChartColor.chartBackground.resolved(for: appearance)
+                    let expected = [fill.blue, fill.green, fill.red, fill.alpha].map { Int(($0 * 255).rounded()) }
+                    let centerY = Int((frame.top + frame.bottom) / 2)
+                    let startX = Int(frame.left) + 8 * scale
+                    let endX = Int(frame.left) + 20 * scale
+                    let interiorMatches = (startX..<endX).allSatisfy { x in
+                        let offset = centerY * image.bytesPerRow + x * 4
+                        let actual = Array(image.bgra8UnormSRGB[offset..<offset + 4]).map(Int.init)
+                        return zip(actual, expected).allSatisfy { abs($0 - $1) <= 1 }
+                    }
+                    XCTAssertTrue(interiorMatches,
+                        "The opaque order-price fill must hide the underlying chart and any crossing line")
+                    let connectionX = Int((line.start.x + frame.left) / 2)
+                    let connectionY = Int((line.start.y + line.end.y) / 2)
+                    let pixels = (-1...1).map { dy -> [Int] in
+                        let offset = (connectionY + dy) * image.bytesPerRow + connectionX * 4
+                        return Array(image.bgra8UnormSRGB[offset..<offset + 4]).map(Int.init)
+                    }
+                    let color = label.color.resolved(for: appearance)
+                    let lineColor = [color.blue, color.green, color.red].map { Int(($0 * 255).rounded()) }
+                    XCTAssertTrue(pixels.contains { pixel in
+                        zip(pixel.prefix(3), lineColor).allSatisfy { abs($0 - $1) <= 1 }
+                    }, "The axis connector must visibly meet the colored frame")
+                    if let reference {
+                        for y in Int(frame.top) + 3 * scale..<Int(frame.bottom) - 3 * scale {
+                            let start = y * image.bytesPerRow + (Int(frame.left) + 4 * scale) * 4
+                            let end = y * image.bytesPerRow + (Int(frame.right) - 4 * scale) * 4
+                            XCTAssertEqual(image.bgra8UnormSRGB[start..<end], reference.bgra8UnormSRGB[start..<end],
+                                "Timeline pans and zooms must not move or remove the axis frame")
+                        }
+                    } else { reference = image }
+                }
             }
         }
     }
@@ -8183,6 +8249,35 @@ final class ChartPositionContextTests: XCTestCase {
         }
         let offscreen = [ChartPositionLine(id: "outside", kind: .entry, price: 300, title: "开仓")]
         XCTAssertTrue(ChartPositionLinesOverlay.labelFrames(lines: offscreen, projection: projection).isEmpty)
+    }
+
+    @MainActor
+    func testAllPositionLinesLeaveThePriceAxisToMetal() throws {
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
+            plotLeft: 4, plotTop: 0, plotRight: 302, plotBottom: 300))
+        for scheme in [ColorScheme.light, .dark] {
+            for scale in [2.0, 3.0] {
+                for kind in [ChartPositionLine.Kind.entry, .stopLoss, .takeProfit] {
+                    let line = ChartPositionLine(id: kind.rawValue, kind: kind, price: 100,
+                        title: kind.rawValue, detail: "1")
+                    let image = try renderPositionLines([line], projection: projection, scheme: scheme, scale: scale)
+                    var plotPixels = 0
+                    var axisPixels = 0
+                    for y in Int(149 * scale)...Int(151 * scale) {
+                        for x in Int(280 * scale)..<Int(359 * scale) {
+                            let alpha = image.pixels[(y * image.width + x) * 4 + 3]
+                            if alpha > 20 {
+                                if x < Int(301 * scale) { plotPixels += 1 }
+                                if x > Int(303 * scale) { axisPixels += 1 }
+                            }
+                        }
+                    }
+                    XCTAssertGreaterThan(plotPixels, 0, "The in-chart price line must remain visible")
+                    XCTAssertEqual(axisPixels, 0,
+                        "Entry, stop-loss and take-profit lines must not overpaint the Metal price frames")
+                }
+            }
+        }
     }
 
     @MainActor

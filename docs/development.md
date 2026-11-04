@@ -2,6 +2,20 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 订单价格框接线与持仓费用展示（2026-11-04，本地）
+
+订单右轴价格框改用图表主题背景：浅色白底、深色灰黑底。持仓止盈也进入右轴框投影，持仓及草稿的 SwiftUI 横线统一止于绘图区右边；Metal 仅绘制到框左边的短连接线，边缘夹紧时避开圆角空隙。修复原纯白硬编码及虚线贯穿框体，保留固定坐标、完整价格和最新价／十字线的覆盖层级。现行规则见 [行情](market-data.md#价格轴与图内订单标签2026-11-02)。
+
+手续费主项未确认时用单边估算并标“估”，确认后使用真实入场费，包括实际零值；保留原实际符号，USDT 简写 U。持仓卡片恢复“（估总 … U）”，确认入场费替换原入场估算，未确认时使用原往返估计的一半；缺原估计时按原数量、开仓价和单边费率 0.0005 估入场费。已减仓部分按开仓价估费，未来剩余部分按最新价格估费，均使用 Decimal，避免把整笔往返估算再加一次。现行 API 不提供已减仓部分的真实费用，该部分仍明确估算；未知数量／价格、手动增仓、非 U 费用不能直接相加时，估总显示待核对。持仓盈亏最多两位并带 U，缺行情保留 `--`。费用显示局部增加严格数字解析，避免 `null`、`--` 被 Foundation 误当零，不修改全局 JSON 工具或交易计算。显示规范见 [原生界面](ios-web-parity.md)。
+
+本地验证：
+
+- `python3 frontend/ios-app/scripts/test_position_fee_presentation.py .integration-runtime/PositionFeeCard/FixedHost`：13 项通过，提取真实展示方法及实际卡片调用点；同一测试重放旧代码有 31 处行为断言失败，覆盖确认转换、实际零、部分减仓、最新报价、非法／缺失值、费用资产和盈亏单位。
+- `python3 frontend/ios-app/scripts/test_chart_order_axis_labels.py .integration-runtime/AxisThemeConnection/Host`：3 项真实 Metal Host 通过；旧代码有 36 处断言失败。覆盖浅深主题、2×／3×、边缘连接、平移缩放及最新价／十字线像素层级。
+- 实际 SwiftUI 标签 Host 9 项通过，旧止盈线重放有 4 处失败；`python3 frontend/ios-app/scripts/check_chart_lines.py` 5 项通过。以上合计 30 项不同回归检查。
+
+费用证据为 `.integration-runtime/PositionFeeCard/{baseline,fixed}.log`；图表证据为 `.integration-runtime/AxisPriceLabels/{theme-connection-baseline,theme-connection-fixed,repository-runner-fixed,line-check}.log` 与 `.integration-runtime/ChartPositionLabels/axis-connection-{baseline,fixed}.log`。最终主 App＋Widget Release 构建与 arm64 测试目标编译成功，日志为 `.integration-runtime/PositionFeeAxis-{release,test-compile}-final.log`。同步 UI 用例的 U 单位断言，仅编译而未运行模拟器／UI 或真机。本轮没有后端改动、迁移、真实交易、资金、通知或部署操作；完成时保留本地，后续用户明确授权提交推送，范围见 [源码交付记录](changes.md#2026-11-04订单价格框与持仓费用源码交付)。实际触摸与手机外观待新签名包验收。
+
 ## 周期收藏与手续费简写（2026-11-04，本地）
 
 周期设置改为只编辑快捷收藏，最多 7 项，上方与外层快捷栏精确对应，下方为支持周期补集。收藏项统一选中底色／边框和实心星，备选项统一未选中和空心星；卡片和星标都只增减收藏，不切图、不关闭面板。允许全部取消，外层始终保留设置按钮；原存储键及首次六项默认保留，空串明确表示零项，旧超限值按时间顺序截为七项。超限点击不禁用按钮，而是沿公共浮字提示“最多可选 7 个周期”。提示层挂在周期面板自身，避免被 `fullScreenCover` 遮住。规则见 [行情](market-data.md#快捷周期与自动价格视窗2026-11-03)。

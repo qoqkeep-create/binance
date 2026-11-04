@@ -402,7 +402,6 @@ private struct MarketChartDetailView: View {
             let neutral = ChartColor.rgb(NativeTradingMode.current == "lead" ? 0x58B9EF : 0xF0B90B)
             return ChartPositionLine.lines(in: heldPositions, symbol: viewModel.market.symbol,
                 currentPrice: Decimal(string: priceString(viewModel.currentPrice)))
-                .filter { $0.kind != .takeProfit }
                 .map { line in
                     ChartAxisPriceLabel(id: line.id, price: NSDecimalNumber(decimal: line.price).doubleValue,
                         text: DisplayNumber.text(line.price), color: line.color(neutral: neutral))

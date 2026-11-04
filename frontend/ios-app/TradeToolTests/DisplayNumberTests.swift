@@ -105,11 +105,110 @@ final class PositionEntryFeePresentationTests: XCTestCase {
     ]), abbreviatedUnit: true), "0 U")
   }
 
-  func testUnknownActualFeeDoesNotPretendAnEstimateHasBeenCharged() {
+  func testUnconfirmedEntryUsesAnExplicitSingleSideEstimate() {
     for status in ["pending", "estimated", "failed", "confirmed"] {
       XCTAssertEqual(PositionEntryFeePresentation.text(.object([
         "entry_fee_status": .string(status), "estimated_total_fee": .string("8")
-      ])), "待核对")
+      ])), "估 -4 USDT")
     }
+  }
+}
+
+final class PositionCardPresentationTests: XCTestCase {
+  private func row(_ overrides: [String: JSONValue] = [:]) -> JSONValue {
+    .object([
+      "entry_fee_status": .string("pending"), "entry_fee_asset": .string("USDT"),
+      "estimated_total_fee": .string("1"), "open_price": .string("100"),
+      "current_price": .string("120"), "size": .string("10"),
+      "exchange_size": .string("10")
+    ].merging(overrides, uniquingKeysWith: { _, value in value }))
+  }
+
+  // The host runner also resolves these adapters from the actual position-card call sites.
+  private func cardFee(_ row: JSONValue, price: Decimal? = nil) -> String { PositionCardPresentation.feeText(row, currentPrice: price) }
+  private func cardProfit(_ profit: Decimal?) -> String { PositionCardPresentation.profitText(profit) }
+
+  func testPendingEntryAndTotalRemainEstimatesUntilEntryFeeIsConfirmed() {
+    XCTAssertEqual(cardFee(row()), "估 -0.5 U（估总 -1.1 U）")
+    XCTAssertEqual(cardFee(row([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.3")
+    ])), "-0.3 U（估总 -0.9 U）")
+  }
+
+  func testConfirmedZeroIsActualAndNotReplacedWithAnEntryEstimate() {
+    XCTAssertEqual(cardFee(row([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("0")
+    ])), "0 U（估总 -0.6 U）")
+  }
+
+  func testPartialCloseEstimatesEachExitPortionOnceWithoutReaddingTheRoundTripFee() {
+    XCTAssertEqual(cardFee(row([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.3"),
+      "exchange_size": .string("4")
+    ])), "-0.3 U（估总 -0.84 U）")
+  }
+
+  func testPendingPartialEntryIsNeverPresentedAsTheCompleteActualFee() {
+    XCTAssertEqual(cardFee(row([
+      "entry_realized_fee": .string("-0.1"), "exchange_size": .string("4")
+    ])), "估 -0.5 U（估总 -1.04 U）")
+  }
+
+  func testMissingOrMalformedActualFeesNeverBecomeAConfirmedZero() {
+    for value in [JSONValue.null, .string("--"), .string("NaN"), .string("1 invalid")] {
+      XCTAssertEqual(cardFee(row([
+        "entry_fee_status": .string("confirmed"), "entry_realized_fee": value
+      ])), "估 -0.5 U（估总 -1.1 U）")
+    }
+  }
+
+  func testLivePriceUpdatesOnlyTheRemainingExitEstimate() {
+    XCTAssertEqual(cardFee(row([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.3"),
+      "exchange_size": .string("4")
+    ]), price: 150), "-0.3 U（估总 -0.9 U）")
+  }
+
+  func testExplicitZeroRemainingDoesNotFallBackToInitialQuantity() {
+    XCTAssertEqual(cardFee(row([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.3"),
+      "exchange_size": .string("0"), "current_price": .null
+    ])), "-0.3 U（估总 -0.8 U）")
+  }
+
+  func testUnknownEstimatesAndManualAdditionsAreNotInventedAsZero() {
+    XCTAssertEqual(cardFee(.object([:])), "待核对（估总待核对）")
+    XCTAssertEqual(cardFee(.object(["estimated_total_fee": .string("1")])),
+      "估 -0.5 U（估总待核对）")
+    XCTAssertEqual(cardFee(row(["has_manual_addition": .bool(true)])),
+      "估 -0.5 U（估总待核对）")
+    for quantity in [JSONValue.null, .string("--"), .string("NaN"), .string("11")] {
+      XCTAssertEqual(cardFee(row(["exchange_size": quantity])), "估 -0.5 U（估总待核对）")
+    }
+  }
+
+  func testDifferentFeeAssetsAreNotMislabeledOrAddedToU() {
+    XCTAssertEqual(cardFee(row([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.01"),
+      "entry_fee_asset": .string("BNB")
+    ])), "-0.01 BNB（估总待核对）")
+    XCTAssertEqual(cardFee(row([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.3"),
+      "entry_fee_asset": .string("")
+    ])), "-0.3 费用币种待核对（估总待核对）")
+  }
+
+  func testEntryEstimateCanUseTheOriginalNotionalWhenTheStoredEstimateIsUnavailable() {
+    XCTAssertEqual(cardFee(row(["estimated_total_fee": .null])), "估 -0.5 U（估总 -1.1 U）")
+    XCTAssertEqual(cardFee(row(["estimated_total_fee": .string("0")])), "估 -0.5 U（估总 -1.1 U）")
+  }
+
+  func testPositionProfitUsesUAndAtMostTwoFractionDigitsWithoutInventingMissingValues() {
+    for (input, expected) in [("12.345", "12.35 U"), ("-12.345", "-12.35 U"),
+      ("0", "0 U"), ("-0.004", "0 U"), ("10.00", "10 U")] {
+      XCTAssertEqual(cardProfit(Decimal(string: input)), expected)
+    }
+    XCTAssertEqual(cardProfit(nil), "--")
+    XCTAssertEqual(cardProfit(.nan), "--")
   }
 }

@@ -315,7 +315,7 @@ struct ChartPositionLinesOverlay: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             ZStack(alignment: .topLeading) {
                 ForEach(lines) { line in
                     let label = Self.labelLayout(for: line, projection: projection)
@@ -324,8 +324,7 @@ struct ChartPositionLinesOverlay: View {
                        y >= projection.plotTop, y <= projection.plotBottom {
                         Path { path in
                             path.move(to: CGPoint(x: projection.plotLeft, y: y))
-                            let right = line.kind == .takeProfit ? max(projection.plotRight, geometry.size.width) : projection.plotRight
-                            path.addLine(to: CGPoint(x: right, y: y))
+                            path.addLine(to: CGPoint(x: projection.plotRight, y: y))
                         }.stroke(color(line), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                         ChartPriceLineLabel(title: line.title, price: line.detail,
                             color: color(line), width: label.width, filled: line.kind != .takeProfit,

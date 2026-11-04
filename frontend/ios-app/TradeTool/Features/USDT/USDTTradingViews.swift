@@ -1,13 +1,90 @@
 import SwiftUI
 
-/// A completed entry's charged fee must never fall back to a round-trip estimate.
+/// Confirmed fees retain their source value; unconfirmed entry fees stay explicitly estimated.
 enum PositionEntryFeePresentation {
+  static let singleSideRate = Decimal(5) / Decimal(10_000)
+
   static func text(_ row: JSONValue, abbreviatedUnit: Bool = false) -> String {
+    if let actual = confirmedFee(row) {
+      let unit = abbreviatedUnit && actual.asset == "USDT" ? "U" : actual.asset
+      return DisplayNumber.amount(actual.value, maximumFractionDigits: 2) + " " + unit
+    }
+    guard let estimate = estimatedEntryFee(row) else { return "待核对" }
+    return "估 " + DisplayNumber.amount(-estimate, maximumFractionDigits: 2)
+      + (abbreviatedUnit ? " U" : " USDT")
+  }
+
+  static func confirmedFee(_ row: JSONValue) -> (value: Decimal, asset: String)? {
     guard row.value("entry_fee_status") == "confirmed",
-      let fee = row["entry_realized_fee"]?.decimal, !fee.isNaN else { return "待核对" }
-    let asset = row.value("entry_fee_asset", fallback: "USDT")
-    let unit = abbreviatedUnit && asset.uppercased() == "USDT" ? "U" : asset
-    return DisplayNumber.amount(fee, maximumFractionDigits: 2) + " " + unit
+      let fee = finiteDecimal(row["entry_realized_fee"]) else { return nil }
+    let rawAsset = row.value("entry_fee_asset", fallback: "USDT")
+      .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    let asset = rawAsset.isEmpty ? (fee == 0 ? "USDT" : "费用币种待核对") : rawAsset
+    return (fee, asset)
+  }
+
+  static func estimatedEntryFee(_ row: JSONValue) -> Decimal? {
+    if let total = finiteDecimal(row["estimated_total_fee"]), total != 0 {
+      return abs(total) / 2
+    }
+    guard let price = finiteDecimal(row["open_price"]), price > 0,
+      let quantity = finiteDecimal(row["size"]), quantity > 0 else { return nil }
+    return price * quantity * singleSideRate
+  }
+
+  static func finiteDecimal(_ value: JSONValue?) -> Decimal? {
+    guard let value else { return nil }
+    let source = value.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard source.range(of: #"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$"#,
+      options: .regularExpression) != nil,
+      let number = Decimal(string: source, locale: Locale(identifier: "en_US_POSIX")),
+      !number.isNaN else { return nil }
+    return number
+  }
+}
+
+enum PositionCardPresentation {
+  static func feeText(_ row: JSONValue, currentPrice: Decimal? = nil) -> String {
+    let entry = PositionEntryFeePresentation.text(row, abbreviatedUnit: true)
+    guard let total = estimatedTotalFee(row, currentPrice: currentPrice) else {
+      return entry + "（估总待核对）"
+    }
+    return entry + "（估总 " + DisplayNumber.amount(-total, maximumFractionDigits: 2) + " U）"
+  }
+
+  static func profitText(_ profit: Decimal?) -> String {
+    guard let profit, !profit.isNaN else { return "--" }
+    return DisplayNumber.amount(profit, maximumFractionDigits: 2) + " U"
+  }
+
+  private static func estimatedTotalFee(_ row: JSONValue, currentPrice: Decimal?) -> Decimal? {
+    guard row["has_manual_addition"]?.flag != true,
+      let original = PositionEntryFeePresentation.finiteDecimal(row["size"]), original > 0,
+      let remaining = PositionEntryFeePresentation.finiteDecimal(row["exchange_size"] ?? row["size"]),
+      remaining >= 0, remaining <= original,
+      let entryPrice = PositionEntryFeePresentation.finiteDecimal(row["open_price"]), entryPrice > 0 else { return nil }
+    let entry: Decimal
+    if let actual = PositionEntryFeePresentation.confirmedFee(row) {
+      // An unconverted BNB/mixed-asset commission cannot be added to a U estimate.
+      guard actual.asset == "USDT" || actual.value == 0 else { return nil }
+      entry = abs(actual.value)
+    } else {
+      guard let estimate = PositionEntryFeePresentation.estimatedEntryFee(row) else { return nil }
+      entry = estimate
+    }
+    let remainingExit: Decimal
+    if remaining == 0 {
+      remainingExit = 0
+    } else {
+      guard let price = currentPrice ?? PositionEntryFeePresentation.finiteDecimal(row["current_price"]),
+        !price.isNaN, price > 0 else { return nil }
+      remainingExit = remaining * price * PositionEntryFeePresentation.singleSideRate
+    }
+    // The API exposes no realized partial-close commission. Keep this component
+    // estimated at the entry notional instead of inventing an actual zero.
+    let closedExit = (original - remaining) * entryPrice * PositionEntryFeePresentation.singleSideRate
+    let total = entry + closedExit + remainingExit
+    return total.isNaN ? nil : total
   }
 }
 
@@ -964,7 +1041,7 @@ struct USDTPositionsView: View {
         HStack(spacing: 16) {
           inline("开仓额度：", DisplayNumber.text(row.value("position_amount")))
           inline(
-            "持仓盈亏：", valuation.map { DisplayNumber.amount($0.profit, maximumFractionDigits: 2) } ?? "--",
+            "持仓盈亏：", PositionCardPresentation.profitText(valuation?.profit),
             color: valuation.map { $0.profit >= 0 ? WebTheme.success : WebTheme.danger } ?? WebTheme.muted)
         }
         HStack(spacing: 16) {
@@ -987,7 +1064,7 @@ struct USDTPositionsView: View {
         }
         HStack(spacing: 4) {
           Text("手续费：").foregroundStyle(WebTheme.muted)
-          Text(PositionEntryFeePresentation.text(row)).foregroundStyle(WebTheme.danger)
+          Text(PositionCardPresentation.feeText(row, currentPrice: valuation?.price)).foregroundStyle(WebTheme.danger)
         }.font(.system(size: 14))
         Text(
           (row.value("position_origin") == "exchange_external" ? "接管时间：" : "开仓时间：")

@@ -1228,7 +1228,6 @@ enum ChartAxisPriceLabelBuilder {
         let height = min(18 * scale, plot.height)
         let border = max(1, 0.7 * scale)
         let radius = min(3 * scale, height / 2)
-        let white = ChartColor(red: 1, green: 1, blue: 1)!
         guard right - left > border * 2, height > border * 2 else { return [] }
 
         return labels.compactMap { label in
@@ -1244,7 +1243,7 @@ enum ChartAxisPriceLabelBuilder {
                 bottom: top + height, color: label.color, cornerRadius: radius)
             let inner = ChartBarInstance(left: left + border, top: top + border,
                 right: right - border, bottom: top + height - border,
-                color: white, cornerRadius: max(0, radius - border))
+                color: .chartBackground, cornerRadius: max(0, radius - border))
             let measured = MetalTextLayouter.layout(text: label.text, atlas: data.glyphAtlas,
                 originX: 0, baselineY: 0, color: label.color)
             let glyphs: [ChartGlyphInstance]
@@ -1269,11 +1268,14 @@ enum ChartAxisPriceLabelBuilder {
             } else {
                 glyphs = []
             }
+            // Only bridge the gap to the frame. Keep the full price line out of
+            // the opaque label; edge-clamped labels connect along the straight side.
+            let connectionY = min(top + height - radius, max(top + radius, y))
             let extensionLine = ChartLineSegmentInstance(
                 start: ChartPolylinePoint(x: plot.right, y: y),
-                end: ChartPolylinePoint(x: data.widthPixels, y: y),
-                width: max(1, 0.5 * scale), dashLength: 4 * scale,
-                gapLength: 4 * scale, dashPhase: 0, color: label.color
+                end: ChartPolylinePoint(x: left, y: connectionY),
+                width: max(1, 0.5 * scale), dashLength: 0,
+                gapLength: 0, dashPhase: 0, color: label.color
             )
             return ChartRenderBatch(lineSegments: [extensionLine], barInstances: [outer, inner], glyphInstances: glyphs,
                 glyphAtlas: data.glyphAtlas, coordinateSpace: .fixed)

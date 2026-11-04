@@ -3169,7 +3169,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(app.staticTexts["chart-ticket.仓位"].label, "1000.00 U")
     XCTAssertEqual(app.staticTexts["chart-ticket.开仓价"].label, "64400.00")
     XCTAssertEqual(app.staticTexts["chart-ticket.止损价"].label, "64100.00")
-    XCTAssertEqual(app.staticTexts["chart-ticket.手续费"].label, "0.5 USDT")
+    XCTAssertEqual(app.staticTexts["chart-ticket.手续费"].label, "0.5 U")
     let heldRisk = app.staticTexts["chart-ticket.止损金额"]
     XCTAssertEqual(heldRisk.label, "10 U")
     XCTAssertFalse(app.buttons["chart-ticket.risk-settings"].exists)
