@@ -8015,69 +8015,99 @@ final class ChartPositionContextTests: XCTestCase {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "stop_loss_amount": .string("10")])
         let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 105)
-        XCTAssertEqual(lines[0].detail, "+10.000 U")
-        XCTAssertEqual(lines[1].detail, "-10.000 U")
+        XCTAssertEqual(lines[0].detail, "+10 U")
+        XCTAssertEqual(lines[1].detail, "-10 U")
         let loss = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 97)
-        XCTAssertEqual(loss[0].detail, "-6.000 U")
-        XCTAssertEqual(loss[1].detail, "-10.000 U")
+        XCTAssertEqual(loss[0].detail, "-6 U")
+        XCTAssertEqual(loss[1].detail, "-10 U")
+    }
+
+    func testPositionAmountsRoundIndependentlyWithoutLosingProfitSign() throws {
+        let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
+            "stop_loss_amount": .string("10.55")])
+        let profit = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: Decimal(string: "105.617")!)
+        XCTAssertEqual(profit[0].detail, "+11.23 U")
+        XCTAssertEqual(profit[1].detail, "-10.6 U")
+        let loss = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: Decimal(string: "99.999")!)
+        XCTAssertEqual(loss[0].detail, "0 U")
+        XCTAssertLessThan(try XCTUnwrap(loss[0].profit), 0, "The raw Decimal sign still controls color when rounded text is zero")
+        let wholeRisk = row(["stop_loss_amount": .string("10.04")])
+        XCTAssertEqual(ChartPositionLine.lines(in: [wholeRisk], symbol: "BTCUSDT")[1].detail, "-10 U")
     }
 
     @MainActor
-    func testPositionLabelColorsFollowProfitWithoutResizingFrames() throws {
+    func testPositionLabelsAreCompactSolidWhiteTextAndReachPriceGutter() throws {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "market_stop_price": .string("60"), "stop_loss_amount": .string("10")])
         let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
-            plotLeft: 4, plotTop: 0, plotRight: 332, plotBottom: 300))
-        var widths: [Int] = []
-        for quote in [Decimal(105), Decimal(99), Decimal(1_000_000)] {
-            let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: quote)
-            let renderer = ImageRenderer(content: ChartPositionLinesOverlay(lines: lines, projection: projection)
-                .frame(width: 360, height: 320).environment(\.colorScheme, .light))
-            renderer.scale = 2
-            let image = try XCTUnwrap(renderer.cgImage)
-            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
-            try pixels.withUnsafeMutableBytes { bytes in
-                let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
-                    bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-                context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-            }
-            func colors(at centerY: Int, text: Bool = false) throws -> (width: Int, green: Int, red: Int) {
-                var xs: [Int] = []
-                var green = 0
-                var red = 0
-                // Text samples avoid the border and dashed line; border samples avoid text.
-                let rows = text ? Array((centerY * 2 - 10)..<(centerY * 2 - 2))
-                    + Array((centerY * 2 + 2)..<(centerY * 2 + 10))
-                    : Array((centerY * 2 - 24)..<(centerY * 2 - 16))
-                for y in rows where y >= 0 && y < image.height {
-                    for x in (text ? 40 : 0)..<min(text ? 220 : image.width, image.width) {
+            plotLeft: 4, plotTop: 0, plotRight: 302, plotBottom: 300))
+        for scheme in [ColorScheme.light, .dark] {
+            for scale in [2.0, 3.0] {
+                for quote in [Decimal(105), Decimal(99), Decimal(string: "99.999")!, Decimal(1_000_000)] {
+                    let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: quote)
+                    let frames = ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection)
+                    XCTAssertEqual(frames.count, 2)
+                    XCTAssertEqual(frames.map(\.width), [96, 96])
+                    XCTAssertEqual(frames.map(\.minX), [10, 10])
+                    let image = try renderPositionLines(lines, projection: projection, scheme: scheme, scale: scale)
+                    func pixel(_ x: Int, _ y: Int) -> (Int, Int, Int, Int) {
                         let offset = (y * image.width + x) * 4
-                        let r = Int(pixels[offset]), g = Int(pixels[offset + 1]), b = Int(pixels[offset + 2])
-                        if max(r, g, b) - min(r, g, b) > 70 {
-                            xs.append(x)
-                            if g > r + 60 && g > b + 30 { green += 1 }
-                            if r > g + 90 && r > b + 90 { red += 1 }
+                        return (Int(image.pixels[offset]), Int(image.pixels[offset + 1]),
+                            Int(image.pixels[offset + 2]), Int(image.pixels[offset + 3]))
+                    }
+                    func isColor(_ pixel: (Int, Int, Int, Int), red: Bool) -> Bool {
+                        guard pixel.3 > 20 else { return false }
+                        let r = pixel.0 * 255 / pixel.3, g = pixel.1 * 255 / pixel.3, b = pixel.2 * 255 / pixel.3
+                        return red ? r > g + 90 && r > b + 90 : g > r + 60 && g > b + 30
+                    }
+                    for (index, centerY) in [150, 210].enumerated() {
+                        let red = index == 1 || quote < 100
+                        let fill = pixel(Int(12 * scale), Int(Double(centerY) * scale))
+                        XCTAssertTrue(isColor(fill, red: red), "Label interior must have an opaque direction color in either theme")
+                        XCTAssertEqual(fill.3, 255)
+                        var whiteGlyphs = 0
+                        for y in Int(Double(centerY - 8) * scale)..<Int(Double(centerY + 8) * scale) {
+                            for x in Int(18 * scale)..<Int(98 * scale) {
+                                let p = pixel(x, y)
+                                if min(p.0, p.1, p.2) > 235 && p.3 > 240 { whiteGlyphs += 1 }
+                            }
                         }
+                        XCTAssertGreaterThan(whiteGlyphs, 3, "Position label glyphs must be white")
+                        var gutterColorPixels = 0
+                        var farEdgeColorPixels = 0
+                        for y in Int(Double(centerY - 1) * scale)...Int(Double(centerY + 1) * scale) {
+                            for x in Int(304 * scale)..<Int(359 * scale) {
+                                if isColor(pixel(x, y), red: red) {
+                                    gutterColorPixels += 1
+                                    if x >= Int(350 * scale) { farEdgeColorPixels += 1 }
+                                }
+                            }
+                        }
+                        XCTAssertGreaterThan(gutterColorPixels, 10, "Read-only lines must cross the right price gutter")
+                        XCTAssertGreaterThan(farEdgeColorPixels, 0, "The line must reach the canvas edge beyond the price-axis text")
                     }
                 }
-                return (try XCTUnwrap(xs.max()) - XCTUnwrap(xs.min()), green, red)
             }
-            let entry = try colors(at: 150)
-            let stop = try colors(at: 210)
-            let entryText = try colors(at: 150, text: true)
-            widths.append(entry.width)
-            XCTAssertEqual(entry.width, stop.width, "Entry and stop labels share one fixed width")
-            if quote > 100 {
-                XCTAssertGreaterThan(entry.green, 0); XCTAssertEqual(entry.red, 0)
-                XCTAssertGreaterThan(entryText.green, 0); XCTAssertEqual(entryText.red, 0)
-            } else {
-                XCTAssertGreaterThan(entry.red, 0); XCTAssertEqual(entry.green, 0)
-                XCTAssertGreaterThan(entryText.red, 0); XCTAssertEqual(entryText.green, 0)
-            }
-            XCTAssertGreaterThan(stop.red, 0)
         }
-        XCTAssertEqual(Set(widths).count, 1, "Profit sign and digit count must not resize either label")
+        let offscreen = [ChartPositionLine(id: "outside", kind: .entry, price: 300, title: "开仓")]
+        XCTAssertTrue(ChartPositionLinesOverlay.labelFrames(lines: offscreen, projection: projection).isEmpty)
+    }
+
+    @MainActor
+    private func renderPositionLines(_ lines: [ChartPositionLine], projection: ChartPriceProjection,
+                                     scheme: ColorScheme, scale: Double) throws -> (width: Int, pixels: [UInt8]) {
+        let renderer = ImageRenderer(content: ChartPositionLinesOverlay(lines: lines, projection: projection)
+            .frame(width: 360, height: 320).environment(\.colorScheme, scheme))
+        renderer.scale = scale
+        let image = try XCTUnwrap(renderer.cgImage)
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return (image.width, pixels)
     }
 
     @MainActor

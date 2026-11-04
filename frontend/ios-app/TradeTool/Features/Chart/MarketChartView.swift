@@ -306,14 +306,12 @@ private struct MarketChartDetailView: View {
                     }.accessibilityIdentifier("market-chart-indicator-settings-shortcut")
                     tradeTool("gauge.with.dots.needle.67percent", title: usdt.displayedLeverage(for: viewModel.market.symbol).map { "杠杆 × \($0)" } ?? "杠杆 · 读取中", width: 62, action: { showsLeverage = true })
                         .accessibilityIdentifier("market-chart-leverage")
-                    tradeTool("gearshape", title: "设置", action: { isOrderSettingsPresented = true })
-                        .accessibilityIdentifier("market-chart-settings")
                 }
 
-                Button {
+                tradeTool(title: "自选", action: {
                     if isFavorite { dashboard.hideMarkets([viewModel.market.symbol]) }
                     else { dashboard.addToWatchlist(viewModel.market.symbol) }
-                } label: {
+                }) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(
@@ -321,11 +319,9 @@ private struct MarketChartDetailView: View {
                                 ? BinanceTheme.accent
                                 : BinanceTheme.secondaryText
                         )
-                        .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.plain)
                 .accessibilityIdentifier("market-chart-favorite")
-                .accessibilityLabel("收藏")
+                .accessibilityLabel("自选")
                 .accessibilityValue(isFavorite ? "已收藏" : "未收藏")
             }
             .padding(.leading, 4)
@@ -426,7 +422,7 @@ private struct MarketChartDetailView: View {
                 HStack(spacing: 2) {
                     ForEach(ChartIntervalPreferences.visible(favoriteIntervals, selected: viewModel.interval)) { interval in
                         Button { viewModel.selectInterval(interval) } label: {
-                            Text(interval.title).font(.system(size: 12,
+                            Text(interval.title).font(.system(size: ChartToolbarMetrics.textSize,
                                 weight: interval == viewModel.interval ? .semibold : .medium))
                                 .foregroundStyle(interval == viewModel.interval ? BinanceTheme.accentText : BinanceTheme.secondaryText)
                                 .overlay(alignment: .bottom) {
@@ -438,12 +434,13 @@ private struct MarketChartDetailView: View {
                         }.buttonStyle(.plain).accessibilityIdentifier("chart-interval." + interval.rawValue)
                     }
                     Button { showsIntervalSettings = true } label: {
-                        Image(systemName: "slider.horizontal.3").font(.system(size: 13)).frame(width: 30, height: 38)
+                        Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .medium))
+                            .frame(width: 32, height: 38)
                     }.buttonStyle(.plain).accessibilityLabel("编辑时间周期").accessibilityIdentifier("chart-interval.edit")
                 }
             }
             Toggle(isOn: $automaticallyFitsPrice) {
-                Text("auto").font(.system(size: 11, weight: .medium))
+                Text("auto").font(.system(size: ChartToolbarMetrics.textSize, weight: .medium))
             }
             .toggleStyle(ChartAutoFitToggleStyle())
             .accessibilityLabel("auto 自动适配")
@@ -515,6 +512,7 @@ private struct MarketChartDetailView: View {
             }
             .foregroundStyle(BinanceTheme.primaryText)
             .frame(width: width, height: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -573,6 +571,10 @@ where Item.ID: Hashable {
     }
 }
 
+private enum ChartToolbarMetrics {
+    static let textSize: CGFloat = 13
+}
+
 private struct MarketChartQuickIndicatorStrip: View {
     let activeIndicators: Set<String>
     let onToggle: (String) -> Void
@@ -629,7 +631,7 @@ private struct MarketChartQuickIndicatorStrip: View {
         } label: {
             Text(indicator)
                 .font(.system(
-                    size: 13,
+                    size: ChartToolbarMetrics.textSize,
                     weight: active ? .semibold : .regular
                 ))
                 .foregroundStyle(

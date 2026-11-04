@@ -48,4 +48,65 @@ final class DisplayNumberTests: XCTestCase {
     XCTAssertEqual(market.formattedPrice, "0.00001235")
     XCTAssertEqual(market.formattedChange, "-1.235%")
   }
+
+  func testPositionAmountsRoundWithoutChangingPricesOrAddingZeroes() {
+    for (input, digits, expected) in [
+      ("12.345", 2, "12.35"), ("-12.345", 2, "-12.35"),
+      ("10.000", 1, "10"), ("1.06", 1, "1.1"),
+      ("0.004", 2, "0"), ("-0.004", 2, "0")
+    ] {
+      XCTAssertEqual(DisplayNumber.amount(Decimal(string: input)!, maximumFractionDigits: digits), expected)
+    }
+    XCTAssertEqual(DisplayNumber.text("0.000012345"), "0.00001235")
+  }
+}
+
+final class WebRefreshInteractionTests: XCTestCase {
+  func testReleaseBelowThresholdAndProgrammaticBounceDoNotRefresh() {
+    var interaction = WebRefreshInteraction()
+    interaction.update(distance: 100, dragging: false)
+    XCTAssertFalse(interaction.release())
+    interaction.update(distance: 69, dragging: true)
+    XCTAssertFalse(interaction.release())
+  }
+
+  func testSeventyPointReleaseStartsOnlyOneReadUntilCompleted() {
+    var interaction = WebRefreshInteraction()
+    interaction.update(distance: 70, dragging: true)
+    XCTAssertTrue(interaction.release())
+    interaction.update(distance: 140, dragging: true)
+    XCTAssertFalse(interaction.release())
+    interaction.complete()
+    interaction.update(distance: 70, dragging: true)
+    XCTAssertTrue(interaction.release())
+  }
+
+  func testPullingBackBeforeReleaseDisarmsRefresh() {
+    var interaction = WebRefreshInteraction()
+    interaction.update(distance: 95, dragging: true)
+    interaction.update(distance: 40, dragging: true)
+    XCTAssertFalse(interaction.release())
+    interaction.update(distance: -200, dragging: true)
+    XCTAssertEqual(interaction.distance, 0)
+  }
+}
+
+final class PositionEntryFeePresentationTests: XCTestCase {
+  func testConfirmedFeeIsDisplayedWithoutAnEstimateIncludingZero() {
+    XCTAssertEqual(PositionEntryFeePresentation.text(.object([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("1.25"),
+      "entry_fee_asset": .string("USDT"), "estimated_total_fee": .string("9")
+    ])), "1.25 USDT")
+    XCTAssertEqual(PositionEntryFeePresentation.text(.object([
+      "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("0")
+    ])), "0 USDT")
+  }
+
+  func testUnknownActualFeeDoesNotPretendAnEstimateHasBeenCharged() {
+    for status in ["pending", "estimated", "failed", "confirmed"] {
+      XCTAssertEqual(PositionEntryFeePresentation.text(.object([
+        "entry_fee_status": .string(status), "estimated_total_fee": .string("8")
+      ])), "待核对")
+    }
+  }
 }

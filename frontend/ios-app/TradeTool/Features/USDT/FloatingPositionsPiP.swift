@@ -2,41 +2,53 @@ import AVKit
 import SwiftUI
 
 struct FloatingPiPSnapshot: Equatable {
+  static let pageSize = 4
   var positions: [FloatingPosition] = []
-  var selectedIndex = 0
   var updatedAt: Date?
   var status = "正在同步…"
 
   func presentation(at now: Date, cyclingSince: Date?, paused: Bool) -> FloatingPiPPresentation {
+    let pageCount = max(1, (positions.count + Self.pageSize - 1) / Self.pageSize)
     let offset = cyclingSince.map { max(0, Int(now.timeIntervalSince($0) / 5)) } ?? 0
-    let index = positions.isEmpty ? 0 : (max(0, selectedIndex) + offset) % positions.count
-    let position = positions.isEmpty ? nil : positions[index]
-    // A successful REST read must not renew an old or missing ticker quote.
-    let valuationTime = updatedAt.flatMap { rowTime in position?.quoteTime.map { min(rowTime, $0) } }
-    let stale = valuationTime.map { now.timeIntervalSince($0) > 12 } ?? true
-    let available = !paused && !stale
+    let pageIndex = offset % pageCount
+    let visible = positions.dropFirst(pageIndex * Self.pageSize).prefix(Self.pageSize)
+    let rows = visible.map { position in
+      // Fresh quotes for other rows or a successful REST read cannot renew this row's old quote.
+      let valuationTime = updatedAt.flatMap { rowTime in position.quoteTime.map { min(rowTime, $0) } }
+      let stale = valuationTime.map { now.timeIntervalSince($0) > 12 } ?? true
+      return FloatingPiPRow(id: position.id, symbol: position.symbol, side: position.isShort ? "空" : "多",
+        price: !paused && !stale ? position.priceText : "--",
+        profit: !paused && !stale ? position.profitText : "--",
+        loss: position.profit.map { $0 < 0 } ?? false, stale: stale, updatedAt: valuationTime)
+    }
     let formatter = DateFormatter()
     formatter.dateFormat = "HH:mm:ss"
-    let timestamp = valuationTime.map { formatter.string(from: $0) }
+    let timestamp = rows.compactMap(\.updatedAt).min().map { formatter.string(from: $0) }
     let footer: String
     if paused { footer = "已暂停 · 点击播放恢复" }
-    else if !positions.isEmpty && stale { footer = "更新延迟 · " + (timestamp ?? "--") }
-    else { footer = timestamp.map { "更新 " + $0 } ?? status }
-    return FloatingPiPPresentation(
-      title: position?.symbol ?? "持仓浮窗", side: position.map { $0.isShort ? "空" : "多" } ?? "",
-      price: available ? position?.priceText ?? "--" : "--",
-      profit: available ? position?.profitText ?? "--" : "--",
-      loss: position?.profit.map { $0 < 0 } ?? false,
-      page: positions.count > 1 ? "\(index + 1)/\(positions.count)" : "", footer: footer)
+    else if rows.contains(where: \.stale) {
+      footer = (rows.allSatisfy(\.stale) ? "更新延迟" : "部分行情延迟") + " · " + (timestamp ?? "--")
+    } else { footer = timestamp.map { "更新 " + $0 } ?? status }
+    return FloatingPiPPresentation(title: "持仓", rows: rows, totalCount: positions.count,
+      page: pageCount > 1 ? "\(pageIndex + 1)/\(pageCount)" : "", footer: footer)
   }
 }
 
-struct FloatingPiPPresentation: Equatable {
-  let title: String
+struct FloatingPiPRow: Equatable {
+  let id: String
+  let symbol: String
   let side: String
   let price: String
   let profit: String
   let loss: Bool
+  let stale: Bool
+  let updatedAt: Date?
+}
+
+struct FloatingPiPPresentation: Equatable {
+  let title: String
+  let rows: [FloatingPiPRow]
+  let totalCount: Int
   let page: String
   let footer: String
 }
@@ -101,8 +113,9 @@ enum FloatingPiPRenderSchedule {
 @MainActor
 final class FloatingPositionsPiP: NSObject, ObservableObject,
   AVPictureInPictureControllerDelegate, AVPictureInPictureSampleBufferPlaybackDelegate {
-  @Published private(set) var isActive = false
-  @Published private(set) var isStarting = false
+  @Published private var lifecycle = FloatingPiPLifecycle()
+  var isActive: Bool { lifecycle.isActive }
+  var isStarting: Bool { lifecycle.isStarting }
   @Published private(set) var isPaused = false
   @Published var notice: String?
   var onSystemClose: (() -> Void)?
@@ -114,11 +127,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   private var ticker: Timer?
   private var frameDelivery: FloatingPiPFrameDelivery<FloatingPiPPresentation>?
   private var startDeadline: Task<Void, Never>?
-  private var startIssued = false
-  private var restoringInline = false
-  private var userClose = true
   private var ownsAudioSession = false
-  private var isPreparedForAutomaticStart = false
   private var startedAt: Date?
   private var snapshot = FloatingPiPSnapshot()
 
@@ -149,7 +158,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
     }
     controller = pip
     pip.delegate = self
-    pip.canStartPictureInPictureAutomaticallyFromInline = isPreparedForAutomaticStart
+    pip.canStartPictureInPictureAutomaticallyFromInline = false
     possibility = pip.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
       Task { @MainActor in self?.startWhenReady() }
     }
@@ -162,11 +171,15 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
     render()
   }
 
-  @discardableResult
-  func prepareForAutomaticStart(reportFailure: Bool = false) -> Bool {
-    if isPreparedForAutomaticStart { return true }
+  private func preparePlayback() -> Bool {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--fixture-pip-unavailable") {
+        notice = "此设备暂不支持画中画。"
+        return false
+      }
+    #endif
     guard AVPictureInPictureController.isPictureInPictureSupported() else {
-      if reportFailure { notice = "此设备暂不支持画中画，仍可使用 App 内浮窗。" }
+      notice = "此设备暂不支持画中画。"
       return false
     }
     do {
@@ -175,16 +188,12 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
       try audio.setActive(true)
       ownsAudioSession = true
     } catch {
-      if reportFailure { notice = "画中画音频会话暂不可用，请稍后重试。" }
+      notice = "画中画音频会话暂不可用，请稍后重试。"
       return false
     }
     notice = nil
     playback.setPaused(false)
     isPaused = false
-    isPreparedForAutomaticStart = true
-    userClose = true
-    restoringInline = false
-    controller?.canStartPictureInPictureAutomaticallyFromInline = true
     controller?.invalidatePlaybackState()
     startTicker()
     render()
@@ -192,10 +201,8 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   }
 
   func start() {
-    guard !isActive, !isStarting else { return }
-    guard prepareForAutomaticStart(reportFailure: true) else { return }
-    isStarting = true
-    startIssued = false
+    guard lifecycle.request() else { return }
+    guard preparePlayback() else { lifecycle.stop(); return }
     startWhenReady()
     startDeadline?.cancel()
     startDeadline = Task { [weak self] in
@@ -207,25 +214,20 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   }
 
   func stop() {
-    isPreparedForAutomaticStart = false
-    controller?.canStartPictureInPictureAutomaticallyFromInline = false
-    userClose = false
+    lifecycle.stop(awaitingSystemStop: controller?.isPictureInPictureActive == true)
     startDeadline?.cancel()
     startDeadline = nil
-    isStarting = false
     ticker?.invalidate()
     ticker = nil
     snapshot = FloatingPiPSnapshot()
     render()
     controller?.stopPictureInPicture()
     deactivateAudio()
-    if controller?.isPictureInPictureActive != true { isActive = false }
   }
 
   private func startWhenReady() {
-    guard isStarting, !startIssued, sourceView?.window != nil,
-      controller?.isPictureInPicturePossible == true else { return }
-    startIssued = true
+    guard lifecycle.issueStart(sourceReady: sourceView?.window != nil
+      && controller?.isPictureInPicturePossible == true) else { return }
     controller?.startPictureInPicture()
   }
 
@@ -237,7 +239,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   }
 
   private func render() {
-    // The delivery retains its layer so a detached inline view can still clear the external frame.
+    // The covered source remains attached, including while the external window closes.
     let content = snapshot.presentation(at: Date(), cyclingSince: isActive ? startedAt : nil, paused: isPaused)
     frameDelivery?.submit(content)
   }
@@ -251,9 +253,7 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   // AVKit may query playback state off the main thread; UI changes are dispatched explicitly.
   nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
     Task { @MainActor [weak self] in
-      guard let self, self.userClose else { return }
-      self.isStarting = true
-      self.startIssued = true
+      guard let self, self.isStarting else { return }
       self.startTicker()
     }
   }
@@ -261,12 +261,10 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
     Task { @MainActor [weak self] in
       guard let self else { return }
-      guard self.userClose else { pictureInPictureController.stopPictureInPicture(); return }
+      guard self.lifecycle.didStart() else { pictureInPictureController.stopPictureInPicture(); return }
       self.startDeadline?.cancel()
       self.startDeadline = nil
       self.startedAt = Date()
-      self.isActive = true
-      self.isStarting = false
       self.render()
     }
   }
@@ -282,25 +280,26 @@ final class FloatingPositionsPiP: NSObject, ObservableObject,
   nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
     Task { @MainActor [weak self] in
       guard let self else { return }
-      let close = self.userClose && !self.restoringInline
-      let resumeAutomatic = self.isPreparedForAutomaticStart && !close
-      self.isPreparedForAutomaticStart = false
-      self.isActive = false
-      self.isStarting = false
+      let requested = self.lifecycle.didStop()
       self.isPaused = false
       self.playback.setPaused(false)
+      if self.isStarting {
+        pictureInPictureController.invalidatePlaybackState()
+        self.startWhenReady()
+        return
+      }
+      self.startDeadline?.cancel()
+      self.startDeadline = nil
       self.ticker?.invalidate()
       self.ticker = nil
       self.deactivateAudio()
-      if close { self.onSystemClose?() }
-      else if resumeAutomatic { self.prepareForAutomaticStart() }
+      if requested { self.onSystemClose?() }
     }
   }
 
   nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
     restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
     Task { @MainActor [weak self] in
-      self?.restoringInline = true
       completionHandler(self != nil)
     }
   }
@@ -342,21 +341,20 @@ struct FloatingPiPSource: UIViewRepresentable {
   func makeUIView(context: Context) -> FloatingPiPSourceView {
     let view = FloatingPiPSourceView()
     view.isUserInteractionEnabled = false
-    view.isAccessibilityElement = true
-    view.accessibilityLabel = "跨 App 持仓浮窗"
-    view.accessibilityIdentifier = "floating.positions.pipStatus"
+    view.isAccessibilityElement = false
+    view.accessibilityElementsHidden = true
     view.displayLayer.videoGravity = .resizeAspect
     controller.attach(view)
     return view
   }
   func updateUIView(_ uiView: FloatingPiPSourceView, context: Context) {
-    uiView.accessibilityValue = controller.isActive ? "画中画已开启" : controller.isStarting ? "正在开启画中画" : "App 内显示"
+    // The source stays covered in the app; the system PiP is the only visible presentation.
   }
 }
 
 enum FloatingPiPFrameRenderer {
   static func sample(_ content: FloatingPiPPresentation) -> CMSampleBuffer? {
-    let width = 640, height = 320
+    let width = 640, height = 480
     var buffer: CVPixelBuffer?
     let attributes: [CFString: Any] = [kCVPixelBufferCGImageCompatibilityKey: true,
       kCVPixelBufferCGBitmapContextCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:]]
@@ -374,15 +372,24 @@ enum FloatingPiPFrameRenderer {
     UIColor(red: 0.06, green: 0.08, blue: 0.11, alpha: 1).setFill()
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     let muted = UIColor(white: 0.66, alpha: 1)
-    let profitColor = content.loss ? UIColor(red: 0.96, green: 0.27, blue: 0.36, alpha: 1)
-      : UIColor(red: 0.05, green: 0.8, blue: 0.5, alpha: 1)
-    text(content.title + " " + content.side, in: CGRect(x: 26, y: 36, width: 484, height: 46), size: 38, color: .white, bold: true)
-    text(content.page, in: CGRect(x: 538, y: 43, width: 80, height: 34), size: 26, color: muted)
-    text("市价", in: CGRect(x: 26, y: 112, width: 280, height: 32), size: 25, color: muted)
-    text("浮盈", in: CGRect(x: 346, y: 112, width: 270, height: 32), size: 25, color: muted)
-    text(content.price, in: CGRect(x: 26, y: 158, width: 292, height: 55), size: 42, color: .white, bold: true)
-    text(content.profit, in: CGRect(x: 346, y: 158, width: 270, height: 55), size: 42, color: profitColor, bold: true)
-    text(content.footer, in: CGRect(x: 26, y: 258, width: 590, height: 32), size: 24, color: muted)
+    text(content.title + " · \(content.totalCount) 笔", in: CGRect(x: 24, y: 22, width: 470, height: 40),
+      size: 30, color: .white, bold: true)
+    text(content.page, in: CGRect(x: 524, y: 25, width: 92, height: 35), size: 26, color: muted)
+    if content.rows.isEmpty {
+      text(content.footer, in: CGRect(x: 24, y: 194, width: 592, height: 54), size: 34, color: muted)
+    }
+    for (index, row) in content.rows.enumerated() {
+      let y = CGFloat(80 + index * 82)
+      let color = row.stale ? muted : row.loss ? UIColor(red: 0.96, green: 0.27, blue: 0.36, alpha: 1)
+        : UIColor(red: 0.05, green: 0.8, blue: 0.5, alpha: 1)
+      text(row.symbol + " " + row.side, in: CGRect(x: 24, y: y, width: 336, height: 39),
+        size: 31, color: .white, bold: true)
+      text(row.profit, in: CGRect(x: 368, y: y, width: 248, height: 39), size: 32, color: color, bold: true)
+      text("市价 " + row.price, in: CGRect(x: 24, y: y + 39, width: 592, height: 29), size: 23, color: muted)
+    }
+    if !content.rows.isEmpty {
+      text(content.footer, in: CGRect(x: 24, y: 438, width: 592, height: 29), size: 22, color: muted)
+    }
     var description: CMVideoFormatDescription?
     guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer,
       formatDescriptionOut: &description) == noErr, let description else { return nil }

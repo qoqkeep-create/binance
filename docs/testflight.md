@@ -4,6 +4,8 @@
 
 2026-11-02 用户确认构建 **26 已成功**，本轮停止追查此前 Cloud 构建失败。该反馈不等于下面新增图表／通知代码已上传或已在手机验收；准确 commit 映射仍以 Apple 记录为准。
 
+2026-11-03 构建 34／35 的测试、归档和上传处理已成功；构建 35 由用户**手动加入内部测试组**后立即收到更新通知。本次不能作为 Cloud 自动分发成功的证据，历史构建 7 的自动分发记录也不能替代当前结果；后续操作仍显示等待的原因待查，详见 [本次核验](#构建-3435-状态核验与日志入口2026-11-03)。
+
 ## 本项目固定信息与待办
 
 | 项目 | 当前值 / 操作 |
@@ -149,6 +151,28 @@ Cloud 首次启用测试时，构建 6 的图表压力测试出现 426ms P95，�
 - [Cloud 构建 7](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/xcode-cloud/products/f01be7a9-f719-4ecc-932e-17c7bac455a6/builds/3684c2fc-6c88-4ba5-b126-a539694097f5/summary)：代码推送触发，提交 `509f2da`，Test / Archive / TestFlight Internal Testing 均成功。
 - [内部测试组](https://appstoreconnect.apple.com/apps/6829222305/testflight/groups/df7e47dd-6266-41c0-9e5c-344dac1ad6f1/builds)：`1.0.1 (7)` 已自动加入，状态“正在测试”，1 名测试员已邀请，Apple 处理已完成。未手工绕过测试门槛分发构建 6。
 - 当前测试者在 iPhone 使用被邀请的 Apple 账号接受 TestFlight 邀请并安装。后台分发完成不代表手机已接受邀请、安装或运行；此三项仍由测试者实机验收。
+
+### 构建 34／35 状态核验与日志入口（2026-11-03）
+
+2026-11-03 晚间通过本机 Xcode 和已登录的 App Store Connect 页面只读核验：构建 34、35 均使用提交 `38e696c`，Xcode 中 `Test - iOS`、`Archive - iOS` 均成功，归档日志中的 App Store 导出与上传准备也成功；构建 34 的 `Errors Only` 没有错误项。核验时 Xcode 总览仍显示 Running、TestFlight 后续操作等待，但 App Store Connect → TestFlight → iOS →「构建版本上传」已显示两者均为「完成」。版本列表中构建 35 已关联「内部测试」组；构建 34 的群组栏为空。现有证据不能将这两次记录判定为编译或上传失败，也未确认 Xcode 等待状态未同步的具体原因。
+
+用户随后明确说明，构建 35 的测试组关联是其在本轮查看期间手动添加，添加后立即收到更新通知。该结果证明本次经手动加组触发了通知，不能据此认定 Cloud 自动分发成功；自动后续操作等待的原因仍待核实。助手没有重新构建、取消任务、调整工作流、添加测试员或手动分发；手机安装与运行 `1.0.1 (35)` 仍待实机确认。核验范围见 [变更记录](changes.md#2026-11-03云端构建-3435-只读状态核验)。
+
+以后排查先按失败阶段查看，避免以 Cloud 总览等待代替上传结果：
+
+1. Xcode → Report navigator → Cloud → 对应构建号，展开失败的 `Test - iOS`／`Archive - iOS` → `Logs`；使用 `Errors Only` 定位错误。测试失败也可查看 `Tests`；完整日志和结果包从同一步骤的 `Artifacts` 下载。
+2. 两个 action 成功时，查看 `TestFlight Internal Testing` 后续操作，再到 App Store Connect → 本 App → TestFlight → iOS →「构建版本上传」核对准确构建号。点击失败状态查看上传／处理错误；点击构建号查看详情。Cloud 总览、上传处理和测试组分发分别核对。
+3. 若上传已经「完成」，继续确认版本列表／内部组是否包含该构建，以及手机 TestFlight 是否可见。没有具体失败记录时，不通过反复重建同一提交推断错误原因。
+
+日志入口依据 Apple [构建问题排查](https://developer.apple.com/documentation/xcode/resolving-common-configuration-and-build-issues)与[查看上传状态](https://developer.apple.com/help/app-store-connect/manage-builds/view-builds-and-metadata)。
+
+### 日常更新：云端与本地归档
+
+- **云端路径**：本地修改后 commit 并 push 到实际构建分支；按用户说明，由现有关联 Jenkins 调用 Apple 打包服务。Cloud 读取已推送的提交，测试／归档／上传并处理完成后，在 App Store Connect → TestFlight →「内部测试」组 →「构建版本」添加该构建，手机 TestFlight 才获得该组的新包。只 commit 而未 push，或从 Xcode 的 Cloud 页面手动重建旧提交，都不会带入未推送的本地修改。本轮没有检查 Jenkins 任务本身。
+- **本地归档路径**：Xcode 选择 `TradeTool Release` → Product → Archive → Organizer → Distribute App → TestFlight & App Store，完成上传；等待 Apple 处理完成，再按同样方式加入内部测试组。本地普通 Build／Run 不会自动上传 TestFlight；本地 Archive 使用当前工作区内容，不要求先 push，但应记录源码版本以便追溯。
+- 两条路径任选一条完成一次客户端交付即可；混用时核对 Version／Build，避免重复上传同一构建号。Cloud 编号由平台递增，本地源码的 Build 基线仍为 `3`，本地上传时应使用 Xcode 的版本／构建号管理功能或协调新的可用编号，不能直接假定源码 `3` 可用。若只是从本机 Xcode 的 **Cloud** 页面启动任务，执行的仍是前一条云端路径。
+
+添加测试组的操作依据 Apple [添加构建的测试员](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-testers-to-builds)，本地归档上传依据 [分发 App](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)。本次未修改工作流以解决自动分发等待。
 
 ### 本次 K 线诊断的打包授权
 

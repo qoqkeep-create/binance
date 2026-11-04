@@ -4,6 +4,7 @@ import { CapitalWorkflow, BulkClose } from './Workflows';
 import { Commands } from './Commands';
 import { Realtime } from './Realtime';
 import { Ticker, Candle, CandleStore } from './Market';
+import { normalizedSymbols, reorderedWatchlist } from './MarketList';
 import type { PreferenceStore, RuntimeClock } from './Ports';
 
 export class AppStore {
@@ -25,6 +26,18 @@ export class AppStore {
   strategies: DataValue[] = [];
   tickers: Ticker[] = [];
   watchlist: string[] = [];
+  catalogSymbols: string[] = [];
+  catalogLoading: boolean = false;
+  catalogFailed: boolean = false;
+  marketRefreshing: boolean = false;
+  private catalogLoadedAt: number = 0;
+  private catalogRequest: number = 0;
+  private watchlistIdentity: string = '';
+  private watchlistConfigured: boolean = false;
+  private watchlistRevision: number = 0;
+  private watchlistSyncIdentity: string = '';
+  private watchlistCustomized: boolean = false;
+  private watchlistNeedsSync: boolean = false;
   selectedSymbol: string = 'BTCUSDT';
   interval: string = '1h';
   chart: CandleStore = new CandleStore();
@@ -32,6 +45,17 @@ export class AppStore {
   chartHasNext: boolean = true;
   chartLoading: boolean = false;
   chartRevision: number = 0;
+  private selectedLeverages: Map<string, number> = new Map();
+  private defaultLeverages: Map<string, number> = new Map();
+  selectedLeverage(symbol: string): number { return this.selectedLeverages.get(this.session.scope + ':' + symbol) || 0; }
+  displayedLeverage(symbol: string): number { return this.selectedLeverage(symbol) || this.defaultLeverages.get(this.session.scope + ':' + symbol) || 0; }
+  selectLeverage(symbol: string, value: number): void { if (Number.isInteger(value) && value > 0) { this.selectedLeverages.set(this.session.scope + ':' + symbol, value); this.changed(); } }
+  async loadDefaultLeverage(symbol: string): Promise<void> {
+    const scope = this.session.scope; const key = scope + ':' + symbol; if (this.defaultLeverages.has(key)) return;
+    try { const value = await this.session.request('/v1/trade/symbol/info?symbol=' + encodeURIComponent(symbol));
+      const maximum = value.get('max_leverage').number(); if (scope === this.session.scope && Number.isInteger(maximum) && maximum > 0) { this.defaultLeverages.set(key, maximum); this.changed(); }
+    } catch (_) { /* Display remains loading; the next chart appearance retries this read. */ }
+  }
   accountRevision: number = 0;
   signalRevision: number = 0;
   onChange: () => void = () => {};
@@ -60,16 +84,16 @@ export class AppStore {
   start(): void {
     this.foreground = true;
     if (!this.session.authenticated) return;
-    try { this.watchlist = DataValue.parse(this.preferences.read(this.userKey('watchlist'), '[]')).rows().map((v: DataValue) => v.text()); } catch (_) { this.watchlist = []; }
+    this.restoreWatchlist(); this.syncWatchlist();
     this.realtime.start(); this.loadTickers(); this.refreshAccount(); this.commands.load().catch((e: Error) => this.report(e));
   }
-  background(): void { this.foreground = false; this.realtime.stop(); this.marketLoadGeneration++; this.changed(); }
+  background(): void { this.foreground = false; this.realtime.stop(); this.marketLoadGeneration++; this.marketRefreshing = false; this.changed(); }
   async login(account: string, password: string, register: boolean): Promise<void> {
     if (this.busy) return; this.busy = true; this.notice = ''; this.changed();
     try { await this.session.authenticate(account, password, register); this.start(); }
     catch (e) { this.report(e as Error); } finally { this.busy = false; this.changed(); }
   }
-  async logout(): Promise<void> { this.realtime.stop(); this.clearAccount(); this.tickers = []; this.chart.clear(); this.chartGeneration++; await this.session.logout(); this.changed(); }
+  async logout(): Promise<void> { this.realtime.stop(); this.clearAccount(); this.clearMarkets(); this.chart.clear(); this.chartGeneration++; await this.session.logout(); this.changed(); }
   async changeServer(origin: string): Promise<void> {
     await this.logout(); this.preferences.write('api-origin', origin); await this.session.restore(origin); this.changed();
   }
@@ -79,29 +103,102 @@ export class AppStore {
   }
   private clearAccount(): void {
     this.account = new DataValue(); this.profile = new DataValue(); this.binding = new DataValue(); this.strategies = [];
+    this.selectedLeverages.clear(); this.defaultLeverages.clear();
     this.accountRefreshPending = false; this.accountRevision++;
   }
   userKey(key: string): string { return this.session.baseUrl + ':' + this.session.user.value('id', '') + ':' + key; }
-  toggleWatch(symbol: string): void {
-    this.watchlist = this.watchlist.includes(symbol) ? this.watchlist.filter((v: string) => v !== symbol) : this.watchlist.concat([symbol]);
-    this.preferences.write(this.userKey('watchlist'), JSON.stringify(this.watchlist)); this.changed();
+  private clearMarkets(): void {
+    this.marketLoadGeneration++; this.catalogRequest++; this.watchlistRevision++;
+    this.watchlistIdentity = ''; this.watchlistSyncIdentity = ''; this.watchlistConfigured = false;
+    this.watchlist = []; this.tickers = []; this.catalogSymbols = []; this.catalogLoading = false;
+    this.catalogFailed = false; this.catalogLoadedAt = 0; this.marketRefreshing = false;
+  }
+  private restoreWatchlist(): void {
+    const identity = this.userKey('watchlist');
+    if (identity === this.watchlistIdentity) return;
+    this.clearMarkets(); this.watchlistIdentity = identity;
+    try { this.watchlist = normalizedSymbols(DataValue.parse(this.preferences.read(identity, '[]')).rows().map((v: DataValue) => v.text())); }
+    catch (_) { this.watchlist = []; }
+    // Preserve legacy local-only preferences until the server has an explicit customized list.
+    this.watchlistCustomized = this.preferences.read(this.userKey('watchlist-customized'), this.preferences.read(identity, '') ? 'true' : 'false') === 'true';
+    this.watchlistNeedsSync = this.preferences.read(this.userKey('watchlist-dirty'), 'false') === 'true';
+  }
+  private persistWatchlist(edited: boolean = false): void {
+    if (edited) { this.watchlistCustomized = true; this.watchlistNeedsSync = true; this.watchlistRevision++; }
+    this.preferences.write(this.userKey('watchlist'), JSON.stringify(this.watchlist));
+    this.preferences.write(this.userKey('watchlist-customized'), String(this.watchlistCustomized));
+    this.preferences.write(this.userKey('watchlist-dirty'), String(this.watchlistNeedsSync));
+    this.changed(); if (edited) this.syncWatchlist();
+  }
+  addWatch(symbol: string): void {
+    const normalized = normalizedSymbols([symbol]);
+    if (!normalized.length || this.watchlist.includes(normalized[0])) return;
+    this.watchlist = this.watchlist.concat(normalized); this.persistWatchlist(true);
+  }
+  removeWatch(symbol: string): void {
+    if (!this.watchlist.includes(symbol)) return;
+    this.watchlist = this.watchlist.filter((v: string) => v !== symbol); this.persistWatchlist(true);
+  }
+  toggleWatch(symbol: string): void { if (this.watchlist.includes(symbol)) this.removeWatch(symbol); else this.addWatch(symbol); }
+  moveWatch(from: number, to: number): void {
+    const reordered = reorderedWatchlist(this.watchlist, from, to);
+    if (JSON.stringify(reordered) === JSON.stringify(this.watchlist)) return;
+    this.watchlist = reordered; this.persistWatchlist(true);
+  }
+  private async syncWatchlist(): Promise<void> {
+    const identity = this.userKey('watchlist'); const scope = this.session.scope;
+    if (!this.watchlistNeedsSync || !this.session.authenticated || this.watchlistSyncIdentity === scope) return;
+    this.watchlistSyncIdentity = scope;
+    try {
+      await this.clock.delay(350);
+      while (this.watchlistNeedsSync && identity === this.userKey('watchlist') && scope === this.session.scope) {
+        const revision = this.watchlistRevision;
+        await this.session.request('/api/market/watchlist', 'POST', DataValue.object({ symbols: this.watchlist.slice() }));
+        if (identity !== this.userKey('watchlist') || scope !== this.session.scope) return;
+        if (revision === this.watchlistRevision) { this.watchlistNeedsSync = false; this.persistWatchlist(); }
+      }
+    } catch (_) { /* Keep the persisted dirty flag; retry on the next launch/catalog load. */ }
+    finally { if (this.watchlistSyncIdentity === scope) this.watchlistSyncIdentity = ''; }
+  }
+  async loadCatalog(force: boolean = false): Promise<void> {
+    this.syncWatchlist();
+    if (this.catalogLoading || (!force && this.catalogSymbols.length > 0 && this.clock.now() - this.catalogLoadedAt < 300000)) return;
+    const request = ++this.catalogRequest; const scope = this.session.scope;
+    this.catalogLoading = true; this.catalogFailed = false; this.changed();
+    try {
+      const value = await this.session.request('/api/market/symbols');
+      if (request !== this.catalogRequest || scope !== this.session.scope) return;
+      if (value.value('quoteAsset', 'USDT') !== 'USDT') throw new Error('交易对币种不匹配');
+      const symbols = normalizedSymbols(value.get('symbols').rows().map((v: DataValue) => v.text()));
+      if (!symbols.length) throw new Error('交易对加载失败');
+      this.catalogSymbols = symbols; this.catalogLoadedAt = this.clock.now(); this.catalogFailed = false;
+    } catch (_) { if (request === this.catalogRequest && scope === this.session.scope) this.catalogFailed = true; }
+    finally { if (request === this.catalogRequest) { this.catalogLoading = false; this.changed(); } }
   }
   async loadTickers(): Promise<void> {
-    const generation = ++this.marketLoadGeneration;
+    const generation = ++this.marketLoadGeneration; const scope = this.session.scope;
+    this.marketRefreshing = true; this.changed();
     try {
       const value = await this.session.request('/api/market/tickers');
-      if (generation !== this.marketLoadGeneration) return;
+      if (generation !== this.marketLoadGeneration || scope !== this.session.scope) return;
       const current = new Map<string, Ticker>(); for (const ticker of this.tickers) current.set(ticker.symbol, ticker);
       for (const row of value.items()) { const ticker = Ticker.from(row); const old = current.get(ticker.symbol); if (!old || old.eventTime <= ticker.eventTime) current.set(ticker.symbol, ticker); }
-      this.tickers = Array.from(current.values());
-      if (!this.preferences.read(this.userKey('watchlist'), '')) {
+      this.tickers = Array.from(current.values()); this.changed();
+      if (!this.watchlistConfigured) {
+        const revision = this.watchlistRevision;
         const defaults = await this.session.request('/api/market/watchlist/defaults');
-        if (generation !== this.marketLoadGeneration) return;
-        this.watchlist = defaults.get('symbols').rows().map((v: DataValue) => v.text());
-        this.preferences.write(this.userKey('watchlist'), JSON.stringify(this.watchlist));
+        if (generation !== this.marketLoadGeneration || scope !== this.session.scope) return;
+        const remote = normalizedSymbols(defaults.get('symbols').rows().map((v: DataValue) => v.text()));
+        if (revision === this.watchlistRevision && !this.watchlistNeedsSync && (defaults.get('isCustomized').flag() || !this.watchlistCustomized)) {
+          this.watchlist = remote; this.watchlistCustomized = defaults.get('isCustomized').flag(); this.persistWatchlist();
+        }
+        const catalog = normalizedSymbols(defaults.get('availableSymbols').rows().map((v: DataValue) => v.text()));
+        if (catalog.length && !this.catalogLoading) { this.catalogSymbols = catalog; this.catalogLoadedAt = this.clock.now(); }
+        this.watchlistConfigured = true;
       }
       this.changed();
-    } catch (e) { this.report(e as Error); }
+    } catch (e) { if (generation === this.marketLoadGeneration && scope === this.session.scope) this.report(e as Error); }
+    finally { if (generation === this.marketLoadGeneration) { this.marketRefreshing = false; this.changed(); } }
   }
   async refreshAccount(): Promise<void> {
     const scope = this.session.scope; const request = ++this.accountRequest;

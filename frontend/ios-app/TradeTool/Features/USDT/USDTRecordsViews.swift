@@ -20,7 +20,7 @@ struct USDTSignalsView: View {
           }.contentShape(Rectangle())
         }.buttonStyle(.plain).padding(.trailing, 8).zIndex(1).accessibilityLabel("内部信号规则")
       }).accessibilityIdentifier("signals.header")
-      ScrollView {
+      WebRefreshScrollView(isActive: isVisible && scenePhase == .active) {
         VStack(spacing: 10) {
           ForEach(model.items, id: \.signalIdentity) { row in
             Button {
@@ -40,7 +40,7 @@ struct USDTSignalsView: View {
           }
         }.padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).accessibilityIdentifier("signals.list")
-        .refreshable { await load() }
+        .webRefreshable { await load() }
     }.usdtPage("信号").task(id: "\(store.scope):\(scenePhase):\(isVisible)") {
       if modelScope != store.scope {
         model.reset(); modelScope = store.scope; nextRefreshAt = .distantPast
@@ -172,10 +172,10 @@ struct USDTRecordsView: View {
       if embedded { records }
       else { records.usdtPage(kind.title, refresh: { Task { await refresh() } }) }
     }.task(id: store.scope) { await load(reset: true) }
-      .refreshable { await refresh() }
+      .webRefreshable { await refresh() }
   }
   private var records: some View {
-    ScrollView {
+    WebRefreshScrollView {
       VStack(alignment: .leading, spacing: 12) {
         if kind.transfers {
           transferSummary

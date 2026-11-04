@@ -44,6 +44,15 @@ enum DisplayNumber {
     return sign + integer + "." + fraction + String(repeating: "0", count: max(0, digits - fraction.count))
   }
 
+  /// Amount labels only; prices and order payloads keep their existing precision.
+  static func amount(_ value: Decimal, maximumFractionDigits: Int, signed: Bool = false) -> String {
+    guard !value.isNaN else { return "--" }
+    var source = value
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &source, max(0, maximumFractionDigits), .plain)
+    return (signed && rounded > 0 ? "+" : "") + NSDecimalNumber(decimal: rounded).stringValue
+  }
+
   static func compact(_ value: Double) -> String {
     guard value.isFinite else { return "--" }
     for (divisor, suffix) in [(1e9, "B"), (1e6, "M"), (1e3, "K")] where abs(value) >= divisor {

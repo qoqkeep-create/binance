@@ -2608,7 +2608,7 @@ final class ChartCalibrationUITests: XCTestCase {
         if chart.waitForExistence(timeout: 3) {
             return
         }
-        let marketTitle = app.staticTexts["合约"]
+        let marketTitle = app.staticTexts["合约自选"]
         guard marketTitle.waitForExistence(timeout: 10) else {
             return
         }
@@ -3157,7 +3157,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(app.staticTexts["chart-ticket.止损价"].label, "64100.00")
     XCTAssertEqual(app.staticTexts["chart-ticket.手续费"].label, "0.5 USDT")
     let heldRisk = app.staticTexts["chart-ticket.止损金额"]
-    XCTAssertEqual(heldRisk.label, "10.000 U")
+    XCTAssertEqual(heldRisk.label, "10 U")
     XCTAssertFalse(app.buttons["chart-ticket.risk-settings"].exists)
     heldRisk.tap()
     XCTAssertFalse(app.buttons["stop-loss.submit"].exists)
@@ -3190,10 +3190,9 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(secondBracket.waitForExistence(timeout: 5))
     XCTAssertEqual(secondBracket.value as? String, "已选中")
     confirmLeverage.tap()
-    app.buttons["market-chart-settings"].tap()
-    XCTAssertFalse(app.staticTexts["图表开仓类型"].exists)
-    XCTAssertEqual(app.pickers.count, 0)
-    app.buttons["返回"].firstMatch.tap()
+    XCTAssertFalse(app.buttons["market-chart-settings"].exists)
+    XCTAssertTrue(app.buttons["market-chart-indicator-settings-shortcut"].isHittable)
+    XCTAssertEqual(app.buttons["market-chart-favorite"].label, "自选")
     ticket.tap()
     XCTAssertTrue(app.scrollViews["positions.list"].waitForExistence(timeout: 5))
     app.buttons["position.chart.101"].tap()
@@ -3522,9 +3521,9 @@ final class WebParityUITests: XCTestCase {
   func testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage() {
     launch("profile", ["--fixture-dark"])
     profileLink("设置")
-    XCTAssertTrue(app.staticTexts["颜色模式"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["开启通知"].waitForExistence(timeout: 5))
     rightSwipe(toX: 85)
-    XCTAssertTrue(app.staticTexts["颜色模式"].exists)
+    XCTAssertTrue(app.staticTexts["开启通知"].exists)
     rightSwipe()
     XCTAssertTrue(app.buttons["profile.switchMode"].waitForExistence(timeout: 5))
     app.swipeDown()
@@ -3547,125 +3546,105 @@ final class WebParityUITests: XCTestCase {
     capture("dark-profile-after-modal")
   }
 
-  func testFloatingPositionsAcrossPagesAndDragging() {
-    launch("positions", ["--fixture-multiple", "--fixture-inline-floating"])
+  func testExternalFloatingFailureUsesToastAndCanRetryWithoutAnInlineCard() {
+    launch("positions", ["--fixture-multiple", "--fixture-pip-unavailable"])
     let toggle = app.buttons["positions.floatingPositions"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-    if !toggle.isHittable { app.swipeUp() }
-    toggle.tap()
-    let panel = app.otherElements["floating.positions.panel"]
-    let price = app.staticTexts["floating.position.price"]
-    let profit = app.staticTexts["floating.position.profit"]
-    XCTAssertTrue(price.waitForExistence(timeout: 10))
-    XCTAssertEqual(price.label, "68000")
-    XCTAssertEqual(profit.label, "+25.000 U")
-    capture("floating-profile")
-    app.buttons["floating.positions.next"].tap()
-    XCTAssertEqual(price.label, "2600.50")
-    XCTAssertEqual(profit.label, "-3.500 U")
-    app.buttons["持仓"].firstMatch.tap()
-    XCTAssertTrue(app.buttons["限价委托"].waitForExistence(timeout: 5))
-    XCTAssertEqual(price.label, "2600.50")
-    capture("floating-positions")
+    XCTAssertEqual(toggle.value as? String, "未开启")
+    assertNoInlineFloatingCard()
+    for attempt in 1...2 {
+      toggle.tap()
+      let toast = app.descendants(matching: .any)["app.toast"].firstMatch
+      XCTAssertTrue(toast.waitForExistence(timeout: 5))
+      XCTAssertTrue(toast.label.contains("此设备暂不支持画中画"))
+      let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "未开启"), object: toggle)
+      XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
+      assertNoInlineFloatingCard()
+      XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
+      capture("external-floating-unavailable-attempt-\(attempt)")
+      XCTAssertTrue(toast.waitForNonExistence(timeout: 5))
+    }
+    app.buttons["行情"].firstMatch.tap()
+    assertNoInlineFloatingCard()
     app.buttons["我的"].firstMatch.tap()
-    let strategy = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止盈止损策略")).firstMatch
-    XCTAssertTrue(strategy.waitForExistence(timeout: 5))
-    if !strategy.isHittable { app.swipeUp() }
-    strategy.tap()
-    XCTAssertTrue(app.staticTexts["我的策略"].waitForExistence(timeout: 5))
-    XCTAssertEqual(price.label, "2600.50")
-    let before = panel.frame
-    let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-    let target = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: before.midX - 100, dy: before.midY + 160))
-    start.press(forDuration: 0.1, thenDragTo: target)
-    XCTAssertLessThan(panel.frame.minX, before.minX - 40)
-    capture("floating-dragged-detail")
-    app.buttons["floating.positions.close"].tap()
-    XCTAssertFalse(panel.exists)
-    app.buttons["返回"].firstMatch.tap()
+    assertNoInlineFloatingCard()
     app.buttons["持仓"].firstMatch.tap()
     XCTAssertTrue(toggle.waitForExistence(timeout: 5))
     XCTAssertEqual(toggle.value as? String, "未开启")
   }
 
-  func testFloatingPositionsPictureInPictureAcrossApps() throws {
+  func testExternalFloatingStartsFromEntryAndSurvivesAcrossApps() {
     launch("positions", ["--fixture-multiple", "--fixture-live-floating"])
     let toggle = app.buttons["positions.floatingPositions"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-    if !toggle.isHittable { app.swipeUp() }
     toggle.tap()
-    let panel = app.otherElements["floating.positions.panel"]
-    XCTAssertTrue(panel.waitForExistence(timeout: 10))
-    let status = app.otherElements["floating.positions.pipStatus"]
-    XCTAssertEqual(status.value as? String, "App 内显示")
-    // Enabling prepares inline playback. Home, rather than the toggle, starts external PiP.
+    let unavailable = app.descendants(matching: .any)["app.toast"].firstMatch
+    if unavailable.waitForExistence(timeout: 2), unavailable.label.contains("此设备暂不支持画中画") {
+      let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "未开启"), object: toggle)
+      XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
+      assertNoInlineFloatingCard()
+      XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
+      capture("external-floating-device-capability-failure")
+      return
+    }
+    // The controller's eight-second deadline closes a failed start. Remaining enabled
+    // after that deadline requires its real AVKit didStart callback; Home is not the trigger.
+    let started = expectation(description: "Explicit foreground PiP startup settles")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 9) { started.fulfill() }
+    wait(for: [started], timeout: 11)
+    XCTAssertEqual(app.state, .runningForeground)
+    XCTAssertEqual(toggle.value as? String, "已开启")
+    assertNoInlineFloatingCard()
+    capture("external-floating-started-in-foreground")
     XCUIDevice.shared.press(.home)
-    let started = expectation(description: "Automatic PiP background transition")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { started.fulfill() }
-    wait(for: [started], timeout: 4)
     let home = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    home.name = "floating-pip-home"
-    home.lifetime = .keepAlways
-    add(home)
+    home.name = "external-floating-home"; home.lifetime = .keepAlways; add(home)
     let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
     settings.launch()
     XCTAssertTrue(settings.wait(for: .runningForeground, timeout: 10))
+    let refresh = expectation(description: "External PiP group rotation while another app is foreground")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6) { refresh.fulfill() }
+    wait(for: [refresh], timeout: 8)
     let other = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    other.name = "floating-pip-other-app"
-    other.lifetime = .keepAlways
-    add(other)
-    // Allow two complete carousel cycles while a different app owns the foreground.
-    let refresh = expectation(description: "PiP foreground-independent refresh window")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 12) { refresh.fulfill() }
-    wait(for: [refresh], timeout: 14)
-    let updated = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    updated.name = "floating-pip-background-refreshed"
-    updated.lifetime = .keepAlways
-    add(updated)
+    other.name = "external-floating-other-app"; other.lifetime = .keepAlways; add(other)
     app.activate()
-    let unavailable = app.alerts.staticTexts["此设备暂不支持画中画，仍可使用 App 内浮窗。"]
-    if unavailable.waitForExistence(timeout: 2) {
-      capture("floating-pip-device-unsupported")
-      app.alerts.buttons["知道了"].tap()
-      throw XCTSkip("当前设备的 AVKit 明确返回画中画不受支持；跨 App 验收需支持该能力的 iPhone。")
-    }
-    XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
-    // The inline source is transparent during external playback, including AVKit's placeholder.
-    let external = NSPredicate(format: "exists == false")
-    expectation(for: external, evaluatedWith: panel)
-    waitForExpectations(timeout: 12)
-    capture("floating-pip-started")
+    XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     XCTAssertEqual(toggle.value as? String, "已开启")
-    if !toggle.isHittable { app.swipeUp() }
-    toggle.tap()
-    XCTAssertFalse(app.otherElements["floating.positions.pipStatus"].exists)
-    XCTAssertEqual(toggle.value as? String, "未开启")
-    toggle.tap()
-    XCTAssertTrue(panel.waitForExistence(timeout: 5))
-    XCTAssertEqual(status.value as? String, "App 内显示")
-    app.buttons["floating.positions.pip"].tap()
-    expectation(for: external, evaluatedWith: panel)
-    waitForExpectations(timeout: 12)
+    assertNoInlineFloatingCard()
     toggle.tap()
     XCTAssertEqual(toggle.value as? String, "未开启")
+    assertNoInlineFloatingCard()
   }
 
-  func testFloatingPositionsEmptyUnboundAndDarkStates() {
+  func testExternalFloatingEmptyUnboundAndDarkFailuresReturnToClosedState() {
     for (options, expected, name) in [
-      (["--fixture-empty"], "暂无持仓", "floating-empty"),
-      (["--fixture-unbound"], "请先绑定 API", "floating-unbound"),
-      (["--fixture-dark", "--fixture-lead"], "+25.000 U", "floating-lead-dark"),
+      (["--fixture-empty", "--fixture-pip-unavailable"], "此设备暂不支持画中画", "external-empty"),
+      (["--fixture-unbound"], "请先绑定 API", "external-unbound"),
+      (["--fixture-dark", "--fixture-lead", "--fixture-pip-unavailable"], "此设备暂不支持画中画", "external-lead-dark"),
     ] {
-      launch("positions", options + ["--fixture-inline-floating"])
+      launch("positions", options)
       let toggle = app.buttons["positions.floatingPositions"]
       XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-      if !toggle.isHittable { app.swipeUp() }
       toggle.tap()
-      XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 10))
+      let toast = app.descendants(matching: .any)["app.toast"].firstMatch
+      XCTAssertTrue(toast.waitForExistence(timeout: 5))
+      XCTAssertTrue(toast.label.contains(expected))
+      let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "未开启"), object: toggle)
+      XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
+      assertNoInlineFloatingCard()
+      XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
       capture(name)
-      app.buttons["floating.positions.close"].tap()
-      XCTAssertFalse(app.otherElements["floating.positions.panel"].exists)
     }
+  }
+
+  private func assertNoInlineFloatingCard(file: StaticString = #filePath, line: UInt = #line) {
+    XCTAssertFalse(app.otherElements["floating.positions.panel"].exists, file: file, line: line)
+    XCTAssertFalse(app.buttons["floating.positions.next"].exists, file: file, line: line)
+    XCTAssertFalse(app.buttons["floating.positions.pip"].exists, file: file, line: line)
+    XCTAssertFalse(app.buttons["floating.positions.close"].exists, file: file, line: line)
+    XCTAssertFalse(app.staticTexts["此视频正在以画中画播放"].exists, file: file, line: line)
+    XCTAssertFalse(app.otherElements["floating.positions.pipStatus"].exists,
+      "The source must remain hidden from accessibility", file: file, line: line)
   }
 
   func testCorePagesAndDialogs() {
@@ -3673,7 +3652,7 @@ final class WebParityUITests: XCTestCase {
       ("trade", "币价"), ("positions", "开仓额度："), ("signals", "信号"), ("profile", "止损额设置"),
       ("strategies", "我的策略"), ("strategy-editor", "不移动止损位"), ("operations", "北京时间 · 最新记录在前"),
       ("transfers", "累计转出"),
-      ("settings", "颜色模式"), ("legal", "用户协议"), ("privacy", "隐私政策"), ("stop-loss", "止损设置"),
+      ("settings", "开启通知"), ("legal", "用户协议"), ("privacy", "隐私政策"), ("stop-loss", "止损设置"),
       ("collect", "资金归集账号"), ("login", "Binance Tools"),
     ]
     for (page, text) in pages {

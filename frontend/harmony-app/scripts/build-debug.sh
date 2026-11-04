@@ -3,6 +3,11 @@ set -eu
 TASK_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$TASK_ROOT/scripts/toolchain-env.sh"
 TASK_PROJECT="$TASK_ROOT/.local-build/project"
+case "${1:-}" in
+  '') ;;
+  --preview) TASK_PROJECT="$TASK_ROOT/.local-build/preview-project" ;;
+  *) echo '用法：build-debug.sh [--preview]' >&2; exit 2 ;;
+esac
 if [ ! -f "$TASK_PROJECT/build-profile.json5" ]; then
   echo '先运行 node scripts/prepare-local.mjs；在生成目录中用 DevEco 配置 SDK 与真机调试签名。' >&2
   exit 2

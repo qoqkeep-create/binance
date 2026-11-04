@@ -3,6 +3,7 @@ import SwiftUI
 struct USDTProfileView: View {
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var auth: AuthStore
+  @AppStorage(AppAppearance.storageKey) private var appearance: AppAppearance = .defaultValue
   @State private var logout = false
   @State private var more = false
   @State private var binding = false
@@ -14,7 +15,7 @@ struct USDTProfileView: View {
   @Environment(\.colorScheme) private var scheme
   private var lead: Bool { store.mode == "lead" }
   var body: some View {
-    ScrollView {
+    WebRefreshScrollView {
       VStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 0) {
           HStack(alignment: .center, spacing: 8) {
@@ -61,7 +62,7 @@ struct USDTProfileView: View {
               Text(lead ? "带单组合可用余额 (USDT)" : "合约余额 (USDT)")
                 .font(.system(size: 14, weight: .medium)).foregroundStyle(WebTheme.secondary)
               Text(balance("balance")).font(.system(size: 36, weight: .bold)).tracking(-0.9)
-                .frame(height: 40).foregroundStyle(scheme == .dark ? BinanceTheme.accent : WebTheme.text)
+                .frame(height: 40).foregroundStyle(scheme == .dark ? WebTheme.brand : WebTheme.text)
                 .lineLimit(1).minimumScaleFactor(0.6)
             }.frame(maxWidth: .infinity, alignment: .leading)
             Button {
@@ -135,6 +136,22 @@ struct USDTProfileView: View {
             }
           }
           separator
+          HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 14).fill(WebTheme.brand.opacity(scheme == .dark ? 0.1 : 0.15))
+              .frame(width: 40, height: 40).overlay {
+                WebIcon(appearance == .dark ? "moon" : "sun", size: 20).foregroundStyle(WebTheme.brand)
+              }
+            Text("颜色模式").font(.system(size: 16, weight: .medium))
+            Spacer(minLength: 0)
+            Text(appearance == .dark ? "深色" : "浅色").font(.system(size: 14, weight: .medium))
+              .foregroundStyle(WebTheme.secondary)
+            Toggle("颜色模式", isOn: Binding(
+              get: { appearance == .dark }, set: { appearance = $0 ? .dark : .light }
+            )).labelsHidden().toggleStyle(AccountSwitchStyle(label: "切换颜色模式"))
+              .accessibilityLabel("切换颜色模式").accessibilityValue(appearance == .dark ? "深色" : "浅色")
+              .accessibilityIdentifier("profile.appearance")
+          }.padding(.horizontal, 16).padding(.vertical, 12)
+          separator
           NavigationLink {
             USDTSettingsView()
           } label: {
@@ -171,7 +188,7 @@ struct USDTProfileView: View {
       .task(id: store.scope) {
         await store.refresh(freshBalance: true)
         collectAccount = (try? await store.get("/v1/account/capital-collect-account")) ?? .null
-      }.refreshable { await store.refresh(freshBalance: true) }
+      }.webRefreshable { await store.refresh(freshBalance: true) }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
       .largeTradingSheet(isPresented: $stopLoss, background: WebTheme.surface, showsDragIndicator: false) { USDTStopLossView() }
       .largeTradingSheet(isPresented: $normalize, background: WebTheme.page) { USDTCapitalView(initialTab: capitalTab) }
@@ -206,14 +223,18 @@ struct USDTProfileView: View {
     Rectangle().fill(WebTheme.border).frame(height: 1).padding(.horizontal, 16)
   }
   private var accountBorder: Color {
-    if scheme == .dark { return BinanceTheme.accent.opacity(0.2) }
+    if scheme == .dark { return WebTheme.brand.opacity(0.2) }
+    if lead { return Color(red: 169 / 255, green: 218 / 255, blue: 247 / 255) }
     return Color(red: 246 / 255, green: 220 / 255, blue: 128 / 255)
   }
   private var accountBackground: LinearGradient {
     LinearGradient(
       colors: scheme == .dark
-        ? [BinanceTheme.accent.opacity(0.10), BinanceTheme.accent.opacity(0.18)]
-        : [
+        ? [WebTheme.brand.opacity(0.10), WebTheme.brand.opacity(0.18)]
+        : lead ? [
+          Color(red: 235 / 255, green: 247 / 255, blue: 254 / 255),
+          Color(red: 210 / 255, green: 237 / 255, blue: 252 / 255),
+        ] : [
           Color(red: 255 / 255, green: 248 / 255, blue: 214 / 255),
           Color(red: 255 / 255, green: 238 / 255, blue: 168 / 255),
         ], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -527,11 +548,15 @@ struct USDTCapitalView: View {
     }
   }
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @EnvironmentObject private var store: USDTStore
+  @Namespace private var tabSelection
   @State private var tab: Tab
   @State private var direction = "to_spot"
   @State private var preview: JSONValue = .null
   @State private var busy = false
+  @State private var loading = false
+  @State private var loadID: UUID?
   @State private var notice = ""
   @State private var requestID = UUID().uuidString
   @State private var legacy = false
@@ -542,8 +567,9 @@ struct USDTCapitalView: View {
   private var pending: Bool { preview.value("status") == "collection_pending" }
   private var completed: Bool { preview.value("reason") == "normalization_completed" }
   private var legacyPending: Bool { pending && preview.value("operation", fallback: "").isEmpty }
+  private var tabsLocked: Bool { busy || pending || submitted }
   private var canSubmit: Bool {
-    tab != .records && !busy && (pending || preview.value("status") == "normalization_required")
+    tab != .records && !busy && !loading && (pending || preview.value("status") == "normalization_required")
       && preview.value("operation") == action
   }
   private var requestStorageKey: String { "capital.request.\(store.scope).\(action)" }
@@ -588,11 +614,19 @@ struct USDTCapitalView: View {
   private var tabs: some View {
     HStack(spacing: 4) {
       ForEach(Tab.allCases, id: \.self) { item in
-        Button { tab = item } label: {
+        Button { selectTab(item) } label: {
           Text(item.rawValue).font(.system(size: 15, weight: tab == item ? .semibold : .medium))
             .foregroundStyle(tab == item ? Color.black : WebTheme.secondary)
+            .transaction { $0.animation = nil }
             .frame(maxWidth: .infinity, minHeight: 44)
-            .background(tab == item ? WebTheme.brand : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+            .background {
+              ZStack {
+                if tab == item {
+                  RoundedRectangle(cornerRadius: 8).fill(WebTheme.brand)
+                    .matchedGeometryEffect(id: "capital.selectedTab", in: tabSelection)
+                }
+              }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: tab)
+            }
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).accessibilityIdentifier(item.identifier)
           .accessibilityAddTraits(tab == item ? .isSelected : [])
@@ -600,7 +634,7 @@ struct USDTCapitalView: View {
     }.padding(4).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
       .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
       .padding(.horizontal, 20).padding(.vertical, 12)
-      .disabled(busy || pending || submitted)
+      .disabled(tabsLocked)
       .accessibilityElement(children: .contain).accessibilityIdentifier("capital.tabs")
   }
   private var walletContent: some View {
@@ -698,10 +732,10 @@ struct USDTCapitalView: View {
           Text("转出金额按现货可用余额计算。子账户转至所属主账户；主账户按已设置的链和地址转出，以交易所最终回执为准。")
             .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
         }
-        if busy { HStack(spacing: 8) { ProgressView(); Text(submitted ? "正在提交，请稍候…" : "正在读取资金状态…") }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary) }
+        if busy || loading { HStack(spacing: 8) { ProgressView(); Text(busy ? "正在提交，请稍候…" : "正在读取资金状态…") }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary) }
         if completed { Label("本次操作已完成", systemImage: "checkmark.circle.fill").foregroundStyle(WebTheme.success).font(.system(size: 15, weight: .semibold)).accessibilityIdentifier("capital.completed") }
         if !notice.isEmpty { Text(notice).font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5).accessibilityIdentifier("capital.notice") }
-        if tab == .transfer && !busy && preview.value("status") == "ready" && !completed {
+        if tab == .transfer && !busy && !loading && preview.value("status") == "ready" && !completed {
           Text("暂无可转出的现货资金")
             .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
         }
@@ -717,7 +751,7 @@ struct USDTCapitalView: View {
       }
       Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == .transfer ? "转账" : "确定划转") {
         if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
-      }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || (!completed && !legacyPending && !canSubmit))
+      }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || loading || (!completed && !legacyPending && !canSubmit))
         .accessibilityIdentifier("capital.submit")
     }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8).background(WebTheme.page)
   }
@@ -725,7 +759,7 @@ struct USDTCapitalView: View {
     Button("刷新") { Task { await load() } }
       .font(.system(size: 12, weight: .medium)).foregroundStyle(WebTheme.secondary)
       .frame(minWidth: 44, minHeight: 32).contentShape(Rectangle())
-      .disabled(busy || pending || submitted)
+      .disabled(busy || loading || pending || submitted)
       .accessibilityLabel("刷新金额").accessibilityIdentifier("capital.refresh")
   }
   private var gap: String {
@@ -759,6 +793,14 @@ struct USDTCapitalView: View {
     guard let amount = Decimal(string: value) else { return "--" }
     return DisplayNumber.text(amount)
   }
+  private func selectTab(_ item: Tab) {
+    guard !tabsLocked, item != tab else { return }
+    tab = item
+    loadID = nil
+    loading = false
+    preview = .null
+    notice = ""
+  }
   private func apply(_ result: JSONValue) {
     preview = .object(preview.fields.merging(result.fields) { _, new in new })
     if result.value("status") == "collection_pending" {
@@ -773,20 +815,31 @@ struct USDTCapitalView: View {
     if result["plan_changed"]?.flag == true { notice = "余额或收款设置已变化，请核对最新金额后再次确认。" }
   }
   private func load() async {
-    guard !busy else { return }
+    guard !busy, tab != .records, !Task.isCancelled else { return }
     let scope = store.scope
+    let requestedTab = tab
     let requestedAction = action
-    busy = true
+    let request = UUID()
+    loadID = request
+    loading = true
     if preview.value("operation") != requestedAction { preview = .null }
     notice = ""
-    defer { if scope == store.scope { busy = false } }
+    defer {
+      if loadID == request {
+        loading = false
+        loadID = nil
+      }
+    }
     do {
       let result = try await store.send("/v1/trade/capital/wallet/precheck", ["action": .string(requestedAction)])
-      guard !Task.isCancelled, scope == store.scope, requestedAction == action else { return }
+      guard !Task.isCancelled, loadID == request, scope == store.scope,
+        requestedTab == tab, requestedAction == action else { return }
       apply(result)
       requestID = UserDefaults.standard.string(forKey: requestStorageKey) ?? UUID().uuidString
     } catch is CancellationError { } catch {
-      if scope == store.scope { notice = error.localizedDescription }
+      guard !Task.isCancelled, loadID == request, scope == store.scope,
+        requestedTab == tab, requestedAction == action else { return }
+      notice = error.localizedDescription
     }
   }
   private func execute() async {
@@ -1058,36 +1111,36 @@ struct USDTLegacyCapitalView: View {
 
 struct USDTSettingsView: View {
   @EnvironmentObject private var store: USDTStore
-  @AppStorage(AppAppearance.storageKey) private var appearance: AppAppearance = .defaultValue
+  @EnvironmentObject private var notifications: StrategySignalNotificationManager
+  @Environment(\.openURL) private var openURL
+  @Environment(\.scenePhase) private var scenePhase
   @State private var enabled = false
   @State private var isAdmin = false
   @State private var saving = false
   @State private var notice = ""
   var body: some View {
     WebForm {
-      HStack(spacing: 12) {
-        RoundedRectangle(cornerRadius: 14).fill(
-          WebTheme.color(0xFEF9C3, 0xF0B90B).opacity(appearance == .dark ? 0.1 : 1)
-        ).frame(width: 40, height: 40).overlay {
-          WebIcon(appearance == .dark ? "moon" : "sun", size: 20).foregroundStyle(WebTheme.brand)
-        }
-        Text("颜色模式").font(.system(size: 16, weight: .medium))
-        Spacer()
-        Text(appearance == .dark ? "深色" : "浅色").font(.system(size: 14, weight: .medium))
-          .foregroundStyle(WebTheme.secondary)
-        Button {
-          appearance = appearance == .dark ? .light : .dark
-        } label: {
-          Capsule().fill(WebTheme.color(0xE5E7EB, 0x2B2F36)).frame(width: 48, height: 28)
-            .overlay(alignment: appearance == .dark ? .trailing : .leading) {
-              Circle().fill(
-                appearance == .dark ? AnyShapeStyle(WebTheme.gradient) : AnyShapeStyle(.white)
-              ).frame(width: 20, height: 20).padding(4).shadow(
-                color: .black.opacity(0.15), radius: 2, y: 2)
+      WebSection {
+        HStack(spacing: 12) {
+          RoundedRectangle(cornerRadius: 14).fill(WebTheme.brand.opacity(0.15))
+            .frame(width: 40, height: 40).overlay {
+              Image(systemName: "bell").font(.system(size: 20)).foregroundStyle(WebTheme.brand)
             }
-        }.accessibilityLabel("切换颜色模式").accessibilityValue(appearance == .dark ? "深色" : "浅色")
-      }.padding(16).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16)).overlay {
-        RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1)
+          Text("开启通知").font(.system(size: 16, weight: .medium))
+          Spacer(minLength: 0)
+          Toggle("开启通知", isOn: Binding(
+            get: { notifications.isEnabled }, set: { notifications.setEnabled($0) }
+          )).labelsHidden().toggleStyle(AccountSwitchStyle(label: "开启通知"))
+            .accessibilityIdentifier("settings.notifications")
+        }
+        if notifications.isEnabled && notifications.systemNotificationsDenied {
+          Text("系统通知权限未开启，请在系统设置中允许通知。")
+            .font(.system(size: 12)).foregroundStyle(WebTheme.secondary)
+          Button("前往系统设置") {
+            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+          }.font(.system(size: 14, weight: .medium)).foregroundStyle(WebTheme.brand)
+            .frame(minHeight: 44).accessibilityIdentifier("settings.notificationPermission")
+        }
       }
       if isAdmin {
         WebSection {
@@ -1105,10 +1158,13 @@ struct USDTSettingsView: View {
       }
       USDTNotice(text: notice)
     }.usdtPage("设置").task {
+      await notifications.refreshAuthorizationStatus()
       if let result = try? await store.get("/v1/auth/admin-settings") {
         isAdmin = result["is_admin"]?.flag ?? false
         enabled = result["open_registration"]?.flag ?? false
       }
+    }.onChange(of: scenePhase) { _, phase in
+      if phase == .active { Task { await notifications.refreshAuthorizationStatus() } }
     }
   }
   private func save(_ value: Bool) {
@@ -1120,6 +1176,22 @@ struct USDTSettingsView: View {
         enabled = value
       } catch { notice = error.localizedDescription }
     }
+  }
+}
+
+private struct AccountSwitchStyle: ToggleStyle {
+  let label: String
+  @Environment(\.colorScheme) private var scheme
+  func makeBody(configuration: Configuration) -> some View {
+    Button { configuration.isOn.toggle() } label: {
+      Capsule().fill(configuration.isOn ? WebTheme.brand : (scheme == .dark
+        ? Color(red: 88 / 255, green: 101 / 255, blue: 119 / 255) : Color(red: 209 / 255, green: 213 / 255, blue: 219 / 255)))
+        .frame(width: 48, height: 28)
+        .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+          Circle().fill(.white).frame(width: 20, height: 20).padding(4)
+        }.frame(width: 48, height: 44).contentShape(Rectangle())
+    }.buttonStyle(.plain).accessibilityLabel(label)
+      .accessibilityValue(configuration.isOn ? "已开启" : "已关闭")
   }
 }
 

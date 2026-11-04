@@ -239,10 +239,12 @@ struct ChartPositionLine: Identifiable, Equatable {
             func detail(_ kind: Kind) -> String {
                 if kind == .entry {
                     guard let profit else { return "-" }
-                    return (profit > 0 ? "+" : "") + DisplayNumber.text(profit) + " U"
+                    return DisplayNumber.amount(profit, maximumFractionDigits: 2, signed: true) + " U"
                 }
                 if kind == .stopLoss {
-                    return row["stop_loss_amount"]?.decimal.map { "-" + DisplayNumber.text(abs($0)) + " U" } ?? "-"
+                    return row["stop_loss_amount"]?.decimal.map {
+                        DisplayNumber.amount(-abs($0), maximumFractionDigits: 1) + " U"
+                    } ?? "-"
                 }
                 return row["manual_take_profit_price"]?.decimal.map { DisplayNumber.text($0) } ?? "-"
             }
@@ -288,28 +290,32 @@ struct ChartPositionLinesOverlay: View {
     let projection: ChartPriceProjection
 
     static func labelFrames(lines: [ChartPositionLine], projection: ChartPriceProjection) -> [CGRect] {
-        let label = ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: 120)
         return lines.compactMap { line in
             guard let y = projection.screenY(for: NSDecimalNumber(decimal: line.price).doubleValue),
                   y >= projection.plotTop, y <= projection.plotBottom else { return nil }
+            let label = labelLayout(for: line, projection: projection)
             return CGRect(x: label.centerX - label.width / 2, y: y - 12, width: label.width, height: 24)
         }
     }
 
+    private static func labelLayout(for line: ChartPositionLine, projection: ChartPriceProjection) -> ChartPriceLineLabelLayout {
+        ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: line.kind == .takeProfit ? 120 : 96)
+    }
+
     var body: some View {
-        GeometryReader { _ in
-            let label = ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: 120)
+        GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 ForEach(lines) { line in
+                    let label = Self.labelLayout(for: line, projection: projection)
                     let price = NSDecimalNumber(decimal: line.price).doubleValue
                     if let y = projection.screenY(for: price),
                        y >= projection.plotTop, y <= projection.plotBottom {
                         Path { path in
                             path.move(to: CGPoint(x: projection.plotLeft, y: y))
-                            path.addLine(to: CGPoint(x: projection.plotRight, y: y))
+                            path.addLine(to: CGPoint(x: max(projection.plotRight, geometry.size.width), y: y))
                         }.stroke(color(line), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                         ChartPriceLineLabel(title: line.title, price: line.detail,
-                            color: color(line), width: label.width)
+                            color: color(line), width: label.width, filled: line.kind != .takeProfit)
                             .position(x: label.centerX, y: y)
                             .accessibilityIdentifier("position-line." + line.id)
                             .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))
@@ -349,6 +355,7 @@ private struct ChartPriceLineLabel: View {
     let color: Color
     let width: Double
     var draggable = false
+    var filled = false
 
     var body: some View {
         HStack(spacing: 5) {
@@ -358,9 +365,11 @@ private struct ChartPriceLineLabel: View {
             Text(title).layoutPriority(1)
             if !price.isEmpty { Text(price).monospacedDigit() }
         }.font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.6)
-            .foregroundStyle(color).padding(.horizontal, 7).frame(width: width, height: 24)
-            .background(BinanceTheme.background.opacity(0.98), in: RoundedRectangle(cornerRadius: 4))
-            .overlay { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.8), lineWidth: 0.5) }
+            .foregroundStyle(filled ? Color.white : color).padding(.horizontal, 7).frame(width: width, height: 24)
+            .background(filled ? color : BinanceTheme.background.opacity(0.98), in: RoundedRectangle(cornerRadius: 4))
+            .overlay {
+                if !filled { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.8), lineWidth: 0.5) }
+            }
             .accessibilityElement(children: .ignore).accessibilityLabel(title).accessibilityValue(price)
     }
 }

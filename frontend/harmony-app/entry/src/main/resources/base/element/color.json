@@ -10,23 +10,23 @@
     },
     {
       "name": "surface",
-      "value": "#FFFFFF"
+      "value": "#FAFAFA"
     },
     {
       "name": "input",
-      "value": "#F3F4F6"
+      "value": "#F5F5F5"
     },
     {
       "name": "border",
-      "value": "#E5E7EB"
+      "value": "#EAECEF"
     },
     {
       "name": "text_primary",
-      "value": "#111827"
+      "value": "#181A20"
     },
     {
       "name": "text_secondary",
-      "value": "#6B7280"
+      "value": "#667080"
     },
     {
       "name": "brand",
@@ -34,15 +34,67 @@
     },
     {
       "name": "positive",
-      "value": "#0ECB81"
+      "value": "#08805E"
     },
     {
       "name": "negative",
-      "value": "#F6465D"
+      "value": "#D92D4C"
     },
     {
       "name": "launch_background",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "auth_primary",
+      "value": "#181A20"
+    },
+    {
+      "name": "auth_secondary",
+      "value": "#667080"
+    },
+    {
+      "name": "auth_input",
+      "value": "#F5F5F5"
+    },
+    {
+      "name": "auth_border",
+      "value": "#EAECEF"
+    },
+    {
+      "name": "auth_accent",
+      "value": "#FCD535"
+    },
+    {
+      "name": "auth_link",
+      "value": "#8D6E00"
+    },
+    {
+      "name": "navigation_idle",
+      "value": "#6B7280"
+    },
+    {
+      "name": "navigation_lead_selected",
+      "value": "#58B9EF"
+    },
+    {
+      "name": "chart_ticket",
+      "value": "#F3F5F7"
+    },
+    {
+      "name": "chart_ticket_border",
+      "value": "#CAB56C"
+    },
+    {
+      "name": "chart_interval_selected",
+      "value": "#FFF5CC"
+    },
+    {
+      "name": "chart_positive",
+      "value": "#2EBD85"
+    },
+    {
+      "name": "chart_negative",
+      "value": "#F6465D"
     }
   ]
 }

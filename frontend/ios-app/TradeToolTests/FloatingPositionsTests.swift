@@ -7,52 +7,122 @@ import UIKit
 @testable import TradeTool
 
 final class FloatingPositionsTests: XCTestCase {
-  func testEnablingInlineFloatingArmsPiPWithoutOpeningAnExternalWindow() {
-    XCTAssertEqual(FloatingPiPActivation.requested(enabled: true, bound: true, inBackground: false), .inline)
-    // Inactive scenes (Control Center and permission dialogs) are not background transitions.
-    XCTAssertNotEqual(FloatingPiPActivation.requested(enabled: true, bound: true, inBackground: false), .external)
+  func testForegroundToggleRequestsExternalPiPImmediately() {
+    XCTAssertEqual(FloatingPiPActivation.requested(enabled: true, bound: true), .external)
+    XCTAssertEqual(FloatingPiPActivation.requested(enabled: false, bound: true), .disabled)
+    XCTAssertEqual(FloatingPiPActivation.requested(enabled: true, bound: false), .disabled)
   }
 
-  func testHomeRequestsExternalPiPAndReturningRestoresInlineIntent() {
-    let transitions = [false, true, false, true].map {
-      FloatingPiPActivation.requested(enabled: true, bound: true, inBackground: $0)
-    }
-    XCTAssertEqual(transitions, [.inline, .external, .inline, .external])
+  func testExternalStartWaitsForAttachedReadySourceAndIssuesOnlyOnce() {
+    var lifecycle = FloatingPiPLifecycle()
+    XCTAssertTrue(lifecycle.request())
+    XCTAssertTrue(lifecycle.isStarting)
+    XCTAssertFalse(lifecycle.isActive)
+    XCTAssertFalse(lifecycle.issueStart(sourceReady: false))
+    XCTAssertFalse(lifecycle.request())
+    XCTAssertTrue(lifecycle.issueStart(sourceReady: true))
+    XCTAssertFalse(lifecycle.issueStart(sourceReady: true))
+    XCTAssertTrue(lifecycle.didStart())
+    XCTAssertTrue(lifecycle.isActive)
+    XCTAssertFalse(lifecycle.isStarting)
   }
 
-  func testDisabledOrUnboundFloatingNeverRequestsAutomaticPiP() {
-    for inBackground in [false, true] {
-      XCTAssertEqual(FloatingPiPActivation.requested(enabled: false, bound: true, inBackground: inBackground), .disabled)
-      XCTAssertEqual(FloatingPiPActivation.requested(enabled: true, bound: false, inBackground: inBackground), .disabled)
-    }
+  func testFailedOrCancelledExternalStartReturnsToClosedAndCanRetry() {
+    var lifecycle = FloatingPiPLifecycle()
+    XCTAssertTrue(lifecycle.request())
+    lifecycle.stop()
+    XCTAssertFalse(lifecycle.isStarting)
+    XCTAssertFalse(lifecycle.issueStart(sourceReady: true))
+    XCTAssertFalse(lifecycle.didStart(), "A late system callback must not reopen a cancelled request")
+    XCTAssertTrue(lifecycle.request())
+    XCTAssertTrue(lifecycle.issueStart(sourceReady: true))
+    XCTAssertTrue(lifecycle.didStart())
+    lifecycle.stop()
+    XCTAssertFalse(lifecycle.isActive)
+    XCTAssertTrue(lifecycle.request(), "The entry must be usable again after a system close")
   }
 
-  func testPictureInPictureRotatesAcrossPositionsWithoutLosingSnapshotTime() throws {
+  func testSystemStartFailureCanRetryWithoutWaitingForAnActiveWindowStopCallback() {
+    var lifecycle = FloatingPiPLifecycle()
+    XCTAssertTrue(lifecycle.request())
+    XCTAssertTrue(lifecycle.issueStart(sourceReady: true))
+    lifecycle.stop(awaitingSystemStop: false)
+    XCTAssertTrue(lifecycle.request())
+    XCTAssertTrue(lifecycle.issueStart(sourceReady: true))
+    XCTAssertTrue(lifecycle.didStart())
+  }
+
+  func testRapidExternalRetryWaitsForPreviousSystemWindowToFinishClosing() {
+    var lifecycle = FloatingPiPLifecycle()
+    XCTAssertTrue(lifecycle.request())
+    XCTAssertTrue(lifecycle.issueStart(sourceReady: true))
+    XCTAssertTrue(lifecycle.didStart())
+    lifecycle.stop(awaitingSystemStop: true)
+    XCTAssertTrue(lifecycle.request())
+    XCTAssertFalse(lifecycle.issueStart(sourceReady: true))
+    XCTAssertFalse(lifecycle.didStart(), "The previous window's late callback cannot activate the retry")
+    XCTAssertFalse(lifecycle.didStop(), "The old stop callback must preserve the newer request")
+    XCTAssertTrue(lifecycle.isStarting)
+    XCTAssertTrue(lifecycle.issueStart(sourceReady: true))
+    XCTAssertTrue(lifecycle.didStart())
+    XCTAssertTrue(lifecycle.didStop(), "System close of the new active window should disable its entry")
+    XCTAssertFalse(lifecycle.isActive)
+  }
+
+  func testPiPShowsAllPositionsTogetherWhenThereAreAtMostFour() throws {
     let now = Date(timeIntervalSince1970: 1_000)
     let positions = [try XCTUnwrap(floating(row())),
       try XCTUnwrap(floating(row(symbol: "ETHUSDT", profit: "-3.50", side: 1)))]
     let snapshot = FloatingPiPSnapshot(positions: positions, updatedAt: now)
-    XCTAssertEqual(snapshot.presentation(at: now, cyclingSince: now, paused: false).title, "BTCUSDT")
-    let second = snapshot.presentation(at: now.addingTimeInterval(5), cyclingSince: now, paused: false)
-    XCTAssertEqual(second.title, "ETHUSDT")
-    XCTAssertEqual(second.page, "2/2")
-    XCTAssertEqual(second.profit, "-3.500 U")
-    XCTAssertTrue(second.loss)
-    XCTAssertEqual(snapshot.presentation(at: now.addingTimeInterval(10), cyclingSince: now, paused: false).title, "BTCUSDT")
+    let first = snapshot.presentation(at: now, cyclingSince: now, paused: false)
+    XCTAssertEqual(first.title, "持仓")
+    XCTAssertEqual(first.rows.map(\.symbol), ["BTCUSDT", "ETHUSDT"])
+    XCTAssertEqual(first.totalCount, 2)
+    XCTAssertEqual(first.page, "")
+    XCTAssertEqual(first.rows[1].profit, "-3.5 U")
+    XCTAssertTrue(first.rows[1].loss)
+    let next = snapshot.presentation(at: now.addingTimeInterval(5), cyclingSince: now, paused: false)
+    XCTAssertEqual(next.rows.map(\.id), first.rows.map(\.id), "A short list must never rotate one coin at a time")
+  }
+
+  func testPiPGroupsAllPositionsIntoPagesOfFourAndWrapsWithoutOmittingRows() throws {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let positions = try (0..<9).map { try XCTUnwrap(floating(row(symbol: "COIN\($0)USDT"))) }
+    let snapshot = FloatingPiPSnapshot(positions: positions, updatedAt: now)
+    let pages = (0..<3).map { snapshot.presentation(at: now.addingTimeInterval(Double($0 * 5)), cyclingSince: now, paused: false) }
+    XCTAssertEqual(pages.map { $0.rows.count }, [4, 4, 1])
+    XCTAssertEqual(pages.map(\.page), ["1/3", "2/3", "3/3"])
+    XCTAssertTrue(pages.allSatisfy { $0.totalCount == 9 })
+    XCTAssertEqual(pages.flatMap { $0.rows.map(\.id) }, positions.map(\.id))
+    let wrapped = snapshot.presentation(at: now.addingTimeInterval(15), cyclingSince: now, paused: false)
+    XCTAssertEqual(wrapped.rows.map(\.id), pages[0].rows.map(\.id))
+    let reduced = FloatingPiPSnapshot(positions: Array(positions.prefix(1)), updatedAt: now)
+      .presentation(at: now.addingTimeInterval(10), cyclingSince: now, paused: false)
+    XCTAssertEqual(reduced.rows.map(\.id), [positions[0].id])
+    XCTAssertEqual(reduced.page, "")
   }
 
   func testPictureInPictureNeverPresentsPausedOrExpiredPriceAsCurrent() throws {
     let now = Date(timeIntervalSince1970: 1_000)
     var snapshot = FloatingPiPSnapshot(positions: [try XCTUnwrap(floating(row()))], updatedAt: now)
     let stale = snapshot.presentation(at: now.addingTimeInterval(13), cyclingSince: nil, paused: false)
-    XCTAssertEqual(stale.price, "--")
-    XCTAssertEqual(stale.profit, "--")
+    XCTAssertEqual(stale.rows.first?.price, "--")
+    XCTAssertEqual(stale.rows.first?.profit, "--")
     XCTAssertTrue(stale.footer.hasPrefix("更新延迟"))
     let paused = snapshot.presentation(at: now, cyclingSince: nil, paused: true)
-    XCTAssertEqual(paused.price, "--")
+    XCTAssertEqual(paused.rows.first?.price, "--")
     XCTAssertTrue(paused.footer.hasPrefix("已暂停"))
     snapshot.updatedAt = nil
-    XCTAssertEqual(snapshot.presentation(at: now, cyclingSince: nil, paused: false).profit, "--")
+    XCTAssertEqual(snapshot.presentation(at: now, cyclingSince: nil, paused: false).rows.first?.profit, "--")
+  }
+
+  func testPiPEmptySnapshotKeepsLoadingOrEmptyStatusWithoutFakeRows() {
+    let snapshot = FloatingPiPSnapshot(status: "正在同步…")
+    let loading = snapshot.presentation(at: Date(), cyclingSince: nil, paused: false)
+    XCTAssertTrue(loading.rows.isEmpty)
+    XCTAssertEqual(loading.totalCount, 0)
+    XCTAssertEqual(loading.page, "")
+    XCTAssertEqual(loading.footer, "正在同步…")
   }
 
   @MainActor
@@ -62,7 +132,7 @@ final class FloatingPositionsTests: XCTestCase {
     XCTAssertTrue(CMSampleBufferDataIsReady(sample))
     let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
     XCTAssertEqual(CVPixelBufferGetWidth(image), 640)
-    XCTAssertEqual(CVPixelBufferGetHeight(image), 320)
+    XCTAssertEqual(CVPixelBufferGetHeight(image), 480)
     XCTAssertNotNil(CVPixelBufferGetIOSurface(image))
     let bitmap = CIImage(cvPixelBuffer: image)
     let context = CIContext(options: [.useSoftwareRenderer: true])
@@ -79,11 +149,11 @@ final class FloatingPositionsTests: XCTestCase {
     fields["exchange_size"] = .string("25005000000000")
     let position = try XCTUnwrap(floating(.object(fields)))
     XCTAssertEqual(position.priceText, "0.000000001234")
-    XCTAssertEqual(position.profitText, "+25.005 U")
+    XCTAssertEqual(position.profitText, "+25.01 U")
     XCTAssertFalse(position.isShort)
     let loss = try XCTUnwrap(floating(row(price: "2600.5", profit: "-3.50", side: 1)))
     XCTAssertEqual(loss.priceText, "2600.50")
-    XCTAssertEqual(loss.profitText, "-3.500 U")
+    XCTAssertEqual(loss.profitText, "-3.5 U")
     XCTAssertTrue(loss.isShort)
   }
 
@@ -93,7 +163,9 @@ final class FloatingPositionsTests: XCTestCase {
     XCTAssertEqual(position.profitText, "--")
     XCTAssertNil(FloatingPosition(.object([:])))
     XCTAssertEqual(floating(row(price: "0", profit: "-0.001"))?.priceText, "--")
-    XCTAssertEqual(floating(row(price: "1", profit: "-0.001"))?.profitText, "-0.001 U")
+    let tinyLoss = floating(row(price: "1", profit: "-0.001"))
+    XCTAssertEqual(tinyLoss?.profitText, "0 U")
+    XCTAssertEqual(tinyLoss?.profit, Decimal(string: "-0.001"), "Rounding the label must not change the loss sign")
   }
 
   @MainActor
@@ -104,7 +176,7 @@ final class FloatingPositionsTests: XCTestCase {
     model.reset(scope: store.scope)
     await model.refresh(store)
     XCTAssertEqual(model.rows.first?.value("symbol"), "BTCUSDT")
-    XCTAssertEqual(model.rows.first.flatMap { floating($0) }?.profitText, "+25.000 U")
+    XCTAssertEqual(model.rows.first.flatMap { floating($0) }?.profitText, "+25 U")
     XCTAssertNotNil(model.updatedAt)
     await model.refresh(store)
     XCTAssertTrue(model.rows.isEmpty)
@@ -178,19 +250,6 @@ final class FloatingPositionsTests: XCTestCase {
     await second.value
     let paths = await api.paths
     XCTAssertEqual(paths, ["/v1/position/list"])
-  }
-
-  func testDraggingClampsPanelInsideScreenAndAboveNavigation() {
-    let screen = CGSize(width: 402, height: 780)
-    let bottom = FloatingPanelPlacement.center(in: screen, fraction: .zero, translation: CGSize(width: 5000, height: 5000))
-    XCTAssertLessThanOrEqual(bottom.x + FloatingPanelPlacement.size.width / 2, screen.width - 12)
-    XCTAssertLessThanOrEqual(bottom.y + FloatingPanelPlacement.size.height / 2, screen.height - 76)
-    let top = FloatingPanelPlacement.center(in: screen, fraction: .zero, translation: CGSize(width: -5000, height: -5000))
-    XCTAssertGreaterThanOrEqual(top.x - FloatingPanelPlacement.size.width / 2, 12)
-    XCTAssertGreaterThanOrEqual(top.y - FloatingPanelPlacement.size.height / 2, 12)
-    let fraction = FloatingPanelPlacement.fraction(for: bottom, in: screen)
-    XCTAssertEqual(fraction.x, 1)
-    XCTAssertEqual(fraction.y, 1)
   }
 
   func testSameQuoteAndRowProduceTheSameCardAndFloatingValuation() throws {
@@ -296,8 +355,8 @@ final class FloatingPositionsTests: XCTestCase {
     let now = old.addingTimeInterval(20)
     let snapshot = FloatingPiPSnapshot(positions: [try XCTUnwrap(floating(row(), at: old))], updatedAt: now)
     let presentation = snapshot.presentation(at: now, cyclingSince: nil, paused: false)
-    XCTAssertEqual(presentation.price, "--")
-    XCTAssertEqual(presentation.profit, "--")
+    XCTAssertEqual(presentation.rows.first?.price, "--")
+    XCTAssertEqual(presentation.rows.first?.profit, "--")
     XCTAssertTrue(presentation.footer.hasPrefix("更新延迟"))
   }
 
@@ -308,12 +367,13 @@ final class FloatingPositionsTests: XCTestCase {
       try XCTUnwrap(floating(row(symbol: "BTCUSDT"), at: old)),
       try XCTUnwrap(floating(row(symbol: "ETHUSDT"), at: now)),
     ], updatedAt: now)
-    let bitcoin = snapshot.presentation(at: now, cyclingSince: nil, paused: false)
-    XCTAssertEqual(bitcoin.title, "BTCUSDT")
-    XCTAssertEqual(bitcoin.profit, "--")
-    let ether = snapshot.presentation(at: now, cyclingSince: now.addingTimeInterval(-5), paused: false)
-    XCTAssertEqual(ether.title, "ETHUSDT")
-    XCTAssertEqual(ether.profit, "+25.000 U")
+    let presentation = snapshot.presentation(at: now, cyclingSince: nil, paused: false)
+    XCTAssertEqual(presentation.rows.map(\.symbol), ["BTCUSDT", "ETHUSDT"])
+    XCTAssertEqual(presentation.rows[0].profit, "--")
+    XCTAssertTrue(presentation.rows[0].stale)
+    XCTAssertEqual(presentation.rows[1].profit, "+25 U")
+    XCTAssertFalse(presentation.rows[1].stale)
+    XCTAssertTrue(presentation.footer.hasPrefix("部分行情延迟"))
   }
 
   @MainActor

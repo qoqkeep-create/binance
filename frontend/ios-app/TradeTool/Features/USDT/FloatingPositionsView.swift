@@ -13,13 +13,53 @@ enum FloatingPositionsPreferences {
   }()
 }
 
-/// Arming inline playback must not open a second window until the app actually leaves the foreground.
+/// The entry requests an external window immediately; scene changes never create an inline card.
 enum FloatingPiPActivation: Equatable {
-  case disabled, inline, external
+  case disabled, external
 
-  static func requested(enabled: Bool, bound: Bool, inBackground: Bool) -> Self {
-    guard enabled && bound else { return .disabled }
-    return inBackground ? .external : .inline
+  static func requested(enabled: Bool, bound: Bool) -> Self {
+    enabled && bound ? .external : .disabled
+  }
+}
+
+/// Shared by the controller and host regressions, including the source-readiness gate.
+struct FloatingPiPLifecycle: Equatable {
+  enum Phase { case stopped, waitingForSource, starting, active }
+  private(set) var phase = Phase.stopped
+  private var awaitingSystemStop = false
+  var isActive: Bool { phase == .active }
+  var isStarting: Bool { phase == .waitingForSource || phase == .starting }
+
+  mutating func request() -> Bool {
+    guard phase == .stopped else { return false }
+    phase = .waitingForSource
+    return true
+  }
+
+  mutating func issueStart(sourceReady: Bool) -> Bool {
+    guard phase == .waitingForSource, sourceReady, !awaitingSystemStop else { return false }
+    phase = .starting
+    return true
+  }
+
+  mutating func didStart() -> Bool {
+    guard phase == .starting, !awaitingSystemStop else { return false }
+    phase = .active
+    return true
+  }
+
+  mutating func stop(awaitingSystemStop: Bool = false) {
+    self.awaitingSystemStop = self.awaitingSystemStop || awaitingSystemStop
+    phase = .stopped
+  }
+
+  /// A quick retry waits until AVKit has finished closing the previous window.
+  mutating func didStop() -> Bool {
+    awaitingSystemStop = false
+    if phase == .waitingForSource { return false }
+    let requested = isActive || isStarting
+    phase = .stopped
+    return requested
   }
 }
 
@@ -45,11 +85,11 @@ struct FloatingPosition: Identifiable, Equatable {
 
   var priceText: String { price.map { DisplayNumber.text($0) } ?? "--" }
   var profitText: String {
-    profit.map { DisplayNumber.text($0, signed: true) + " U" } ?? "--"
+    profit.map { DisplayNumber.amount($0, maximumFractionDigits: 2, signed: true) + " U" } ?? "--"
   }
 }
 
-/// One read-only position snapshot is shared by the positions page and both floating presentations.
+/// One read-only position snapshot is shared by the positions page and the external floating presentation.
 @MainActor
 final class FloatingPositionsModel: ObservableObject {
   @Published private(set) var rows: [JSONValue] = []
@@ -118,50 +158,22 @@ final class FloatingPositionsModel: ObservableObject {
 }
 
 enum FloatingPanelPlacement {
-  static let size = CGSize(width: 184, height: 82)
-  static func bounds(in available: CGSize) -> CGRect {
-    let left = min(available.width / 2, size.width / 2 + 12)
-    let top = min(available.height / 2, size.height / 2 + 12)
-    return CGRect(
-      x: left, y: top,
-      width: max(0, available.width - left * 2),
-      height: max(0, available.height - top - size.height / 2 - 76))
-  }
-  static func center(in available: CGSize, fraction: CGPoint, translation: CGSize = .zero) -> CGPoint {
-    let bounds = bounds(in: available)
-    return CGPoint(
-      x: min(bounds.maxX, max(bounds.minX, bounds.minX + bounds.width * fraction.x + translation.width)),
-      y: min(bounds.maxY, max(bounds.minY, bounds.minY + bounds.height * fraction.y + translation.height)))
-  }
-  static func fraction(for center: CGPoint, in available: CGSize) -> CGPoint {
-    let bounds = bounds(in: available)
-    return CGPoint(
-      x: bounds.width > 0 ? min(1, max(0, (center.x - bounds.minX) / bounds.width)) : 0.5,
-      y: bounds.height > 0 ? min(1, max(0, (center.y - bounds.minY) / bounds.height)) : 0.5)
-  }
+  // The covered source needs stable, nonzero geometry for AVKit readiness.
+  static let sourceSize = CGSize(width: 160, height: 120)
 }
 
 private struct FloatingPositionsOverlay: ViewModifier {
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var container: AppContainer
   @EnvironmentObject private var dashboard: DashboardViewModel
-  @Environment(\.scenePhase) private var scenePhase
   @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
   private var enabled = false
-  @AppStorage("integrated.floatingPositions.x", store: FloatingPositionsPreferences.defaults)
-  private var x = 1.0
-  @AppStorage("integrated.floatingPositions.y", store: FloatingPositionsPreferences.defaults)
-  private var y = 0.22
   private var model: FloatingPositionsModel { store.positionSnapshots }
   @StateObject private var pip = FloatingPositionsPiP()
-  @State private var selectedID: String?
-  @GestureState private var translation = CGSize.zero
-
-  private var active: Bool { enabled && scenePhase == .active }
-  private var refreshing: Bool { enabled && store.isBound && (scenePhase == .active || pip.keepsUpdating) }
+  private var refreshing: Bool { enabled && store.isBound && pip.keepsUpdating }
   private var context: String { enabled && store.isBound ? store.scope : "" }
   private var activation: FloatingPiPActivation {
-    .requested(enabled: enabled, bound: store.isBound, inBackground: scenePhase == .background)
+    .requested(enabled: enabled, bound: store.isBound)
   }
   private var positions: [FloatingPosition] {
     guard store.isBound, model.scope == store.scope else { return [] }
@@ -174,10 +186,8 @@ private struct FloatingPositionsOverlay: ViewModifier {
     return Array(Set(model.rows.map { $0.value("symbol", fallback: "").uppercased() }
       .filter { !$0.isEmpty })).sorted()
   }
-  private var index: Int { positions.firstIndex { $0.id == selectedID } ?? 0 }
-  private var selected: FloatingPosition? { positions.isEmpty ? nil : positions[index] }
   private var snapshot: FloatingPiPSnapshot {
-    FloatingPiPSnapshot(positions: positions, selectedIndex: index,
+    FloatingPiPSnapshot(positions: positions,
       updatedAt: model.scope == store.scope ? model.updatedAt : nil, status: status)
   }
   private var status: String {
@@ -187,30 +197,14 @@ private struct FloatingPositionsOverlay: ViewModifier {
   }
 
   func body(content: Content) -> some View {
-    content.overlay {
-      GeometryReader { geometry in
-        if enabled {
-          ZStack {
-            FloatingPiPSource(controller: pip)
-            if !pip.isActive { panel }
-          }
-            .frame(width: FloatingPanelPlacement.size.width, height: FloatingPanelPlacement.size.height)
-            // Keep the AVKit source attached for PiP, while hiding its inline system placeholder.
-            .opacity(pip.isActive ? 0 : 1)
-            .allowsHitTesting(active && !pip.isActive)
-            .position(FloatingPanelPlacement.center(
-              in: geometry.size, fraction: CGPoint(x: x, y: y), translation: translation))
-            .gesture(DragGesture(minimumDistance: 6)
-              .updating($translation) { value, state, _ in state = value.translation }
-              .onEnded { value in
-                let center = FloatingPanelPlacement.center(
-                  in: geometry.size, fraction: CGPoint(x: x, y: y), translation: value.translation)
-                let fraction = FloatingPanelPlacement.fraction(for: center, in: geometry.size)
-                x = fraction.x
-                y = fraction.y
-              })
-        }
-      }
+    content.background(alignment: .bottomTrailing) {
+      // Keep a nonzero, attached source with normal visibility for AVKit readiness.
+      // An opaque sibling covers its video and system placeholder; no inline card exists.
+      ZStack {
+        FloatingPiPSource(controller: pip)
+        BinanceTheme.navigationBackground
+      }.frame(width: FloatingPanelPlacement.sourceSize.width, height: FloatingPanelPlacement.sourceSize.height)
+        .allowsHitTesting(false).accessibilityHidden(true)
     }
     .task(id: "\(context):\(refreshing)") {
       guard refreshing else { return }
@@ -236,98 +230,36 @@ private struct FloatingPositionsOverlay: ViewModifier {
       guard refreshing else { return }
       Task { await store.refreshPositions() }
     }
-    .onChange(of: snapshot) { _, value in pip.update(value) }
+    .onChange(of: snapshot) { _, value in if enabled { pip.update(value) } }
+    .onChange(of: enabled) { _, value in
+      guard value, !store.isBound else { return }
+      enabled = false
+      container.toastCenter.present("请先绑定 API，再开启持仓浮窗。")
+    }
     .onChange(of: activation, initial: true) { _, value in
       apply(value)
     }
     .onChange(of: store.scope) { _, _ in
+      enabled = false
       pip.stop()
-      apply(activation)
     }
-    .onAppear { pip.onSystemClose = { enabled = false }; pip.update(snapshot) }
-    .onDisappear { pip.onSystemClose = nil; pip.stop() }
-    .alert("跨 App 浮窗", isPresented: Binding(get: { pip.notice != nil }, set: { showing in
-      if !showing { Task { @MainActor in pip.notice = nil } }
-    })) {
-      Button("知道了", role: .cancel) {}
-    } message: { Text(pip.notice ?? "") }
+    .onAppear { pip.onSystemClose = { enabled = false } }
+    .onDisappear { pip.onSystemClose = nil; enabled = false; pip.stop() }
+    .onChange(of: pip.notice) { _, message in
+      guard let message else { return }
+      enabled = false
+      container.toastCenter.present(message)
+      pip.notice = nil
+    }
   }
 
   private func apply(_ activation: FloatingPiPActivation) {
-    #if DEBUG
-      if ProcessInfo.processInfo.arguments.contains("--fixture-inline-floating") {
-        pip.stop()
-        return
-      }
-    #endif
     switch activation {
     case .disabled: pip.stop()
-    case .inline: pip.prepareForAutomaticStart()
-    case .external: pip.start()
+    case .external: pip.update(snapshot); pip.start()
     }
   }
 
-  private var panel: some View {
-    VStack(spacing: 4) {
-      HStack(spacing: 4) {
-        Button {
-          guard positions.count > 1 else { return }
-          selectedID = positions[(index + 1) % positions.count].id
-        } label: {
-          HStack(spacing: 4) {
-            Text(selected?.symbol ?? "持仓浮窗").font(.system(size: 12, weight: .semibold))
-              .lineLimit(1).minimumScaleFactor(0.7)
-              .accessibilityIdentifier("floating.position.symbol")
-            if let selected {
-              Text(selected.isShort ? "空" : "多").font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(selected.isShort ? WebTheme.danger : WebTheme.success)
-            }
-            Spacer(minLength: 0)
-            if positions.count > 1 {
-              Text("\(index + 1)/\(positions.count)").font(.system(size: 9)).foregroundStyle(WebTheme.muted)
-            }
-          }.frame(maxWidth: .infinity).frame(height: 24).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("切换浮窗持仓")
-          .accessibilityValue("\(selected?.symbol ?? "") \(index + 1)/\(max(1, positions.count))")
-          .accessibilityIdentifier("floating.positions.next")
-        Button { pip.start() } label: {
-          Image(systemName: "pip.enter").font(.system(size: 12)).frame(width: 22, height: 24)
-        }.buttonStyle(.plain).accessibilityLabel("切换到其他 App 显示")
-          .accessibilityIdentifier("floating.positions.pip")
-        Button { enabled = false } label: {
-          WebIcon("x", size: 12).frame(width: 24, height: 24).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("关闭持仓浮窗")
-          .accessibilityIdentifier("floating.positions.close")
-      }
-      if let selected {
-        HStack(spacing: 8) {
-          metric("市价", selected.priceText, color: WebTheme.text, identifier: "floating.position.price")
-          Spacer(minLength: 0)
-          metric("浮盈", selected.profitText,
-            color: selected.profit.map { $0 < 0 ? WebTheme.danger : WebTheme.success } ?? WebTheme.muted,
-            identifier: "floating.position.profit")
-        }
-      } else {
-        Text(status).font(.system(size: 12)).foregroundStyle(WebTheme.muted)
-          .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-      }
-    }.padding(8).frame(width: FloatingPanelPlacement.size.width, height: FloatingPanelPlacement.size.height)
-      .foregroundStyle(WebTheme.text)
-      .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-      .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
-      .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
-      .contentShape(RoundedRectangle(cornerRadius: 12))
-      .accessibilityElement(children: .contain).accessibilityIdentifier("floating.positions.panel")
-  }
-
-  private func metric(_ title: String, _ value: String, color: Color, identifier: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(title).font(.system(size: 9)).foregroundStyle(WebTheme.muted)
-      Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit()
-        .foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.65)
-        .accessibilityIdentifier(identifier)
-    }
-  }
 }
 
 extension View {

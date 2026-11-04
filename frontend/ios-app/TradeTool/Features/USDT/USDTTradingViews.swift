@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// A completed entry's charged fee must never fall back to a round-trip estimate.
+enum PositionEntryFeePresentation {
+  static func text(_ row: JSONValue) -> String {
+    guard row.value("entry_fee_status") == "confirmed",
+      let fee = row["entry_realized_fee"]?.decimal, !fee.isNaN else { return "待核对" }
+    return NSDecimalNumber(decimal: fee).stringValue + " " + row.value("entry_fee_asset", fallback: "USDT")
+  }
+}
+
 struct USDTTradeView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.scenePhase) private var scenePhase
@@ -294,10 +303,6 @@ struct USDTTradeView: View {
     if !strategyEnabled { return "手动止盈" }
     return store.strategies.first { $0.value("id") == strategyID }?.value("name", fallback: "选择止盈方式") ?? "选择止盈方式"
   }
-  private var takeProfitIsAutomatic: Bool {
-    if hasPosition { return heldRow?.value("strategy_status") == "1" }
-    return strategyEnabled
-  }
   private var takeProfitSelectionLabel: some View {
     HStack(spacing: 4) {
       Text(takeProfitSelectionText).font(.system(size: 16, weight: .semibold))
@@ -305,7 +310,7 @@ struct USDTTradeView: View {
       if !hasPosition {
         Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
       }
-    }.foregroundStyle(takeProfitIsAutomatic ? BinanceTheme.accent : ChartTradingPalette.color(.positive, for: colorScheme))
+    }.foregroundStyle(strategyValid || hasPosition ? WebTheme.text : WebTheme.danger)
       .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).contentShape(Rectangle())
   }
 
@@ -365,8 +370,11 @@ struct USDTTradeView: View {
   private var heldRow: JSONValue? {
     chartPositionRows.first { $0.value("id") == heldPositionID } ?? chartPositionRows.first
   }
-  private func heldAmount(_ key: String, unit: String = "") -> String {
+  private func heldAmount(_ key: String, unit: String = "", maximumFractionDigits: Int? = nil) -> String {
     guard let amount = heldRow?[key]?.decimal, !amount.isNaN else { return "-" }
+    if let maximumFractionDigits {
+      return DisplayNumber.amount(amount, maximumFractionDigits: maximumFractionDigits) + unit
+    }
     return DisplayNumber.text(amount) + unit
   }
   private var heldStopPrice: String {
@@ -382,10 +390,7 @@ struct USDTTradeView: View {
   }
   private var heldFee: String {
     guard let row = heldRow else { return "-" }
-    if row.value("entry_fee_status") == "confirmed" {
-      return heldAmount("entry_realized_fee", unit: " " + row.value("entry_fee_asset", fallback: "USDT"))
-    }
-    return row["estimated_total_fee"]?.decimal.map { "≈" + DisplayNumber.text(abs($0) / 2) + " U" } ?? "-"
+    return PositionEntryFeePresentation.text(row)
   }
   private var chartTicket: some View {
     VStack(spacing: 14) {
@@ -410,7 +415,7 @@ struct USDTTradeView: View {
           VStack(alignment: .leading, spacing: 5) {
             chartMetricLabel("止损金额").frame(height: 24, alignment: .leading)
             if hasPosition {
-              chartMetricValue("止损金额", heldAmount("stop_loss_amount", unit: " U"))
+              chartMetricValue("止损金额", heldAmount("stop_loss_amount", unit: " U", maximumFractionDigits: 1))
                 .foregroundStyle(WebTheme.text).frame(minHeight: 28, alignment: .leading)
             } else {
               Button { showStopLoss = true } label: {
@@ -447,12 +452,9 @@ struct USDTTradeView: View {
       }.monospacedDigit().padding(.horizontal, 10).padding(.vertical, 12)
         .background(WebTheme.color(0xF3F5F7, 0x202731), in: RoundedRectangle(cornerRadius: 10))
       HStack(spacing: 12) {
-        Picker("委托类型", selection: Binding(get: { orderType }, set: { value in
+        WebOrderTypeSelector(selection: Binding(get: { orderType }, set: { value in
           orderType = value; onChartOrderTypeChange?(value)
-        })) {
-          Text("市价").tag("market")
-          Text("限价").tag("limit")
-        }.pickerStyle(.segmented).frame(width: 112).accessibilityIdentifier("chart-ticket.order-type")
+        })).frame(width: 112).accessibilityIdentifier("chart-ticket.order-type")
           .disabled(hasPosition || busy || submitted || confirm)
         Button(action: advanceEntry) {
           HStack(spacing: 6) {
@@ -589,7 +591,6 @@ struct USDTPositionsView: View {
   @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
   private var floatingPositions = false
   @StateObject private var model = USDTPageModel()
-  @StateObject private var trendAdvice = PositionTrendAdviceModel()
   private var liveQuotes: PositionLiveQuotes { store.positionQuotes }
   private var snapshots: FloatingPositionsModel { store.positionSnapshots }
   private var rows: [JSONValue] {
@@ -620,7 +621,7 @@ struct USDTPositionsView: View {
   }
   private var totalPnlText: String { totalPnl.map { DisplayNumber.text($0, signed: true) } ?? "--" }
   private var totalPnlColor: Color { totalPnl.map { $0 >= 0 ? WebTheme.success : WebTheme.danger } ?? WebTheme.muted }
-  private var trendSymbols: [String] {
+  private var positionSymbols: [String] {
     guard isVisible, store.isBound, segment == "positions", scenePhase == .active, !chart else { return [] }
     return Array(Set(rows.map { $0.value("symbol", fallback: "").uppercased() }
       .filter { !$0.isEmpty })).sorted()
@@ -657,7 +658,7 @@ struct USDTPositionsView: View {
           Rectangle().fill(WebTheme.border).frame(height: 1)
         }.accessibilityElement(children: .contain).accessibilityIdentifier("positions.header")
       GeometryReader { geometry in
-      ScrollView {
+      WebRefreshScrollView(isActive: isVisible && scenePhase == .active) {
         VStack(spacing: 10) {
           if segment == "history" && store.isBound {
             HStack(spacing: 8) {
@@ -723,7 +724,7 @@ struct USDTPositionsView: View {
           .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
       }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
         .accessibilityIdentifier("positions.list")
-        .refreshable {
+        .webRefreshable {
           let scope = store.scope
           let refreshSegment = segment
           let refreshFilter = filter
@@ -738,12 +739,12 @@ struct USDTPositionsView: View {
         }
       }
     }.usdtPage("持仓")
-      .task(id: "quotes:\(store.scope):\(store.isBound):\(trendSymbols.joined(separator: ","))") {
+      .task(id: "quotes:\(store.scope):\(store.isBound):\(positionSymbols.joined(separator: ","))") {
         guard store.isBound else {
           dashboard.trackPositionTickerSymbols([], owner: "positions")
           return
         }
-        let symbols = trendSymbols
+        let symbols = positionSymbols
         let session = liveQuotes.begin(scope: store.scope, symbols: symbols, owner: "positions")
         dashboard.trackPositionTickerSymbols(symbols, owner: "positions")
         defer {
@@ -754,9 +755,6 @@ struct USDTPositionsView: View {
           guard !Task.isCancelled else { break }
           if container.realtimeClient.state == .connected { liveQuotes.receive(event, session: session) }
         }
-      }
-      .task(id: "\(store.scope):\(segment):\(trendSymbols.joined(separator: ","))") {
-        await trendAdvice.monitor(symbols: trendSymbols, api: container.apiClient)
       }
       .webModal(isPresented: $binding, motion: .fade) { USDTBindingView() }
       .task(id: store.scope) {
@@ -940,7 +938,7 @@ struct USDTPositionsView: View {
           .accessibilityIdentifier("position.symbol." + row.value("id"))
         if row.value("position_origin") == "exchange_external" { WebBadge(text: "手动仓") }
         Text("x\(row.value("leverage"))").font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-        Text("止损\(DisplayNumber.text(row.value("stop_loss_amount")))U").font(.system(size: 12)).foregroundStyle(
+        Text("止损\(row["stop_loss_amount"]?.decimal.map { DisplayNumber.amount($0, maximumFractionDigits: 1) } ?? "--")U").font(.system(size: 12)).foregroundStyle(
           WebTheme.brand
         ).padding(.horizontal, 6).padding(.vertical, 2).background(
           WebTheme.brand.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
@@ -959,7 +957,7 @@ struct USDTPositionsView: View {
         HStack(spacing: 16) {
           inline("开仓额度：", DisplayNumber.text(row.value("position_amount")))
           inline(
-            "持仓盈亏：", valuation.map { DisplayNumber.text($0.profit) } ?? "--",
+            "持仓盈亏：", valuation.map { DisplayNumber.amount($0.profit, maximumFractionDigits: 2) } ?? "--",
             color: valuation.map { $0.profit >= 0 ? WebTheme.success : WebTheme.danger } ?? WebTheme.muted)
         }
         HStack(spacing: 16) {
@@ -982,18 +980,7 @@ struct USDTPositionsView: View {
         }
         HStack(spacing: 4) {
           Text("手续费：").foregroundStyle(WebTheme.muted)
-          Text(
-            row.value("entry_fee_status") == "confirmed"
-              ? DisplayNumber.text(row.value("entry_realized_fee")) + " "
-                + row.value("entry_fee_asset", fallback: "USDT")
-              : "估-"
-                + DisplayNumber.text(abs(row["estimated_total_fee"]?.decimal ?? 0) / 2) + "U"
-          ).foregroundStyle(WebTheme.danger)
-          Text(
-            "（估-"
-              + DisplayNumber.text(abs(row["estimated_total_fee"]?.decimal ?? 0))
-              + "U）"
-          ).foregroundStyle(WebTheme.muted)
+          Text(PositionEntryFeePresentation.text(row)).foregroundStyle(WebTheme.danger)
         }.font(.system(size: 14))
         Text(
           (row.value("position_origin") == "exchange_external" ? "接管时间：" : "开仓时间：")
@@ -1026,13 +1013,6 @@ struct USDTPositionsView: View {
         }
         Button("立即平仓") { show("close", row) }.lineLimit(1).minimumScaleFactor(0.8)
           .buttonStyle(WebButtonStyle(height: 38, fontSize: 14))
-      }
-      if trendAdvice.isCountertrend(symbol: row.value("symbol"), side: row.value("side")) {
-        Text(PositionTrendAdviceModel.message)
-          .font(.system(size: 12)).foregroundStyle(WebTheme.brand)
-          .lineLimit(1).minimumScaleFactor(0.8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityIdentifier("position.countertrendAdvice")
       }
     }
   }
@@ -1245,7 +1225,7 @@ struct USDTCommandsView: View {
   @EnvironmentObject private var store: USDTStore
   @StateObject private var model = USDTPageModel()
   var body: some View {
-    ScrollView {
+    WebRefreshScrollView {
       VStack(spacing: 12) {
         ForEach(Array(model.items.enumerated()), id: \.offset) { _, row in
           USDTCard {
@@ -1259,7 +1239,7 @@ struct USDTCommandsView: View {
           USDTEmptyState(title: "暂无交易命令", error: model.error) { Task { await load() } }
         }
       }.padding(16)
-    }.usdtPage("交易命令").task(id: store.scope) { await load() }.refreshable { await load() }
+    }.usdtPage("交易命令").task(id: store.scope) { await load() }.webRefreshable { await load() }
       .onChange(of: store.liveRevision) { _, _ in Task { await load() } }
   }
   private func load() async { await model.load(store, path: "/api/commands") }
@@ -1309,16 +1289,7 @@ private struct USDTPositionControls: View {
               HStack(spacing: 8) {
                 USDTField(
                   title: "", text: $price, numeric: true, placeholder: "请输入止盈价格", radius: 14)
-                HStack(spacing: 0) {
-                  ForEach([("market", "市价"), ("limit", "限价")], id: \.0) { item, label in
-                    Button(label) { orderType = item }.font(.system(size: 12, weight: .semibold))
-                      .padding(.horizontal, 12).frame(height: 34).foregroundStyle(
-                        orderType == item ? Color.black : WebTheme.muted
-                      ).background(orderType == item ? WebTheme.brand : Color.clear, in: Capsule())
-                  }
-                }.padding(2).background(WebTheme.secondaryButton, in: Capsule()).overlay {
-                  Capsule().stroke(WebTheme.border, lineWidth: 1)
-                }.fixedSize()
+                WebOrderTypeSelector(selection: $orderType).frame(width: 116)
               }
             }
             if position["manual_take_profit_set"]?.flag == true {

@@ -126,7 +126,7 @@ struct BottomNavigationBar: View {
         WebNavigationIcon(tab: tab).frame(width: 29, height: 29)
           .overlay(alignment: .topTrailing) {
             if tab == .signals && hasUnreadSignals {
-              Circle().fill(Color.red).frame(width: 8, height: 8)
+              Circle().fill(Color.red).frame(width: 16, height: 16)
                 .overlay { Circle().stroke(WebTheme.color(0xFFFFFF, 0x212731), lineWidth: 1.5) }
                 .offset(x: 3, y: -1)
                 .accessibilityHidden(true)

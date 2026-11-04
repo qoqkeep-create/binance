@@ -138,7 +138,7 @@ test('invalid OHLC values are rejected', () => {
   const store = new CandleStore(); store.merge([candle(60000, NaN), candle(120000, 200), candle(180000, -1)]); assert.equal(store.candles.length, 0);
 });
 test('EMA, RSI and indicator warmup are deterministic', () => {
-  assert.deepEqual(ema([1, 2, 3], 3), [1, 1.5, 2.25]);
+  assert.deepEqual(ema([1, 2, 3, 4], 3), [NaN, NaN, 2, 3]);
   assert.equal(rsi(Array.from({ length: 20 }, () => 1))[19], 50);
   assert.equal(rsi(Array.from({ length: 20 }, (_, i) => i + 1))[19], 100);
   const boll = mainIndicators(Array.from({ length: 25 }, (_, i) => candle((i + 1) * 60000, 100)), 'BOLL');

@@ -2,11 +2,13 @@
 
 独立原生鸿蒙客户端，使用 ArkTS / ArkUI、Stage 模型与 Canvas，共用现有 Django HTTP / WSS。测试设备为 Mate 80；目标 HarmonyOS 6.0 / API 20，兼容配置为 5.0 / API 12，兼容设备尚未验收。不接入任何应用市场。
 
-本目录是首轮客户端代码，**已通过真实鸿蒙编译并生成未签名 debug HAP，尚未完成真机安装或签名**。功能矩阵、已知差异和验证范围以 [鸿蒙主文档](../../docs/harmony-client.md) 为准。iOS、后端与部署使用各自原目录。
+2026-11-03 已通过 hdc 连接 Mate 80，设备报告系统7.0.0.111／API 26。DevEco Studio 26.0.0、设备登记与本地调试签名已就绪，签名 HAP 已安装启动。
+
+**iOS 复刻前三批覆盖窗口／认证、四项导航／自选行情、图表／指标编辑及嵌入式开仓票据，登录上下黑边已在深浅主题真机验证修复。** 认证、行情及第三批图表交互用离线替身验收，测试后已恢复正常签名包；持仓、账户等后续批次及真实账号联调仍待完成。完整状态见 [鸿蒙主文档](../../docs/harmony-client.md)，批次见 [实施计划](../../docs/plans/2026-11-03-harmony-ios-parity.md)。iOS、后端与部署使用各自原目录。
 
 ## 结构
 
-- `entry/src/main/ets/pages/`：认证、五个主入口、图表、账户、策略、资金与记录。
+- `entry/src/main/ets/pages/`：认证、四个主入口、图表与开仓、账户、策略、资金与记录。
 - `core/`：纯 TypeScript 协议、十进制、会话、命令恢复、资金与批量任务、行情和指标。
 - `platform/`：Network Kit HTTP / WebSocket、Asset Store 安全存储、偏好和时钟适配。
 - `components/`：复用组件、原生 Canvas 和应用内持仓浮窗。
@@ -31,12 +33,21 @@ npm exec --yes --package=typescript@5.9.3 -- tsc --noEmit --strict --target es20
 
 这些检查不包含 ArkTS / ArkUI 编译、鸿蒙系统 API 类型或界面运行。
 
+指标数值基准来自当前实际 Swift 计算器。需要更新基准时执行（使用本机 Xcode 工具链，不启动模拟器）：
+
+```sh
+python3 scripts/generate-ios-chart-reference.py
+npm test
+```
+
+生成器覆盖20类指标的连续／缺口两组180根合成K线，保存来源SHA-256；修改iOS计算器后应核对生成差异，不能直接用鸿蒙输出覆盖期望值。
+
 ## DevEco 与调试安装
 
 1. 从 [华为官方](https://developer.huawei.com/consumer/cn/download/)安装匹配电脑架构的 DevEco Studio 或 Command Line Tools。本机已安装 ARM64 Command Line Tools 26.0.0.865／API 26 SDK 与 JDK 21，真实构建通过；应用 target 保持 API 20，compatible API 12，真机兼容性待验。官方下载和调试签名需华为账号；认证与签名有效期以开发者中心当时要求为准。
 2. 在本目录运行 `node scripts/prepare-local.mjs`。**用 DevEco 打开输出的 `.local-build/project/`**；它是忽略的本地构建目录。后续同步源代码再次运行该命令，保留此目录中 IDE 生成的签名配置。
-3. Mate 80 开启开发者选项、USB 调试，连接电脑并在手机授权。在 DevEco 的 Project Structure / Signing Configs 为这台测试机生成调试签名。包名 `com.waibao2025.trade.harmony`，签名与设备列表必须匹配。首次调试以 IDE 提示为准。
-4. 源码目录运行 `./scripts/build-debug.sh`，构建输出在 `.local-build/project/`；修正应写入公开源码后再次同步。使用 IDE 时选择 Mate 80 点击 Run。脚本支持 DevEco Studio 与独立 Command Line Tools，路径说明见下节。
+3. Mate 80 开启开发者选项、USB 调试，连接电脑并在手机授权。在 DevEco 的 Project Structure / Signing Configs 为这台测试机生成调试签名。包名 `com.waibao2025.trade.harmony`，签名与设备列表必须匹配。首次调试以 IDE 提示为准。生成后核对本地 `app.products` 的 `default` 产品已通过 `signingConfig` 引用该签名配置；只生成材料而未关联产品时，构建仍会输出未签名包。此项配置只修改忽略的本地工程。
+4. 每次修改后先运行 `node scripts/prepare-local.mjs`，再运行 `./scripts/build-debug.sh`。构建脚本只编译忽略副本，不会自动同步公开源码；同步保留本地完整签名配置。使用 IDE 时选择 Mate 80 点击 Run。脚本支持 DevEco Studio 与独立 Command Line Tools，路径说明见下节。
 5. 已签名调试包默认在 `.local-build/project/entry/build/default/outputs/default/entry-default-signed.hap`；以实际 DevEco 输出为准。只对显式指定设备安装：
 
 ```sh
@@ -46,9 +57,30 @@ hdc list targets
 
 调试设备登记和签名即可用于本机测试，应用市场上架属于另一套流程。安装脚本只更新指定设备上的本应用，不卸载、清数据或调用交易接口。未签名 HAP 不能作为可直接安装包分发。
 
-2026-11-01 首次成功编译的未签名包已本地备份至 `.local-build/artifacts/2026-11-01/entry-default-unsigned.hap`，附 `SHA256SUMS` 和 `build-info.json`。用户选择稍后连接 Mate 80，再完成调试签名与安装；此备份不进入 Git。
+第三批正常签名包备份至 `.local-build/artifacts/2026-11-03/ios-parity-batch-3/`；首两批备份至 `.local-build/artifacts/2026-11-03/ios-parity-batches-1-2/`，附 `SHA256SUMS`、构建元数据和截图。该日期根目录的首屏包与2026-11-01未签名包作为历史保留。调试包仅适用于 Profile 授权设备，有效期以签名配置为准；所有产物均忽略，不进入 Git。
 
 签名口令、私钥、证书、设备身份和 `local.properties` 仅保留在忽略目录。DevEco 会将签名信息写入工程配置，务必在 `.local-build/project/` 配置；不要将带签名的配置复制回公开工程或提交 Git。
+
+## 离线 UI 预览
+
+在正常忽略工程已有签名后执行：
+
+```sh
+node scripts/prepare-preview.mjs market light
+./scripts/build-debug.sh --preview
+./scripts/install-debug.sh '<设备标识>' '.local-build/preview-project/entry/build/default/outputs/default/entry-default-signed.hap'
+```
+
+场景支持 `auth`／`market`／`chart`／`chart-held`／`chart-error`，主题支持 `light`／`dark`，第三个参数为注册状态 `open`／`closed`／`unavailable`。该命令仅在独立忽略副本替换 Runtime，所有存储为内存，拒绝外部网络和账户／认证／订单命令／划转写请求；仅模拟自选保存及图表EMA初筛／资金预检。`chart-held`展示固定持仓，`chart-error`模拟持仓读取失败；固定行情只用于 UI 检查。正常源码的 Runtime 不改动。
+
+检查结束后重新运行 `node scripts/prepare-local.mjs`、`./scripts/build-debug.sh`，再安装正常签名包。预览包与正常包包名相同，**不可把预览包留作交付版本**。黑边回归可对正常登录首屏截图执行：
+
+```sh
+python3 scripts/check-system-bars.py '<深色截图.png>'
+python3 scripts/check-system-bars.py '<浅色截图.png>' --background '#FFFFFF'
+```
+
+截图检查需要本地 Python Pillow，只读取图片。当前122项核心替身测试与工程检查不替代真实 ArkTS 编译和手机验收。
 
 ## 独立命令行工具链
 

@@ -169,6 +169,8 @@ final class StrategySignalNotificationManager:
     @Published private(set) var navigationRequest:
         SignalNotificationNavigationRequest?
     @Published private(set) var signalReceiptRevision = 0
+    @Published private(set) var isEnabled: Bool
+    @Published private(set) var systemNotificationsDenied = false
 
     private let notificationCenter: UNUserNotificationCenter
     private let userDefaults: UserDefaults
@@ -178,6 +180,7 @@ final class StrategySignalNotificationManager:
     private var deviceTokenObserver: NSObjectProtocol?
     private var registrationFailureObserver: NSObjectProtocol?
     private var registrationTask: Task<Void, Never>?
+    private var authorizationTask: Task<Void, Never>?
     private var systemRegistrationTask: Task<Void, Never>?
     private var systemRegistrationAttempt = 0
 
@@ -189,6 +192,7 @@ final class StrategySignalNotificationManager:
         self.apiClient = apiClient
         self.notificationCenter = notificationCenter
         self.userDefaults = userDefaults
+        isEnabled = userDefaults.object(forKey: Self.enabledDefaultsKey) as? Bool ?? true
         installationID = PushInstallationIdentity.current(
             userDefaults: userDefaults
         )
@@ -230,13 +234,14 @@ final class StrategySignalNotificationManager:
             )
         }
         registrationTask?.cancel()
+        authorizationTask?.cancel()
         systemRegistrationTask?.cancel()
     }
 
     func activateSession() {
         isSessionActive = true
         if isEnabled {
-            Task { await enableRemoteNotifications() }
+            scheduleAuthorization()
         } else {
             scheduleUnregistration()
         }
@@ -246,19 +251,38 @@ final class StrategySignalNotificationManager:
         isSessionActive = false
         registrationTask?.cancel()
         registrationTask = nil
+        authorizationTask?.cancel()
+        authorizationTask = nil
         systemRegistrationTask?.cancel()
         systemRegistrationTask = nil
     }
 
     func setEnabled(_ enabled: Bool) {
         userDefaults.set(enabled, forKey: Self.enabledDefaultsKey)
+        isEnabled = enabled
         if enabled {
-            Task { await enableRemoteNotifications() }
+            registrationTask?.cancel()
+            registrationTask = nil
+            scheduleAuthorization()
         } else {
+            authorizationTask?.cancel()
+            authorizationTask = nil
             systemRegistrationTask?.cancel()
             systemRegistrationTask = nil
             scheduleUnregistration()
             notificationCenter.removeAllDeliveredNotifications()
+        }
+    }
+
+    /// Recheck Settings changes without prompting merely because this page opens.
+    func refreshAuthorizationStatus() async {
+        await enableRemoteNotifications(requestingPermission: false)
+    }
+
+    private func scheduleAuthorization() {
+        authorizationTask?.cancel()
+        authorizationTask = Task { [weak self] in
+            await self?.enableRemoteNotifications()
         }
     }
 
@@ -273,6 +297,7 @@ final class StrategySignalNotificationManager:
     ) async -> UNNotificationPresentationOptions {
         let userInfo = notification.request.content.userInfo
         let route = userInfo["route"] as? String
+        guard await isEnabled else { return [] }
         guard Self.allowsPresentation(route: route, source: userInfo["source"] as? String) else { return [] }
         if route == "strategy.signal" {
             await recordSignalReceipt()
@@ -292,8 +317,9 @@ final class StrategySignalNotificationManager:
         guard let destination else { return }
 
         Task { @MainActor [weak self] in
-            if case .strategy = destination { self?.recordSignalReceipt() }
-            self?.navigationRequest = SignalNotificationNavigationRequest(
+            guard let self, self.isEnabled, self.isSessionActive else { return }
+            if case .strategy = destination { self.recordSignalReceipt() }
+            self.navigationRequest = SignalNotificationNavigationRequest(
                 id: UUID(),
                 destination: destination
             )
@@ -364,27 +390,24 @@ final class StrategySignalNotificationManager:
         return (value as? NSNumber)?.doubleValue
     }
 
-    private var isEnabled: Bool {
-        guard userDefaults.object(
-            forKey: Self.enabledDefaultsKey
-        ) != nil else {
-            return true
-        }
-        return userDefaults.bool(forKey: Self.enabledDefaultsKey)
-    }
-
-    private func enableRemoteNotifications() async {
-        guard isEnabled, isSessionActive else { return }
+    private func enableRemoteNotifications(requestingPermission: Bool = true) async {
         let settings = await notificationCenter.notificationSettings()
-        var authorized = settings.authorizationStatus == .authorized
-            || settings.authorizationStatus == .provisional
-            || settings.authorizationStatus == .ephemeral
-        if settings.authorizationStatus == .notDetermined {
-            authorized = (try? await notificationCenter.requestAuthorization(
-                options: [.alert, .sound]
-            )) ?? false
+        guard !Task.isCancelled else { return }
+        var status = settings.authorizationStatus
+        systemNotificationsDenied = status == .denied
+        guard isEnabled, isSessionActive else { return }
+        if status == .notDetermined, requestingPermission {
+            do {
+                _ = try await notificationCenter.requestAuthorization(options: [.alert, .sound])
+                status = await notificationCenter.notificationSettings().authorizationStatus
+            } catch { return }
         }
-        guard authorized else { return }
+        guard !Task.isCancelled, isEnabled, isSessionActive else { return }
+        systemNotificationsDenied = status == .denied
+        guard [.authorized, .provisional, .ephemeral].contains(status) else {
+            if status == .denied { scheduleUnregistration() }
+            return
+        }
 
         UIApplication.shared.registerForRemoteNotifications()
     }
@@ -483,6 +506,7 @@ final class StrategySignalNotificationManager:
             if delay > 0 {
                 try? await Task.sleep(nanoseconds: delay)
             }
+            guard !Task.isCancelled else { return }
             do {
                 try await operation()
                 return

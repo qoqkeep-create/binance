@@ -215,8 +215,7 @@ struct WebTabs: View {
     GeometryReader { geometry in
       let slotWidth = geometry.size.width / CGFloat(max(1, tabs.count))
       let selectedIndex = tabs.firstIndex { $0.0 == selection } ?? 0
-      let title = tabs.indices.contains(selectedIndex) ? tabs[selectedIndex].1 : ""
-      let titleWidth = (title as NSString).size(withAttributes: [
+      let titleWidth = ("持仓" as NSString).size(withAttributes: [
         .font: UIFont.boldSystemFont(ofSize: 20)
       ]).width
       let lineWidth = max(0, min(titleWidth - 8, slotWidth - 12))
@@ -248,6 +247,128 @@ struct WebTabs: View {
   }
 }
 
+/// Pull distance is explicit rather than coupled to UIKit's private refresh threshold.
+struct WebRefreshInteraction {
+  static let triggerDistance: CGFloat = 100 * 0.7
+  private(set) var distance: CGFloat = 0
+  private(set) var isRefreshing = false
+  private var dragging = false
+
+  mutating func update(distance: CGFloat, dragging: Bool) {
+    guard !isRefreshing else { return }
+    self.distance = max(0, distance)
+    self.dragging = dragging
+  }
+
+  mutating func release() -> Bool {
+    let start = dragging && distance >= Self.triggerDistance && !isRefreshing
+    dragging = false
+    distance = 0
+    if start { isRefreshing = true }
+    return start
+  }
+
+  mutating func complete() {
+    isRefreshing = false
+    dragging = false
+    distance = 0
+  }
+}
+
+private struct WebRefreshActionKey: EnvironmentKey {
+  static let defaultValue: (@MainActor () async -> Void)? = nil
+}
+
+private extension EnvironmentValues {
+  var webRefreshAction: (@MainActor () async -> Void)? {
+    get { self[WebRefreshActionKey.self] }
+    set { self[WebRefreshActionKey.self] = newValue }
+  }
+}
+
+private struct WebRefreshOffsetKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+extension View {
+  func webRefreshable(_ action: @escaping @MainActor () async -> Void) -> some View {
+    environment(\.webRefreshAction, action)
+  }
+}
+
+/// Shares one compact indicator and the same release threshold across list pages.
+struct WebRefreshScrollView<Content: View>: View {
+  var isActive = true
+  @ViewBuilder var content: Content
+  @Environment(\.webRefreshAction) private var action
+  @State private var coordinateSpace = UUID()
+  @State private var interaction = WebRefreshInteraction()
+  @State private var dragging = false
+  @State private var offset: CGFloat = 0
+  @State private var refreshTask: Task<Void, Never>?
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 0) {
+        GeometryReader { geometry in
+          Color.clear.preference(key: WebRefreshOffsetKey.self,
+            value: geometry.frame(in: .named(coordinateSpace)).minY)
+        }.frame(height: 0)
+        if interaction.isRefreshing { indicator.frame(height: 28) }
+        content
+      }
+    }.coordinateSpace(name: coordinateSpace).scrollBounceBehavior(.always)
+      .overlay(alignment: .top) {
+        if isActive, action != nil, !interaction.isRefreshing, interaction.distance > 0 {
+          indicator.frame(height: 28).offset(y: min(interaction.distance, 28) - 28)
+            .allowsHitTesting(false).accessibilityHidden(true)
+        }
+      }
+      .onPreferenceChange(WebRefreshOffsetKey.self) { value in
+        offset = value
+        interaction.update(distance: value, dragging: dragging)
+      }
+      .simultaneousGesture(DragGesture(minimumDistance: 4).onChanged { _ in
+        guard isActive else { return }
+        dragging = true
+        interaction.update(distance: offset, dragging: true)
+      }.onEnded { _ in
+        dragging = false
+        if isActive, action != nil, interaction.release() { startRefresh() }
+      })
+      .accessibilityAction(named: Text("刷新")) {
+        guard isActive, action != nil, !interaction.isRefreshing else { return }
+        interaction.update(distance: WebRefreshInteraction.triggerDistance, dragging: true)
+        if interaction.release() { startRefresh() }
+      }
+      .onDisappear(perform: stopRefresh)
+      .onChange(of: isActive) { _, active in if !active { stopRefresh() } }
+  }
+
+  private var indicator: some View {
+    ProgressView().scaleEffect(0.5).frame(maxWidth: .infinity)
+  }
+
+  private func startRefresh() {
+    guard isActive, let action else { interaction.complete(); return }
+    refreshTask = Task { @MainActor in
+      guard !Task.isCancelled else { return }
+      await action()
+      guard !Task.isCancelled else { return }
+      interaction.complete()
+      refreshTask = nil
+    }
+  }
+
+  private func stopRefresh() {
+    refreshTask?.cancel()
+    refreshTask = nil
+    dragging = false
+    interaction.complete()
+  }
+}
+
 struct WebForm<Content: View>: View {
   @ViewBuilder var content: Content
   var body: some View {
@@ -257,6 +378,26 @@ struct WebForm<Content: View>: View {
     }
     .scrollDismissesKeyboard(.interactively).scrollIndicators(.hidden)
     .font(.system(size: 14)).toggleStyle(WebSwitchStyle()).tint(WebTheme.brand)
+  }
+}
+
+struct WebOrderTypeSelector: View {
+  @Binding var selection: String
+  var body: some View {
+    HStack(spacing: 2) {
+      ForEach([("market", "市价"), ("limit", "限价")], id: \.0) { value, label in
+        Button { selection = value } label: {
+          Text(label).font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(selection == value ? Color.black : WebTheme.secondary)
+            .frame(maxWidth: .infinity).frame(height: 30)
+            .background(selection == value ? WebTheme.brand : Color.clear,
+              in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }.buttonStyle(.plain).accessibilityAddTraits(selection == value ? .isSelected : [])
+      }
+    }.padding(2).background(WebTheme.secondaryButton, in: RoundedRectangle(cornerRadius: 8))
+      .overlay { RoundedRectangle(cornerRadius: 8).stroke(WebTheme.border, lineWidth: 1) }
+      .accessibilityElement(children: .contain)
   }
 }
 

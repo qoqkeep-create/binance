@@ -4,39 +4,6 @@ import { DataValue } from '../core/Json';
 import { normalizeOrigin, DEFAULT_API } from '../core/Session';
 import { SectionCard, Metric, Field, ActionButton, MenuRow, confirmAction, GOLD } from '../components/Ui';
 
-const MAIN: string[] = ['MA', 'EMA', 'BOLL', 'SAR', 'AVL', 'SUPER'];
-const PANELS: string[] = ['VOL', 'MACD', 'RSI', 'KDJ', 'OBV', 'WR', 'StochRSI', 'ATR', 'O.I.', 'L.S Acco.', 'L.S Posit.', 'L.S Ratio', 'B.S Vol.', 'Basis'];
-@Component
-export struct IndicatorsPage {
-  @State selectedMain: string[] = [];
-  @State selectedPanels: string[] = [];
-  aboutToAppear(): void {
-    this.selectedMain = Runtime.store.preferences.read('chart-main', 'EMA,SUPER').split(',').filter((v: string) => !!v);
-    this.selectedPanels = Runtime.store.preferences.read('chart-panels', 'MACD,VOL').split(',').filter((v: string) => !!v);
-  }
-  private toggle(name: string, main: boolean): void {
-    const values = main ? this.selectedMain : this.selectedPanels;
-    const next = values.includes(name) ? values.filter((v: string) => v !== name) : values.concat([name]);
-    if (!main && next.length > 3) { Runtime.store.report(new Error('最多显示三个副图')); return; }
-    if (main) this.selectedMain = next; else this.selectedPanels = next;
-    Runtime.store.preferences.write(main ? 'chart-main' : 'chart-panels', next.join(',')); Runtime.store.chartRevision++; Runtime.store.changed();
-  }
-  build() {
-    Scroll() {
-      Column({ space: 16 }) {
-        SectionCard() {
-          Text('主图叠加').fontSize(18).fontWeight(FontWeight.Bold).fontColor($r('app.color.text_primary'))
-          ForEach(MAIN, (name: string) => { MenuRow({ label: name, symbol: this.selectedMain.includes(name) ? '✓' : '○', action: () => this.toggle(name, true) }) })
-        }
-        SectionCard() {
-          Text('副图（最多3个）').fontSize(18).fontWeight(FontWeight.Bold).fontColor($r('app.color.text_primary'))
-          ForEach(PANELS, (name: string) => { MenuRow({ label: name, symbol: this.selectedPanels.includes(name) ? '✓' : '○', action: () => this.toggle(name, false) }) })
-        }
-        ActionButton({ label: '恢复默认', secondary: true, action: () => { this.selectedMain = ['EMA', 'SUPER']; this.selectedPanels = ['MACD', 'VOL']; Runtime.store.preferences.write('chart-main', 'EMA,SUPER'); Runtime.store.preferences.write('chart-panels', 'MACD,VOL'); Runtime.store.chartRevision++; Runtime.store.changed(); } })
-      }.padding(16).width('100%').constraintSize({ maxWidth: 600 })
-    }.width('100%').height('100%').backgroundColor($r('app.color.page'))
-  }
-}
 @Component
 export struct SettingsPage {
   @State appearance: string = 'system';

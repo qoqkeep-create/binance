@@ -312,6 +312,8 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 2026-11-01 本次用户授权整批提交并推送，收录工作区的界面／延迟、连续纵轴和行情协调／出口保护等全部安全改动，基线为 `fab71ee`；范围与既有验证见 [本次交付记录](changes.md#2026-11-01整批源码提交与-github-交付)。本次不执行服务器部署或手动 TestFlight 上传，源码交付与运行版本分别记录；上方 47.80.22.243（首尔服务器）的最后发布记录继续有效。
 
+2026-11-04 用户授权“完成后全部提交推送”，以 `194d1e7` 为基线交付当前全部安全源码和文档，包含待提交的 iOS 调整与鸿蒙前三批复刻。沿用下方独立 Git 元数据及 `codex/integrated-ios`，父 Gitee、凭证／签名和构建产物不参与。本次只做源码推送，不追加 **47.80.22.243（首尔服务器）** 部署或手动 TestFlight 上传；范围及验证见 [交付记录](changes.md#2026-11-04图表顶部归集筛选与全部待提交源码交付)。
+
 整合版仓库为 `https://github.com/qoqkeep-create/binance.git`，分支 `codex/integrated-ios`。有两种本地工作副本，操作前先核对 Git 元数据和 origin，不能仅凭相同目录名判断：
 
 - 正常独立 clone：根目录有 `.git`，使用普通 `git` 命令，以 `git rev-parse --show-toplevel` / `git remote -v` 核对范围与仓库。Apple / Cloud 准备任务使用过这种副本。

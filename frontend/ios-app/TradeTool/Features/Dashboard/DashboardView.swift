@@ -98,7 +98,7 @@ struct DashboardView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 2)
 
-                ScrollView {
+                WebRefreshScrollView(isActive: isVisible && scenePhase == .active) {
                     LazyVStack(spacing: 0) {
                         if markets.isEmpty {
                             emptyState
@@ -118,7 +118,7 @@ struct DashboardView: View {
                     .padding(.bottom, 18)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .refreshable {
+                .webRefreshable {
                     realtimeClient.requestLatencyTest()
                     await viewModel.refresh()
                 }
@@ -192,7 +192,7 @@ struct DashboardView: View {
 
     private var marketHeader: some View {
         HStack(spacing: 0) {
-            Text("合约")
+            Text("合约自选")
                 .font(BinanceTheme.Typography.selectedTab)
                 .foregroundStyle(BinanceTheme.primaryText)
 

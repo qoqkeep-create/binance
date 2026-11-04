@@ -14,7 +14,7 @@
     },
     {
       "name": "input",
-      "value": "#212731"
+      "value": "#2B3441"
     },
     {
       "name": "border",
@@ -38,11 +38,63 @@
     },
     {
       "name": "negative",
-      "value": "#F6465D"
+      "value": "#FF4D67"
     },
     {
       "name": "launch_background",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "auth_primary",
+      "value": "#EAECEF"
+    },
+    {
+      "name": "auth_secondary",
+      "value": "#848E9C"
+    },
+    {
+      "name": "auth_input",
+      "value": "#2B3441"
+    },
+    {
+      "name": "auth_border",
+      "value": "#333B47"
+    },
+    {
+      "name": "auth_accent",
+      "value": "#FCD535"
+    },
+    {
+      "name": "auth_link",
+      "value": "#FCD535"
+    },
+    {
+      "name": "navigation_idle",
+      "value": "#929AA5"
+    },
+    {
+      "name": "navigation_lead_selected",
+      "value": "#F0B90B"
+    },
+    {
+      "name": "chart_ticket",
+      "value": "#202731"
+    },
+    {
+      "name": "chart_ticket_border",
+      "value": "#887A4F"
+    },
+    {
+      "name": "chart_interval_selected",
+      "value": "#51451F"
+    },
+    {
+      "name": "chart_positive",
+      "value": "#28A473"
+    },
+    {
+      "name": "chart_negative",
+      "value": "#F63C55"
     }
   ]
 }

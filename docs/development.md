@@ -2,6 +2,36 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 图表顶部、归集页签与整批源码交付（2026-11-04）
+
+K 线顶部移除独立设置按钮，指标／杠杆靠右，自选星标增加 9 pt 标题和统一 44 pt 点击区；行情标题改为“合约自选”。原设置视图代码保留，收藏与杠杆逻辑不变。资金页签即时选中、只让背景平移，预检读取与提交状态分离；旧动作在进入记录后仍相同，之前迟到的 pending 响应可能切回划转，现按请求 UUID／页签／动作／scope 及取消状态保护成功、错误和清理。
+
+新增 `python3 frontend/ios-app/scripts/test_capital_tab_loading.py .integration-runtime/CapitalTabs/Host`，直接提取生产视图的状态、选择、load／execute 方法，HTTP 为内存替身。修改前 8 项中 6 项失败，修改后 8／8 通过；覆盖读取期间立即切换、旧请求不能拉回记录页或覆写新状态、取消与跨账户错误丢弃、真实执行入口／pending 仍锁定原 request_id 与 plan_token，不调用真实钱包接口。UI 的旧设置入口和持仓止损格式断言同步当前实现。
+
+为整批交付核对既有鸿蒙改动，`npm test` 122 项及 `npm run check`（14 配置、148 导入、55 资源）通过，核心 TypeScript strict 检查通过；从当前公开源码同步本地工程并执行正常 `assembleHap` 成功（4.960 秒），未安装或启动手机。首轮测试仅因 Swift `DisplayNumber` 新增金额展示方法导致参考源码 SHA 不匹配；通过原 Swift 生成器重算，连续／缺口各 180 根合成 K 线及全部指标数值与重算前完全一致，仅该来源校验值变化，没有使用鸿蒙输出替换期望值。
+
+最终 iOS Release 及测试目标编译结果和本批提交推送见 [变更记录](changes.md#2026-11-04图表顶部归集筛选与全部待提交源码交付)。既有 84 项 iOS host 验证仍按下节范围记录，本次新增为 8 项资金页签。未启动模拟器、执行真实交易／资金／通知或手机验收；未追加部署或手动上传 TestFlight。
+
+## 账户、图表与外部浮窗调整（2026-11-04，本地）
+
+本轮实现颜色切换外置、通知偏好开关、普通黄／带单蓝资产卡、16 pt 未读红点、固定黄色页签短线、96 pt 实心持仓标签和贯通价格边栏的水平线。浮盈最多 2 位、止损金额最多 1 位去尾零，保留原始 Decimal 判断颜色和交易精度；实际开仓费不再附估算，未确认显示“待核对”。移除逆势建议的运行入口和附加 K 线读取；止盈选项已选为正文色、未有效选择为红色，委托选择器共用圆角矩形。设置止盈与蒙层继续明确 fade。
+
+下拉刷新改为公共可配置容器，指示器 scale 0.5、释放阈值 70 pt（100 pt 设计基准的 70%，不冒称系统原生固定阈值）。状态回归覆盖低于阈值、程序滚动、回拉撤销、刷新中不重复；只读复核补齐保留信号页隐藏／场景非活跃时取消及任务执行前取消检查，避免隐藏后的旧刷新把新信号标已读。页面原 scope、独立读取、幂等与交易命令条件保留。
+
+外部 PiP 取代 App 内卡片，每页最多 4 行、每 5 秒组轮播。先在旧实现复现前台仍请求 inline／仅单行标题，再验证新多行和生命周期；图表先复现标签空底、宽度、金额位数及价格栏截线，再用实际 SwiftUI ImageRenderer 像素回归验证。通知先复现权限返回／重试取消后仍注册，再用实际管理器和内存系统边界验证。所有数据替身不发网络交易或真实通知。
+
+本地不同 host 用例合计 **84 项通过**：
+
+- `python3 frontend/ios-app/scripts/test_floating_positions.py .integration-runtime/ClientPolishNov4/FloatingHost`：40 项，包括真实 Store、估值、PiP 分页／过期／启动状态及 live 身份。
+- `python3 frontend/ios-app/scripts/test_position_strategy_picker.py .integration-runtime/ClientPolishNov4/StrategyHost`：17 项，保留策略二次确认、账户隔离及未知结果原键查询。
+- `test_notification_preferences.py`：8 项，完整生产通知管理器、实际请求类型及 UN／UIKit 内存边界替身，不触发系统权限或 APNs。
+- `.integration-runtime/ChartPositionLabels/HostTests`：8 项，真实持仓 overlay／投影／估值／格式器，macOS 仅适配 UIKit 字体／主题边界，浅深主题、2x／3x、正负／极小负／长金额像素通过。
+- `.integration-runtime/ClientPolishNov4/AmountRefreshHost`：11 项，直接抽取生产金额／费用／刷新状态类型，使用仓库 `DisplayNumberTests.swift`，包含原有价格精度回归。
+
+最终 `generic/platform=iOS` 的 Release 无签名构建通过（主 App 与 Widget）；`generic/platform=iOS Simulator` arm64 的 Debug `build-for-testing` 通过，仅编译测试和 UI 目标。首次构建发现浮窗引用不存在的主题成员，改用真实根背景后最终构建成功。日志在 `.integration-runtime/ClientPolishNov4/{release-final.log,unit-compile.log,amount-refresh.log,strategy.log,floating.log}`，通知与图表红绿证据分别留 `.integration-runtime/ProfileSettings/`、`.integration-runtime/ChartPositionLabels/`。
+
+没有启动模拟器、执行 UI／真机测试、开平仓／划转／撤保护单或发送通知。新 UI 用例已将旧内部浮窗和设置主题入口改为当前规范并编译。PiP 遮挡源可用性、直接外部启动、多行字号、系统权限和推送实际停止边界、刷新体感及淡出动态仍待正式签名包 iPhone 验收。本批验证结束时保留本地；后续整批提交推送见 [交付记录](changes.md#2026-11-04图表顶部归集筛选与全部待提交源码交付)，未追加部署或手动上传 TestFlight。
+
 ## 持仓交互、弹窗与浮窗同步回归（2026-11-03）
 
 本轮将持仓“添加自动止盈”改为共用 60% 高度的 WebSheet，仅列自动策略；选择后二次确认，成功关闭，失败保留，未知结果锁定原策略／幂等键并查询。开仓及设置入口原有策略选择行为保留。交易对名称复用 K 线导航，市价止盈设置紧随文字；顶部三页签仅保留单层文字缩放和一条黄色短线移动。普通 Bool／item 弹窗默认原位淡入淡出，蒙层共用动画进度；大面板显式上滑，首次有效布局前隐藏，避免零高度误判与系统 fullScreenCover 上滑。页面规则见 [界面](ios-web-parity.md#持仓卡片操作区2026-11-03)。
@@ -60,7 +90,6 @@ live 使用主 App ActivityKit 与独立 Widget 扩展，共享秒级 Unix 时�
 直接编译实际 `USDTStore` 的 macOS host 包 **5 项通过（0.017 秒）**，覆盖重启恢复、打开清除／新 ID、服务器／用户／模式隔离、旧响应／取消和非法 ID。当前后端 SQLite／LocMem、外部 socket 禁用的定向回归 **87 项通过（14.967 秒，0 跳过）**；针对真实线上基线构建的 314 文件限定快照另有 **70 项通过（6.802 秒）**，两组部分重叠，不相加。旧外部 APNs 接受及入站／分流先以失败断言复现。证据在忽略目录 `.integration-runtime/SignalUnreadBadge/`、`SignalNotificationPolicy/`、`SignalBadgePolish/`。
 
 最终 generic iOS Release 无签名编译和 generic iOS Simulator arm64 单测／UI 目标 `build-for-testing` 通过；后者只编译，未启动模拟器或执行 XCTest／UI。另从当前生产解析器与原 XCTest 方法提取的 macOS host 路由测试 **3 项通过（0.003 秒）**，覆盖普通／带单、缺失／非法模式及旧外部 route／source 载荷拒绝；不代替系统通知委托实测。浅深黄色、点击范围、红点实机及新通知点击仍待新包验收；本轮没有发送测试通知或执行真实交易／资金操作。服务端版本和实际验收见 [运维](operations.md#外部接收暂停与-app-通知分流2026-11-03)，当前交互见 [页面对照](ios-web-parity.md)。
-
 
 ## 持仓文字页签、方向标记与行情编辑图标（2026-11-03）
 
@@ -206,7 +235,7 @@ generic iOS Release 未签名构建、`TradeTool` 单测目标及 `TradeTool Cha
 
 ## 持仓逆势建议与底栏回归（2026-11-02）
 
-活动持仓建议与四项底栏规则见 [页面说明](ios-web-parity.md#持仓逆势建议与四项底栏2026-11-02)。新增 `PositionTrendAdviceTests` 八项，覆盖多空方向的双条件、均线相等／交错、三个高周期真实指标计算、数据不足／过期／近期缺口、未收盘线反转、账户切换后旧响应拒绝、取消清理及失败后移除旧建议。既有底栏断言同步四项；登录 UI 检查的未绑定下单禁用断言改至 K 线下单区，独立开仓表单 fixture 继续用于共用组件检查。
+活动持仓建议与四项底栏规则见 [页面说明](ios-web-parity.md#持仓估值与四项底栏2026-11-0211-04-更新)。新增 `PositionTrendAdviceTests` 八项，覆盖多空方向的双条件、均线相等／交错、三个高周期真实指标计算、数据不足／过期／近期缺口、未收盘线反转、账户切换后旧响应拒绝、取消清理及失败后移除旧建议。既有底栏断言同步四项；登录 UI 检查的未绑定下单禁用断言改至 K 线下单区，独立开仓表单 fixture 继续用于共用组件检查。
 
 本轮通过 host Swift 检查器执行上述八项逻辑：复用测试方法、生产 EMA／Supertrend 计算器及完整建议模型；仅 API 协议／请求外壳为本地替身，Supertrend 绘图插件未纳入 host 编译。八项全部通过。最终 generic iOS Release 未签名构建，以及 `TradeTool Chart Calibration` 的 generic iOS Simulator `build-for-testing` 均通过，后者只编译单测与 UI 工程，没有启动模拟器或执行 XCTest／UI 用例。证据位于忽略目录 `.integration-runtime/PositionAdvice/`。未执行真实交易、后端部署、TestFlight 上传或实机验收；本轮未执行提交与推送。
 
@@ -405,7 +434,13 @@ iOS `MarketFastPathTests` 覆盖账户范围准备不请求业务接口、pendin
 
 ## HarmonyOS
 
-独立工程为 `frontend/harmony-app/`，面向 Mate 80 的原生鸿蒙测试；不接应用市场。`npm test` / `npm run check` 仅作隔离核心与配置检查。本轮40项替身测试、核心 strict 类型检查与工程静态检查通过；安装 Command Line Tools 26.0.0.865、API 26 SDK 与 JDK 21 后，真实 ArkTS 编译及未签名 HAP 打包通过，调试签名和手机运行仍待验证。工具链版本与验收边界以 [鸿蒙主文档](harmony-client.md) 为准。使用忽略的 `.local-build/project/` 配置调试签名，保护公开工程中的签名口令与证书；具体命令见 [工程 README](../frontend/harmony-app/README.md)。
+独立工程为 `frontend/harmony-app/`，不接应用市场。2026-11-03 首两批复刻完成54项无网络替身测试、核心 strict 与工程检查，正常源码真实 ArkTS／签名 HAP 构建及 Mate 80 更新安装通过。黑边先用旧真机截图复现，再检查深浅主题；认证表单、协议和自选行情在 `.local-build/preview-project/` 的内存替身中作真机交互检查，未进行真实账户或交易联调。两项新增自选同步／旧账户错误竞争在旧实现失败、修复后通过。
+
+2026-11-03第三批另完成122项无网络测试、TypeScript 5.9.3 strict、14份配置／148个导入／55项资源检查及真实ArkTS签名构建（7.740秒）。新增 `generate-ios-chart-reference.py` 从当前Swift源码生成连续／缺口两组180根数据，来源SHA-256随基准保存；默认20类指标逐值验证，包含预热、统计缺值及末根替换。图表票据覆盖Decimal含费估算、参数／策略快照改变、EMA过期、确认取消、页面／账户变化、持仓读取失败与未决命令阻断。
+
+Mate 80离线真机验证了深浅图表、13周期及收藏／重置、指标无效输入／重置／应用、Super透明度、同次触摸跟随及松手保留／后续平移清除、auto与手动价格域、限价线及多空联动、杠杆／手动策略、确认取消与持仓只读；换币种清空旧意图；持仓读取失败只重试、不进入开仓确认。测试后恢复正常签名包并核对登录首屏与深色系统栏。初次真机截图暴露的Canvas物理字号、提示按钮变暗、周期旧高亮和票据第一行旧值已复现并修复后复测。收尾同步图表配色及双指接管十字线状态，新增接管／迟到回调回归先失败后通过。未测真实订单、HTTP／WSS、双指缩放、帧耗时或长稳；不能将替身、单指手势或数值测试写成这些范围已通过。
+
+正常工程 `.local-build/project/` 与离线预览工程隔离，签名仅存在忽略目录。每次编译前先同步公开源码；预览结束重新安装正常包。完整工具链、验收范围及后续批次见 [鸿蒙主文档](harmony-client.md) 与 [复刻计划](plans/2026-11-03-harmony-ios-parity.md)，具体命令见 [工程 README](../frontend/harmony-app/README.md)。
 
 ## 图表加载诊断回归
 
