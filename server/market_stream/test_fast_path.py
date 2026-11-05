@@ -221,7 +221,10 @@ class IsolatedMarketRedisMixin:
             port = reservation.getsockname()[1]
         cls.process = subprocess.Popen([os.environ["MARKET_TEST_REDIS_BINARY"], "--bind", "127.0.0.1",
             "--port", str(port), "--save", "", "--appendonly", "no"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        cls.settings = override_settings(MARKET_REDIS_URL=f"redis://127.0.0.1:{port}/0")
+        url = f"redis://127.0.0.1:{port}/0"
+        cls.settings = override_settings(MARKET_REDIS_URL=url, CACHES={"default": {
+            "BACKEND": "django_redis.cache.RedisCache", "LOCATION": url,
+            "KEY_PREFIX": "isolated-market", "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"}}})
         cls.settings.enable()
         bus.connection.cache_clear()
         deadline = time.monotonic() + 3

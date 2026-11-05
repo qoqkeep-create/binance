@@ -2,6 +2,12 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。
 
+## 历史缓存与统计限定发布（2026-11-06）
+
+本次 SSH 只读核验 **47.80.22.243（首尔服务器）**：`current`／API 为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`，market 为 `integrated-20261102-git-171be8d74c50`；worker 为 `integrated-20261103-worker-retire-entry-ema-f7a289ab3c7d`，scheduler 为 `integrated-20261103-position-live-activity-3a1a95e914ba`。六个服务健康，API／market 分别核对 304／295 个 Python／requirements 哈希。源码已推送的共享分发及近期周期扩展未在该运行基线生效；不能据 GitHub HEAD 推断实际发布或提速归因。
+
+用户授权完成后推送部署。本次只叠加统计最小上下文、历史 revision 回收／回填保护及关联 maintenance 让位，按 API／market 各自实际基线构建两个独立镜像；各包 92 项隔离回归通过，详见 [开发](development.md#历史缓存生命周期与统计隔离2026-11-06)。不得整包覆盖为 HEAD，或漏带既有 Compose override 而回退其他业务。发布将重新核对容器／源码基线，备份数据库，保留环境、迁移及原镜像，只替换 API／market；worker、scheduler、MySQL、Redis 容器不变。此处目前为发布准备状态，实际结果将在完成后补记。
+
 ## 周期切换只读测量（2026-11-05）
 
 22:03:39（北京时间）最后通过已有 SSH 认证，在 **47.80.22.243（首尔服务器）** 的 API 容器只读取得最近 50 份公共图表诊断。报告均为 Build 44，接收区间 20:00:06–22:02:03；此时 release 仍为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`，限定来源 `limited-entry-ema-retirement`／`15b4784c70433233c34cb5c6c738cb1a9b92848b`，基线为 `integrated-20261103-position-live-activity-3a1a95e914ba`。没有据 GitHub 最新源码推定线上版本。

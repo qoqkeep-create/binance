@@ -1,7 +1,6 @@
 import logging
 import time
 from threading import RLock
-from uuid import uuid4
 
 from django.conf import settings
 from django.core.cache import cache
@@ -113,12 +112,13 @@ def persist(rows):
                                     update_fields=["close_time", *FIELD_MAP.values()],
                                     unique_fields=["symbol", "interval", "open_time"] if connection.vendor != "mysql" else None)
     for symbol, interval in {(row["symbol"], row["interval"]) for row in closed}:
-        transaction.on_commit(lambda key=f"market:revision:{symbol}:{interval}": cache.set(key, uuid4().hex, 86400))
+        transaction.on_commit(lambda symbol=symbol, interval=interval: history_cache.invalidate(symbol, interval))
 
 
 def warm_history(symbol, interval, before=None, *, prewarm=False):
     """A shared, limit-independent hot window, also populated at startup."""
-    revision = cache.get(f"market:revision:{symbol}:{interval}", "initial")
+    revision_key = f"market:revision:{symbol}:{interval}"
+    revision = cache.get(revision_key, "initial")
     key = f"market:history:v4:{symbol}:{interval}:{before or 'latest'}:{revision}"
     def read_window():
         query = MarketCandle.objects.filter(symbol=symbol, interval=interval)
@@ -126,7 +126,8 @@ def warm_history(symbol, interval, before=None, *, prewarm=False):
             query = query.filter(open_time__lt=before)
         size = HOT_WINDOW_SIZE[interval] if before is None else 1500
         return [from_model(row) for row in reversed(list(query.order_by("-open_time")[:size]))]
-    return history_cache.read_through(key, read_window, prewarm=prewarm)
+    return history_cache.read_through(key, read_window, prewarm=prewarm,
+                                      revision_key=revision_key, revision=revision)
 
 
 def partial_bucket(symbol, interval, now):

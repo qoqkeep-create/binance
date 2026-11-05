@@ -16,6 +16,21 @@ SERIES = {
 }
 
 STATISTICS_INTERVALS = {"5m", "15m", "30m", "1h", "2h", "4h", "1d"}
+CONTEXT_TTL = 300
+
+
+def context_key(symbol, interval):
+    return f"market:stats:context:v1:{symbol}:{interval}"
+
+
+def scheduled_context(symbol, interval):
+    """Use the actual requested bucket, without reading or promoting history."""
+    result = cache.get(context_key(symbol, interval))
+    if result is None:
+        # Expired context / old queued job: keep the durable retry boundary.
+        # A subsequent HTTP read supplies fresh context; no false ready notice.
+        raise ValueError("Statistics context unavailable")
+    return result
 
 
 def series_key(result, name):
@@ -44,10 +59,17 @@ def attach(result, requested):
         return result
     by_time = {}
     pending = False
+    context_saved = False
     width = INTERVAL_MS[result["interval"]]
     for name in sorted(requested):
         rows = cache.get(series_key(result, name))
         if rows is None:
+            if not context_saved:
+                tail = result["items"][-1]
+                cache.set(context_key(result["symbol"], result["interval"]),
+                          {"symbol": result["symbol"], "interval": result["interval"],
+                           "items": [{"openTime": tail["openTime"], "closeTime": tail["closeTime"]}]}, CONTEXT_TTL)
+                context_saved = True
             repair.schedule(result["symbol"], result["interval"], kind=f"stats:{name}")
             pending = True
             continue

@@ -147,8 +147,8 @@ def run_next(lane="history"):
             task.save(update_fields=["lease_until"])
         try:
             if task.kind.startswith("stats:"):
-                from market_stream import service, trading_data
-                snapshot = service.load_history(task.symbol, task.interval, 1500, schedule_repair=False)
+                from market_stream import trading_data
+                snapshot = trading_data.scheduled_context(task.symbol, task.interval)
                 trading_data.load_series(snapshot, task.kind.removeprefix("stats:"))
                 exhausted, delay = False, 30
             else:

@@ -2,6 +2,24 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 历史缓存生命周期与统计隔离（2026-11-06）
+
+先补可复现测试：原实现七个定向用例出现 4 个失败、1 个错误，复现后台统计完整读历史、旧窗口占位及旧构建迟到回填；日志 `.integration-runtime/history-lifecycle-baseline.log`。实现与正确性边界见 [行情](market-data.md#后台统计与历史缓存生命周期2026-11-06)。新增九项覆盖六类统计共享上下文、缺失上下文重试、新请求桶覆盖旧任务、提交／回滚、最新窗与分页回收、迟到构建、其他热流不被挤出、满 LRU 下统计不改变成员／分数，以及 Redis 故障时本地 SQL 返回。
+
+完整 `market_stream` **114 项通过（6.290 秒，0 跳过）**，运行器沿用隔离 SQLite／回环 Redis、禁外网／dotenv／账户流／scheduler 的边界。测试 Redis 同时作为 Django cache，真实验证 revision 编码与原子比较；最终日志 `.integration-runtime/history-lifecycle-full-final.log`，命令：
+
+```bash
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py market_stream
+```
+
+47.80.22.243（首尔服务器）实际 API 与 market 来自不同旧发布包，不能直接替换为整个 HEAD。分别下载排除凭证的来源，核对运行容器全部 304／295 个 Python／requirements 哈希；仅叠加四个运行文件和两个测试文件，保留各自其他源码与迁移。`service.py` 仅替换 `persist`／`warm_history`，`repair.py` 仅替换 `run_next`（包含关联 maintenance `prewarm=True` 让位），未带入共享分发与周期扩展。两个实际限定包完整行情回归分别 **92 项通过（5.686／5.730 秒，0 跳过）**；日志及来源清单在 `.integration-runtime/HistoryCacheNov6/` 的 `api-package-tests-final.log`／`market-package-tests-final.log`、`baseline.json` 与发布 manifest。没有真实交易／资金／保护单操作，也没有新手机延迟／吞吐基准；上线验收另见 [运维](operations.md#历史缓存与统计限定发布2026-11-06)。
+
+## USDC 再次源码对照（2026-11-06）
+
+重新核对整合版 `7e8a4ab3186c0f863be5ccf2f6f70bdf6e2064d2` 与 USDC `104d7d7fc44d244087fa06841659246965b3914b`。当前所选 16 个源码／部署文件、USDC 所选 12 个文件均相对各自 HEAD 无改动，SHA-256 清单位于忽略目录 `.integration-runtime/USDCComparisonNov6/source-comparison.json`；来源目录只读，保留前轮三份未提交复盘文档。
+
+复核接收／分发、live／closed 与后台调度、历史 LRU／revision、统计任务与完成通知、定期校对和宿主连续视口／静态 buffer 路径。确认共享分发已完成，并提出统计取数／前台缓存隔离、旧 revision 管理、通知按 kind 筛选等方向；推荐顺序、现状及尚未实施的范围统一见 [行情](market-data.md#与-usdc-再次对照与后续方向2026-11-06)。这是源码审阅与既有证据复核，本轮不新增业务测试、性能 A/B、模拟器／手机验收或 47.80.22.243（首尔服务器）核验，不把候选瓶颈写成已测得的运行故障。交付仅检查文档链接、敏感模式、未追踪文件、源码哈希与 `git diff --check`。
+
 ## API 共享行情分发器（2026-11-06，本地）
 
 基线为已推送的 `c96fcbc`。先扩展实际三连接／三事件回归，旧实现明确失败 `AssertionError: 9 != 3`，日志 `.integration-runtime/shared-fanout-baseline.log`；此前已验证的公共重复编码仍应为 0。新 `fanout.py` 接管 Redis 接收、主题合并与重叠 pattern 去重，原 ASGI `matches` 逐连接过滤、发送队列和客户端恢复协议保留；方案及 USDC 比较见 [行情](market-data.md#api-共享行情分发器2026-11-06本地)。
