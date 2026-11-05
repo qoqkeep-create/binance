@@ -6,6 +6,14 @@
 
 2026-11-03 构建 34／35 的测试、归档和上传处理已成功；构建 35 由用户**手动加入内部测试组**后立即收到更新通知。本次不能作为 Cloud 自动分发成功的证据，历史构建 7 的自动分发记录也不能替代当前结果；后续操作仍显示等待的原因待查，详见 [本次核验](#构建-3435-状态核验与日志入口2026-11-03)。
 
+## 持仓界面源码交付核验（2026-11-06）
+
+用户反馈未选中页签仍小，且看不到此前刷新／保证金徽标改动。本次 fetch 后核对 GitHub `codex/integrated-ios`：`c96fcbcde43165c889e0f79540e3a412806c3c7f` 已在分支历史中，`USDTTradingViews.swift`、`USDTComponents.swift`、`PositionMargin.swift` 与该提交及本地逐字一致，没有漏推或后续回退。该提交包含约 15 pt 未选中／20 pt 选中页签、紧凑条不二次缩字、20 pt 刷新覆盖层与松手位移修复、顶部整数百分比和移除比较符号，以及整页横滑。
+
+GitHub 公开 check 与 combined status 确认该提交对应 [Xcode Cloud 运行](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/d75e7bc4-1279-4f04-8db8-caecb2b86db4)的 Required Test／Archive 均成功，均为 0 errors／0 test failures，整体状态 success。App Store Connect 详情跳转登录，未能核实准确 Build Number、Apple 处理与内部测试组分发；本次用户也未提供手机构建号。因此只确认源码交付和云端构建成功，不能据此声称手机已安装或断言真机字号回归。新客户端显示改动需要安装包含 `c96fcbc` 的构建，后端限定部署不会改变已安装 App 的字体或刷新图标。
+
+来源哈希与公开 check 证据保存在忽略目录 `.integration-runtime/ClientDeliveryNov6/verified.json`。本次不修改界面源码、不重复运行已通过的 UI／Release 验证、不手动上传或分发 TestFlight，也不创建空提交重建相同源码；补记核验文档并按用户授权推送，真实手机构建映射仍待核实。此前各构建记录描述其各自时点。
+
 ## 本项目固定信息与待办
 
 | 项目 | 当前值 / 操作 |
