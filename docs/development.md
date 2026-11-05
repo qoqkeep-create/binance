@@ -2,6 +2,12 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## USDC 前端与推送源码对照（2026-11-05）
+
+按用户要求先将当前全部安全改动以 `dd4e5db` 推送 GitHub `codex/integrated-ios`，再只读比较 USDC `104d7d7`。本轮不改业务代码、不新增测试；沿既有验证记录核对交付内容，执行 Git 差异／敏感模式／未追踪文件检查，并验证远端分支包含提交。`.build/` 加入忽略，未收录原始诊断、凭证或来源目录。
+
+对比覆盖真实 iOS 模型、网络、数据／指标、场景、宿主、Metal，以及 Java／Python 的采集、分发、收盘、HTTP 和统计链路。USDC 选定路径 `git diff HEAD --name-only` 为空，未把来源目录其他 Scheme 与网络研究改动混入结论。当前／来源 engine 为 42／44 文件，共同文件 18 个字节相同、24 个不同；双方 SHA、路径清单及基线写入忽略目录 `.integration-runtime/USDCComparisonNov5/source-comparison.json`。这是可核对的源码差异，未运行两套后端 A/B、旧 Java 或新一轮真机测试；性能推断与待测项见 [行情主文档](market-data.md#与-usdc-的前端和数据推送对照2026-11-05)。
+
 ## 保证金率与手势切页（2026-11-05，本地）
 
 后端 `positions.test_margin` 15 项及 `common.tests.BinanceRequestBudgetTests` 17 项共 32 项通过。覆盖交易所权益分母与独立委托占用、真实维持保证金不由杠杆反推、空账户／零及负权益、无效／非有限／不一致字段、逐仓与多资产拒算、未成交委托、认证、绑定变更、跨用户／模式／Key／创建代际缓存、过慢快照和失败不缓存，以及两项新增账户 GET 的低优先级完整权重。测试用 SQLite 临时库、内存缓存和交易所替身，通过既有禁外网运行器执行，无生产账户或交易动作。

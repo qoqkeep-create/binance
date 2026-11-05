@@ -2,6 +2,49 @@
 
 整合环境使用 Python 采集和推送，SwiftUI / Metal 显示。接口和当前性能样本见 [整合说明](INTEGRATION.md)。
 
+## 与 USDC 的前端和数据推送对照（2026-11-05）
+
+整合版基线为已推送 GitHub 的 `dd4e5dbfe18a5774b14f412eda2aabba3697bb2d`；USDC 来源为 [来源索引](sources.md) 中只读目录的 `104d7d7fc44d244087fa06841659246965b3914b`。本次检查的 USDC 图表、网络、Java 行情／推送及主配置路径相对该 HEAD 没有未提交改动，未纳入来源目录其他 Scheme／网络研究改动。以下为源码对照，不是两套后端同设备／同网络的性能 A/B；没有启动已退役 Java 服务或追加生产操作。
+
+### 前端差异
+
+两者仍是 SwiftUI＋自研 Metal、HTTP 历史＋WSS 增量。完整首次读取 1500 根用于指标预热，视图模型价格数组保留末 500 根，实际生成可见区域及缓冲场景；收线提交指标，盘中计算 provisional，不逐 tick 重算全部历史。`KlineIngressState`、`RealtimeKlineIngress`、EMA／RSI／SAR／VOL、多项其他指标、glyph atlas／texture cache、GPU resource ring 仍逐字相同。
+
+| 环节 | USDC `104d7d7` | 整合版 `dd4e5db` | 对耗时／行为的含义 |
+| --- | --- | --- | --- |
+| 切周期 | 新建管线、清 frame、每次 HTTP 1500 根 | 最近 3 个非活动周期、同桶 10 秒缓存，回切先发布完整 frame，后台只核验 2 根 | 热返回可绕开完整网络等待；冷周期仍要读取 |
+| Metal 宿主 | frame／场景为空时移除 Representable，回来重建 renderer | 始终保留宿主，加载暂停／遮挡，按 stream＋epoch 追踪真实提交首帧 | 省去切换中的资源重建，旧 GPU 回调不能结束新周期加载 |
+| 完整快照与指标 | `CandleStore` 为独立 actor，快照安装后重新预热指标 | 管线 actor 内同步持有 `CandleStorage`，相同闭合历史保留对象及指标，增加 quote／真实 OHLC 合并和恢复屏障 | 减少不变历史的重算和 actor 间交错；真实历史变化仍重建 |
+| 校对与通知 | 固定 15 秒 `reload`；没有 `market.history`；每个 ready 都开启新 epoch | 15 秒在途合并；区分首次握手和真实重连；通知按 `serverTime` 去重，未覆盖补读排在首帧之后 | 原版协议较简单；整合版额外承担 pending 恢复，已修复取消／重复读问题 |
+| 断线、后台与旧响应 | 已有 epoch／sequence／buffer drop 和快照恢复 | 增加前后台显式恢复、等待初始快照的发布屏障、旧请求／分页 ID 和缓存失效 | 恢复约束更多，避免用旧历史提前发布新 epoch |
+| 订阅与鉴权 | 订阅变更由独立 Task 发送，ack 不发布给模型 | 按 socket 串行发送订阅变更、能力协商、ack 发布、交易模式 header、token 续期 | 快切时保持线上订阅顺序；增加协议编排，不是固定半秒等待 |
+| 手势与场景 | 横拖优先复用横向 GPU transform，场景在缓冲不足或结束等时点更新 | 增加按显示帧合并的连续 viewport／价格域适配、auto 固定域、主图纵向操作 | 整合版在持续拖动时有更多场景及静态 buffer 工作，成本需单独测量 |
+| 绘制内容 | 原图例、十字线、指标与交互 | 增加订单右轴标签与连接、持仓 B／S、主题／图例适配、Super 连续填充等；shader 矩形边缘修复 | 增加部分 CPU 排版、图元及分层；不能假定所有差异都增加 GPU 耗时 |
+| 周期 | 6 种：1m／5m／15m／1h／4h／1d | 13 种，新增 3m／30m／2h／8h／16h／3d／1w | 是能力和聚合范围增加，不是同时绘制 13 个周期 |
+
+当前 `ChartEngine` 目录为 42 个文件，USDC 为 44 个；共同文件中 18 个字节相同、24 个不同，整合版移除两个未使用文件。24 个不同包括样式、格式、指标参数、宿主和数据恢复变化，不能用这个数量推导性能比例，也不能再把 11 月 1 日的“多数文件相同”当作现行逐文件结论。此次清单及 SHA-256 在忽略目录 `.integration-runtime/USDCComparisonNov5/source-comparison.json`。
+
+前端已知受控证据仍见 [本轮验证](development.md#周期缓存宿主复用与首帧优先2026-11-05本地)：固定 500ms HTTP，热返回模型 frame 566.26 → 0.0716ms；这是取数模型就绪，不含屏幕呈现。此前 USDC／整合旧模型的相同 HTTP 对照均约 550–570ms，未证实模型本身额外增加半秒；不是各版本完整渲染器的 A/B。
+
+### 数据采集与推送差异
+
+| 环节 | USDC Java | 当前 Python 整合版 | 对耗时／正确性的含义 |
+| --- | --- | --- | --- |
+| 原始行情 | 主配置 continuous 1m、每连接 50 streams，按 pair 队列由虚拟线程消费，依次调用 handlers | continuous 1m、每连接 80 streams；async 接收，live／收线／ticker／历史／6 路统计分别执行 | 两者都以 1m 为基础；当前普通 live 发布不等数据库收线 |
+| 未收盘发布路径 | handler → 内存 dispatcher → WebSocket session；先检查订阅者，无人订阅即返回 | pending 按 symbol／interval 保留较新事件，唤醒发布 → live cache → Redis Lua PubSub → ASGI → WebSocket | 当前多缓存访问、跨进程 hop 和 JSON 编解码；发布忙时合并中间 live 事件，无固定 200ms 节流等待 |
+| 序列化与扇出 | 匹配 recipients 后 ObjectMapper 编码一次，再向各 session 派发同一字符串 | 采集端编码并发布，ASGI 解码、筛选、剔除内部字段再编码；Redis 主题先筛选公共行情 | USDC 无订阅市场的编码／分发工作较少；当前主题路由减少每个连接收到无关事件的成本 |
+| 顺序 | 进程内每流 AtomicLong；默认 4 线程 dispatcher／5000 任务队列 | Redis Lua 原子分配 sequence 并 publish，同批 pipeline；每连接单 sender／128 条队列、5 秒发送超时 | 当前跨生产者 sequence 与发布一致；USDC 多线程发送不能由 sequence 分配推断绝对有序。队列不同单位，不能直接比较容量优劣 |
+| 收盘与聚合 | 事务内写库／ZSET 并聚合，提交后发 closed 事件；同 pair handler 顺序执行 | 收线独立任务先提交数据库再发布，随后对到边界的大周期聚合／持久化／发布；缺分钟不伪造 | USDC 收线 handler 可能占用该 pair 消费线程；当前将实时与收线工作分开 |
+| 首次 HTTP | Controller 直接查 Mapper／MySQL；不足时同步 Binance 补线；所选统计并发请求后 join | 版本化压缩历史缓存，冷态查 MySQL；缺线／统计 pending 排后台，完成后 market.history 通知 | 当前首响应不等外部补线，但可能要后续读取；USDC HTTP 并不读其维护用 Redis ZSET |
+| 历史缓存与后台工作 | 按 symbol／interval 维护 ZSET，但该 Controller 不消费它 | 共享最多 64 窗 LRU；maintenance 已改预热优先级；统计任务仍用默认前台窗口读取 | 当前命中可省 SQL，未命中或后台竞争仍可能慢；统计 lane 挤占是剩余待测项 |
+| 市场范围与长周期 | 源码主配置报价资产默认 USDC，常规 6 周期 | USDT 全市场、13 周期，16h 用 8h 源线，部分长周期用小时源线 | 实际上游负载与查询范围不同；没有本次运行时合约数量对照 |
+
+两边都没有对每一个高周期持续接收 Binance 原生完整 OHLC：高周期收线由分钟聚合，前端同时订阅 1m／ticker 推动当前价，HTTP 获取／校正当前桶。价格变化及时不等于高周期高低价、成交量每个 tick 都完整更新；这也是当前热返回仍需要两根权威核验的原因。Redis PubSub 与 Java dispatcher 都没有向客户端提供持久游标重放，断线仍依靠快照恢复。
+
+证据入口：当前 [`MarketChartViewModel`](../frontend/ios-app/TradeTool/Features/Chart/MarketChartViewModel.swift)、[`ChartDataPipeline`](../frontend/ios-app/TradeTool/Features/ChartEngine/Data/ChartDataPipeline.swift)、[`Host`](../frontend/ios-app/TradeTool/Features/ChartEngine/Host/KlineChartHostView.swift)、[`collector`](../server/market_stream/collector.py)、[`service`](../server/market_stream/service.py)、[`bus`](../server/market_stream/bus.py)、[`websocket`](../server/market_stream/websocket.py)。USDC 同名 iOS 文件，以及 `backend/app-service/src/main/java/com/oovso/` 下 `realtime/RealtimeLiveKlineHandler.java`、`RealtimeEventPublisher.java`、`RealtimeClientSession.java`、`market/MarketKlineController.java`、`MarketKlineService.java`、`KlineAggregationService.java` 和 `binance/BinanceUsdMarginedPerpetualContinuousKlineConnector.java`；配置以 `src/main/resources/application.yaml` 的显式 1m 为准，不能仅看 properties 类的 1h 默认值。
+
+剩余性能判断：USDC 的进程内实时路径更短是源码事实；它贡献多少毫秒、当前更多绘制工作占多少 CPU/GPU，仍缺同条件分段测量。优先测采集接收→cache／Redis 发布→ASGI→手机收到→场景→呈现，并分别观察切周期与持续拖动；现有 87ms ping RTT 不能代替行情端到端延迟。当前缓存与宿主优化已推送，真实手机效果、后端统计 lane／SQL／网络波动仍待验证。
+
 ## 周期切换耗时与十字线百分比（2026-11-05）
 
 十字线右轴“距当前价”百分比固定显示两位小数，例如 `+3.91%`、`-0.12%`、`+1.00%`；舍入为零统一为 `0.00%`。只改变该标签的格式，价格精度、百分比计算基准和指标数据不变。真实字形回归及构建见 [开发验证](development.md#周期切换排查与百分比回归2026-11-05本地)。
@@ -319,6 +362,8 @@ iOS 行情搜索、编辑添加、开仓与 K 线顶部下拉四个入口共用�
 上线前需应用 `market_stream.0002_markethistorytask`，再配套更新 API / market 及对应客户端；本次关键路径对齐没有新增迁移。公共行情主题由原总线切换为 v2，API 与 market 必须共同升级／回滚，混用两版会丢失公共行情。迁移只新增公共行情任务表，不改交易表或持仓；旧代码回滚可忽略该表，不能把代码回滚等同于数据库还原。旧客户端能忽略新增字段，但冷数据请求可能暂时显示空图，建议配合新客户端升级。
 
 ## 与原 USDC 实现的核对（2026-11-01）
+
+本节保留 11 月 1 日的排查与发布基线。11 月 5 日新增的周期缓存、宿主复用、恢复和绘制差异，以 [最新源码对照](#与-usdc-的前端和数据推送对照2026-11-05) 为准。
 
 本次只读对照 `/Users/apple/work/tradetools-usdc`，来源 Git HEAD 为 `2ed33f7d2da9380e6fc6e6b1c0076550c4156c36`，整合版以当前工作区为准。11 月 1 日进一步核对时，来源目录有其他任务的导航／手势改动；以下将来源 HEAD 与工作区区别核对，不将那些改动计为本轮变更。原 Java 部署已退役，本次未重启它，没有原版与整合版在同设备、同网络下的 A/B 结果。
 
