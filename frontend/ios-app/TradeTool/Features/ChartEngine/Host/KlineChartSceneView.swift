@@ -389,6 +389,7 @@ struct KlineChartSceneView: View {
   @Environment(\.displayScale) private var displayScale
   @StateObject private var controller =
     KlineChartSceneController()
+  @State private var presentedID: ChartPresentationID?
 
   var body: some View {
     GeometryReader { proxy in
@@ -408,48 +409,49 @@ struct KlineChartSceneView: View {
         priceViewport: priceViewport
       )
 
+      let renderState = controller.renderState(matching: frame)
+      let presentationID = frame.map { ChartPresentationID(stream: $0.stream, epoch: $0.epoch) }
+      let isPresented = renderState != nil && presentationID != nil && presentedID == presentationID
       ZStack {
-        if let renderState = controller.renderState(
-          matching: frame
-        )
-        {
-          KlineChartRepresentable(
-            renderState: renderState,
-            timelineViewport: timeline,
-            priceViewport: priceViewport,
-            totalSlotCount: frame.map(
+        KlineChartRepresentable(
+          renderState: renderState,
+          timelineViewport: timeline,
+          priceViewport: priceViewport,
+          totalSlotCount: frame.map(
+            KlineChartSceneController.totalSlotCount
+          ) ?? 0,
+          onTimelineViewportChange: { next in
+            let totalSlotCount = frame.map(
               KlineChartSceneController.totalSlotCount
-            ) ?? 0,
-            onTimelineViewportChange: { next in
-              let totalSlotCount = frame.map(
-                KlineChartSceneController.totalSlotCount
-              ) ?? 0
-              controller.updateTimelineViewport(
-                next,
-                totalSlotCount: totalSlotCount
-              )
-              if shouldRequestOlderHistory(
-                viewport: next,
-                totalSlotCount: totalSlotCount
-              ) {
-                onNeedsOlderHistory()
-              }
-            },
-            onPriceViewportChange: { next in
-              controller.updatePriceViewport(next)
-            },
-            automaticallyFitsPrice: automaticallyFitsPrice,
-            candleMarkers: candleMarkers,
-            candleMarkerExclusions: candleMarkerExclusions,
-            axisPriceLabels: axisPriceLabels,
-            onFirstFramePresented: { time in
-              if let epoch = frame?.epoch { onFirstFramePresented(epoch, time) }
-            },
-            onCrosshairSelection: onCrosshairSelection,
-            onCrosshairDismiss: onCrosshairDismiss
-          )
-          .transition(.opacity)
-        } else {
+            ) ?? 0
+            controller.updateTimelineViewport(
+              next,
+              totalSlotCount: totalSlotCount
+            )
+            if shouldRequestOlderHistory(
+              viewport: next,
+              totalSlotCount: totalSlotCount
+            ) {
+              onNeedsOlderHistory()
+            }
+          },
+          onPriceViewportChange: { next in
+            controller.updatePriceViewport(next)
+          },
+          automaticallyFitsPrice: automaticallyFitsPrice,
+          candleMarkers: candleMarkers,
+          candleMarkerExclusions: candleMarkerExclusions,
+          axisPriceLabels: axisPriceLabels,
+          presentationID: presentationID,
+          onFirstFramePresented: { id, time in
+            presentedID = id
+            onFirstFramePresented(id.epoch, time)
+          },
+          onCrosshairSelection: onCrosshairSelection,
+          onCrosshairDismiss: onCrosshairDismiss
+        )
+        .allowsHitTesting(isPresented)
+        if renderState == nil {
           BinanceKlineLoadingIndicator()
         }
       }

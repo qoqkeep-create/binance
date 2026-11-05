@@ -58,7 +58,7 @@ struct ChartPanelLayout: Equatable, Sendable {
   static let timeAxisHeightPoints = 24.0
 
   static func squareViewportHeightPoints(widthPoints: Double, indicatorPanelCount: Int) -> Double {
-    let plotWidth = max(120, widthPoints - 4 - 58)
+    let plotWidth = max(120, widthPoints - 58)
     return pricePlotTopPoints + plotWidth + timeAxisHeightPoints
       + Double(max(0, indicatorPanelCount)) * (panelGapPoints + indicatorPanelHeightPoints)
   }
@@ -144,7 +144,7 @@ struct ChartPanelLayout: Equatable, Sendable {
     let width = Float(viewport.widthPixels)
     let height = Float(viewport.heightPixels)
     let scale = Float(viewport.displayScale)
-    let plotLeft = 4 * scale
+    let plotLeft: Float = 0
     let plotRight = width - 58 * scale
     let timeAxisHeight = Float(timeAxisHeightPoints) * scale
     let panelHeightBudget = height - timeAxisHeight

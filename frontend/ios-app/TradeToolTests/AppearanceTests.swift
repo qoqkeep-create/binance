@@ -6,6 +6,56 @@ import UIKit
 import XCTest
 @testable import TradeTool
 
+@MainActor
+final class WebModalRenderingTests: XCTestCase {
+  func testPositionActionsChooseFadeExceptTheStrategyPicker() {
+    XCTAssertEqual(WebModalMotion.positionOperation(action: "strategy", strategyRunning: true), .fade)
+    XCTAssertEqual(WebModalMotion.positionOperation(action: "breakEven", strategyRunning: false), .fade)
+    XCTAssertEqual(WebModalMotion.positionOperation(action: "strategy", strategyRunning: false), .slide)
+  }
+
+  func testStrategyAndExecutionLogFadesForActiveAndHistoricalPositionsAtAnyHeight() {
+    for running in [true, false] {
+      for action in running ? ["strategy", "strategyLog"] : ["strategyLog"] {
+        let preferred = WebModalMotion.positionOperation(action: action, strategyRunning: running)
+        for height: CGFloat in [200, 650] {
+          let motion = WebModalMotion.resolve(cardHeight: height, containerHeight: 800,
+            reduceMotion: false, preferred: preferred)
+          XCTAssertEqual(motion, .fade, "Loading execution records must not turn a tall dialog into a slide")
+          let transition = WebModalTransitionState(motion: motion, progress: 0.5, drag: 0, containerHeight: 800)
+          XCTAssertEqual(transition.cardOffset, 0)
+          XCTAssertEqual(transition.cardOpacity, 0.5)
+        }
+      }
+    }
+  }
+
+  func testCardAndBackdropFadeTogetherWithoutChangingTheirFrames() throws {
+    for progress: CGFloat in [0, 0.25, 0.5, 0.75, 1] {
+      let transition = WebModalTransitionState(motion: .fade, progress: progress, drag: 0, containerHeight: 100)
+      let content = ZStack {
+        WebModalBackdrop(opacity: 0.6)
+        Color.white.frame(width: 20, height: 20).webModalCard()
+      }.frame(width: 100, height: 100)
+        .modifier(WebModalVisuals(motion: .fade, transition: transition, underlying: 0))
+      let renderer = ImageRenderer(content: content)
+      let image = try XCTUnwrap(renderer.cgImage)
+      var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+      try pixels.withUnsafeMutableBytes { bytes in
+        let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+          bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+      }
+      func pixel(_ x: Int, _ y: Int, _ channel: Int) -> Int { Int(pixels[(y * image.width + x) * 4 + channel]) }
+      XCTAssertEqual(Double(pixel(50, 50, 3)), Double(progress) * 255, accuracy: 2)
+      XCTAssertEqual(Double(pixel(10, 10, 3)), Double(progress) * 0.6 * 255, accuracy: 2)
+      XCTAssertEqual(pixel(50, 50, 0), pixel(50, 50, 3), "The card stays centered throughout the fade")
+      XCTAssertEqual(pixel(50, 85, 0), 0, "No card pixels may slide down into the backdrop")
+    }
+  }
+}
+
 final class AppearanceTests: XCTestCase {
     @MainActor
     func testPositionAndSelectedTradeTickersSurviveFavoritesAndSearchSubscriptionChanges() async throws {
@@ -383,6 +433,52 @@ final class NetworkLatencyAndModalTests: XCTestCase {
     }
     XCTAssertEqual(pixels[3], 0, "System launch screens need the rounded mask in the asset itself")
     XCTAssertEqual(pixels[(48 * 96 + 48) * 4 + 3], 255)
+  }
+
+  func testAppLaunchMatchesSystemLaunchAcrossAsymmetricSafeAreas() throws {
+    let controller = try XCTUnwrap(UIStoryboard(name: "BrandLaunchScreen", bundle: Bundle(for: AuthStore.self))
+      .instantiateInitialViewController())
+    controller.loadViewIfNeeded()
+    let mark = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? UIImageView }.first?.image)
+    let cases: [(CGSize, EdgeInsets)] = [
+      (CGSize(width: 393, height: 852), EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)),
+      (CGSize(width: 402, height: 874), EdgeInsets(top: 62, leading: 0, bottom: 34, trailing: 0)),
+      (CGSize(width: 852, height: 393), EdgeInsets(top: 0, leading: 59, bottom: 21, trailing: 21)),
+    ]
+    for (size, insets) in cases {
+      for scheme in [ColorScheme.light, .dark] {
+        let actual = ImageRenderer(content: AppLaunchView()
+          .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: insets.top) }
+          .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: insets.bottom) }
+          .safeAreaInset(edge: .leading, spacing: 0) { Color.clear.frame(width: insets.leading) }
+          .safeAreaInset(edge: .trailing, spacing: 0) { Color.clear.frame(width: insets.trailing) }
+          .frame(width: size.width, height: size.height)
+          .environment(\.colorScheme, scheme))
+        let reference = ImageRenderer(content: ZStack {
+          Color.white
+          Image(uiImage: mark).resizable().scaledToFit().frame(width: 96, height: 96)
+        }.frame(width: size.width, height: size.height).environment(\.colorScheme, scheme))
+        actual.scale = 1
+        reference.scale = 1
+        let actualImage = try XCTUnwrap(actual.cgImage)
+        let referenceImage = try XCTUnwrap(reference.cgImage)
+        XCTAssertEqual(actualImage.width, Int(size.width))
+        XCTAssertEqual(actualImage.height, Int(size.height))
+        XCTAssertTrue(try launchPixels(actualImage) == launchPixels(referenceImage),
+          "App launch must retain the system launch artwork, size and full-window center: \(size), \(scheme)")
+      }
+    }
+  }
+
+  private func launchPixels(_ image: CGImage) throws -> [UInt8] {
+    var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+    try pixels.withUnsafeMutableBytes { bytes in
+      let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+        bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+      context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    }
+    return pixels
   }
 }
 

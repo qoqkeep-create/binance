@@ -211,8 +211,7 @@ class HistoryFastPathTests(TestCase):
         self.assertFalse(response["items"][-1]["closed"])
 
 
-@skipUnless(os.getenv("MARKET_TEST_REDIS_BINARY"), "opt-in isolated Redis protocol test")
-class RedisMarketProtocolTests(SimpleTestCase):
+class IsolatedMarketRedisMixin:
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -245,6 +244,56 @@ class RedisMarketProtocolTests(SimpleTestCase):
         cls.process.wait(timeout=5)
         super().tearDownClass()
 
+
+@skipUnless(os.getenv("MARKET_TEST_REDIS_BINARY"), "opt-in isolated Redis protocol test")
+class HistoryRepairCachePriorityTests(IsolatedMarketRedisMixin, TestCase):
+    def setUp(self):
+        cache.clear()
+        bus.connection().flushdb()
+        for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
+            service.persist([{**candle(closed=True), "symbol": symbol}])
+
+    @override_settings(USE_REDIS_CACHE=True)
+    @patch("market_stream.history_cache.MAX_WINDOWS", 2)
+    @patch("common.binance.rate_limit_cooldown_remaining", return_value=0)
+    @patch("market_stream.repair.repair_history", return_value=(True, 60))
+    def test_maintenance_preserves_full_foreground_cache(self, _repair, _cooldown):
+        from market_stream.models import MarketHistoryTask
+        foreground = {}
+        for symbol in ("BTCUSDT", "ETHUSDT"):
+            foreground[symbol] = service.warm_history(symbol, "1m")
+        task = repair.schedule("SOLUSDT", "1m", kind="maintenance", priority=10)
+        with patch("market_stream.service.from_model", wraps=service.from_model) as convert, \
+             patch("market_stream.repair.notify_ready") as notify:
+            self.assertTrue(repair.run_next())
+        for symbol, rows in foreground.items():
+            self.assertEqual(history_cache.get(f"market:history:v4:{symbol}:1m:latest:initial"), rows)
+        self.assertEqual(convert.call_count, 0)
+        task.refresh_from_db()
+        self.assertGreater(task.completed_at, 0)
+        self.assertEqual(MarketHistoryTask.objects.count(), 1)
+        notify.assert_not_called()
+
+    @override_settings(USE_REDIS_CACHE=True)
+    @patch("market_stream.history_cache.MAX_WINDOWS", 2)
+    @patch("common.binance.rate_limit_cooldown_remaining", return_value=0)
+    @patch("market_stream.repair.repair_history", return_value=(True, 60))
+    def test_on_demand_history_can_replace_an_old_foreground_window(self, _repair, _cooldown):
+        for symbol in ("BTCUSDT", "ETHUSDT"):
+            service.warm_history(symbol, "1m")
+        task = repair.schedule("SOLUSDT", "1m")
+        with patch("market_stream.repair.notify_ready") as notify, self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(repair.run_next())
+        self.assertIsNone(history_cache.get("market:history:v4:BTCUSDT:1m:latest:initial"))
+        self.assertIsNotNone(history_cache.get("market:history:v4:ETHUSDT:1m:latest:initial"))
+        self.assertIsNotNone(history_cache.get("market:history:v4:SOLUSDT:1m:latest:initial"))
+        task.refresh_from_db()
+        self.assertGreater(task.completed_at, 0)
+        notify.assert_called_once()
+
+
+@skipUnless(os.getenv("MARKET_TEST_REDIS_BINARY"), "opt-in isolated Redis protocol test")
+class RedisMarketProtocolTests(IsolatedMarketRedisMixin, SimpleTestCase):
     def test_private_batch_uses_one_roundtrip_and_preserves_order_and_account_scope(self):
         from market_stream.websocket import matches
         client = bus.connection()

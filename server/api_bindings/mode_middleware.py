@@ -18,6 +18,7 @@ LEAD_PATHS = frozenset({
     "/v1/trade/limit-order/create", "/v1/trade/limit-order/list",
     "/v1/trade/limit-order/cancel", "/v1/trade/limit-order/chase",
     "/v1/position/list", "/v1/position/history", "/v1/position/close",
+    "/v1/position/margin",
     "/v1/position/break-even-stop", "/v1/position/take-profit",
     "/v1/strategy/list", "/v1/strategy/cancel", "/v1/strategy/rebind", "/v1/strategy/log",
     "/v1/strategy/save", "/v1/strategy/delete", "/v1/strategy/set-active",

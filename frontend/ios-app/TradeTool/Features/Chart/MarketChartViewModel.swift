@@ -83,7 +83,59 @@ final class MarketChartViewModel: ObservableObject {
     private var chartPipelineSessionID = UUID()
     private var chartPipelineGeneration: UInt64 = 0
     private var chartRecoveryNeeded = false
+    private var hasRealtimeConnection = false
+    private var isSuspendedForBackground = false
     private var chartIndicatorConfigurationRevision: UInt64 = 0
+    private struct CachedInterval {
+        let pipeline: ChartDataPipeline
+        let frame: ChartDataFrame
+        let candles: [MarketCandle]
+        let hasMoreHistory: Bool
+        let verifiedAt: Date
+        let bucketOpenTime: Int64
+        let selection: ChartIndicatorSelection
+        let parameters: ChartIndicatorParameters
+        let tradingMode: String
+        let useOrder: UInt64
+    }
+    private var intervalCache: [MarketKlineInterval: CachedInterval] = [:]
+    private var cacheUseOrder: UInt64 = 0
+    private let cacheTimeProvider: () -> Date
+    private var snapshotVerifiedAt: Date?
+    private var snapshotVerifiedBucket: Int64?
+    private var cacheRestoreTask: Task<Void, Never>?
+    private var isUsingVerifiedIntervalCache = false
+    private var cachedTradingMode: String?
+    private struct PendingHistorySignals {
+        var acknowledgementTime: Int64?
+        var noticeTime: Int64?
+        var unknownAcknowledgement = false
+        var unknownNotice = false
+        var isEmpty: Bool {
+            acknowledgementTime == nil && noticeTime == nil && !unknownAcknowledgement && !unknownNotice
+        }
+        mutating func record(timestamp: Int64, acknowledgement: Bool) {
+            if acknowledgement {
+                if timestamp > 0 { acknowledgementTime = max(acknowledgementTime ?? timestamp, timestamp) }
+                else { unknownAcknowledgement = true }
+            } else {
+                if timestamp > 0 { noticeTime = max(noticeTime ?? timestamp, timestamp) }
+                else { unknownNotice = true }
+            }
+        }
+        mutating func removeCovered(by serverTime: Int64?) {
+            guard let serverTime, serverTime > 0 else { return }
+            if let time = acknowledgementTime, time < serverTime { acknowledgementTime = nil }
+            if let time = noticeTime, time < serverTime { noticeTime = nil }
+        }
+    }
+    private var pendingHistorySignals = PendingHistorySignals()
+    private var firstFrameGateToken: UUID?
+    private var firstFrameFallback: Task<Void, Never>?
+    private var firstFrameGateWasReleased = false
+    private var latestHistoryServerTime: Int64?
+    private var activeHistoryLimit: Int?
+    private var isInstallingTailSnapshot = false
 #if DEBUG
     private static let performanceLog = Logger(subsystem: "BinanceTools", category: "MarketChart")
 #endif
@@ -95,12 +147,14 @@ final class MarketChartViewModel: ObservableObject {
         initialInterval: MarketKlineInterval = .oneHour,
         chartIndicatorSelectionStore: ChartIndicatorSelectionStore = .init(),
         chartIndicatorParametersStore: ChartIndicatorParametersStore = .init(),
-        diagnosticUpload: ((Data) -> Void)? = nil
+        diagnosticUpload: ((Data) -> Void)? = nil,
+        cacheTimeProvider: @escaping () -> Date = Date.init
     ) {
         self.market = market
         self.apiClient = apiClient
         self.realtimeClient = realtimeClient
         self.diagnosticUpload = diagnosticUpload
+        self.cacheTimeProvider = cacheTimeProvider
         _interval = Published(initialValue: initialInterval)
         self.chartIndicatorSelectionStore = chartIndicatorSelectionStore
         self.chartIndicatorParametersStore = chartIndicatorParametersStore
@@ -114,6 +168,7 @@ final class MarketChartViewModel: ObservableObject {
         }
 
         startLoadDiagnostics()
+        hasRealtimeConnection = realtimeClient.state == .connected
         configureChartPipeline(for: interval)
         let events = realtimeClient.events(
             bufferingPolicy: .bufferingNewest(64)
@@ -138,6 +193,7 @@ final class MarketChartViewModel: ObservableObject {
                       let self else {
                     return
                 }
+                guard !self.isSuspendedForBackground else { continue }
                 self.refreshHistoryWhenIdle()
                 if let before = self.pendingHistoryBoundary, !self.isLoadingOlderHistory {
                     self.loadOlderHistory(before: before)
@@ -147,6 +203,10 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     func stop() {
+        invalidateIntervalCache()
+        cacheRestoreTask?.cancel()
+        cacheRestoreTask = nil
+        resetHistoryPresentationGate()
         finishLoadDiagnostics(outcome: "cancelled")
         realtimeTask?.cancel()
         realtimeTask = nil
@@ -168,6 +228,8 @@ final class MarketChartViewModel: ObservableObject {
         isLoading = false
         isLoadingOlderHistory = false
         chartRecoveryNeeded = false
+        hasRealtimeConnection = false
+        isSuspendedForBackground = false
         chartIndicatorUpdateTask?.cancel()
         chartIndicatorUpdateTask = nil
         pendingChartPriceUpdate = nil
@@ -182,16 +244,47 @@ final class MarketChartViewModel: ObservableObject {
         )
     }
 
+    func suspendForBackground() {
+        guard realtimeTask != nil, !isSuspendedForBackground else { return }
+        isSuspendedForBackground = true
+        invalidateIntervalCache()
+        cacheRestoreTask?.cancel()
+        cacheRestoreTask = nil
+        resetHistoryPresentationGate()
+        intervalTask?.cancel()
+        intervalTask = nil
+        historyRequestID = UUID()
+        historyRefreshPending = false
+        historyNoticeTask?.cancel()
+        historyNoticeTask = nil
+        historyPageTask?.cancel()
+        historyPageTask = nil
+        historyPageRequestID = UUID()
+        isLoadingOlderHistory = false
+    }
+
+    func resumeFromBackground() async {
+        guard realtimeTask != nil, isSuspendedForBackground else { return }
+        isSuspendedForBackground = false
+        // The socket may survive backgrounding. Always repair before publishing
+        // its queued events, even if it sends no new ready handshake.
+        await beginRealtimeEpoch()
+    }
+
     func selectInterval(_ interval: MarketKlineInterval) {
         guard self.interval != interval else {
             return
         }
+        let cached = takeCachedInterval(interval)
+        cacheCurrentIntervalIfVerified()
         self.interval = interval
         finishLoadDiagnostics(outcome: "superseded")
         startLoadDiagnostics()
-        configureChartPipeline(for: interval)
-        subscribe()
-        reload()
+        configureChartPipeline(for: interval, restoring: cached)
+        if cached == nil {
+            subscribe()
+            reload()
+        }
     }
 
     func isChartIndicatorActive(_ displayName: String) -> Bool {
@@ -245,6 +338,11 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     func reload() {
+        reloadHistory(limit: 1_500)
+    }
+
+    private func reloadHistory(limit: Int) {
+        guard !isSuspendedForBackground else { return }
         if chartPipeline == nil {
             configureChartPipeline(for: interval)
         }
@@ -252,21 +350,33 @@ final class MarketChartViewModel: ObservableObject {
         intervalTask?.cancel()
         let requestID = UUID()
         historyRequestID = requestID
+        isInstallingTailSnapshot = false
         historyRefreshPending = false
         let requestedInterval = interval
         let pipeline = chartPipeline
         let epoch = chartPipelineEpoch
         let sessionID = chartPipelineSessionID
+        let restore = cacheRestoreTask
+        activeHistoryLimit = limit
         intervalTask = Task { [weak self] in
             guard let self else { return }
+            await restore?.value
+            guard !Task.isCancelled, self.chartPipelineSessionID == sessionID,
+                  self.chartPipelineEpoch == epoch, self.historyRequestID == requestID else { return }
             var recoveryAttempt = 0
+            var requestLimit = limit
             while !Task.isCancelled {
+                if !self.pendingHistorySignals.isEmpty || self.chartRecoveryNeeded {
+                    requestLimit = 1_500
+                }
+                self.activeHistoryLimit = requestLimit
                 await self.loadHistory(
                     interval: requestedInterval,
                     pipeline: pipeline,
                     epoch: epoch,
                     sessionID: sessionID,
-                    requestID: requestID
+                    requestID: requestID,
+                    limit: requestLimit
                 )
                 guard !Task.isCancelled, self.historyRequestID == requestID,
                       self.chartPipelineSessionID == sessionID,
@@ -278,12 +388,18 @@ final class MarketChartViewModel: ObservableObject {
                 // A snapshot already in flight can satisfy a new recovery request.
                 // Only retry if the pipeline still needs repair after installing it.
                 self.chartRecoveryNeeded = !self.waitingForHistory
-                    && self.chartRecoveryNeeded && health?.recoveryRequest != nil
+                    && self.chartRecoveryNeeded && (requestLimit == 2 || health?.recoveryRequest != nil)
                 if self.historyRefreshPending {
                     self.historyRefreshPending = false
+                    requestLimit = 1_500
+                    continue
+                }
+                if !self.pendingHistorySignals.isEmpty, self.firstFrameGateToken == nil {
+                    requestLimit = 1_500
                     continue
                 }
                 if self.chartRecoveryNeeded {
+                    if requestLimit == 2 { requestLimit = 1_500; continue }
                     let delay = min(30, pow(2, Double(min(recoveryAttempt, 5))) * Double.random(in: 0.8...1.2))
                     recoveryAttempt += 1
                     do { try await Task.sleep(for: .seconds(delay)) }
@@ -291,6 +407,7 @@ final class MarketChartViewModel: ObservableObject {
                     continue
                 }
                 self.intervalTask = nil
+                self.activeHistoryLimit = nil
                 if self.historyPageAwaitingSnapshot,
                    self.chartDataFrame?.epoch == epoch {
                     self.historyPageAwaitingSnapshot = false
@@ -306,6 +423,7 @@ final class MarketChartViewModel: ObservableObject {
     // Ready notices and reconciliation must not restart a downloading snapshot.
     // Present that response first, then recover all overlapping notices in one read.
     private func refreshHistoryWhenIdle() {
+        guard !isSuspendedForBackground else { return }
         if intervalTask != nil {
             historyRefreshPending = true
         } else {
@@ -325,6 +443,7 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func loadOlderHistory(before beforeOpenTime: Int64) {
+        guard !isSuspendedForBackground else { return }
         guard let pipeline = chartPipeline, let epoch = chartPipelineEpoch else { return }
         guard !historyPageAwaitingSnapshot else { return }
         if historyPageTask != nil {
@@ -338,6 +457,7 @@ final class MarketChartViewModel: ObservableObject {
         let requestID = UUID()
         historyPageRequestID = requestID
         pendingHistoryBoundary = beforeOpenTime
+        let restore = cacheRestoreTask
         historyPageTask = Task { [weak self] in
             guard let self else {
                 return
@@ -354,6 +474,9 @@ final class MarketChartViewModel: ObservableObject {
                     }
                 }
             }
+            await restore?.value
+            guard !Task.isCancelled, self.chartPipelineSessionID == sessionID,
+                  self.chartPipelineEpoch == epoch, self.historyPageRequestID == requestID else { return }
             do {
                 let response = try await self.fetchHistory(
                     interval: requestedInterval, beforeOpenTime: beforeOpenTime, limit: pageLimit)
@@ -431,12 +554,18 @@ final class MarketChartViewModel: ObservableObject {
         pipeline: ChartDataPipeline?,
         epoch: KlineStreamEpoch?,
         sessionID: UUID,
-        requestID: UUID
+        requestID: UUID,
+        limit: Int
     ) async {
 #if DEBUG
         let snapshotStarted = Date.timeIntervalSinceReferenceDate
 #endif
         isLoading = candles.isEmpty
+        // Signals already observed before this request are covered by this new
+        // read. Signals arriving during it need the response's server watermark.
+        if limit == 1_500 { pendingHistorySignals = PendingHistorySignals() }
+        let requestDate = cacheTimeProvider()
+        let tailBaseRevision = limit == 2 ? chartDataFrame?.candles.revision : nil
         lastError = nil
         defer {
             if chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
@@ -449,14 +578,29 @@ final class MarketChartViewModel: ObservableObject {
             let response = try await fetchHistory(
                 interval: requestedInterval,
                 beforeOpenTime: nil,
-                limit: 1_500
+                limit: limit
             )
             guard !Task.isCancelled, interval == requestedInterval,
                   chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
                   historyRequestID == requestID else {
                 return
             }
-            waitingForHistory = response.historyPending == true
+            let verificationDate = cacheTimeProvider()
+            let responseBucket = cacheBucket(for: requestedInterval, at: verificationDate)
+            let serverBucketMatches = response.serverTime.map { serverTime in
+                serverTime > 0 && cacheBucket(for: requestedInterval,
+                    at: Date(timeIntervalSince1970: Double(serverTime) / 1_000)) == responseBucket
+            } ?? true
+            if limit == 1_500 {
+                waitingForHistory = response.historyPending == true
+                pendingHistorySignals.removeCovered(by: response.serverTime)
+            } else if response.historyPending == true || response.items.isEmpty || chartRecoveryNeeded
+                || cacheBucket(for: requestedInterval, at: requestDate) != responseBucket
+                || snapshotVerifiedBucket != responseBucket || !serverBucketMatches {
+                invalidateIntervalCache()
+                historyRefreshPending = true
+                return
+            }
             if response.items.isEmpty {
                 if response.historyPending == true {
                     return
@@ -467,20 +611,25 @@ final class MarketChartViewModel: ObservableObject {
             let sorted = response.items.sorted {
                 $0.openTime < $1.openTime
             }
-            hasMoreHistory = response.hasMoreHistory ?? (sorted.count == 1_500)
-            candles = Array(sorted.suffix(500))
+            if limit == 1_500 { hasMoreHistory = response.hasMoreHistory ?? (sorted.count == 1_500) }
             guard let pipeline, let epoch,
                   chartPipelineSessionID == sessionID else {
                 return
             }
             let loadedAt = currentTimeMilliseconds()
             loadDiagnostics?.record("snapshot_started", value: sorted.count)
+            if limit == 2 { isInstallingTailSnapshot = true }
             let result = await pipeline.installSnapshot(
                 sorted,
                 fetchedAtMilliseconds: loadedAt,
                 epoch: epoch,
-                preservingNewerData: true
+                preservingNewerData: true,
+                tailOnly: limit == 2,
+                tailBaseRevision: tailBaseRevision
             )
+            if chartPipelineSessionID == sessionID, historyRequestID == requestID {
+                isInstallingTailSnapshot = false
+            }
             guard !Task.isCancelled, chartPipelineSessionID == sessionID,
                   chartPipelineEpoch == epoch else {
                 return
@@ -495,9 +644,27 @@ final class MarketChartViewModel: ObservableObject {
                 sessionID: sessionID
             ) {
                 guard !Task.isCancelled, historyRequestID == requestID else { return }
+                if limit == 1_500 { candles = Array(sorted.suffix(500)) }
+                armHistoryPresentationGate()
                 chartDataFrame = frame
                 loadDiagnostics?.record("frame_ready")
                 upsertLiveTail(from: frame)
+                if limit == 1_500 {
+                    latestHistoryServerTime = response.serverTime
+                    pendingHistorySignals.removeCovered(by: response.serverTime)
+                }
+                let verifiedBucket = cacheBucket(for: requestedInterval, at: verificationDate)
+                if limit == 1_500, response.historyPending != true, response.statisticsPending != true,
+                   frame.recoveryRequest == nil,
+                   cacheBucket(for: requestedInterval, at: requestDate) == verifiedBucket,
+                   serverBucketMatches {
+                    snapshotVerifiedAt = verificationDate
+                    snapshotVerifiedBucket = verifiedBucket
+                } else if limit == 1_500 || response.statisticsPending == true {
+                    snapshotVerifiedAt = nil
+                    snapshotVerifiedBucket = nil
+                }
+                if limit == 1_500 { isUsingVerifiedIntervalCache = false }
 #if DEBUG
                 let elapsed = (Date.timeIntervalSinceReferenceDate - snapshotStarted) * 1000
                 Self.performanceLog.debug("chart_snapshot_ready symbol=\(self.market.symbol, privacy: .public) interval=\(requestedInterval.rawValue, privacy: .public) duration_ms=\(elapsed)")
@@ -521,6 +688,9 @@ final class MarketChartViewModel: ObservableObject {
                 return
             }
             waitingForHistory = false
+            snapshotVerifiedAt = nil
+            snapshotVerifiedBucket = nil
+            isUsingVerifiedIntervalCache = false
             lastError = "K线加载失败"
         }
     }
@@ -546,7 +716,7 @@ final class MarketChartViewModel: ObservableObject {
                 name: "beforeOpenTime",
                 value: String(beforeOpenTime)
             ))
-        } else {
+        } else if limit == 1_500 {
             let tradingData = chartIndicatorSelection
                 .requestedTradingDataSeries
                 .map(\.rawValue)
@@ -585,16 +755,34 @@ final class MarketChartViewModel: ObservableObject {
     func receive(
         _ message: RealtimeServerMessage
     ) async {
+        let receivingSession = chartPipelineSessionID
+        if let restore = cacheRestoreTask {
+            await restore.value
+            guard receivingSession == chartPipelineSessionID else { return }
+        }
         if message.type == "ready" {
             loadDiagnostics?.record("socket_ready")
-            await beginRealtimeEpoch()
+            guard !isSuspendedForBackground else { hasRealtimeConnection = true; return }
+            if hasRealtimeConnection {
+                await beginRealtimeEpoch()
+            } else {
+                // HTTP and the first handshake start together. That response
+                // already belongs to this connection; do not cancel its download.
+                hasRealtimeConnection = true
+            }
             return
         }
+        guard !isSuspendedForBackground else { return }
         if message.type == "ack", let ack = message.decodeData(as: RealtimeSubscriptionAcknowledgement.self),
            ack.subscriptions.contains(where: { $0.channel == "market.history"
                && ($0.filters["symbols"]?.contains(market.symbol) ?? false)
                && ($0.filters["intervals"]?.contains(interval.rawValue) ?? false) }) {
-            scheduleHistoryNoticeRefresh()
+            // A subscription acknowledgement is not a data-change event. A
+            // verified same-bucket cache already has complete closed history;
+            // cumulative OHLC resumes after the cache-restore barrier above.
+            if !canTrustActiveIntervalCache() {
+                scheduleHistoryNoticeRefresh(timestamp: message.timestamp, acknowledgement: true)
+            }
             return
         }
         guard message.type == "event" else {
@@ -604,11 +792,20 @@ final class MarketChartViewModel: ObservableObject {
         switch message.channel {
         case "market.history":
             guard let payload = message.decodeData(as: MarketHistoryReadyPayload.self),
-                  payload.symbol == market.symbol, payload.interval == interval.rawValue else { return }
+                  payload.symbol == market.symbol else { return }
+            if let changed = MarketKlineInterval(rawValue: payload.interval) {
+                intervalCache.removeValue(forKey: changed)
+            }
+            guard payload.interval == interval.rawValue else { return }
             if let before = payload.beforeOpenTime {
                 if pendingHistoryBoundary == before { loadOlderHistory(before: before) }
             } else {
-                scheduleHistoryNoticeRefresh()
+                if message.timestamp > 0, let watermark = latestHistoryServerTime,
+                   message.timestamp < watermark { return }
+                snapshotVerifiedAt = nil
+                snapshotVerifiedBucket = nil
+                isUsingVerifiedIntervalCache = false
+                scheduleHistoryNoticeRefresh(timestamp: message.timestamp)
             }
         case "market.kline":
             guard let payload = message.decodeData(
@@ -637,7 +834,6 @@ final class MarketChartViewModel: ObservableObject {
             guard isSelectedInterval else {
                 return
             }
-            upsert(payload.candle)
             await handleChartKline(
                 message: message,
                 payload: payload
@@ -657,22 +853,146 @@ final class MarketChartViewModel: ObservableObject {
         }
     }
 
-    private func scheduleHistoryNoticeRefresh() {
+    private func scheduleHistoryNoticeRefresh(timestamp: Int64, acknowledgement: Bool = false) {
         loadDiagnostics?.record("history_notice")
+        pendingHistorySignals.record(timestamp: timestamp, acknowledgement: acknowledgement)
+        pendingHistorySignals.removeCovered(by: latestHistoryServerTime)
+        guard !pendingHistorySignals.isEmpty else { return }
         guard historyNoticeTask == nil else { return }
         let sessionID = chartPipelineSessionID
+        let epoch = chartPipelineEpoch
         historyNoticeTask = Task { [weak self] in
             await Task.yield()
-            guard let self, !Task.isCancelled, self.chartPipelineSessionID == sessionID else { return }
+            guard let self, !Task.isCancelled, self.chartPipelineSessionID == sessionID,
+                  self.chartPipelineEpoch == epoch else { return }
             self.historyNoticeTask = nil
-            self.refreshHistoryWhenIdle()
+            self.refreshForHistorySignalsIfReady()
             if let before = self.pendingHistoryBoundary { self.loadOlderHistory(before: before) }
         }
     }
 
+    private func refreshForHistorySignalsIfReady() {
+        guard !isSuspendedForBackground, !pendingHistorySignals.isEmpty,
+              intervalTask == nil, cacheRestoreTask == nil, firstFrameGateToken == nil else { return }
+        reload()
+    }
+
+    private func armHistoryPresentationGate() {
+        guard !firstFrameGateWasReleased, firstFrameGateToken == nil,
+              let epoch = chartPipelineEpoch else { return }
+        let token = UUID(), sessionID = chartPipelineSessionID
+        firstFrameGateToken = token
+        firstFrameFallback = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+            guard let self, self.chartPipelineSessionID == sessionID,
+                  self.chartPipelineEpoch == epoch, self.firstFrameGateToken == token else { return }
+            self.releaseHistoryPresentationGate()
+        }
+    }
+
+    private func releaseHistoryPresentationGate() {
+        firstFrameFallback?.cancel()
+        firstFrameFallback = nil
+        firstFrameGateToken = nil
+        firstFrameGateWasReleased = true
+        refreshForHistorySignalsIfReady()
+    }
+
+    private func resetHistoryPresentationGate() {
+        historyNoticeTask?.cancel()
+        historyNoticeTask = nil
+        firstFrameFallback?.cancel()
+        firstFrameFallback = nil
+        firstFrameGateToken = nil
+        firstFrameGateWasReleased = false
+        pendingHistorySignals = PendingHistorySignals()
+        latestHistoryServerTime = nil
+    }
+
+    private func canTrustActiveIntervalCache() -> Bool {
+        guard isUsingVerifiedIntervalCache, !waitingForHistory, !chartRecoveryNeeded,
+              pendingHistorySignals.isEmpty, cachedTradingMode == NativeTradingMode.current,
+              let verified = snapshotVerifiedAt, let bucket = snapshotVerifiedBucket else { return false }
+        let now = cacheTimeProvider(), age = now.timeIntervalSince(verified)
+        return age >= 0 && age < 10 && bucket == cacheBucket(for: interval, at: now)
+    }
+
+    private func cacheBucket(for interval: MarketKlineInterval, at date: Date) -> Int64 {
+        let width = Int64(interval.duration * 1_000)
+        let time = Int64(date.timeIntervalSince1970 * 1_000)
+        let offset: Int64 = interval == .oneWeek ? 345_600_000 : 0
+        let remainder = ((time - offset) % width + width) % width
+        return time - remainder
+    }
+
+    private func cacheCurrentIntervalIfVerified() {
+        guard !isSuspendedForBackground, (intervalTask == nil || activeHistoryLimit == 2),
+              !isInstallingTailSnapshot,
+              historyPageTask == nil, !isLoadingOlderHistory, !historyPageAwaitingSnapshot,
+              pendingHistoryBoundary == nil, !historyRefreshPending, historyNoticeTask == nil,
+              pendingHistorySignals.isEmpty,
+              chartIndicatorUpdateTask == nil, cacheRestoreTask == nil,
+              !waitingForHistory, !chartRecoveryNeeded,
+              let pipeline = chartPipeline, let frame = chartDataFrame,
+              frame.epoch == chartPipelineEpoch, frame.stream.interval == interval.rawValue,
+              frame.stream.symbol == market.symbol.uppercased(), frame.recoveryRequest == nil,
+              let verifiedAt = snapshotVerifiedAt, let bucket = snapshotVerifiedBucket,
+              cacheTimeProvider().timeIntervalSince(verifiedAt) >= 0,
+              cacheTimeProvider().timeIntervalSince(verifiedAt) < 10,
+              cacheBucket(for: interval, at: cacheTimeProvider()) == bucket else { return }
+        if activeHistoryLimit == 2 {
+            intervalTask?.cancel()
+            intervalTask = nil
+            activeHistoryLimit = nil
+            historyRequestID = UUID()
+        }
+        cacheUseOrder &+= 1
+        intervalCache[interval] = CachedInterval(pipeline: pipeline, frame: frame,
+            candles: candles, hasMoreHistory: hasMoreHistory, verifiedAt: verifiedAt,
+            bucketOpenTime: bucket, selection: chartIndicatorSelection,
+            parameters: chartIndicatorParameters, tradingMode: NativeTradingMode.current,
+            useOrder: cacheUseOrder)
+        while intervalCache.count > 3,
+              let oldest = intervalCache.min(by: { $0.value.useOrder < $1.value.useOrder })?.key {
+            intervalCache.removeValue(forKey: oldest)
+        }
+    }
+
+    private func takeCachedInterval(_ requested: MarketKlineInterval) -> CachedInterval? {
+        let now = cacheTimeProvider()
+        intervalCache = intervalCache.filter { key, cached in
+            let age = now.timeIntervalSince(cached.verifiedAt)
+            return age >= 0 && age < 10 && cached.bucketOpenTime == cacheBucket(for: key, at: now)
+                && cached.selection == chartIndicatorSelection && cached.parameters == chartIndicatorParameters
+                && cached.tradingMode == NativeTradingMode.current
+        }
+        return intervalCache.removeValue(forKey: requested)
+    }
+
+    private func invalidateIntervalCache() {
+        intervalCache.removeAll()
+        snapshotVerifiedAt = nil
+        snapshotVerifiedBucket = nil
+        isUsingVerifiedIntervalCache = false
+        cachedTradingMode = nil
+    }
+
     private func configureChartPipeline(
-        for interval: MarketKlineInterval
+        for interval: MarketKlineInterval,
+        restoring cached: CachedInterval? = nil
     ) {
+        resetHistoryPresentationGate()
+        cacheRestoreTask?.cancel()
+        cacheRestoreTask = nil
+        intervalTask?.cancel()
+        intervalTask = nil
+        activeHistoryLimit = nil
+        isInstallingTailSnapshot = false
+        historyRequestID = UUID()
+        snapshotVerifiedAt = nil
+        snapshotVerifiedBucket = nil
+        isUsingVerifiedIntervalCache = false
+        cachedTradingMode = nil
         historyNoticeTask?.cancel()
         historyNoticeTask = nil
         pendingHistoryBoundary = nil
@@ -694,6 +1014,52 @@ final class MarketChartViewModel: ObservableObject {
         let epoch = KlineStreamEpoch(
             generation: chartPipelineGeneration
         )
+        if let cached {
+            chartPipeline = cached.pipeline
+            chartPipelineEpoch = epoch
+            snapshotVerifiedAt = cached.verifiedAt
+            snapshotVerifiedBucket = cached.bucketOpenTime
+            isUsingVerifiedIntervalCache = true
+            cachedTradingMode = cached.tradingMode
+            candles = cached.candles
+            hasMoreHistory = cached.hasMoreHistory
+            isLoading = false
+            lastError = nil
+            chartDataFrame = ChartDataFrame(stream: cached.frame.stream, epoch: epoch,
+                candles: cached.frame.candles, indicators: cached.frame.indicators,
+                recoveryRequest: nil, readyTime: ProcessInfo.processInfo.systemUptime)
+            // Existing stage names remain compatible with deployed diagnostics.
+            loadDiagnostics?.record("snapshot_installed", value: 0)
+            loadDiagnostics?.record("frame_ready", value: 1)
+            armHistoryPresentationGate()
+            let sessionID = chartPipelineSessionID
+            cacheRestoreTask = Task { [weak self] in
+                let frame = await cached.pipeline.resumeCachedEpoch(epoch,
+                    from: cached.frame.epoch, bucketOpenTime: cached.bucketOpenTime)
+                guard let self, !Task.isCancelled,
+                      self.chartPipelineSessionID == sessionID,
+                      self.chartPipelineEpoch == epoch else { return }
+                self.cacheRestoreTask = nil
+                guard let frame else {
+                    self.invalidateIntervalCache()
+                    self.configureChartPipeline(for: interval)
+                    self.subscribe()
+                    self.reload()
+                    return
+                }
+                self.chartDataFrame = frame
+                if let price = self.realtimePrice, let eventTime = self.latestPriceEventTime,
+                   self.cacheBucket(for: interval,
+                       at: Date(timeIntervalSince1970: Double(eventTime) / 1_000)) == cached.bucketOpenTime {
+                    await self.applyChartPriceUpdate(price: price, eventTime: eventTime)
+                }
+                guard !Task.isCancelled, self.chartPipelineSessionID == sessionID,
+                      self.chartPipelineEpoch == epoch else { return }
+                self.subscribe()
+                if self.intervalTask == nil { self.reloadHistory(limit: 2) }
+            }
+            return
+        }
         let durationMilliseconds =
             interval.duration * 1_000
         guard durationMilliseconds.isFinite,
@@ -722,6 +1088,8 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func applyChartIndicatorConfiguration() {
+        let restore = cacheRestoreTask
+        invalidateIntervalCache()
         guard let pipeline = chartPipeline,
               let epoch = chartPipelineEpoch else {
             return
@@ -733,6 +1101,8 @@ final class MarketChartViewModel: ObservableObject {
         let sessionID = chartPipelineSessionID
         chartIndicatorUpdateTask?.cancel()
         chartIndicatorUpdateTask = Task { [weak self] in
+            await restore?.value
+            guard !Task.isCancelled else { return }
             let result = await pipeline.updateIndicatorConfiguration(
                 selection: selection,
                 parameters: parameters,
@@ -744,7 +1114,8 @@ final class MarketChartViewModel: ObservableObject {
                   self.chartPipelineEpoch == epoch,
                   self.chartIndicatorConfigurationRevision == revision,
                   self.chartIndicatorSelection == selection,
-                  self.chartIndicatorParameters == parameters else {
+                  self.chartIndicatorParameters == parameters,
+                  !self.isSuspendedForBackground else {
                 return
             }
             self.chartIndicatorUpdateTask = nil
@@ -764,6 +1135,10 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func beginRealtimeEpoch() async {
+        invalidateIntervalCache()
+        cacheRestoreTask?.cancel()
+        cacheRestoreTask = nil
+        resetHistoryPresentationGate()
         loadDiagnostics?.record("epoch_changed")
         guard let pipeline = chartPipeline else {
             return
@@ -785,7 +1160,7 @@ final class MarketChartViewModel: ObservableObject {
         let sessionID = chartPipelineSessionID
         _ = await pipeline.beginEpoch(epoch)
         guard chartPipelineSessionID == sessionID,
-              chartPipelineEpoch == epoch else {
+              chartPipelineEpoch == epoch, !isSuspendedForBackground else {
             return
         }
         reload()
@@ -815,7 +1190,7 @@ final class MarketChartViewModel: ObservableObject {
             epoch: epoch
         )
         guard chartPipelineSessionID == sessionID,
-              chartPipelineEpoch == epoch else {
+              chartPipelineEpoch == epoch, !isSuspendedForBackground else {
             return
         }
         scheduleChartRecoveryIfNeeded(
@@ -827,11 +1202,12 @@ final class MarketChartViewModel: ObservableObject {
         if result.shouldDrain {
             let drained = await pipeline.drain()
             guard chartPipelineSessionID == sessionID,
-                  chartPipelineEpoch == epoch else {
+                  chartPipelineEpoch == epoch, !isSuspendedForBackground else {
                 return
             }
             if let frame = drained.frame {
                 chartDataFrame = frame
+                upsert(payload.candle)
             }
             scheduleChartRecoveryIfNeeded(
                 drained.recoveryRequest,
@@ -843,12 +1219,15 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func handleRealtimeBufferDrop() {
+        let restore = cacheRestoreTask
+        invalidateIntervalCache()
         guard let pipeline = chartPipeline,
               let epoch = chartPipelineEpoch else {
             return
         }
         let sessionID = chartPipelineSessionID
         Task { [weak self] in
+            await restore?.value
             let request =
                 await pipeline.markUpstreamBufferDropped()
             guard let self,
@@ -879,8 +1258,10 @@ final class MarketChartViewModel: ObservableObject {
                 == interval.rawValue else {
             return
         }
-        guard chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
+        guard !isSuspendedForBackground,
+              chartPipelineSessionID == sessionID, chartPipelineEpoch == epoch,
               chartPipeline === pipeline, !waitingForHistory else { return }
+        invalidateIntervalCache()
         chartRecoveryNeeded = true
         loadDiagnostics?.record("recovery_requested")
         if intervalTask == nil { reload() }
@@ -900,6 +1281,7 @@ final class MarketChartViewModel: ObservableObject {
 
     func chartFirstFramePresented(epoch: KlineStreamEpoch, at time: TimeInterval) {
         guard chartPipelineEpoch == epoch, chartDataFrame?.epoch == epoch else { return }
+        releaseHistoryPresentationGate()
         finishLoadDiagnostics(outcome: "displayed", presentedAt: time)
     }
 
@@ -975,9 +1357,9 @@ final class MarketChartViewModel: ObservableObject {
         guard interval != .oneMinute else {
             return
         }
-        guard chartDataFrame != nil,
-              let pipeline = chartPipeline,
-              let epoch = chartPipelineEpoch else {
+        guard let pipeline = chartPipeline,
+              let epoch = chartPipelineEpoch,
+              chartDataFrame?.epoch == epoch else {
             pendingChartPriceUpdate = MarketChartPriceUpdate(
                 price: price,
                 eventTime: eventTime
@@ -991,12 +1373,14 @@ final class MarketChartViewModel: ObservableObject {
             epoch: epoch
         )
         guard chartPipelineSessionID == sessionID,
-              chartPipelineEpoch == epoch else {
+              chartPipelineEpoch == epoch, !isSuspendedForBackground else {
             return
         }
         if let frame = result.frame {
             chartDataFrame = frame
             upsertLiveTail(from: frame)
+        } else if result.recoveryRequest != nil {
+            pendingChartPriceUpdate = MarketChartPriceUpdate(price: price, eventTime: eventTime)
         }
     }
 

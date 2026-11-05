@@ -2,7 +2,7 @@ import SwiftUI
 
 struct KlineChartRepresentable: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
-    let renderState: RenderState
+    let renderState: RenderState?
     let timelineViewport: ChartTimelineViewport
     let priceViewport: ChartPriceViewport
     let totalSlotCount: Int
@@ -12,7 +12,8 @@ struct KlineChartRepresentable: UIViewRepresentable {
     var candleMarkers: [ChartCandleMarker] = []
     var candleMarkerExclusions: [CGRect] = []
     var axisPriceLabels: [ChartAxisPriceLabel] = []
-    var onFirstFramePresented: (TimeInterval) -> Void = { _ in }
+    var presentationID: ChartPresentationID? = nil
+    var onFirstFramePresented: (ChartPresentationID, TimeInterval) -> Void = { _, _ in }
     var onCrosshairSelection: (ChartCrosshairSelection) -> Void = { _ in }
     var onCrosshairDismiss: () -> Void = {}
 
@@ -27,8 +28,12 @@ struct KlineChartRepresentable: UIViewRepresentable {
         context: Context
     ) {
         view.setAppearance(colorScheme == .light ? .light : .dark)
+        view.observeFirstPresentation(for: presentationID, onFirstFramePresented)
+        guard let renderState else {
+            view.setLoadingPresentation(true)
+            return
+        }
         view.setCandleMarkers(candleMarkers, exclusions: candleMarkerExclusions)
-        view.observeFirstPresentation(onFirstFramePresented)
         view.onCrosshairSelection = onCrosshairSelection
         view.onCrosshairDismiss = onCrosshairDismiss
         view.configureTimelineInteraction(
@@ -42,6 +47,8 @@ struct KlineChartRepresentable: UIViewRepresentable {
             onChange: onPriceViewportChange
         )
         view.submit(renderState.withAxisPriceLabels(axisPriceLabels))
+        // Install the new mailbox state before drawing is resumed.
+        view.setLoadingPresentation(false)
     }
 
     static func dismantleUIView(

@@ -38,6 +38,8 @@ def generate(destination, view_source=None):
     profit = profit.replace("valuation?.profit", "profit").replace("$0.profit", "$0").replace("valuation", "profit")
     fixture = re.sub(r"^  private func cardFee[^\n]+$", lambda _: "  private func cardFee(_ row: JSONValue, price: Decimal? = nil) -> String { " + fee + " }", fixture, flags=re.M)
     fixture = re.sub(r"^  private func cardProfit[^\n]+$", lambda _: "  private func cardProfit(_ profit: Decimal?) -> String { " + profit + " }", fixture, flags=re.M)
+    warning = re.search(r'if !(.*?)\.isEmpty \{\n\s*Text\(', card).group(1)
+    fixture = re.sub(r"^  private func cardStrategyError[^\n]+$", lambda _: "  private func cardStrategyError(_ row: JSONValue) -> String { " + warning + " }", fixture, flags=re.M)
     (tests / "PositionFeeTests.swift").write_text(fixture)
     (destination / "Package.swift").write_text(
         '// swift-tools-version: 6.0\nimport PackageDescription\n'

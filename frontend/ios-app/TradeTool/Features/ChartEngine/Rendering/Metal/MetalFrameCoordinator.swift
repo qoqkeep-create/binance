@@ -117,6 +117,10 @@ final class MetalFrameCoordinator: NSObject, MTKViewDelegate {
     }
 
 #if DEBUG
+    var diagnosticRendererIdentity: ObjectIdentifier? {
+        renderer.map(ObjectIdentifier.init)
+    }
+
     var diagnosticIsStopped: Bool {
         isStopped
     }

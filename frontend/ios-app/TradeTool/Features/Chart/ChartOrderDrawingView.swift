@@ -402,7 +402,7 @@ struct ChartOrderDrawingOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                riskArea(canvasRight: projection.plotRight)
+                riskArea(canvasRight: proxy.size.width)
 
                 if let entryPrice = drawing.entryPrice {
                     orderLine(

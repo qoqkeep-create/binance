@@ -44,6 +44,15 @@ enum PositionEntryFeePresentation {
 }
 
 enum PositionCardPresentation {
+  static func strategyErrorText(_ row: JSONValue) -> String {
+    let message = row.value("latest_strategy_error", fallback: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    // Older responses can put a successful binding audit entry in this field.
+    // Keep it in the execution log, without repeating it as a card warning.
+    let prefixes = ["开仓绑定策略", "限价成交绑定策略"]
+    if prefixes.contains(where: { message.hasPrefix($0 + "：") || message.hasPrefix($0 + ":") }) { return "" }
+    return message
+  }
+
   static func feeText(_ row: JSONValue, currentPrice: Decimal? = nil) -> String {
     let entry = PositionEntryFeePresentation.text(row, abbreviatedUnit: true)
     guard let total = estimatedTotalFee(row, currentPrice: currentPrice) else {
@@ -674,11 +683,16 @@ struct USDTPositionsView: View {
   @Environment(\.scenePhase) private var scenePhase
   @AppStorage(FloatingPositionsPreferences.enabledKey, store: FloatingPositionsPreferences.defaults)
   private var floatingPositions = false
-  @StateObject private var model = USDTPageModel()
+  @StateObject private var limitsModel = USDTPageModel()
+  @StateObject private var historyModel = USDTPageModel()
+  @StateObject private var margin = PositionMarginModel()
+  @State private var marginDetails = false
+  private var model: USDTPageModel { segment == "limits" ? limitsModel : historyModel }
   private var liveQuotes: PositionLiveQuotes { store.positionQuotes }
   private var snapshots: FloatingPositionsModel { store.positionSnapshots }
   private var rows: [JSONValue] {
-    segment == "positions" ? (snapshots.scope == store.scope ? snapshots.rows : []) : model.items
+    segment == "positions" ? (snapshots.scope == store.scope ? snapshots.rows : [])
+      : (modelScope == store.scope ? model.items : [])
   }
   private var loading: Bool { segment == "positions" ? snapshots.loading : model.loading }
   private var refreshing: Bool { segment != "positions" && model.refreshing }
@@ -714,9 +728,13 @@ struct USDTPositionsView: View {
     VStack(spacing: 0) {
       HStack(spacing: 4) {
         WebTabs(
-          tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment)
+          tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment, compact: true)
           .frame(maxWidth: 248).frame(height: 44)
         Spacer(minLength: 0)
+        PositionMarginBadge(model: margin, scope: store.scope) {
+          marginDetails = true
+          Task { await margin.refresh(store) }
+        }
         Button { liveActivity.toggle(store: store, container: container) } label: {
           VStack(spacing: 1) {
             if liveActivity.isStarting || liveActivity.isRegistering {
@@ -806,7 +824,15 @@ struct USDTPositionsView: View {
           }
         }.frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
           .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-      }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
+          .background {
+            PositionPageSwipeObserver { horizontal, vertical in
+              guard isVisible, scenePhase == .active, !chart,
+                let next = PositionPageSwipe.destination(from: segment,
+                  horizontal: horizontal, vertical: vertical) else { return }
+              segment = next
+            }
+          }
+      }.id(segment).scrollIndicators(.hidden).scrollBounceBehavior(.always)
         .accessibilityIdentifier("positions.list")
         .webRefreshable {
           let scope = store.scope
@@ -818,11 +844,21 @@ struct USDTPositionsView: View {
             await store.refresh()
             guard scope == store.scope, refreshSegment == segment, refreshFilter == filter else { return }
             model.page = 1
+            async let marginRefresh: Void = margin.refresh(store)
             await reload()
+            await marginRefresh
           }.value
         }
       }
     }.usdtPage("持仓")
+      .task(id: "margin:\(store.scope):\(store.isBound):\(isVisible):\(scenePhase):\(chart)") {
+        guard isVisible, scenePhase == .active, !chart, store.isBound else {
+          margin.suspend()
+          return
+        }
+        await margin.monitor(store)
+      }
+      .webModal(isPresented: $marginDetails, motion: .fade) { PositionMarginDetails(model: margin) }
       .task(id: "quotes:\(store.scope):\(store.isBound):\(positionSymbols.joined(separator: ","))") {
         guard store.isBound else {
           dashboard.trackPositionTickerSymbols([], owner: "positions")
@@ -851,8 +887,10 @@ struct USDTPositionsView: View {
         }
       }
       .task(id: "\(store.scope):\(segment):\(filter):\(store.isBound):\(isVisible):\(scenePhase)") {
-        if modelScope != store.scope { model.reset(); modelScope = store.scope; notice = "" }
-        guard store.isBound else { model.reset(); return }
+        if modelScope != store.scope {
+          limitsModel.reset(); historyModel.reset(); modelScope = store.scope; notice = ""
+        }
+        guard store.isBound else { limitsModel.reset(); historyModel.reset(); return }
         guard isVisible, scenePhase == .active, !chart else { return }
         model.page = 1
         let scope = store.scope
@@ -865,6 +903,7 @@ struct USDTPositionsView: View {
         }.value
       }
       .onChange(of: store.liveRevision) { _, _ in
+        if isVisible, scenePhase == .active, !chart { Task { await margin.refresh(store) } }
         if isVisible, scenePhase == .active, !chart, segment != "history" {
           model.page = 1
           Task { await reload() }
@@ -892,13 +931,16 @@ struct USDTPositionsView: View {
         }
       }
       .webModal(item: $operation,
-        motion: operation?.action == "strategy" && operation?.position.value("strategy_status") != "1" ? .slide : .fade
+        motion: .positionOperation(action: operation?.action,
+          strategyRunning: operation?.position.value("strategy_status") == "1")
       ) { operation in
         USDTPositionControls(position: operation.position, action: operation.action) {
           completePositionOperation($0)
         }.presentationBackground(.clear)
       }
-      .onChange(of: store.scope) { _, _ in operation = nil }
+      .onChange(of: store.scope) { _, _ in
+        operation = nil; marginDetails = false
+      }
       .navigationDestination(isPresented: $chart) {
           MarketChartView(
             market: MarketSnapshot(
@@ -1072,8 +1114,8 @@ struct USDTPositionsView: View {
               row.value("created_at", fallback: row.value("opened_at")),
               format: "yyyy-MM-dd HH:mm:ss")
         ).font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-        if !row.value("latest_strategy_error", fallback: "").isEmpty {
-          Text(row.value("latest_strategy_error")).font(.system(size: 14)).foregroundStyle(
+        if !PositionCardPresentation.strategyErrorText(row).isEmpty {
+          Text(PositionCardPresentation.strategyErrorText(row)).font(.system(size: 14)).foregroundStyle(
             WebTheme.brand
           ).padding(12).background(
             WebTheme.brand.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))

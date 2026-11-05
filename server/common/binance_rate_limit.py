@@ -62,6 +62,8 @@ _READ_ONLY_POST_PATHS = frozenset({
 _EXACT_PATH_WEIGHTS = {
     "/api/v3/account": 20,
     "/fapi/v3/balance": 5,
+    "/fapi/v2/account": 5,
+    "/fapi/v1/accountConfig": 5,
     "/sapi/v1/pay/transactions": 3000,
 }
 

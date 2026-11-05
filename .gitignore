@@ -26,6 +26,7 @@ server/db.sqlite3
 
 # Xcode
 DerivedData/
+.build/
 build/
 *.xcresult/
 xcuserdata/

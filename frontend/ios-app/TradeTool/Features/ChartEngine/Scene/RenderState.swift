@@ -143,7 +143,13 @@ final class InteractionSnapshot: @unchecked Sendable {
     }
 }
 
+struct ChartPresentationID: Hashable, Sendable {
+    let stream: ChartStreamKey
+    let epoch: KlineStreamEpoch
+}
+
 struct RenderState: Sendable {
+    let presentationID: ChartPresentationID?
     let appearance: ChartAppearance
     let axisPriceLabels: [ChartAxisPriceLabel]
     let staticScene: StaticSceneSnapshot
@@ -159,9 +165,11 @@ struct RenderState: Sendable {
         invalidation: ChartInvalidation,
         appearance: ChartAppearance = .dark,
         axisPriceLabels: [ChartAxisPriceLabel] = [],
+        presentationID: ChartPresentationID? = nil,
         readyTime: TimeInterval =
             ProcessInfo.processInfo.systemUptime
     ) {
+        self.presentationID = presentationID
         self.appearance = appearance
         self.axisPriceLabels = axisPriceLabels
         self.staticScene = staticScene
@@ -179,6 +187,7 @@ struct RenderState: Sendable {
             invalidation: invalidation,
             appearance: appearance,
             axisPriceLabels: axisPriceLabels,
+            presentationID: presentationID,
             readyTime: readyTime
         )
     }
@@ -191,8 +200,15 @@ struct RenderState: Sendable {
             invalidation: invalidation,
             appearance: appearance,
             axisPriceLabels: labels,
+            presentationID: presentationID,
             readyTime: readyTime
         )
+    }
+
+    func withPresentationID(_ id: ChartPresentationID?) -> RenderState {
+        RenderState(staticScene: staticScene, liveTail: liveTail, interaction: interaction,
+            invalidation: invalidation, appearance: appearance, axisPriceLabels: axisPriceLabels,
+            presentationID: id, readyTime: readyTime)
     }
 
     var revision: UInt64 {

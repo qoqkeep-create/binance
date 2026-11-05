@@ -448,6 +448,7 @@ final class MetalRenderer {
         let liveRevision = state.liveTail.revision
         let liveReadyTime = state.liveTail.readyTime
         let readyTime = state.readyTime
+        let presentationID = state.presentationID
         let submittedTime =
             ProcessInfo.processInfo.systemUptime
         let submissionContext = health.recordSubmitted()
@@ -464,7 +465,8 @@ final class MetalRenderer {
                 presentedTime: drawable.presentedTime,
                 readyTime: readyTime,
                 submittedTime: submittedTime,
-                submissionContext: submissionContext
+                submissionContext: submissionContext,
+                presentationID: presentationID
             )
         }
 #endif
@@ -492,7 +494,8 @@ final class MetalRenderer {
                         ProcessInfo.processInfo.systemUptime,
                     readyTime: readyTime,
                     submittedTime: submittedTime,
-                    submissionContext: submissionContext
+                    submissionContext: submissionContext,
+                    presentationID: presentationID
                 )
             }
 #endif

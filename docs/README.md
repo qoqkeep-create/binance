@@ -19,7 +19,7 @@
 | [行情与图表](market-data.md) | 采集、分页、推送、Metal、加载诊断与排障 |
 | [K 线首屏交接原稿](plans/2026-11-01-ios-kline-first-frame-handoff.md) | 保留用户原始材料；执行结果已归入行情、开发、运维与变更主文档 |
 | [交易安全](trading-safety.md) | 幂等、保护、结算和测试边界 |
-| [资金](capital-and-transfers.md) | 归集状态机与历史归属 |
+| [资金](capital-and-transfers.md) | 归集状态机、历史归属与保证金率 |
 | [带单模式](lead-trading.md) | 模式身份、能力和开放边界 |
 | [信号与通知](signals-and-notifications.md) | 入库、事件和独立投递 |
 | [计划、校验与研究退役](research.md) | 已移除页面与接口、内部扫描、历史资料与数据库兼容 |

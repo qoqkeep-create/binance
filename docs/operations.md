@@ -2,6 +2,77 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。
 
+## 周期切换只读测量（2026-11-05）
+
+22:03:39（北京时间）最后通过已有 SSH 认证，在 **47.80.22.243（首尔服务器）** 的 API 容器只读取得最近 50 份公共图表诊断。报告均为 Build 44，接收区间 20:00:06–22:02:03；此时 release 仍为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`，限定来源 `limited-entry-ema-retirement`／`15b4784c70433233c34cb5c6c738cb1a9b92848b`，基线为 `integrated-20261103-position-live-activity-3a1a95e914ba`。没有据 GitHub 最新源码推定线上版本。
+
+数据库会话显式 `SET SESSION TRANSACTION READ ONLY`，除诊断外只查询四组公共历史各 1500 根并在同一会话紧接复读，测量 Python 转换与压缩；Redis 只用 GET／ZSET 查询缓存容量、窗口键和 revision。没有调用会排补线任务／写缓存的 `load_history` 或历史 HTTP 接口，没有清缓存、注入生产计时日志、修改服务／数据库／网络配置、重启或部署，也没有交易所请求、交易／资金／保护单操作。
+
+受限原始诊断、脱敏汇总、SQL／Redis 测量与复现脚本保存在本机忽略目录 `.integration-runtime/ChartIntervalLatencyNov5/`，目录 0700、文件 0600。`reports-50.ndjson`／`reports-summary.json` 为报告证据，`history-cost-summary.json` 为已得成本样本；只读脚本为 `read_production_reports.py`／`read_production_history_cost.py`。查询仍可能占用数据库资源，未使用压力测试，也未反复清缓存制造冷启动。业务结论、缓存优先级的本地修复与待验证范围统一见 [行情](market-data.md#周期切换耗时与十字线百分比2026-11-05)，测试见 [开发](development.md#周期切换排查与百分比回归2026-11-05本地)。源码及文档保留本地，未提交／推送或上传新包；本次查询不构成修复后线上验收。
+
+## 公网访问边界与安全核验（2026-11-05）
+
+2026-11-05 13:54～14:00（北京时间）从本机对 **47.80.22.243（首尔服务器）** 做低频 TCP 探测、匿名 HTTP GET／一次 WSS 握手，并审阅本地部署、认证和资源使用代码。用户明确说明已在云后台关闭 22，目的为测试 Codex 是否仍可接入；22 的连接超时符合该设置，不能当作 SSH 服务故障。没有取得 SSH 会话，也没有核验宿主实时配置、线上镜像源码或全部云防火墙规则。
+
+| 检查 | 本次实际结果 |
+| --- | --- |
+| 公网端口抽查 | 80／443 可连接；22、3306、33060、6379、8787、2375、2376、8443、3000、8000、9000 超时，8080 拒绝连接。仅代表本机到该 IPv4、该时点和所列端口的观测，不是全端口、IPv6 或其他来源的验证 |
+| HTTPS 深度健康 | `/integrated/v1/health` 连续三次 200，约 403／430／456 ms，证书校验通过；14:00 复查仍 200，database／migrations／scheduler 全部 true。不能据此声称本轮查过六个容器或数据库内容 |
+| 业务认证 | 匿名访问 `/integrated/api/auth/me`、`/integrated/api/commands`、账户 info、持仓 list、API 绑定 info、策略 list 均 401；`/integrated/ws/v1` 匿名握手 403。未携带用户会话或查询他人对象 |
+| 消息与配置文件 | TradingView pending 在未配置消息凭证时返回 503，不开放读取；根路径和 `/integrated/` 下的 `.env`、`.git/HEAD` 抽查均 404 |
+| 管理与注册入口 | `/integrated/admin/login/` 匿名 200，为 Django 登录页；`/integrated/v1/auth/admin-settings` 返回 `open_registration=true`、匿名 `is_admin=false`。看到登录页或注册开放不等于绕过权限 |
+
+本轮未发现已证实的匿名任意数据库读写或远程命令执行入口；代码审阅确认以下待加固项，影响条件与线上验证必须分开：
+
+| 优先级 | 代码与公网证据 | 风险和建议（均未实施） |
+| --- | --- | --- |
+| 优先 | `riskon/urls.py` 挂载标准 Django admin，公网登录页可达；`users/views.py` 的登录失败锁定只包围应用 LoginView，未包围 admin | 后台增加了独立的密码攻击面。建议不用时在入口封闭，用时限制 VPN／允许来源并配置独立登录防护；应用 `is_admin` 与 Django `is_staff` 是不同权限，不能据应用管理员身份推定可进入后台 |
+| 优先 | `common/health.py` 每次匿名 GET 都执行 `SELECT 1`、实例化 `MigrationExecutor` 并查 Redis；本地 Nginx 模板未定义 `limit_req`／`limit_conn` | 请求可反复消耗 API、MySQL 与 Redis 资源，可能影响业务可用性。建议公网仅返回轻量或短时缓存状态，将完整深度检查限制在内部，并在代理层分路径限速／限并发。没有压测复现故障；线上全局 Nginx／WAF 保护尚未核实 |
+| 需加固 | 注册已按既有业务要求开放；代码有每 IP 注册限制，默认 10 次／小时，创建账户前未验证邮箱。默认 REST 配置无通用请求限流；策略新增无用户总量上限、列表无分页；WSS 有消息／队列／超时边界但无每账户连接数上限 | 注册开放本身属于当前功能。新账户可使用其获授权的数据库写入和行情订阅；若被滥用，可能累积数据或占用共享资源。建议补邮箱所有权校验、每账户写入及连接配额、列表分页和入口防护；保留既有用户／模式／绑定隔离。不推定新账户能访问他人数据，也未创建测试账户或写入策略／命令 |
+
+依据：[Django 官方安全说明](https://docs.djangoproject.com/en/5.2/topics/security/#additional-security-topics)明确标准认证不自带登录请求节流；[Nginx 请求限速模块](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html)用于入口速率限制；[DRF 节流说明](https://www.django-rest-framework.org/api-guide/throttling/)指出应用节流不能单独承担暴力破解／DoS 防护。关闭 SSH 只缩小主机管理入口，正常开放的 HTTPS 仍能触发应用及其数据库访问；不能把端口关闭当作完整安全审计。
+
+本轮没有登录尝试、注册、写入探测、压力测试、生产交易／资金／保护单动作或配置修改。本轮仅更新文档，未提交、推送或部署。依赖／宿主补丁、实际数据库权限、备份隔离及云控制台／CI 等管理入口不在本次在线验证范围；后续应通过受控云控制台或既有授权管理通道核验，无需为本次结论重新开放公网 SSH。
+
+### 连通性复测（14:05～14:07）
+
+2026-11-05 14:05～14:07（北京时间）按用户要求重新测试 **47.80.22.243（首尔服务器）**：22／80／443 均可建立 TCP 连接，22 建连约 135 ms。默认 SSH 身份被拒绝；随后使用本机已有项目专用密钥，在严格主机指纹校验与非交互模式下认证成功，远端只执行 `id -un`，返回 `root`、退出码 0。说明本机在此时可以通过既有授权密钥取得 root SSH 会话，不是匿名访问或认证绕过；未修改密钥、主机信任或服务器配置。
+
+HTTPS `/integrated/v1/health` 连续三次返回 200，总耗时约 461／263／1338 ms，证书校验均通过，database／migrations／scheduler 全部 true。上方 22 阻断、未取得 SSH 的结论仅适用于 13:54～14:00；最新连通性以上述复测为准。本次未重查其他端口、全局防火墙、容器、数据库内容或安全加固状态，没有运行交易／资金／保护单动作、重启或部署；仅补记文档，未提交推送。
+
+## 强平与费用只读对账（2026-11-05）
+
+21:49（北京时间）最后按用户授权，在 **47.80.22.243（首尔服务器）** 现有 API 容器查询指定账户的两笔近期平仓。数据库会话显式设置 `SET SESSION TRANSACTION READ ONLY`；只读匹配订单后，核对现有绑定的 Key 指纹，凭证仅在进程内解密，不使用会迁移旧密文／写绑定健康状态的通用凭证读取器。交易所请求限制为 GET 白名单，使用现有预算机制读取 `account`、`income`、`userTrades`、`forceOrders` 和 `leverageBracket`；没有调用会补写结算的普通仓位历史接口。
+
+订单身份、成交数量、已实现盈亏、独立清算费和当前余额核对通过，确认历史净盈亏漏计清算费；当前档位只用于近似复算维持保证金，不代替历史标记价快照。业务结论及待修复边界统一见 [资金文档](capital-and-transfers.md#强平清算费用与历史净盈亏2026-11-05线上只读核验)。受限产物位于本机忽略目录 `.integration-runtime/LiquidationReviewNov5/`（目录 0700，原始结果及对账 JSON 为 0600）；其中真实账户交易资料不进入项目文档或版本控制。未修改数据库业务数据、交易／资金／保护单状态或服务配置，没有重启、部署、迁移或测试造仓；文档保留本地，未提交推送。
+
+22:06（北京时间）经 **47.80.22.243（首尔服务器）** 现有 API 容器补查一次未签名的公开 GET `exchangeInfo`，仅输出目标合约的公开参数。结合既有私密对账产物，复算清算费的名义价值基数、独立费率和剩余保证金上限，结果相符；未再次读取私有账单、写业务数据或执行交易。计算结果保存在同一受限目录的 `clearance-calculation.json`，查询时费率不能冒充事发时历史快照。
+
+## 重启恢复与开机自启（2026-11-05）
+
+2026-11-05 12:59（北京时间）最后核验 **47.80.22.243（首尔服务器）** 六个整合容器均 `running/healthy`，公网 HTTPS `/integrated/v1/health` 返回 200，数据库、迁移和 scheduler 心跳检查全部通过；Redis 持久化状态为 `loading=0`、AOF enabled、最后写入与 rewrite 状态均为 `ok`。本次恢复现有容器，没有发布新代码；`current` 仍为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`，API／worker／scheduler／market 的组合继续以下节限定发布为准。
+
+主机于本日 12:40 启动，Docker／containerd／Nginx 和六个容器原本已经自动启动；故障并非缺少自启配置。Redis 读取 `appendonly.aof.2055.incr.aof` 时遇到格式错误并循环退出，另外四个 Python 服务随之不健康，MySQL 始终健康。只读诊断确认 BASE RDB 全部有效，INCR 的 53,309,440 字节中，前 53,307,426 字节为完整记录，剩余 2,014 字节全部为零；没有完整命令或事务需要从该尾部保留。本次可确认磁盘上可校验的完整前缀已保留；故障前尚未落盘的内存写入不在这项校验范围内。
+
+恢复时先停止四个 Python 写入进程和故障 Redis，完整备份 Redis 卷并逐文件核对压缩归档内容哈希；备份位于 `/opt/trade-tools-integrated/backups/reboot-recovery-20261105-124725/`（目录 0700、文件受限）。归档 `redis-volume-before.tar.gz` 为 **30,081,131 bytes**，SHA-256 为 `18b079494c6ec42dd0c965638c767769494baf5894b42aa5f57388dcdbe4159c`，包含原 manifest、BASE、INCR 和 dump。备份内原容器元数据含受限配置，禁止上传仓库或输出其完整内容。
+
+在单独副本中用原 Redis 7.4.12 镜像、以 manifest 为入口修复并复查，再以禁网络、无端口的隔离实例验证加载、PING 和持久化状态；生产卷只原子替换经确认的 INCR 完整前缀，保留原属主／权限，BASE、manifest、dump 保持原样，未对 MySQL 执行恢复或人工数据改写。修复后的原 manifest 再次检查通过，之后依次恢复 Redis、等待 MySQL／Redis 健康，再启动四个原 Python 容器。六个容器的 ID、镜像、环境和挂载与备份逐项一致，MySQL 仍为 1 GiB 内存限额；没有迁移、数据库恢复、命令／幂等状态重置、手动交易、划转、撤保护或通知测试。
+
+已重新确认并持久化以下开机配置：
+
+```bash
+systemctl enable docker.service containerd.service nginx.service tradetools-integrated-cert-renew.timer
+systemctl start docker.service nginx.service
+docker update --restart unless-stopped \
+  tradetools-integrated-api-1 tradetools-integrated-market-1 \
+  tradetools-integrated-worker-1 tradetools-integrated-scheduler-1 \
+  tradetools-integrated-mysql-1 tradetools-integrated-redis-1
+```
+
+四个宿主 units 均为 `enabled/active`，六个容器均为 `unless-stopped`，Nginx 配置检查通过。该策略会在 Docker／宿主恢复时启动未被人工停止的容器，并在进程异常退出时重启；人工 `docker stop` 的容器需要明确 `docker start` 才恢复。自启不能修复损坏的持久化文件，不设置无条件 AOF 截断脚本；本次未再次重启宿主作验证。
+
+以后单纯重启业务应优先恢复现有容器，不运行会构建、迁移和切换 `current` 的 `release.sh`。必须使用 Compose 时仍保留现行三份配置及独立 worker／scheduler 镜像，不能用单个基础文件重新 `up`。AOF 排障遵循 [Redis 官方持久化说明](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)：先完整备份，在副本检查损坏位置及预计损失，再决定是否修复；工具即使不带 `--fix` 也可能以 `r+` 打开文件，因此使用可写诊断副本，检查原卷时使用文件属主。容器中确认修复需转发标准输入（`docker run --interactive`），不能把没有执行修复的退出当成成功。此次应用与验证证据保存在上述备份的 `applied-recovery.json`、`isolated-validation.json`、`restoration-verification.json` 及 AOF 检查日志。
+
 ## 开仓周期初筛退役限定发布（2026-11-03）
 
 2026-11-03 23:31（北京时间）核验 **47.80.22.243（首尔服务器）** 的 `current` 为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`（API）；worker 独立为 `integrated-20261103-worker-retire-entry-ema-f7a289ab3c7d`。本次按用户要求移除 EMA 方向／周期初筛接口及新单门控，未替换完整 Git HEAD。下方发布记录均保留各次操作时点，当前组合以本节为准。
@@ -300,6 +371,8 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 ## GitHub 源码交付
 
+2026-11-05 用户授权先提交推送当前全部未提交改动，以 `2c491c2` 为基线沿用独立 Git 元数据交付 `codex/integrated-ios`。范围及已有验证见 [本批记录](changes.md#2026-11-05当前全部改动源码交付)；原 USDT／USDC 来源目录、父 Gitee、凭证、运行证据和 `.build/` 不参与。本次不追加 47.80.22.243（首尔服务器）部署或手动 TestFlight 上传，GitHub 源码与实际运行版本分开验收。
+
 2026-11-03 本次用户明确授权提交推送整合工作区全部未提交内容，以 `df77ba2` 为基线交付周期／auto、六种周期后端及 Super 双主题、MACD 边框、账户与策略界面等源码到 `codex/integrated-ios`；范围和已有验证见 [整批交付记录](changes.md#2026-11-03周期主题与账户策略整批源码交付)。沿用独立 Git 元数据，父 Gitee 及忽略的凭证／构建不参与。本次不追加部署、迁移或手动 TestFlight 上传；47.80.22.243（首尔服务器）的实际版本仍以上方运行记录为准，新增周期后端和手机新包待配套交付。
 
 2026-11-03 后续用户明确要求本轮完成后直接提交推送，以 `dd4f048` 为基线交付策略编辑、指标卡片及透明度、连续 Super 填充、同触点十字线、默认杠杆、账户／持仓界面及普通信号 APNs／浮盈 Echo 分流源码。全部本地验证与范围见 [本批记录](changes.md#2026-11-03策略指标交互与通知分流源码交付)。沿用独立 Git 元数据推送 `codex/integrated-ios`；本次不追加部署、迁移或手动 TestFlight 上传，**47.80.22.243（首尔服务器）** 的运行范围继续以本页实际发布记录为准，完整通知及手机新包待配套验收。
@@ -337,6 +410,8 @@ Xcode Cloud 必须单独获得指定 GitHub 仓库的访问授权；本机 Deplo
 2026-11-02 用户在本地图表／持仓／通知验收完成后授权“提交推送”，本批以 `17a3eda` 为基线交付 51 个文件到 `codex/integrated-ios`，范围与既有验证见 [变更记录](changes.md#2026-11-02图表持仓杠杆选择与通知源码交付)。生产 Echo／APNs 配置和密钥不随源码上传；本次不部署后端、重启服务或手动上传 TestFlight，47.80.22.243（首尔服务器）仍以上方通知配置准备及杠杆限定发布记录为准。
 
 ## 图表加载诊断
+
+2026-11-05 本次通过既有 SSH 认证在 **47.80.22.243（首尔服务器）** 的 API 容器只读执行 `python manage.py chart_load_reports --limit 12`。返回既有 iPhone Build 44 记录（北京时间 19:55:14–20:01:42），本机受限原始输出位于忽略目录 `.integration-runtime/ChartResumeNov5/recent-reports.ndjson`。仅汇总公共计时字段；没有修改应用／系统／网络配置、数据库、缓存或凭证，没有部署与重启。样本、已修复的本地竞态和剩余线上波动统一见 [行情](market-data.md#首次握手与后台恢复2026-11-05本地)，本次没有复查宿主 BBR 或进行新的 TCP 采样。
 
 2026-11-01 按用户实际点击，47.80.22.243（首尔服务器）临时启用仅针对 K 线的 Nginx 阶段日志，采到 build 14 响应头约 72 ms、完整传送 4.62 秒。临时配置已撤销，站点文件与原备份 SHA-256 相同，`nginx -t`／reload 通过。配置备份和脱敏计时位于 `/opt/trade-tools-integrated/backups/kline-diagnostic-20261101/`，目录／日志保持受限；没有清空缓存、修改交易或发布新应用。结论和 upstream 背压解释见 [行情](market-data.md#手机实际请求与响应体传送)。
 

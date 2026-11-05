@@ -7,6 +7,7 @@ final class KlineChartHostView: UIView {
     var onCrosshairDismiss: (() -> Void)?
     private let metalView: MTKView
     private let candleMarkerContainer = UIView()
+    private let loadingCover = UIView()
     private var candleMarkers: [ChartCandleMarker] = []
     private var candleMarkerExclusions: [CGRect] = []
     private var candleMarkerLabels: [String: UILabel] = [:]
@@ -82,22 +83,56 @@ final class KlineChartHostView: UIView {
         MetalApplicationActivity = .unknown
     private var isDisposed = false
     private var appearance: ChartAppearance = .dark
-    private var firstPresentationTime: TimeInterval?
+    private var presentationID: ChartPresentationID?
+    private var isLoadingPresentation = false
     private var firstPresentationDelivered = false
-    private var onFirstFramePresented: ((TimeInterval) -> Void)?
+    private var onFirstFramePresented: ((ChartPresentationID, TimeInterval) -> Void)?
 
-    func observeFirstPresentation(_ callback: @escaping (TimeInterval) -> Void) {
-        guard !firstPresentationDelivered, onFirstFramePresented == nil else { return }
+    func observeFirstPresentation(for id: ChartPresentationID?,
+        _ callback: @escaping (ChartPresentationID, TimeInterval) -> Void) {
+        guard !isDisposed else { return }
         onFirstFramePresented = callback
-        deliverFirstPresentationIfReady()
+        guard presentationID != id else { return }
+        setLoadingPresentation(true)
+        // A cached switch can replace the epoch without an intermediate nil frame.
+        // Clear every gesture baseline before configuring the new interval.
+        cancelActiveInteraction(publishViewport: false)
+        resetCrosshairWithoutSubmitting()
+        timelineViewport = nil
+        interactionBaseline = nil
+        gestureViewportBaseline = nil
+        interactionBaseStaticRevision = nil
+        pendingGuardBandRebase = nil
+        pendingContinuousViewport = nil
+        committedViewportAwaitingRender = nil
+        baseRenderState = nil
+        presentationID = id
+        firstPresentationDelivered = false
+        rendererHealth.observeFirstPresentation(for: id) { [weak self] submittedID, time in
+            Task { @MainActor [weak self] in
+                guard let self, !self.isDisposed, !self.firstPresentationDelivered,
+                      self.presentationID == submittedID else { return }
+                self.firstPresentationDelivered = true
+                self.isUserInteractionEnabled = !self.isLoadingPresentation
+                if !self.isLoadingPresentation { self.loadingCover.isHidden = true }
+                self.onFirstFramePresented?(submittedID, time)
+            }
+        }
     }
 
-    private func deliverFirstPresentationIfReady() {
-        guard !isDisposed, !firstPresentationDelivered, let time = firstPresentationTime,
-              let callback = onFirstFramePresented else { return }
-        firstPresentationDelivered = true
-        onFirstFramePresented = nil
-        callback(time)
+    func setLoadingPresentation(_ loading: Bool) {
+        guard !isDisposed, isLoadingPresentation != loading else { return }
+        isLoadingPresentation = loading
+        loadingCover.isHidden = !loading && (presentationID == nil || firstPresentationDelivered)
+        isUserInteractionEnabled = !loading && (presentationID == nil || firstPresentationDelivered)
+        if loading {
+            frameCoordinator?.suspend()
+            cancelActiveInteraction(publishViewport: false)
+            resetCrosshairWithoutSubmitting()
+            baseRenderState = nil
+            candleMarkerContainer.isHidden = true
+        }
+        reconcileRenderingActivity()
     }
 
     private var isApplicationActive: Bool {
@@ -108,11 +143,17 @@ final class KlineChartHostView: UIView {
         let device = MTLCreateSystemDefaultDevice()
         metalView = MTKView(frame: .zero, device: device)
         super.init(frame: frame)
+#if DEBUG
+        Self.diagnosticInitializationCount += 1
+#endif
 
         configureMetalView()
         candleMarkerContainer.isUserInteractionEnabled = false
         candleMarkerContainer.clipsToBounds = true
         addSubview(candleMarkerContainer)
+        loadingCover.isUserInteractionEnabled = false
+        loadingCover.isHidden = true
+        addSubview(loadingCover)
         configureErrorLabel()
         setAppearance(appearance)
         configureGestures()
@@ -157,12 +198,6 @@ final class KlineChartHostView: UIView {
         }
 
         do {
-            rendererHealth.observeFirstPresentation { [weak self] time in
-                Task { @MainActor [weak self] in
-                    self?.firstPresentationTime = time
-                    self?.deliverFirstPresentationIfReady()
-                }
-            }
             let health = rendererHealth
             let pixelFormat = metalView.colorPixelFormat
             let rendererFactory = {
@@ -198,6 +233,7 @@ final class KlineChartHostView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         metalView.frame = bounds
+        loadingCover.frame = bounds
         errorLabel.frame = bounds.insetBy(dx: 24, dy: 24)
 
         let scale = window?.screen.scale ?? UIScreen.main.scale
@@ -224,6 +260,7 @@ final class KlineChartHostView: UIView {
     ) -> Bool {
         let beginsPinch = gestureRecognizer === timelinePinchGesture
         guard !isDisposed,
+              !isLoadingPresentation,
               !isPriceScaleGestureActive,
               (beginsPinch ? interactionState.canBeginPinch : interactionState.state == .idle),
               committedViewportAwaitingRender == nil,
@@ -335,6 +372,7 @@ final class KlineChartHostView: UIView {
         )
         let linear = background.linearRGBA
         backgroundColor = color
+        loadingCover.backgroundColor = color
         metalView.backgroundColor = color
         metalView.clearColor = MTLClearColor(
             red: Double(linear.x),
@@ -419,7 +457,7 @@ final class KlineChartHostView: UIView {
     }
 
     func submit(_ incomingState: RenderState) {
-        let state = incomingState.withAppearance(appearance)
+        let state = incomingState.withAppearance(appearance).withPresentationID(presentationID)
         baseRenderState = state
         defer { updateCandleMarkers() }
         updateTimelineAccessibilityState()
@@ -489,6 +527,32 @@ final class KlineChartHostView: UIView {
     }
 
 #if DEBUG
+    private(set) static var diagnosticInitializationCount = 0
+
+    var diagnosticRendererIdentity: ObjectIdentifier? {
+        frameCoordinator?.diagnosticRendererIdentity
+    }
+
+    var diagnosticIsLoadingCovered: Bool { !loadingCover.isHidden }
+
+    var diagnosticVisibleRendererError: String? {
+        guard !isHidden, !errorLabel.isHidden,
+              let labelIndex = subviews.firstIndex(of: errorLabel),
+              let coverIndex = subviews.firstIndex(of: loadingCover), labelIndex > coverIndex else { return nil }
+        return errorLabel.text
+    }
+
+    var diagnosticHasInteractionBaseline: Bool {
+        interactionBaseline != nil || gestureViewportBaseline != nil
+            || committedViewportAwaitingRender != nil || pendingGuardBandRebase != nil
+            || pendingContinuousViewport != nil || currentCrosshair != nil || timelineMotion.isActive
+    }
+
+    func diagnosticRecordPresentation(for id: ChartPresentationID, at time: TimeInterval) {
+        rendererHealth.recordPresented(revision: 1, liveRevision: 1, liveReadyTime: 1,
+            presentedTime: time, readyTime: 1, submittedTime: 2, presentationID: id)
+    }
+
     func diagnosticHealthSnapshot()
         -> MetalRendererHealthSnapshot {
         rendererHealth.snapshot()
@@ -590,7 +654,7 @@ final class KlineChartHostView: UIView {
             return
         }
         updateHostPresentationContext()
-        if window != nil, isApplicationActive {
+        if window != nil, isApplicationActive, !isLoadingPresentation {
             frameCoordinator?.resume()
         } else {
             frameCoordinator?.suspend()
@@ -1177,6 +1241,7 @@ final class KlineChartHostView: UIView {
             invalidation: .interaction,
             appearance: appearance,
             axisPriceLabels: state.axisPriceLabels,
+            presentationID: state.presentationID,
             readyTime: state.readyTime
         ))
     }

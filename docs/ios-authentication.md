@@ -6,7 +6,9 @@
 
 App 图标采用橙色到珊瑚红的渐变底色与象牙白折带 B 标记。`Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` 是 1024 × 1024、无透明通道的发布图标；`BrandMark.imageset` 保存同源的 64 / 128 / 192 像素标记，供 App 内品牌组件使用。桌面圆角由系统裁切，App 内标记由 `BinanceLogoMark` 使用连续圆角裁切。
 
-系统启动页使用 `Info.plist` 的 `UILaunchStoryboardName = BrandLaunchScreen`，固定 RGB 纯白，居中图标从 64 pt 放大 50% 至 96 pt；会话恢复页 `AppLaunchView` 同样为固定白底、96 pt 图标，深色模式也保持白底。启动 storyboard 不应用运行时圆角属性，因此使用专用 `LaunchBrandMark.imageset`：在 96 / 192 / 288 像素资源中预渲染 SwiftUI 连续圆角（半径为边长的 22%），四角透明。资源由 [生成脚本](../frontend/ios-app/scripts/render_launch_mark.swift) 从发布图标生成，命令见 [开发文档](development.md)。启动背景独立于业务主题，不能只修改登录页背景。
+系统启动页使用 `Info.plist` 的 `UILaunchStoryboardName = BrandLaunchScreen`，固定 RGB 纯白，居中图标从 64 pt 放大 50% 至 96 pt；会话恢复页 `AppLaunchView` 同样为固定白底、96 pt 图标，深色模式也保持白底。两阶段都相对完整窗口居中，整个 `AppLaunchView` 容器忽略安全区，并共用专用 `LaunchBrandMark.imageset`。启动 storyboard 不应用运行时圆角属性，因此该图集在 96 / 192 / 288 像素资源中预渲染 SwiftUI 连续圆角（半径为边长的 22%），四角透明。资源由 [生成脚本](../frontend/ios-app/scripts/render_launch_mark.swift) 从发布图标生成，命令见 [开发文档](development.md)。启动背景独立于业务主题，不能只修改登录页背景。
+
+2026-11-05 定位到启动交接轻微位移：旧 SwiftUI 实现只有背景忽略安全区，图标按安全区居中，而 storyboard 按整个窗口居中；上下安全区不等时，两者相差 `(top - bottom) / 2`，59／34 pt 场景像素复现下移约 13 pt。修复同时统一上述布局基准和图标资源，避免运行时再次缩放裁切造成外观跳变。回归与实机待验边界见 [开发验证](development.md#启动图标交接2026-11-05本地)。
 
 同一个本地构建号反复更换启动资源会复用旧资源缓存：此前替换图集并重装后仍见旧黑底图标，更换图集名称后曾只显示白底；重启模拟器也未解除。当时以命令行临时 `CURRENT_PROJECT_VERSION=4` 重新安装后，冷启动显示白底、当时的 64 pt 新图标；当前尺寸已调整为上述 96 pt。未改工程中的发布版本号或 Cloud 自动递增规则。后续启动页验收需使用新构建号，不能把相同构建号的旧缓存当成包内资源；手机需安装此次新的 TestFlight 构建后再核对。
 

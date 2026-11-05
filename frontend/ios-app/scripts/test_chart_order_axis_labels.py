@@ -46,7 +46,9 @@ def run(destination):
         (sources / (name + ".swift")).write_text(source)
 
     fixture = read(IOS / "TradeToolTests/ChartEngineCoreTests.swift")
-    begin = fixture.index("    func testOrderPriceAxisLabelsKeepCompletePricesInsideTheFixedAxis()")
+    crosshair_begin = fixture.index("    @MainActor\n    func testCrosshairLabelsFitTimeAndPriceAxesWithoutActionIcon()")
+    crosshair_end = fixture.index("    @MainActor\n    func testTimeAxisAndPanelFootersKeepCrosshairInSync()", crosshair_begin)
+    begin = fixture.index("    func testPlotStartsAtCanvasEdgeAndRetainsSquarePriceArea()")
     end = fixture.index("    private func makeOffscreenState(", begin)
     helper_begin = fixture.index("    private func marketCandle(")
     helper_end = fixture.index("    /// The fixed right-axis marker", helper_begin)
@@ -54,6 +56,7 @@ def run(destination):
         "import Foundation\nimport Metal\nimport XCTest\n@testable import TradeTool\n"
         "final class AxisPriceLabelTests: XCTestCase {\n"
         'private let stream = ChartStreamKey(symbol: "BTCUSDC", interval: "1h")\n'
+        + fixture[crosshair_begin:crosshair_end]
         + fixture[begin:end] + fixture[helper_begin:helper_end] + "}\n")
     (destination / "Package.swift").write_text(
         '// swift-tools-version: 6.0\nimport PackageDescription\n'

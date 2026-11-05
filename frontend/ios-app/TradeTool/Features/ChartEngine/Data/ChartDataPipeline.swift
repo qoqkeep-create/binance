@@ -49,6 +49,7 @@ actor ChartDataPipeline {
     private var indicatorParameters: ChartIndicatorParameters
     private var indicatorConfigurationRevision: UInt64 = 0
     private var lastMergedPriceEventTime: Int64?
+    private var awaitingEpochSnapshot = true
 
     init?(
         stream: ChartStreamKey,
@@ -96,9 +97,32 @@ actor ChartDataPipeline {
         _ newEpoch: KlineStreamEpoch
     ) -> KlineRecoveryRequest? {
         epoch = newEpoch
+        awaitingEpochSnapshot = true
         lastMergedPriceEventTime = nil
         ingress.beginEpoch(newEpoch, stream: stream)
         return ingress.recoveryRequest
+    }
+
+    /// Re-enter a recently verified, unchanged candle bucket without rebuilding
+    /// its closed history or indicators. The caller enforces TTL and session scope.
+    func resumeCachedEpoch(
+        _ newEpoch: KlineStreamEpoch,
+        from previousEpoch: KlineStreamEpoch,
+        bucketOpenTime: Int64
+    ) -> ChartDataFrame? {
+        guard !Task.isCancelled, epoch == previousEpoch,
+              !awaitingEpochSnapshot, ingress.recoveryRequest == nil,
+              ingress.pendingLiveUpsert == nil, ingress.pendingBarrierCount == 0 else { return nil }
+        let snapshot = store.snapshot()
+        guard !snapshot.history.candles.isEmpty,
+              snapshot.liveTail.map({ $0.openTime == bucketOpenTime })
+                ?? (snapshot.history.candles.last?.closeTime == bucketOpenTime - 1) else { return nil }
+        epoch = newEpoch
+        lastMergedPriceEventTime = nil
+        ingress.beginEpoch(newEpoch, stream: stream)
+        ingress.completeRecovery(newestOpenTime:
+            snapshot.liveTail?.openTime ?? snapshot.history.candles.last?.openTime)
+        return makeFrame(candles: snapshot)
     }
 
     func accept(
@@ -153,9 +177,12 @@ actor ChartDataPipeline {
         _ marketCandles: [MarketCandle],
         fetchedAtMilliseconds: Int64,
         epoch snapshotEpoch: KlineStreamEpoch,
-        preservingNewerData: Bool = false
+        preservingNewerData: Bool = false,
+        tailOnly: Bool = false,
+        tailBaseRevision: UInt64? = nil
     ) async -> ChartDataPipelineDrainResult {
-        guard !Task.isCancelled, snapshotEpoch == epoch else {
+        guard !Task.isCancelled, snapshotEpoch == epoch,
+              !tailOnly || (!awaitingEpochSnapshot && ingress.recoveryRequest == nil) else {
             return ChartDataPipelineDrainResult(
                 frame: nil,
                 recoveryRequest: ingress.recoveryRequest
@@ -169,7 +196,7 @@ actor ChartDataPipeline {
                 recoveryRequest: ingress.recoveryRequest
             )
         }
-        let closed = normalized
+        var closed = normalized
             .filter { $0.closeTime < fetchedAtMilliseconds }
             .map {
                 ChartCandle(
@@ -188,6 +215,33 @@ actor ChartDataPipeline {
             }
 
         let previousHistory = store.snapshot().history
+        if tailOnly {
+            // A small response cannot repair a gap or replace the full window.
+            // Preserve cached statistics when the OHLC-only read omits them.
+            let previous = Dictionary(uniqueKeysWithValues:
+                previousHistory.candles.map { ($0.openTime, $0) })
+            closed = closed.map { candle in
+                guard candle.tradingData == nil, let saved = previous[candle.openTime]?.tradingData else { return candle }
+                return candle.withTradingData(saved)
+            }
+            var expected = previousHistory.candles.last.map { $0.closeTime + 1 }
+            for candle in closed where candle.openTime > (previousHistory.candles.last?.openTime ?? Int64.min) {
+                guard candle.openTime == expected else {
+                    ingress.requireDownstreamRecovery(openTime: candle.openTime)
+                    return ChartDataPipelineDrainResult(frame: nil, recoveryRequest: ingress.recoveryRequest)
+                }
+                expected = candle.closeTime + 1
+            }
+            guard let live, live.openTime == expected else {
+                ingress.requireDownstreamRecovery(openTime: expected ?? 0)
+                return ChartDataPipelineDrainResult(frame: nil, recoveryRequest: ingress.recoveryRequest)
+            }
+            if store.snapshot().revision == tailBaseRevision {
+                // No quote/OHLC arrived during this request: the REST tail is
+                // newer than the displayed cache, including its close/range.
+                _ = store.upsertProvisional(live)
+            }
+        }
         let installed = store.installSnapshot(
             closedCandles: closed,
             liveCandle: live,
@@ -201,6 +255,7 @@ actor ChartDataPipeline {
                 installed.liveTail?.openTime
                 ?? installed.history.candles.last?.openTime
         )
+        awaitingEpochSnapshot = false
 
         let drained = applyPendingMutations()
         if drained.frame != nil {
@@ -223,7 +278,10 @@ actor ChartDataPipeline {
         eventTimeMilliseconds: Int64,
         epoch priceEpoch: KlineStreamEpoch
     ) async -> ChartDataPipelineDrainResult {
-        guard priceEpoch == epoch,
+        // Ticker updates must obey the same recovery barrier as OHLC events.
+        // Otherwise they can publish a new epoch using the previous history.
+        guard ingress.recoveryRequest == nil,
+              priceEpoch == epoch,
               price.isFinite,
               price > 0,
               eventTimeMilliseconds >= 0,
@@ -311,7 +369,7 @@ actor ChartDataPipeline {
         _ marketCandles: [MarketCandle],
         epoch pageEpoch: KlineStreamEpoch
     ) async -> ChartDataPipelineDrainResult {
-        guard !Task.isCancelled, pageEpoch == epoch else {
+        guard !Task.isCancelled, pageEpoch == epoch, !awaitingEpochSnapshot else {
             return ChartDataPipelineDrainResult(
                 frame: nil,
                 recoveryRequest: ingress.recoveryRequest
@@ -382,7 +440,7 @@ actor ChartDataPipeline {
                 candles.history.candles.last?.openTime ?? candles.liveTail?.openTime ?? 0)
         }
         return ChartDataPipelineDrainResult(
-            frame: makeFrame(candles: candles),
+            frame: awaitingEpochSnapshot ? nil : makeFrame(candles: candles),
             recoveryRequest: ingress.recoveryRequest
         )
     }
@@ -412,6 +470,9 @@ actor ChartDataPipeline {
     }
 
     private func applyPendingMutations() -> ChartDataPipelineDrainResult {
+        guard !awaitingEpochSnapshot else {
+            return ChartDataPipelineDrainResult(frame: nil, recoveryRequest: ingress.recoveryRequest)
+        }
         let drain = ingress.drain()
         guard !drain.mutations.isEmpty else {
             return ChartDataPipelineDrainResult(

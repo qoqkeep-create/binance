@@ -288,10 +288,21 @@ final class MetalRendererHealth: @unchecked Sendable {
     private var nextCommandFailureIndex = 0
     private var commandFailureCount = 0
     private var firstPresentationHandler: (@Sendable (TimeInterval) -> Void)?
+    private var scopedPresentationID: ChartPresentationID?
+    private var scopedPresentationHandler: (@Sendable (ChartPresentationID, TimeInterval) -> Void)?
 
     func observeFirstPresentation(_ handler: @escaping @Sendable (TimeInterval) -> Void) {
         lock.lock()
         if value.presentedFrames == 0 { firstPresentationHandler = handler }
+        lock.unlock()
+    }
+
+    func observeFirstPresentation(for id: ChartPresentationID?,
+        _ handler: @escaping @Sendable (ChartPresentationID, TimeInterval) -> Void) {
+        lock.lock()
+        if scopedPresentationID != id { value.lastPresentedLiveRevision = 0 }
+        scopedPresentationID = id
+        scopedPresentationHandler = id == nil ? nil : handler
         lock.unlock()
     }
 
@@ -317,12 +328,16 @@ final class MetalRendererHealth: @unchecked Sendable {
         readyTime: TimeInterval,
         submittedTime: TimeInterval,
         submissionContext: MetalPresentationContext? = nil,
+        presentationID: ChartPresentationID? = nil,
         callbackTime: TimeInterval =
             ProcessInfo.processInfo.systemUptime
     ) {
         lock.lock()
         let firstPresentation = presentedTime > 0 ? firstPresentationHandler : nil
         if presentedTime > 0 { firstPresentationHandler = nil }
+        let scopedPresentation = presentedTime > 0 && presentationID != nil
+            && presentationID == scopedPresentationID ? scopedPresentationHandler : nil
+        if scopedPresentation != nil { scopedPresentationHandler = nil }
         if presentedTime > 0 {
             value.presentedFrames &+= 1
             value.lastPresentedRevision = revision
@@ -344,7 +359,10 @@ final class MetalRendererHealth: @unchecked Sendable {
             if let duration = sample.submitToPresentDuration {
                 value.submitToPresentLatency.record(duration)
             }
-            if liveRevision >
+            // Commands already in flight still count as frames, but cannot advance
+            // another stream's live revision watermark after a host is reused.
+            if (presentationID == nil || presentationID == scopedPresentationID),
+               liveRevision >
                     value.lastPresentedLiveRevision,
                let duration =
                     sample.liveReadyToPresentDuration {
@@ -404,6 +422,7 @@ final class MetalRendererHealth: @unchecked Sendable {
         }
         lock.unlock()
         firstPresentation?(presentedTime)
+        if let presentationID { scopedPresentation?(presentationID, presentedTime) }
     }
 
     func recordCommandCompleted(

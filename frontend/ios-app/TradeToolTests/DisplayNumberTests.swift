@@ -127,6 +127,16 @@ final class PositionCardPresentationTests: XCTestCase {
   // The host runner also resolves these adapters from the actual position-card call sites.
   private func cardFee(_ row: JSONValue, price: Decimal? = nil) -> String { PositionCardPresentation.feeText(row, currentPrice: price) }
   private func cardProfit(_ profit: Decimal?) -> String { PositionCardPresentation.profitText(profit) }
+  private func cardStrategyError(_ row: JSONValue) -> String { PositionCardPresentation.strategyErrorText(row) }
+
+  func testOpeningStrategySummaryIsHiddenWhileActualFailuresRemainVisible() {
+    for info in ["开仓绑定策略：策略 A", "限价成交绑定策略：策略 B", " 开仓绑定策略:策略 C "] {
+      XCTAssertEqual(cardStrategyError(row(["latest_strategy_error": .string(info)])), "")
+    }
+    for failure in ["余额不足", "止损保护待恢复", "开仓绑定策略失败：余额不足"] {
+      XCTAssertEqual(cardStrategyError(row(["latest_strategy_error": .string(failure)])), failure)
+    }
+  }
 
   func testPendingEntryAndTotalRemainEstimatesUntilEntryFeeIsConfirmed() {
     XCTAssertEqual(cardFee(row()), "估 -0.5 U（估总 -1.1 U）")

@@ -2637,6 +2637,16 @@ class BinanceFuturesClient:
         )
         return [{key: row[key] for key in fields if key in row} for row in rows]
 
+    def get_margin_account_snapshot(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Fresh read-only risk fields; do not reuse the ten-minute config cache."""
+        config = self._request("GET", "/fapi/v1/accountConfig", signed=True,
+                               budget_priority=RequestPriority.BACKGROUND)
+        account = self._request("GET", "/fapi/v2/account", signed=True,
+                                budget_priority=RequestPriority.BACKGROUND)
+        if not isinstance(config, dict) or not isinstance(account, dict):
+            raise BinanceApiError("保证金账户返回格式异常")
+        return config, account
+
     def get_positions(
         self,
         inst_type: str = "SWAP",

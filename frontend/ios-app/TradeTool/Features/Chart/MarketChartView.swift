@@ -227,6 +227,13 @@ private struct MarketChartDetailView: View {
         .task {
             viewModel.start()
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                viewModel.suspendForBackground()
+            } else if phase == .active {
+                Task { await viewModel.resumeFromBackground() }
+            }
+        }
         .task(id: "\(usdt.scope):\(viewModel.market.symbol)") {
             await usdt.loadDefaultLeverage(for: viewModel.market.symbol)
         }

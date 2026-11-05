@@ -3433,6 +3433,33 @@ final class WebParityUITests: XCTestCase {
     capture("launch-96pt-rounded")
   }
 
+  func testPositionPagesSwipeAndMarginDetailsStayReadOnly() {
+    launch("positions", ["--fixture-margin-danger"])
+    let position = app.buttons["positions.tabs.positions"]
+    let limits = app.buttons["positions.tabs.limits"]
+    let history = app.buttons["positions.tabs.history"]
+    XCTAssertTrue(position.waitForExistence(timeout: 5))
+    let badge = app.buttons["positions.margin"]
+    XCTAssertTrue(badge.waitForExistence(timeout: 5))
+    XCTAssertLessThanOrEqual(badge.frame.maxX, app.buttons["positions.liveActivity"].frame.minX)
+    XCTAssertTrue(badge.isHittable)
+    app.scrollViews["positions.list"].swipeLeft()
+    XCTAssertTrue(limits.isSelected)
+    app.scrollViews["positions.list"].swipeLeft()
+    XCTAssertTrue(history.isSelected)
+    app.scrollViews["positions.list"].swipeRight()
+    XCTAssertTrue(limits.isSelected)
+    app.scrollViews["positions.list"].swipeRight()
+    XCTAssertTrue(position.isSelected)
+    pullToRefresh(app.scrollViews["positions.list"], distance: 30)
+    XCTAssertTrue(position.isSelected, "Vertical pull must not change pages")
+    badge.tap()
+    XCTAssertTrue(app.staticTexts["币安保证金率"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["85%"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["合计初始保证金占用"].exists)
+    capture("positions-margin-danger-details")
+  }
+
   func testAllPositionTabsRefreshFromEmptyLists() {
     launch("positions", ["--fixture-refresh-lists"])
     for (tab, empty, content) in [
@@ -3450,6 +3477,56 @@ final class WebParityUITests: XCTestCase {
         .matching(NSPredicate(format: "label CONTAINS %@", content)).firstMatch
         .waitForExistence(timeout: 10), tab)
       capture("refreshed-" + tab)
+    }
+  }
+
+  private func pullToRefresh(_ list: XCUIElement, distance: CGFloat? = nil) {
+    let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+    let end = distance.map { start.withOffset(CGVector(dx: 0, dy: $0)) }
+      ?? list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+    start.press(forDuration: 0.1, thenDragTo: end)
+  }
+
+  func testSignalsPullRefreshShowsIndicatorAndLoadsNewSnapshot() {
+    launch("signals", ["--fixture-page-state", "--fixture-refresh-delay"])
+    XCTAssertTrue(app.staticTexts["读取 1 · 测试信号 1"].waitForExistence(timeout: 10))
+    let list = app.scrollViews["signals.list"]
+    let indicator = app.descendants(matching: .any)["refresh.indicator"].firstMatch
+    pullToRefresh(list, distance: 30)
+    XCTAssertFalse(indicator.exists)
+    XCTAssertTrue(app.staticTexts["读取 1 · 测试信号 1"].exists)
+    pullToRefresh(list)
+    XCTAssertTrue(indicator.waitForExistence(timeout: 2))
+    XCTAssertTrue(indicator.isHittable)
+    capture("signals-pull-refresh-indicator")
+    XCTAssertTrue(app.staticTexts["读取 2 · 测试信号 1"].waitForExistence(timeout: 10))
+    XCTAssertFalse(indicator.exists)
+  }
+
+  func testSharedRefreshIndicatorOnMarketProfileCommandsAndRecords() {
+    for page in ["market", "profile", "commands", "operations", "transfers", "strategy-log", "embedded-records"] {
+      launch(page, ["--fixture-refresh-delay"])
+      let list = app.scrollViews.firstMatch
+      XCTAssertTrue(list.waitForExistence(timeout: 10), page)
+      if page == "profile" {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"),
+          object: app.buttons["profile.refreshBalance"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+      } else if page == "commands" {
+        XCTAssertTrue(app.staticTexts["只读命令列表"].waitForExistence(timeout: 10))
+      } else if ["operations", "transfers", "strategy-log", "embedded-records"].contains(page) {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+          object: app.staticTexts["正在加载..."])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+      }
+      pullToRefresh(list)
+      let indicator = app.descendants(matching: .any)["refresh.indicator"].firstMatch
+      XCTAssertTrue(indicator.waitForExistence(timeout: 2), page)
+      XCTAssertTrue(indicator.isHittable, page)
+      capture(page + "-pull-refresh-indicator")
+      let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+        object: indicator)
+      XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed, page)
     }
   }
 

@@ -566,6 +566,575 @@ private actor NativeFixtureClient: APIClient {
 
 @MainActor
 final class MarketFastPathTests: XCTestCase {
+    func testReturningToRecentIntervalUsesCompleteCachedFrameWithoutDownloading() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        let original = try XCTUnwrap(model.chartDataFrame)
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+
+        model.selectInterval(.oneHour)
+        let restored = try XCTUnwrap(model.chartDataFrame,
+            "Returning to a verified recent interval must not wait for another HTTP response")
+        XCTAssertEqual(restored.stream.interval, "1h")
+        XCTAssertNotEqual(restored.epoch, original.epoch)
+        XCTAssertTrue(restored.candles.history === original.candles.history)
+        XCTAssertTrue(restored.indicators.history === original.indicators.history,
+            "A warm return must reuse the completed indicator history")
+        try await Task.sleep(for: .milliseconds(30))
+        let reads = await api.reads
+        XCTAssertEqual(reads, 3)
+        let limits = await api.limits
+        XCTAssertEqual(limits, [1500, 1500, 2], "Only the tail is checked in the background")
+    }
+
+    func testCachedActivationAcknowledgementDoesNotDownloadButRealNoticeDoes() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        for timestamp in 100...105 {
+            await model.receive(ack(symbol: "BTCUSDT", interval: "1h", timestamp: Int64(timestamp)))
+        }
+        model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+            at: ProcessInfo.processInfo.systemUptime)
+        try await Task.sleep(for: .milliseconds(30))
+        var reads = await api.reads
+        XCTAssertEqual(reads, 3, "Ack bursts must not add a full read to the two-bar tail check")
+        await model.receive(notice(symbol: "BTCUSDT", timestamp: 101))
+        await api.setServerTime(Int64(Date().timeIntervalSince1970 * 1000))
+        await api.releaseCurrentRead()
+        try await waitForReads(4, api)
+        reads = await api.reads
+        XCTAssertEqual(reads, 4, "A real history notice must follow the small check with a full read")
+        let limits = await api.limits
+        XCTAssertEqual(limits, [1500, 1500, 2, 1500])
+    }
+
+    func testIntervalCacheTTLIsNotExtendedByRepeatedSwitching() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        var clock = Date()
+        let model = makeChart(api, cacheTimeProvider: { clock })
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        clock.addTimeInterval(2)
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        clock.addTimeInterval(2)
+        model.selectInterval(.oneHour)
+        XCTAssertEqual(model.chartDataFrame?.stream.interval, "1h")
+        try await Task.sleep(for: .milliseconds(20))
+        clock.addTimeInterval(4)
+        model.selectInterval(.fiveMinutes)
+        XCTAssertEqual(model.chartDataFrame?.stream.interval, "5m")
+        try await Task.sleep(for: .milliseconds(20))
+        clock.addTimeInterval(3)
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        XCTAssertNil(model.chartDataFrame, "11s since HTTP must expire despite a return at 4s")
+        try await waitForFullReads(3, api)
+    }
+
+    func testCachedActivationLateAcknowledgementRechecksTTLAndCandleBoundary() async throws {
+        for crossesBucket in [false, true] {
+            let api = GatedChartHistoryAPI()
+            await api.openGate()
+            var clock = Date()
+            let model = makeChart(api, cacheTimeProvider: { clock })
+            model.start()
+            try await waitUntil { model.chartDataFrame != nil }
+            model.selectInterval(.fiveMinutes)
+            try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+            model.selectInterval(.oneHour)
+            XCTAssertEqual(model.chartDataFrame?.stream.interval, "1h")
+            await api.closeGate()
+            clock.addTimeInterval(crossesBucket ? 3600 : 11)
+            await model.receive(ack(symbol: "BTCUSDT", interval: "1h", timestamp: 100))
+            model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+                at: ProcessInfo.processInfo.systemUptime)
+            await api.releaseCurrentRead()
+            try await waitForFullReads(3, api)
+            model.stop()
+        }
+    }
+
+    func testIntervalCacheIsInvalidatedByConfigurationBackgroundAndReconnect() async throws {
+        for invalidation in ["configuration", "background", "reconnect", "bucket"] {
+            let api = GatedChartHistoryAPI()
+            await api.openGate()
+            var clock = Date()
+            let model = makeChart(api, cacheTimeProvider: { clock })
+            model.start()
+            await model.receive(ready())
+            try await waitUntil { model.chartDataFrame != nil }
+            model.selectInterval(.fiveMinutes)
+            try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+            switch invalidation {
+            case "configuration": model.toggleChartIndicator("RSI")
+            case "background": model.suspendForBackground(); await model.resumeFromBackground()
+            case "reconnect": await model.receive(ready())
+            default: clock.addTimeInterval(3600)
+            }
+            if invalidation == "background" || invalidation == "reconnect" {
+                try await waitUntil { model.candles.first?.closePrice == 103 }
+            } else { try await Task.sleep(for: .milliseconds(20)) }
+            await api.closeGate()
+            model.selectInterval(.oneHour)
+            XCTAssertNil(model.chartDataFrame, "Must discard cached history after \(invalidation)")
+            model.stop()
+        }
+    }
+
+    func testIntervalCacheIsBoundedAndNeverSharedWithAnotherModel() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        for interval in [MarketKlineInterval.fiveMinutes, .fifteenMinutes, .fourHours, .oneDay] {
+            model.selectInterval(interval)
+            try await waitUntil { model.chartDataFrame?.stream.interval == interval.rawValue }
+        }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        XCTAssertNil(model.chartDataFrame, "A fourth saved interval evicts the oldest of three")
+        let other = makeChart(api)
+        other.start()
+        defer { other.stop() }
+        XCTAssertNil(other.chartDataFrame, "Another model/session cannot see this model's cache")
+    }
+
+    func testCacheResetsSequenceBaselineAndStillDetectsTheNextGap() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        await model.receive(liveKline(sequence: 40, close: 105))
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        await model.receive(liveKline(sequence: 900, close: 106))
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail?.closePrice, 106)
+        var reads = await api.reads
+        XCTAssertEqual(reads, 3, "Skipped inactive events only need the small tail check")
+        await model.receive(liveKline(sequence: 902, close: 107))
+        await api.releaseCurrentRead()
+        try await waitForFullReads(3, api)
+        reads = await api.reads
+        XCTAssertEqual(reads, 4, "The next true sequence gap must still repair")
+    }
+
+    func testSequenceRepairInvalidatesOtherCachedIntervals() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        await model.receive(liveKline(interval: .fiveMinutes, sequence: 40))
+        await model.receive(liveKline(interval: .fiveMinutes, sequence: 42))
+        try await waitForReads(3, api)
+        model.selectInterval(.oneHour)
+        XCTAssertNil(model.chartDataFrame, "An ingress repair invalidates the session's cached verification")
+    }
+
+    func testCachedReturnMergesTheNewerSharedQuoteAndTrustedOHLCStillCorrectsItsRange() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await model.receive(liveKline(interval: .oneMinute, close: 200))
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        await model.receive(ack(symbol: "BTCUSDT", interval: "1h"))
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail?.closePrice, 200)
+        let history = try XCTUnwrap(model.chartDataFrame?.candles.history)
+        await model.receive(liveKline(sequence: 900, close: 106))
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail?.highPrice, 110)
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail?.lowPrice, 99)
+        XCTAssertTrue(model.chartDataFrame?.candles.history === history,
+            "Refreshing a provisional price must not rewrite closed bars")
+        let reads = await api.reads
+        XCTAssertEqual(reads, 3)
+    }
+
+    func testHistoryRequestCrossingCandleBoundaryNeverEntersIntervalCache() async throws {
+        let api = GatedChartHistoryAPI()
+        let hour = floor(Date().timeIntervalSince1970 / 3600) * 3600
+        var clock = Date(timeIntervalSince1970: hour + 3599.8)
+        let model = makeChart(api, cacheTimeProvider: { clock })
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        clock.addTimeInterval(0.4)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        XCTAssertNil(model.chartDataFrame, "A request spanning an hour boundary did not verify its new bucket")
+        try await waitForReads(3, api)
+    }
+
+    func testPendingStatisticsAndFailedVerificationCannotEnterTheCache() async throws {
+        for fails in [false, true] {
+            let api = GatedChartHistoryAPI()
+            await api.setStatisticsPending(!fails)
+            await api.openGate()
+            let model = makeChart(api)
+            model.start()
+            try await waitUntil { model.chartDataFrame != nil }
+            if fails {
+                await api.closeGate()
+                model.reload()
+                try await waitForReads(2, api)
+                await api.finishRead(2, error: APIError.invalidResponse)
+                try await waitUntil { model.lastError != nil }
+                await api.openGate()
+            }
+            await api.setStatisticsPending(false)
+            model.selectInterval(.fiveMinutes)
+            try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+            await api.closeGate()
+            model.selectInterval(.oneHour)
+            XCTAssertNil(model.chartDataFrame, "Unverified first history must not be cached")
+            model.stop()
+        }
+    }
+
+    func testSmallTailCorrectsOHLCWithoutReplacingHistoryIndicatorsOrPagination() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.setIncludeTradingData(true)
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        let first = try XCTUnwrap(model.chartDataFrame)
+        let count = model.candles.count
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        try await waitForReads(3, api)
+        await api.releaseCurrentRead()
+        try await waitUntil { model.chartDataFrame?.candles.liveTail?.volume == 20 }
+        let corrected = try XCTUnwrap(model.chartDataFrame)
+        XCTAssertEqual(corrected.candles.liveTail?.highPrice, 120)
+        XCTAssertEqual(corrected.candles.liveTail?.lowPrice, 90)
+        XCTAssertEqual(corrected.candles.liveTail?.closePrice, 109)
+        XCTAssertTrue(corrected.candles.history === first.candles.history)
+        XCTAssertTrue(corrected.indicators.history === first.indicators.history)
+        XCTAssertEqual(corrected.candles.history.candles.last?.tradingData?.openInterest, 100)
+        XCTAssertEqual(model.candles.count, count)
+        XCTAssertTrue(model.hasMoreHistory, "Two-bar hasMoreHistory must not replace full pagination state")
+    }
+
+    func testSmallTailPreservesAQuoteReceivedDuringItsDownload() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        try await waitForReads(3, api)
+        await model.receive(liveKline(interval: .oneMinute, close: 108))
+        await api.releaseCurrentRead()
+        try await waitUntil { model.chartDataFrame?.candles.liveTail?.volume == 20 }
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail?.closePrice, 108)
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail?.highPrice, 120)
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail?.lowPrice, 90)
+    }
+
+    func testFastSwitchesCancelBlockedSmallChecksWithoutDownloadingFullHistoryAgain() async throws {
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        for (index, interval) in [MarketKlineInterval.oneHour, .fiveMinutes, .oneHour, .fiveMinutes].enumerated() {
+            model.selectInterval(interval)
+            XCTAssertEqual(model.chartDataFrame?.stream.interval, interval.rawValue)
+            try await waitForReads(3 + index, api)
+        }
+        let epoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame?.candles.liveTail?.volume == 20 }
+        XCTAssertEqual(model.chartDataFrame?.stream.interval, "5m")
+        XCTAssertEqual(model.chartDataFrame?.epoch, epoch)
+        let limits = await api.limits
+        XCTAssertEqual(limits, [1500, 1500, 2, 2, 2, 2])
+    }
+
+    func testSmallTailCrossingBucketBoundaryUpgradesToFullHistory() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        var clock = Date()
+        let model = makeChart(api, cacheTimeProvider: { clock })
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        try await waitForReads(3, api)
+        let previous = try XCTUnwrap(model.chartDataFrame)
+        clock.addTimeInterval(3600)
+        await api.releaseCurrentRead()
+        try await waitForReads(4, api)
+        let limits = await api.limits
+        XCTAssertEqual(limits, [1500, 1500, 2, 1500])
+        XCTAssertTrue(model.chartDataFrame?.candles.history === previous.candles.history,
+            "Cross-boundary small responses cannot release a complete-history repair")
+    }
+
+    func testImmediateReloadAndPageAfterCacheRestoreKeepTheNewEpoch() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        model.selectInterval(.fiveMinutes)
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await api.closeGate()
+        model.selectInterval(.oneHour)
+        let epoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.reload()
+        model.requestOlderHistory()
+        try await waitForReads(4, api)
+        await api.openGate()
+        try await waitUntil { !model.isLoadingOlderHistory && model.candles.first?.closePrice ?? 0 >= 103 }
+        XCTAssertEqual(model.chartDataFrame?.epoch, epoch)
+        XCTAssertEqual(model.chartDataFrame?.stream.interval, "1h")
+        XCTAssertTrue(model.hasMoreHistory)
+    }
+
+    func testOldPresentationAndBackgroundCannotReleaseANewOrCancelledNoticeGate() async throws {
+        let api = GatedChartHistoryAPI()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        await model.receive(notice(symbol: "BTCUSDT"))
+        await api.releaseCurrentRead()
+        try await waitUntil { model.chartDataFrame != nil }
+        let oldEpoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.selectInterval(.fiveMinutes)
+        try await waitForReads(2, api)
+        await api.releaseCurrentRead()
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        await model.receive(notice(symbol: "BTCUSDT", interval: "5m"))
+        model.chartFirstFramePresented(epoch: oldEpoch, at: ProcessInfo.processInfo.systemUptime)
+        try await Task.sleep(for: .milliseconds(30))
+        var reads = await api.reads
+        XCTAssertEqual(reads, 2, "An old epoch cannot release the new interval's presentation gate")
+        model.suspendForBackground()
+        try await Task.sleep(for: .milliseconds(550))
+        reads = await api.reads
+        XCTAssertEqual(reads, 2, "Backgrounding cancels both old and new fallback reads")
+    }
+
+    func testLateCoveredSocketSignalsDoNotReloadAnInstalledSnapshot() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.setServerTime(102)
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        await model.receive(ack(symbol: "BTCUSDT", interval: "1h", timestamp: 100))
+        await model.receive(notice(symbol: "BTCUSDT", timestamp: 101))
+        try await Task.sleep(for: .milliseconds(550))
+        let reads = await api.reads
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testServerWatermarkCoversOlderAcknowledgementAndNoticeWithoutSecondRead() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.setServerTime(102)
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        await model.receive(ack(symbol: "BTCUSDT", interval: "1h", timestamp: 100))
+        await model.receive(notice(symbol: "BTCUSDT", timestamp: 101))
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame != nil }
+        model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+            at: ProcessInfo.processInfo.systemUptime)
+        try await Task.sleep(for: .milliseconds(550))
+        let reads = await api.reads
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testUncoveredNoticeWaitsForFirstPresentationThenRefreshesOnce() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.setServerTime(102)
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        await model.receive(ack(symbol: "BTCUSDT", interval: "1h", timestamp: 100))
+        await model.receive(notice(symbol: "BTCUSDT", timestamp: 105))
+        await api.releaseCurrentRead()
+        try await waitUntil { model.chartDataFrame != nil }
+        try await Task.sleep(for: .milliseconds(30))
+        var reads = await api.reads
+        XCTAssertEqual(reads, 1, "Do not compete with the first scene and presentation")
+        let epoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.chartFirstFramePresented(epoch: epoch, at: ProcessInfo.processInfo.systemUptime)
+        try await waitForReads(2, api)
+        await api.setServerTime(106)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 102 }
+        model.chartFirstFramePresented(epoch: epoch, at: ProcessInfo.processInfo.systemUptime)
+        try await Task.sleep(for: .milliseconds(30))
+        reads = await api.reads
+        XCTAssertEqual(reads, 2)
+    }
+
+    func testUnknownOrEqualWatermarkUsesOneBoundedFallbackWithoutRendererCallback() async throws {
+        for serverTime in [Int64(101), nil] {
+            let api = GatedChartHistoryAPI()
+            await api.setServerTime(serverTime)
+            let model = makeChart(api)
+            model.start()
+            try await waitForReads(1, api)
+            await model.receive(notice(symbol: "BTCUSDT", timestamp: 101))
+            await api.releaseCurrentRead()
+            try await waitUntil { model.chartDataFrame != nil }
+            let epoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+            try await Task.sleep(for: .milliseconds(30))
+            var reads = await api.reads
+            XCTAssertEqual(reads, 1)
+            try await waitForReads(2, api)
+            await api.openGate()
+            try await waitUntil { model.candles.first?.closePrice == 102 }
+            model.chartFirstFramePresented(epoch: epoch, at: ProcessInfo.processInfo.systemUptime)
+            try await Task.sleep(for: .milliseconds(50))
+            reads = await api.reads
+            XCTAssertEqual(reads, 2, "Fallback and late presentation must not each refresh")
+            model.stop()
+        }
+    }
+
+    func testForegroundWithoutSocketReconnectWaitsForACompleteSnapshot() async throws {
+        for interval in [MarketKlineInterval.oneMinute, .oneHour] {
+            let api = GatedChartHistoryAPI()
+            await api.openGate()
+            let model = makeChart(api, initialInterval: interval)
+            model.start()
+            await model.receive(ready())
+            try await waitUntil { model.chartDataFrame != nil }
+            let previous = try XCTUnwrap(model.chartDataFrame)
+            let oldCandles = model.candles
+            await api.closeGate()
+            model.suspendForBackground()
+            await model.receive(liveKline(interval: interval))
+            XCTAssertTrue(model.chartDataFrame?.candles.liveTail == previous.candles.liveTail)
+            await model.resumeFromBackground()
+            try await waitForReads(2, api)
+            await model.receive(liveKline(interval: interval))
+            XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch)
+            XCTAssertTrue(model.candles == oldCandles)
+            model.toggleChartIndicator("RSI")
+            try await Task.sleep(for: .milliseconds(30))
+            XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch,
+                "Indicator changes must also wait for the foreground snapshot")
+            await api.openGate()
+            try await waitUntil { model.candles.first?.closePrice == 102 }
+            XCTAssertNotEqual(model.chartDataFrame?.epoch, previous.epoch)
+            await model.resumeFromBackground()
+            let reads = await api.reads
+            XCTAssertEqual(reads, 2)
+            model.stop()
+        }
+    }
+
+    func testFirstSocketReadyPreservesTheDownloadingInitialSnapshot() async throws {
+        let cancelled = expectation(description: "The first socket handshake must preserve HTTP history")
+        cancelled.isInverted = true
+        let api = GatedChartHistoryAPI(onCancelled: { cancelled.fulfill() })
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        await model.receive(ready())
+        await fulfillment(of: [cancelled], timeout: 0.15)
+        let reads = await api.reads
+        XCTAssertEqual(reads, 1, "A slow handshake must not restart the first HTTP download")
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame != nil }
+    }
+
+    func testReconnectKeepsTheLastCompleteFrameUntilHistoryArrives() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        let previous = try XCTUnwrap(model.chartDataFrame)
+        let previousCandles = model.candles
+        await api.closeGate()
+        await model.receive(ready())
+        try await waitForReads(2, api)
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let tick = RealtimeServerMessage(version: 1, type: "event", requestId: nil,
+            channel: "market.ticker", event: "upsert", key: "BTCUSDT", sequence: 1,
+            timestamp: now, data: .object(["symbol": .string("BTCUSDT"),
+                "lastPrice": .number(300), "priceChangePercent24h": .number(1),
+                "quoteVolume24h": .number(1000),
+                "eventTime": .number(Double(now))]), error: nil)
+        _ = try XCTUnwrap(tick.decodeData(as: MarketTickerPayload.self))
+        await model.receive(tick)
+        await model.receive(liveKline())
+        XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch,
+            "Keep the complete old frame while the reconnect snapshot is downloading")
+        XCTAssertTrue(model.chartDataFrame?.candles.history === previous.candles.history)
+        XCTAssertEqual(model.chartDataFrame?.candles.liveTail, previous.candles.liveTail)
+        XCTAssertTrue(model.candles == previousCandles)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 102 }
+        XCTAssertNotEqual(model.chartDataFrame?.epoch, previous.epoch)
+    }
+
     func testDiagnosticFirstFrameIgnoresOldEpochAndFinishesEachLoadOnce() async throws {
         let api = GatedChartHistoryAPI()
         await api.openGate()
@@ -799,6 +1368,7 @@ final class MarketFastPathTests: XCTestCase {
         let viewModel = makeChart(api)
         viewModel.start()
         defer { viewModel.stop() }
+        await viewModel.receive(ready())
         try await waitForReads(1, api)
         await viewModel.receive(ready())
         await fulfillment(of: [cancelled], timeout: 2)
@@ -815,6 +1385,7 @@ final class MarketFastPathTests: XCTestCase {
         let viewModel = makeChart(api)
         viewModel.start()
         defer { viewModel.stop() }
+        await viewModel.receive(ready())
         try await waitUntil { viewModel.chartDataFrame != nil }
         let first = try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime)
         await api.closeGate()
@@ -854,6 +1425,7 @@ final class MarketFastPathTests: XCTestCase {
         let viewModel = makeChart(api)
         viewModel.start()
         defer { viewModel.stop() }
+        await viewModel.receive(ready())
         try await waitUntil { viewModel.chartDataFrame != nil }
         let first = try XCTUnwrap(viewModel.chartDataFrame?.candles.history.candles.first?.openTime)
         await api.closeGate()
@@ -968,35 +1540,42 @@ final class MarketFastPathTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
-    private func makeChart(_ api: any APIClient) -> MarketChartViewModel {
+    private func makeChart(_ api: any APIClient, initialInterval: MarketKlineInterval = .oneHour,
+                           cacheTimeProvider: @escaping () -> Date = Date.init) -> MarketChartViewModel {
         let market = MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 100,
             changePercent24h: 0, updatedAt: .now)
         return MarketChartViewModel(market: market, apiClient: api,
-            realtimeClient: RealtimeClient(baseURL: URL(string: "http://127.0.0.1")!, tokenProvider: { nil }))
+            realtimeClient: RealtimeClient(baseURL: URL(string: "http://127.0.0.1")!, tokenProvider: { nil }),
+            initialInterval: initialInterval,
+            chartIndicatorSelectionStore: .init(key: "chart-test-selection-\(UUID())"),
+            chartIndicatorParametersStore: .init(key: "chart-test-parameters-\(UUID())"),
+            cacheTimeProvider: cacheTimeProvider)
     }
 
-    private func liveKline() -> RealtimeServerMessage {
-        let at = Int64(Date().timeIntervalSince1970 * 1000) / 3_600_000 * 3_600_000
+    private func liveKline(interval: MarketKlineInterval = .oneHour, sequence: Int64 = 1,
+                           close: Double = 105) -> RealtimeServerMessage {
+        let width = Int64(interval.duration * 1000)
+        let at = Int64(Date().timeIntervalSince1970 * 1000) / width * width
         let data: JSONValue = .object([
-            "symbol": .string("BTCUSDT"), "contractType": .string("PERPETUAL"), "interval": .string("1h"),
-            "openTime": .number(Double(at)), "closeTime": .number(Double(at + 3_599_999)),
+            "symbol": .string("BTCUSDT"), "contractType": .string("PERPETUAL"), "interval": .string(interval.rawValue),
+            "openTime": .number(Double(at)), "closeTime": .number(Double(at + width - 1)),
             "openPrice": .number(100), "highPrice": .number(110), "lowPrice": .number(99),
-            "closePrice": .number(105), "volume": .number(1), "quoteVolume": .number(100),
+            "closePrice": .number(close), "volume": .number(1), "quoteVolume": .number(100),
             "closed": .bool(false), "eventTime": .number(Double(at + 1000))])
         return RealtimeServerMessage(version: 1, type: "event", requestId: nil,
-            channel: "market.kline", event: "upsert", key: "BTCUSDT:1h", sequence: 1,
+            channel: "market.kline", event: "upsert", key: "BTCUSDT:" + interval.rawValue, sequence: sequence,
             timestamp: at + 1000, data: data, error: nil)
     }
 
-    private func notice(symbol: String, interval: String = "1h") -> RealtimeServerMessage {
+    private func notice(symbol: String, interval: String = "1h", timestamp: Int64 = 1) -> RealtimeServerMessage {
         RealtimeServerMessage(version: 1, type: "event", requestId: nil, channel: "market.history",
-            event: "upsert", key: nil, sequence: 1, timestamp: 1,
+            event: "upsert", key: nil, sequence: 1, timestamp: timestamp,
             data: .object(["symbol": .string(symbol), "interval": .string(interval), "kind": .string("history")]), error: nil)
     }
 
-    private func ack(symbol: String, interval: String) -> RealtimeServerMessage {
+    private func ack(symbol: String, interval: String, timestamp: Int64 = 1) -> RealtimeServerMessage {
         let data = Data("""
-        {"version":1,"type":"ack","timestamp":1,"data":{"subscriptions":[{"channel":"market.history","filters":{"symbols":["\(symbol)"],"intervals":["\(interval)"]}}]}}
+        {"version":1,"type":"ack","timestamp":\(timestamp),"data":{"subscriptions":[{"channel":"market.history","filters":{"symbols":["\(symbol)"],"intervals":["\(interval)"]}}]}}
         """.utf8)
         return try! JSONDecoder().decode(RealtimeServerMessage.self, from: data)
     }
@@ -1013,6 +1592,15 @@ final class MarketFastPathTests: XCTestCase {
         }
         let reads = await api.reads
         XCTAssertEqual(reads, expected)
+    }
+
+    private func waitForFullReads(_ expected: Int, _ api: GatedChartHistoryAPI) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await api.limits.filter({ $0 == 1500 }).count < expected, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let count = await api.limits.filter { $0 == 1500 }.count
+        XCTAssertEqual(count, expected)
     }
 
     private func waitUntil(_ predicate: () -> Bool) async throws {
@@ -1054,11 +1642,20 @@ private actor EmptyPendingChartAPI: APIClient {
 
 private actor GatedChartHistoryAPI: APIClient {
     private(set) var reads = 0
+    private(set) var limits: [Int] = []
+    private var closedPrices: [String: Double] = [:]
     private var isOpen = false
     private var waiting: [Int: CheckedContinuation<Void, Error>] = [:]
     private let ignoresCancellation: Bool
     private let onFirstRead: @Sendable () -> Void
     private let onCancelled: @Sendable () -> Void
+    private var serverTime: Int64?
+    private var statisticsPending = false
+    private var includeTradingData = false
+
+    func setServerTime(_ value: Int64?) { serverTime = value }
+    func setStatisticsPending(_ value: Bool) { statisticsPending = value }
+    func setIncludeTradingData(_ value: Bool) { includeTradingData = value }
 
     init(onFirstRead: @escaping @Sendable () -> Void = {}, onCancelled: @escaping @Sendable () -> Void = {},
          ignoresCancellation: Bool = false) {
@@ -1071,6 +1668,8 @@ private actor GatedChartHistoryAPI: APIClient {
         guard request.path == "/api/market/klines" else { throw APIError.invalidResponse }
         reads += 1
         let read = reads
+        let limit = request.queryItems.first { $0.name == "limit" }?.value.flatMap(Int.init) ?? 1500
+        limits.append(limit)
         if read == 1 { onFirstRead() }
         if !isOpen {
             let id = read
@@ -1083,15 +1682,30 @@ private actor GatedChartHistoryAPI: APIClient {
         if !ignoresCancellation { try Task.checkCancellation() }
         let interval = request.queryItems.first { $0.name == "interval" }?.value ?? "1h"
         let before = request.queryItems.first { $0.name == "beforeOpenTime" }?.value.flatMap(Int64.init)
-        let width: Int64 = interval == "5m" ? 300_000 : 3_600_000
+        let width = Int64((MarketKlineInterval(rawValue: interval) ?? .oneHour).duration * 1000)
         let end = before ?? Int64(Date().timeIntervalSince1970 * 1000) / width * width
+        if limit == 2 {
+            let rows = [
+                MarketCandle(openTime: end - width, closeTime: end - 1, openPrice: 100,
+                    highPrice: 110, lowPrice: 99, closePrice: closedPrices[interval] ?? 101,
+                    volume: 1, quoteVolume: 100),
+                MarketCandle(openTime: end, closeTime: end + width - 1, openPrice: 100,
+                    highPrice: 120, lowPrice: 90, closePrice: 109, volume: 20, quoteVolume: 2000)
+            ]
+            return MarketKlineHistoryResponse(symbol: "BTCUSDT", interval: interval, items: rows,
+                historyPending: false, statisticsPending: statisticsPending,
+                hasMoreHistory: false, serverTime: serverTime) as! Response
+        }
+        if before == nil { closedPrices[interval] = Double(100 + read) }
         let rows = (1...32).reversed().map { index in
             MarketCandle(openTime: end - Int64(index) * width,
                 closeTime: end - Int64(index - 1) * width - 1,
-                openPrice: 100, highPrice: 110, lowPrice: 99, closePrice: Double(100 + read), volume: 1, quoteVolume: 100)
+                openPrice: 100, highPrice: 110, lowPrice: 99, closePrice: Double(100 + read), volume: 1, quoteVolume: 100,
+                tradingData: includeTradingData ? MarketChartTradingData(openInterest: 100) : nil)
         }
         return MarketKlineHistoryResponse(symbol: "BTCUSDT", interval: interval, items: rows,
-            historyPending: before != nil && !isOpen, hasMoreHistory: true) as! Response
+            historyPending: before != nil && !isOpen, statisticsPending: statisticsPending,
+            hasMoreHistory: true, serverTime: serverTime) as! Response
     }
 
     func releaseCurrentRead() {

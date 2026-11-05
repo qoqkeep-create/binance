@@ -210,6 +210,7 @@ struct WebCheckbox: View {
 struct WebTabs: View {
   let tabs: [(String, String)]
   @Binding var selection: String
+  var compact = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   var body: some View {
     GeometryReader { geometry in
@@ -223,8 +224,8 @@ struct WebTabs: View {
         ForEach(tabs, id: \.0) { key, title in
           let selected = selection == key
           Button { selection = key } label: {
-            Text(title).font(.system(size: 20, weight: selected ? .bold : .regular))
-              .lineLimit(1).minimumScaleFactor(0.95)
+            Text(title).font(.system(size: compact ? 17 : 20, weight: selected ? .bold : .regular))
+              .lineLimit(1).minimumScaleFactor(compact ? 0.6 : 0.95)
               .foregroundStyle(selected ? WebTheme.text : WebTheme.secondary)
               // Keep one glyph layer: only its scale animates, never cross-fade fonts.
               .transaction { $0.animation = nil }
@@ -286,14 +287,95 @@ private extension EnvironmentValues {
   }
 }
 
-private struct WebRefreshOffsetKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
 extension View {
   func webRefreshable(_ action: @escaping @MainActor () async -> Void) -> some View {
     environment(\.webRefreshAction, action)
+  }
+}
+
+/// Observe the existing native scroll view without replacing its delegate or pan recognizer.
+/// Layout preferences can stay at zero during a pull, and a second drag gesture is unnecessary.
+private struct WebRefreshScrollObserver: UIViewRepresentable {
+  enum Event {
+    case moved(distance: CGFloat, dragging: Bool)
+    case released(distance: CGFloat)
+    case cancelled
+  }
+  var onEvent: (Event) -> Void
+
+  func makeUIView(context: Context) -> ObserverView {
+    let view = ObserverView()
+    view.isUserInteractionEnabled = false
+    view.onEvent = onEvent
+    return view
+  }
+
+  func updateUIView(_ uiView: ObserverView, context: Context) { uiView.onEvent = onEvent }
+  static func dismantleUIView(_ uiView: ObserverView, coordinator: ()) { uiView.detach() }
+
+  final class ObserverView: UIView {
+    var onEvent: ((Event) -> Void)?
+    private weak var scrollView: UIScrollView?
+    private var observation: NSKeyValueObservation?
+
+    override func didMoveToWindow() {
+      super.didMoveToWindow()
+      if window == nil { detach() }
+      else { attach() }
+    }
+
+    override func layoutSubviews() {
+      super.layoutSubviews()
+      if window != nil { attach() }
+    }
+
+    private func attach() {
+      var ancestor = superview
+      while let view = ancestor {
+        if let scroll = view as? UIScrollView {
+          guard scrollView !== scroll else { return }
+          detach()
+          scrollView = scroll
+          scroll.alwaysBounceVertical = true
+          scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged))
+          observation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] scroll, _ in
+            self?.emit(.moved(distance: Self.distance(in: scroll), dragging: scroll.isDragging))
+          }
+          return
+        }
+        ancestor = view.superview
+      }
+    }
+
+    func detach() {
+      scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged))
+      observation?.invalidate()
+      observation = nil
+      scrollView = nil
+    }
+
+    private static func distance(in scroll: UIScrollView) -> CGFloat {
+      max(0, -(scroll.contentOffset.y + scroll.adjustedContentInset.top))
+    }
+
+    @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
+      guard let scroll = scrollView else { return }
+      switch pan.state {
+      case .began, .changed: emit(.moved(distance: Self.distance(in: scroll), dragging: true))
+      case .ended: emit(.released(distance: Self.distance(in: scroll)))
+      case .cancelled, .failed: emit(.cancelled)
+      default: break
+      }
+    }
+
+    private func emit(_ event: Event) {
+      // Native layout can also change contentOffset; publish outside SwiftUI's update transaction.
+      DispatchQueue.main.async { [weak self, weak observedScroll = scrollView] in
+        guard let self, let observedScroll, self.scrollView === observedScroll,
+          self.window != nil else { return }
+        self.onEvent?(event)
+      }
+    }
   }
 }
 
@@ -302,41 +384,37 @@ struct WebRefreshScrollView<Content: View>: View {
   var isActive = true
   @ViewBuilder var content: Content
   @Environment(\.webRefreshAction) private var action
-  @State private var coordinateSpace = UUID()
   @State private var interaction = WebRefreshInteraction()
-  @State private var dragging = false
-  @State private var offset: CGFloat = 0
   @State private var refreshTask: Task<Void, Never>?
 
   var body: some View {
     ScrollView {
       VStack(spacing: 0) {
-        GeometryReader { geometry in
-          Color.clear.preference(key: WebRefreshOffsetKey.self,
-            value: geometry.frame(in: .named(coordinateSpace)).minY)
-        }.frame(height: 0)
         if interaction.isRefreshing { indicator.frame(height: 28) }
         content
       }
-    }.coordinateSpace(name: coordinateSpace).scrollBounceBehavior(.always)
+      .background {
+        if isActive, action != nil {
+          WebRefreshScrollObserver { event in
+            guard isActive, action != nil else { return }
+            switch event {
+            case let .moved(distance, dragging):
+              interaction.update(distance: dragging ? distance : 0, dragging: dragging)
+            case let .released(distance):
+              interaction.update(distance: distance, dragging: true)
+              if interaction.release() { startRefresh() }
+            case .cancelled: interaction.update(distance: 0, dragging: false)
+            }
+          }
+        }
+      }
+    }.scrollBounceBehavior(.always)
       .overlay(alignment: .top) {
         if isActive, action != nil, !interaction.isRefreshing, interaction.distance > 0 {
           indicator.frame(height: 28).offset(y: min(interaction.distance, 28) - 28)
             .allowsHitTesting(false).accessibilityHidden(true)
         }
       }
-      .onPreferenceChange(WebRefreshOffsetKey.self) { value in
-        offset = value
-        interaction.update(distance: value, dragging: dragging)
-      }
-      .simultaneousGesture(DragGesture(minimumDistance: 4).onChanged { _ in
-        guard isActive else { return }
-        dragging = true
-        interaction.update(distance: offset, dragging: true)
-      }.onEnded { _ in
-        dragging = false
-        if isActive, action != nil, interaction.release() { startRefresh() }
-      })
       .accessibilityAction(named: Text("刷新")) {
         guard isActive, action != nil, !interaction.isRefreshing else { return }
         interaction.update(distance: WebRefreshInteraction.triggerDistance, dragging: true)
@@ -347,7 +425,8 @@ struct WebRefreshScrollView<Content: View>: View {
   }
 
   private var indicator: some View {
-    ProgressView().scaleEffect(0.5).frame(maxWidth: .infinity)
+    ProgressView().controlSize(.regular).scaleEffect(0.5).frame(maxWidth: .infinity)
+      .accessibilityLabel("正在刷新").accessibilityIdentifier("refresh.indicator")
   }
 
   private func startRefresh() {
@@ -364,7 +443,6 @@ struct WebRefreshScrollView<Content: View>: View {
   private func stopRefresh() {
     refreshTask?.cancel()
     refreshTask = nil
-    dragging = false
     interaction.complete()
   }
 }
@@ -1007,6 +1085,13 @@ struct WebModalBackdrop: View {
 }
 enum WebModalMotion: Equatable {
   case fade, slide
+  static func positionOperation(action: String?, strategyRunning: Bool) -> Self {
+    switch action {
+    case "strategyLog", "breakEven": .fade
+    case "strategy": strategyRunning ? .fade : .slide
+    default: .fade
+    }
+  }
   static func resolve(cardHeight: CGFloat, containerHeight: CGFloat, reduceMotion: Bool,
     preferred: Self? = nil) -> Self {
     if reduceMotion { return .fade }
@@ -1032,6 +1117,22 @@ struct WebModalTransitionState: Equatable {
     phase = progress * max(0, 1 - drag / containerHeight)
     cardOffset = motion == .slide ? (1 - progress) * containerHeight + drag : 0
     cardOpacity = motion == .slide ? 1 : Double(phase)
+  }
+}
+/// Card and backdrop share one composited opacity throughout a fade.
+struct WebModalVisuals: ViewModifier {
+  let motion: WebModalMotion?
+  let transition: WebModalTransitionState
+  let underlying: Double
+  func body(content: Content) -> some View {
+    let fades = motion == .fade
+    content
+      .environment(\.webModalBase, underlying)
+      .environment(\.webModalPhase, fades ? 1 : transition.phase)
+      .environment(\.webModalOffset, transition.cardOffset)
+      .environment(\.webModalOpacity, fades ? 1 : transition.cardOpacity)
+      .compositingGroup()
+      .opacity(fades ? transition.cardOpacity : motion == nil ? 0 : 1)
   }
 }
 private struct WebModalCardFrameKey: PreferenceKey {
@@ -1122,12 +1223,9 @@ private struct WebModalStage<Modal: View>: View {
       let transition = WebModalTransitionState(motion: motion, progress: progress,
         drag: drag, containerHeight: geometry.size.height)
       modal
-        .environment(\.webModalBase, underlying)
+        .modifier(WebModalVisuals(motion: motion, transition: transition, underlying: underlying))
         .environment(\.webModalUnderlying, max(underlying, overlayOpacity * Double(transition.phase)))
         .environment(\.webModalCloseAction, { if !blocked { isPresented = false } })
-        .environment(\.webModalPhase, transition.phase)
-        .environment(\.webModalOffset, transition.cardOffset)
-        .environment(\.webModalOpacity, transition.cardOpacity)
         .environment(\.webModalDrag, { amount, ended in
           guard !blocked, !closing else { return }
           if ended {
@@ -1137,26 +1235,34 @@ private struct WebModalStage<Modal: View>: View {
         })
         .onPreferenceChange(WebModalBlockedKey.self) { blocked = $0 }
         .onPreferenceChange(WebModalDimmingPreferenceKey.self) { overlayOpacity = $0 }
+        .onAppear {
+          // Explicit fade dialogs do not depend on a height preference arriving.
+          if preferredMotion == .fade || reduceMotion { beginPresentation(.fade) }
+        }
         .onPreferenceChange(WebModalCardFrameKey.self) { frame in
           guard motion == nil, frame.height > 0, geometry.size.height > 0 else { return }
           let selected = WebModalMotion.resolve(cardHeight: frame.height,
             containerHeight: geometry.size.height, reduceMotion: reduceMotion, preferred: preferredMotion)
-          motion = selected
-          Task { @MainActor in
-            await Task.yield()
-            guard isPresented, !closing else { return }
-            var transaction = Transaction(animation: .easeOut(duration: selected.openingDuration))
-            transaction.disablesAnimations = false
-            withTransaction(transaction) { progress = 1 }
-          }
+          beginPresentation(selected)
         }
         .onChange(of: isPresented) { _, shown in
           guard !shown, !closing else { return }
           closing = true
-          withAnimation(.easeOut(duration: 0.14), completionCriteria: .logicallyComplete) {
+          withAnimation(.easeOut(duration: motion?.openingDuration ?? 0.16), completionCriteria: .logicallyComplete) {
             progress = 0; drag = 0
           } completion: { finished() }
         }
+    }
+  }
+  private func beginPresentation(_ selected: WebModalMotion) {
+    guard motion == nil else { return }
+    motion = selected
+    Task { @MainActor in
+      await Task.yield()
+      guard isPresented, !closing else { return }
+      var transaction = Transaction(animation: .easeOut(duration: selected.openingDuration))
+      transaction.disablesAnimations = false
+      withTransaction(transaction) { progress = 1 }
     }
   }
 }

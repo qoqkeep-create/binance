@@ -2,6 +2,110 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 保证金率与手势切页（2026-11-05，本地）
+
+后端 `positions.test_margin` 15 项及 `common.tests.BinanceRequestBudgetTests` 17 项共 32 项通过。覆盖交易所权益分母与独立委托占用、真实维持保证金不由杠杆反推、空账户／零及负权益、无效／非有限／不一致字段、逐仓与多资产拒算、未成交委托、认证、绑定变更、跨用户／模式／Key／创建代际缓存、过慢快照和失败不缓存，以及两项新增账户 GET 的低优先级完整权重。测试用 SQLite 临时库、内存缓存和交易所替身，通过既有禁外网运行器执行，无生产账户或交易动作。
+
+```bash
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py positions.test_margin common.tests.BinanceRequestBudgetTests
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/MarginAndSwipeNov5/Host
+```
+
+后端也可按项目现有 SQLite 测试配置直接运行上述两个版本化测试模块；忽略目录运行器仅提供禁外网、禁 dotenv 和本地配置。后端日志为 `.integration-runtime/position-margin-backend.log`。
+
+Swift host 直接编译真实 Store、分页模型、保证金状态、百分比与手势规则，9 项模型测试通过；包含延迟旧账户回包、前后台 monitor 交接、失败保留明细但取消风险颜色、有效期、重复请求、颜色边界／强平后不截断、水平阈值及边缘、两套分页模型和返回不增请求。另 1 项真实生产 Header／WebTabs／Badge 的离屏渲染测试通过：320／393／440 pt × 深浅主题 × 绿黄红共 18 组，2x 输出，检查尺寸和边缘溢出；只将 UIKit 主题颜色选择与字体适配为 AppKit。已人工查看 320 pt 浅色红色和 393 pt 深色绿色。日志 `.integration-runtime/position-margin-host.log`，图片在 Host 的 `rendered/`，生产源码 SHA 清单为 `production-inputs.json`。
+
+generic iOS 主 App／Widget Release 无签名构建和 arm64 Simulator `build-for-testing` 通过，日志分别为 `.integration-runtime/position-margin-release.log`、`.integration-runtime/position-margin-build-tests.log`。新增离线 UI 场景为 `testPositionPagesSwipeAndMarginDetailsStayReadOnly`，只完成编译，**未运行模拟器、系统手势或真机验收**。真实滚动／刷新手感、弹窗动态效果、当前绑定和带单绑定结果仍待新包验证。
+
+本次未提交／推送、部署到 47.80.22.243（首尔服务器）或上传 TestFlight；新客户端与新增接口需配套发布。业务口径见 [资金](capital-and-transfers.md#持仓页保证金率2026-11-05本地实现)，轻量切页的实现与取舍见 [原生页面](ios-web-parity.md#保证金徽标与手势切页2026-11-05本地)。
+
+## 周期缓存、宿主复用与首帧优先（2026-11-05，本地）
+
+在下节排查基线之后实现会话内周期缓存、两根尾部核验、Metal 宿主复用及通知覆盖／首帧门控。现行有效期、失效条件与数据边界统一见 [行情](market-data.md#会话内周期缓存与宿主复用本地实现)，本节只记录验证。
+
+`python3 frontend/ios-app/scripts/test_chart_recovery.py .integration-runtime/ChartIntervalNov5/CacheChecks` 的最终模型 44 项及真实数据／指标管线 14 项共 **58 项通过（25.019 秒，0 失败）**，日志 `.integration-runtime/ChartIntervalNov5/host-checks.log`。API／WSS 为内存替身，不启动 transport；覆盖缓存上限、TTL 不续期、跨收线边界、后台／重连／指标／序列缺口失效、订阅确认与真实通知、严格水位去重、无呈现回调的 500ms 兜底、旧请求／分页隔离。尾部新增阻塞测试覆盖真实 OHLC／成交量纠正、下载期间较新报价、已有统计与指标历史对象复用、分页不收缩、连切只增加两根请求、迟到响应拒绝，以及真实通知／缺口／跨桶升级完整读取。
+
+同样使用 500ms 固定 HTTP、真实 1500 根指标管线，只替换优化前后模型的单次受控对照如下。冷周期仍受 HTTP 约束，热返回同步发布完整 frame；两根核验完成后仍复用同一指标历史对象。
+
+| 模型 | 首次 1h ms | 切 5m ms | 返回 1h ms | 三次请求 limit | 返回时指标历史复用 |
+| --- | ---: | ---: | ---: | --- | --- |
+| 修改前 | 560.11 | 540.88 | 566.26 | 1500／1500／1500 | 否 |
+| 修改后 | 568.52 | 562.52 | 0.0716 | 1500／1500／2 | 是 |
+
+这是模型 frame 就绪耗时，不含 UIKit／Metal、真实网络或物理屏幕。可复现命令为 `python3 .integration-runtime/ChartIntervalNov5/CacheBenchmark/run_benchmark.py`，原始 `before.log`／`after.log`、`results.json`、源码哈希与模型快照保留在该目录；没有覆盖下节旧三模型基线。
+
+真实 SwiftUI `UIHostingController` 用例先在旧实现复现 frame 变 nil 后宿主移除并重建，4 处断言失败；修复后验证 nil／新周期／同周期更新全程宿主构造计数为 1、renderer 身份相同，以及切换清理交互、旧 epoch 回调隔离和加载遮挡不盖住渲染错误。专用模拟器为 `TradeTools Chart Host Reuse`（`6D67613C-F801-48BA-A3FF-0726A254389A`）。`ChartEngineCoreTests` 170 项加 `ChartLoadDiagnosticsTests` 4 项共 **174 项通过（23.104 秒，0 失败／0 跳过）**，结果为 `.integration-runtime/ChartHostReuseNov6/FinalCover.xcresult`，日志 `.integration-runtime/chart-host-reuse-final-cover.log`。
+
+追加下述 live 水位修复后 clean 重编译，最终定向 **10 项通过（0.592 秒，0 失败／0 跳过）**，为 6 项宿主／呈现回归和 4 项诊断，结果 `.integration-runtime/ChartHostReuseNov6/FinalTen.xcresult`，日志 `.integration-runtime/chart-host-reuse-final-ten.log`。该轮离线 SwiftUI／Metal 用例实测视图创建到首个 GPU completion 代理 61.2ms，三次新状态到 GPU completion 代理分别为 18.1／13.0／8.5ms，宿主仍只创建一次且 renderer 身份不变。它不含 HTTP 和模型取数，也不等于手机真实 presentedTime。早期旧专用模拟器磁盘目录缺失导致启动失败，另一次增量链接使用到签名变化前的模块；均未计为产品验证，最终 clean 定向通过。另修正一个已有右侧未来空白测试的坐标样本，未修改几何／命中生产代码。
+
+宿主复用后另补 live revision 水位回归：旧 stream `100` → 新 stream `1` → 迟到旧 stream `101` → 新 stream `2`。修改前新增回归有 6 处断言失败；按 presentationID 重置水位并拒绝旧 ID 更新当前 live 统计后，独立健康检查 **6 项通过（0.003 秒）**，保留原 nil-ID 行为。命令为 `python3 frontend/ios-app/scripts/test_renderer_presentation.py .integration-runtime/ChartHostReuseNov6/Health`；输入哈希和提取测试保留在该目录，日志为 `.integration-runtime/chart-host-reuse-health-baseline.log` 与 `chart-host-reuse-health-fixed.log`。
+
+最终主 App／Widget generic iOS 无签名 Release 构建通过，命令为 `xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Release' -configuration Release -destination 'generic/platform=iOS' -derivedDataPath .integration-runtime/ChartIntervalOptimizedNov5/DerivedData CODE_SIGNING_ALLOWED=NO build`，日志 `.integration-runtime/chart-interval-optimized-release.log`。文档链接、`git diff --check` 和未追踪文件检查完成，新增安全测试脚本加入独立 Git 追踪。没有提交／推送、部署或上传 TestFlight；新包真机连续切换、长后台及相同网络下与币安的对照仍待验。
+
+## 周期切换排查与百分比回归（2026-11-05，本地）
+
+十字线右轴百分比的真实 glyph 回归先在旧格式复现失败，固定两位后 `test_chart_order_axis_labels.py` 的 6 项全部通过，覆盖正负／整数／小百分比／归零、2x／3x、320／390／440 pt，以及原订单价格轴和 Metal 像素规则。命令为 `python3 frontend/ios-app/scripts/test_chart_order_axis_labels.py .integration-runtime/CrosshairPercentNov5/Host`；失败与最终日志为 `.integration-runtime/crosshair-percent-baseline.log`、`crosshair-percent-final.log`，生产输入哈希保留于 host 目录。
+
+后端新回归执行真实 `repair.run_next → service.warm_history → history_cache`，使用专用临时回环 Redis、隔离 SQLite 和两格测试容量：旧实现确认 maintenance 驱逐 BTC 前台窗口，按需 history 对照通过；修复后两项通过（0.115 秒）。完整 `market_stream` **93 项通过（5.369 秒，0 跳过）**，包含真实 Redis 协议测试。运行器禁用环境文件、调度器／账户流及非回环 socket／DNS，交易所为替身：
+
+```bash
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py market_stream
+```
+
+命令依赖本机已有测试 Redis 二进制；可维护测试位于 `server/market_stream/test_fast_path.py`，运行器及 `cache-priority-before.log`／`cache-priority-after.log`／`market-stream-tests.log` 位于忽略的 `.integration-runtime/ChartIntervalLatencyNov5/`。production 修改仅让 maintenance 使用原有 `prewarm=True`，没有修改账户／交易路径、数据库结构或按需通知职责。
+
+三模型受控对照把每次 HTTP 固定为 500ms／1500 根，只替换模型，首次 1h → 5m → 返回 1h 都产生三次完整读取，约 550–570ms；当前、`7daa362`、USDC 各 1 项对照通过，归档后再运行 `all` 验证三个入口可复现。归档 `.integration-runtime/ChartIntervalNov5/Comparison/` 含三份模型、相同管线快照、原始／复测数据、来源 Git 与输入哈希，不含 `.build/`：
+
+```bash
+python3 .integration-runtime/ChartIntervalNov5/Comparison/run_model.py all
+```
+
+该对照断言的是优化前每次等待 HTTP 的基线行为；它隔离模型差异，不是各历史版本完整管线／Metal、线上旧后端或手机 A/B。完整结论及后续周期缓存／宿主复用见 [行情](market-data.md#周期切换耗时与十字线百分比2026-11-05)。
+
+主 App／Widget 的 generic iOS 无签名 Release 构建成功，命令为 `xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Release' -configuration Release -destination 'generic/platform=iOS' -derivedDataPath .integration-runtime/ChartIntervalNov5/DerivedData CODE_SIGNING_ALLOWED=NO build`，日志 `.integration-runtime/chart-interval-release.log`。本轮未启动模拟器或进行新包实机验收，未提交／推送、部署或上传 TestFlight；**47.80.22.243（首尔服务器）** 只读结果与本地修复分开记录，见 [运维](operations.md#周期切换只读测量2026-11-05)。
+
+## 图表恢复、弹窗与边缘填充（2026-11-05，本地）
+
+`test_chart_recovery.py` 提取真实 `MarketChartViewModel`、`RealtimeClient`、HTTP 类型、指标和数据管线，使用受控历史接口阻塞／释放快照，不启动网络 transport。旧实现先复现首次 socket ready 取消 HTTP、历史尚未返回时 ticker／K 线提前发布新 epoch；修复后 23 项模型用例和 14 项原管线用例通过。范围包含首次握手、真实重连旧请求取消、旧分页晚到、通知合并、15 秒核验、空快照、修正 OHLC、每条实时 K 线、指标一致性；新增前后台生命周期检查覆盖 1m／1h、没有 socket 重连、后台消息、补线时改指标及重复前台通知。
+
+实际 SwiftUI 草稿叠层先复现右轴无填充，修复后 1 项像素用例覆盖 2／3 倍屏及多空两向，确认右边缘与图内同色且主图上下无越界。实际场景／Metal 4 项通过，先复现左边界为 8／12 物理像素，修复后为 0，并保持主图正方形及右轴价格层级。真实卡片表达式及费用 14 项通过，旧版对三种成功绑定提示的断言失败；真实错误仍显示。弹窗实际 `WebModalBackdrop`／`webModalCard`／合成层 2 项通过，检查 0／25／50／75／100% 的卡片与蒙层像素透明度、固定位置和持仓操作转场选择。
+
+可复现命令（从仓库根目录执行；输出均在忽略目录）：
+
+```bash
+python3 frontend/ios-app/scripts/test_chart_recovery.py .integration-runtime/ChartResumeNov5/Host
+python3 frontend/ios-app/scripts/test_chart_order_axis_labels.py .integration-runtime/ChartResumeNov5/Axis
+python3 frontend/ios-app/scripts/test_chart_order_overlay.py .integration-runtime/ChartResumeNov5/Overlay
+python3 frontend/ios-app/scripts/test_position_fee_presentation.py .integration-runtime/ChartResumeNov5/Card
+python3 frontend/ios-app/scripts/test_modal_fade.py .integration-runtime/ChartResumeNov5/Modal
+```
+
+合计 58 项 host 定向回归通过，生产输入哈希保存在各目录 `production-inputs.json`。旧版失败与修复日志为 `recovery-baseline.log`／`recovery-final.log`／`pipeline-final.log`、`axis-baseline.log`／`axis-fixed.log`、`overlay-baseline.log`／`overlay-fixed.log`、`card-baseline.log`／`card-fixed.log` 和 `modal-fixed.log`。最终主 App／Widget 的 generic iOS 无签名 Release 构建及 arm64 Simulator `build-for-testing` 成功（`release-final.log`／`test-build.log`）；没有启动模拟器、执行 iOS UI 测试或手机动态验收。主模型 host 需要显式导入 Combine，字体接口从 UIKit 适配到 AppKit，草稿像素检查仅使用主题替身，生产几何、裁剪、标签与手势未替换。弹窗像素检查不代替系统 fullScreenCover／真实点击与时间动画验收。
+
+只读查看 **47.80.22.243（首尔服务器）** 的既有 Build 44 诊断，未变更服务器、数据库或部署；具体样本及未定位的线上耗时见 [行情](market-data.md#首次握手与后台恢复2026-11-05本地)。本轮未提交／推送或上传 TestFlight，不涉及真实交易、资金或保护单操作。
+
+2026-11-05 同日后续按用户明确要求，将“策略和执行日志”的 `strategyLog` 动作显式固定为 fade，覆盖当前持仓与历史仓位入口，复用同一合成层蒙层。定向 `test_modal_fade.py .integration-runtime/StrategyLogFadeNov5/Host` 的 3 项 host 用例通过：包含运行中／历史策略、加载前短内容／加载后高内容，以及卡片和蒙层各阶段同步像素。日志位于 `.integration-runtime/strategy-log-fade-test.log`。本次主 App／Widget 的 generic iOS 无签名 Release 构建及 arm64 Simulator `build-for-testing` 均成功，日志为 `.integration-runtime/strategy-log-fade-release.log` 与 `.integration-runtime/strategy-log-fade-build-tests.log`。未启动模拟器，系统展示和真机观感仍待新包验收。
+
+## 下拉刷新触发与动画恢复（2026-11-05，本地）
+
+2026-11-04 的公共刷新容器替换了系统 `.refreshable`，原页面回调仍在，但真实拖动未进入有效距离状态。离线 UI 用例 `WebParityUITests.testAllPositionTabsRefreshFromEmptyLists` 在旧代码失败；定向探针记录 53 次手势更新、最大测距 0、松手距离 0，将测量器移入内容背景仍失败。原有三个 `WebRefreshInteractionTests` 只验证纯状态，无法发现滚动视图接线失效，不能作为动画和真实触发通过的证据。
+
+共用组件现读取实际 `UIScrollView` 顶部越界距离，并观察其已有 pan 的释放／取消；不占用原 delegate，不再添加 SwiftUI 拖动手势。保留 70 pt 阈值、0.5 指示器、短／空列表回弹、单个刷新任务、无障碍动作，以及各页面原账户范围和隐藏取消规则。完整行为与覆盖入口见 [页面规范](ios-web-parity.md#账户设置与紧凑刷新2026-11-05本地)。临时测距探针已移除。
+
+在专用 iPhone 18 Pro／iOS 27.2 离线模拟器上，四个不同 UI 用例通过：三个空持仓页签下拉后从空变为有数据；信号 30 pt 短拖不刷新、充分下拉出现小动画并从“读取 1”变为“读取 2”；行情、我的、交易命令、操作日志、资金归集、策略日志和内嵌记录逐一验证动画可见且完成收起；信号原有跨标签／前后台滚动位置保留用例通过。已查看行情、信号、账户及记录截图，指示器约 10×10 pt。慢响应只由 DEBUG 的 `--fixture-refresh-delay` 内存 API 提供，没有网络传输，写操作仍按原 fixture 拒绝；命令就绪标记用于等待首次加载结束，避免把已有在途读取的防重保护误判为下拉失败。
+
+复现命令为 `xcodebuild test-without-building -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Chart Calibration' -destination 'platform=iOS Simulator,id=18FBF3F9-632C-4B00-BADE-F1CA7FFF483E' -derivedDataPath .integration-runtime/PullRefresh/DerivedData -only-testing:TradeToolChartCalibrationUITests/WebParityUITests/testAllPositionTabsRefreshFromEmptyLists CODE_SIGNING_ALLOWED=NO`；其他三个用例为 `testSignalsPullRefreshShowsIndicatorAndLoadsNewSnapshot`、`testSharedRefreshIndicatorOnMarketProfileCommandsAndRecords`、`testSignalListKeepsSnapshotAndScrollPositionAcrossTabsAndBackground`。证据位于 `.integration-runtime/PullRefresh/`：旧版 `baseline-retry.log`／`Probe.xcresult`，通过结果分别在 `Fixed.xcresult`（空列表、保留滚动）、`Indicator.xcresult`（信号）和 `AllPages.xcresult`（其余入口）。初始化期间另有一次模拟器 runner 崩溃，恢复专用设备后已重跑；不计为产品用例通过。
+
+最终 `TradeTool Release` 的 generic iOS 无签名主 App／Widget 构建成功，日志为 `.integration-runtime/PullRefresh/release.log`；UI 测试目标也已实际编译并运行。最低部署版本仍为 iOS 17，本轮运行验证仅覆盖上述模拟器版本。没有真机、新签名包、TestFlight 上传或生产部署；改动保留本地、未提交推送。真实 iPhone 的连续下拉手感仍需新包验收。
+
+## 启动图标交接（2026-11-05，本地）
+
+系统启动 storyboard 将图标约束到整屏中心，旧 `AppLaunchView` 只有背景忽略安全区，图标仍按安全区居中。实际 SwiftUI `ImageRenderer` 注入上下 59／34 pt 安全区后，393×852 pt 画面的图标从 y=378…473 移至 y=391…486，稳定复现约 13 pt 的下移；整容器填满窗口并忽略安全区后恢复到原坐标。两阶段统一使用 96 pt 的 `LaunchBrandMark`，避免从较小图集放大并再次裁切；登录页品牌组件不变。现行资源和布局规范见 [品牌与认证](ios-authentication.md)。
+
+`python3 frontend/ios-app/scripts/test_launch_layout.py .integration-runtime/LaunchLayout/RepositoryFixed` 提取真实生产视图，只有图片加载从 iOS bundle 适配为源 PNG；使用真实 SwiftUI 离屏渲染，对照 storyboard 的全窗口中心与预渲染资源。四组布局（无安全区、两种竖屏及非对称横屏）乘浅深主题，8／8 逐像素一致；`--source .integration-runtime/LaunchLayout/RootBefore.swift` 重放旧版为 0／8，复现竖屏下移及横屏偏移。两个 Host 目录的 `production-inputs.json` 保存源码和资源哈希。
+
+最终主 App／Widget generic iOS Release 无签名构建通过，generic iOS Simulator arm64 的 `build-for-testing` 通过，日志为 `.integration-runtime/LaunchLayout/{release-final,test-compile}.log`。新增 iOS XCTest 对照三组非对称安全区与浅深主题，仅编译，未启动模拟器或执行 iOS XCTest／UI。手机冷启动仍需安装新签名包后验收，旧启动资源缓存注意事项见 [认证文档](ios-authentication.md)。本轮未提交推送、上传 TestFlight 或发布后端；此前运维记录保留。
+
 ## 订单价格框接线与持仓费用展示（2026-11-04，本地）
 
 订单右轴价格框改用图表主题背景：浅色白底、深色灰黑底。持仓止盈也进入右轴框投影，持仓及草稿的 SwiftUI 横线统一止于绘图区右边；Metal 仅绘制到框左边的短连接线，边缘夹紧时避开圆角空隙。修复原纯白硬编码及虚线贯穿框体，保留固定坐标、完整价格和最新价／十字线的覆盖层级。现行规则见 [行情](market-data.md#价格轴与图内订单标签2026-11-02)。

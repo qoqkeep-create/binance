@@ -260,11 +260,43 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       else {
         throw APIError.business(code: "VISUAL_FIXTURE", message: "视觉校准模式不执行写操作")
       }
+      if ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay"),
+        ["/api/market/tickers", "/v1/account/info", "/api/commands",
+         "/v1/trade/tradingview/signals", "/v1/account/operation-logs",
+         "/v1/account/transfer-history", "/v1/strategy/log"].contains(request.path) {
+        try await Task.sleep(for: .seconds(4))
+      }
       let all = try JSONDecoder().decode([String: JSONValue].self, from: Data(Self.payload.utf8))
       var value =
         all[
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if request.path == "/v1/position/margin" {
+        let danger = ProcessInfo.processInfo.arguments.contains("--fixture-margin-danger")
+        let caution = ProcessInfo.processInfo.arguments.contains("--fixture-margin-caution")
+        value = .object(["supported": .bool(true), "observed_at": .number(Date().timeIntervalSince1970 * 1000),
+          "max_age_seconds": .number(20), "currency": .string("USDT"),
+          "margin_ratio_percent": .string(danger ? "85" : caution ? "55" : "25"),
+          "liquidation_reached": .bool(false), "wallet_balance": .string("1000"),
+          "unrealized_profit": .string("-200"), "margin_balance": .string("800"),
+          "maintenance_margin": .string(danger ? "680" : caution ? "440" : "200"),
+          "initial_margin": .string("400"), "position_initial_margin": .string("350"),
+          "open_order_initial_margin": .string("50"), "total_usage_percent": .string("50"),
+          "available_balance": .string("400"), "positions": .array([
+            .object(["symbol": .string("TESTUSDT"), "side": .string("long"), "quantity": .string("10"),
+              "leverage": .string("20"), "position_initial_margin": .string("350"),
+              "maintenance_margin": .string(danger ? "680" : caution ? "440" : "200"),
+              "unrealized_profit": .string("-200"), "usage_percent": .string("43.75"),
+              "open_order_initial_margin": .string("50")])])])
+      }
+      if ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay") {
+        if request.path == "/api/market/tickers" {
+          value = .object(["quoteAsset": .string("USDT"), "tickers": .array([])])
+        } else if request.path == "/api/commands" {
+          value = .array([.object(["id": .string("fixture-read-only"),
+            "action": .string("只读命令列表"), "status": .string("SUCCEEDED")])])
+        }
+      }
       if request.path == "/v1/trade/capital/precheck",
         ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
         value = .object(["status": .string("ready")])
@@ -794,6 +826,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         FloatingPositionsPreferences.defaults.set(false, forKey: FloatingPositionsPreferences.enabledKey)
         FloatingPositionsPreferences.defaults.set(1.0, forKey: "integrated.floatingPositions.x")
         FloatingPositionsPreferences.defaults.set(0.22, forKey: "integrated.floatingPositions.y")
+        if ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay") {
+          await dashboard.loadSymbolCatalog()
+        }
         await store.begin(userID: "_web_visual_fixture")
         if ProcessInfo.processInfo.arguments.contains("--fixture-toast") {
           container.toastCenter.present("网络请求超时，请稍后重试", duration: 30)
@@ -816,6 +851,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       case "strategy-editor": USDTStrategyEditor(strategy: nil)
       case "operations": USDTRecordsView(kind: .operations)
       case "transfers": USDTRecordsView(kind: .transfers)
+      case "strategy-log": USDTRecordsView(kind: .strategyLog("201"))
+      case "commands": USDTCommandsView()
+      case "embedded-records": USDTRecordsView(kind: .transfers, embedded: true)
       case "settings": USDTSettingsView()
       case "legal": USDTLegalView()
       case "privacy": USDTLegalView(document: "隐私政策")

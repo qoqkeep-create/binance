@@ -3087,7 +3087,10 @@ final class ChartEngineCoreTests: XCTestCase {
             screenY: Double(
                 (pricePanel.plot.top + pricePanel.plot.bottom) / 2
             ),
-            transform: .identity,
+            // Move the last candle away from the edge, creating real future blank
+            // rather than depending on rounding exactly halfway between two slots.
+            transform: ChartTimelineInteractionTransform(
+                translationPixels: -2 * Double(data.slotWidthPixels), scaleX: 1),
             data: data,
             liveData: output.renderState.liveTail
                 .crosshairLiveData
@@ -5675,7 +5678,7 @@ final class ChartEngineCoreTests: XCTestCase {
                             && $0.top >= label.top && $0.bottom <= label.bottom
                     }
                     let texts = [DisplayNumber.text(hit.selection.panelValue, grouped: true)]
-                        + (panel.isPricePanel ? [DisplayNumber.text(try XCTUnwrap(snapshot.axisPriceChangeRate) * 100, signed: true) + "%"] : [])
+                        + (panel.isPricePanel ? ["+10.00%"] : [])
                     let expectedCount = texts.reduce(0) { total, text in
                         total + MetalTextLayouter.layout(text: text, atlas: data.glyphAtlas,
                             originX: 0, baselineY: 0, color: .crosshairAxisLabelText).instances.count
@@ -7628,6 +7631,293 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertEqual(liveBars.count, 4)
     }
 
+    @MainActor
+    func testSwiftUIIntervalLoadingRetainsTheMetalHostAndRenderer() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let initializationBaseline = KlineChartHostView.diagnosticInitializationCount
+        let initialStarted = ProcessInfo.processInfo.systemUptime
+        let model = ChartHostedReuseFixtureModel(frame: nil)
+        let hosting = UIHostingController(rootView: ChartHostedReuseFixture(model: model))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
+        window.rootViewController = hosting
+        window.makeKeyAndVisible()
+        hosting.view.frame = window.bounds
+        hosting.view.layoutIfNeeded()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        func findHost(_ view: UIView) -> KlineChartHostView? {
+            if let host = view as? KlineChartHostView { return host }
+            return view.subviews.lazy.compactMap(findHost).first
+        }
+        for _ in 0..<100 where findHost(hosting.view) == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let original = try XCTUnwrap(findHost(hosting.view))
+        XCTAssertTrue(original.diagnosticIsLoadingCovered, "The renderer can initialize while HTTP history is still unavailable")
+        XCTAssertTrue(original.diagnosticIsRendererSuspended)
+        model.frame = fixture.frame
+        original.diagnosticSetApplicationActive(true)
+        for _ in 0..<100 where model.presentations.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.presentations.first?.0, fixture.frame.epoch)
+        if let initialTime = model.presentations.first?.1 {
+            print("chart_host_fixture initial_ui_to_gpu_ms=\((initialTime - initialStarted) * 1000)")
+        }
+        let originalIdentity = ObjectIdentifier(original)
+        let rendererIdentity = try XCTUnwrap(original.diagnosticRendererIdentity)
+        model.frame = nil
+        try await Task.sleep(for: .milliseconds(100))
+        let loadingHost = findHost(hosting.view)
+        XCTAssertEqual(loadingHost.map(ObjectIdentifier.init), originalIdentity,
+            "Loading another interval must retain the existing Metal host")
+        XCTAssertFalse(loadingHost?.isUserInteractionEnabled ?? true,
+            "The old interval must not remain interactive under the loading indicator")
+        for generation in UInt64(78)...80 {
+            let started = ProcessInfo.processInfo.systemUptime
+            let epoch = KlineStreamEpoch(generation: generation)
+            let stream = ChartStreamKey(symbol: fixture.frame.stream.symbol,
+                interval: generation == 79 ? "5m" : "1h")
+            model.frame = ChartDataFrame(stream: stream, epoch: epoch,
+                candles: fixture.frame.candles, indicators: fixture.frame.indicators,
+                recoveryRequest: nil, readyTime: started)
+            for _ in 0..<100 where !model.presentations.contains(where: { $0.0 == epoch }) {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(model.presentations.last?.0, epoch)
+            if let presented = model.presentations.last, presented.0 == epoch {
+                print("chart_host_fixture generation=\(generation) state_to_gpu_ms=\((presented.1 - started) * 1000)")
+            }
+            XCTAssertEqual(original.diagnosticRendererIdentity, rendererIdentity)
+        }
+        let restored = try XCTUnwrap(findHost(hosting.view))
+        XCTAssertEqual(ObjectIdentifier(restored), originalIdentity,
+            "The new interval must reuse the same UIView and its renderer")
+        XCTAssertFalse(original.diagnosticIsRendererStopped,
+            "Interval loading must pause rather than dispose the renderer")
+        XCTAssertEqual(KlineChartHostView.diagnosticInitializationCount - initializationBaseline, 1)
+        XCTAssertEqual(model.presentations.count, 4, "Each submitted epoch presents once")
+        print("chart_host_fixture host_constructions=\(KlineChartHostView.diagnosticInitializationCount - initializationBaseline) renderer_identity_retained=true")
+    }
+
+    func testFirstPresentationMatchesTheSubmittedStreamAndEpoch() async {
+        let health = MetalRendererHealth()
+        let firstID = ChartPresentationID(stream: stream, epoch: KlineStreamEpoch(generation: 1))
+        let currentID = ChartPresentationID(stream: stream, epoch: KlineStreamEpoch(generation: 2))
+        let anotherStream = ChartPresentationID(stream: ChartStreamKey(symbol: "ETHUSDT", interval: "5m"),
+            epoch: currentID.epoch)
+        let first = expectation(description: "Current epoch presentation only")
+        health.observeFirstPresentation(for: currentID) { id, time in
+            XCTAssertEqual(id, currentID)
+            XCTAssertEqual(time, 20)
+            XCTAssertGreaterThan(health.snapshot().presentedFrames, 0, "Observer runs outside the health lock")
+            first.fulfill()
+        }
+        for (id, time) in [(firstID, 10.0), (anotherStream, 11.0), (currentID, 0.0),
+                            (currentID, 20.0), (currentID, 21.0)] {
+            health.recordPresented(revision: 1, liveRevision: 1, liveReadyTime: 1,
+                presentedTime: time, readyTime: 1, submittedTime: 2, presentationID: id)
+        }
+        await fulfillment(of: [first], timeout: 1)
+    }
+
+    func testLivePresentationWatermarkFollowsCurrentStreamAndRejectsOldGPUCallbacks() {
+        let health = MetalRendererHealth()
+        let oldID = ChartPresentationID(stream: stream, epoch: KlineStreamEpoch(generation: 1))
+        let newID = ChartPresentationID(stream: ChartStreamKey(symbol: "ETHUSDT", interval: "5m"),
+            epoch: KlineStreamEpoch(generation: 2))
+        func present(_ id: ChartPresentationID, _ liveRevision: UInt64) {
+            health.recordPresented(revision: liveRevision, liveRevision: liveRevision,
+                liveReadyTime: 1, presentedTime: 3, readyTime: 1, submittedTime: 2,
+                presentationID: id)
+        }
+        health.observeFirstPresentation(for: oldID) { _, _ in }
+        present(oldID, 100)
+        XCTAssertEqual(health.snapshot().lastPresentedLiveRevision, 100)
+        health.observeFirstPresentation(for: newID) { _, _ in }
+        XCTAssertEqual(health.snapshot().lastPresentedLiveRevision, 0)
+        present(newID, 1)
+        XCTAssertEqual(health.snapshot().lastPresentedLiveRevision, 1)
+        XCTAssertEqual(health.snapshot().livePresentationLatency.sampleCount, 2)
+        present(oldID, 101)
+        XCTAssertEqual(health.snapshot().lastPresentedLiveRevision, 1,
+            "A late GPU callback must not change the new stream's watermark")
+        XCTAssertEqual(health.snapshot().livePresentationLatency.sampleCount, 2)
+        present(newID, 2)
+        XCTAssertEqual(health.snapshot().lastPresentedLiveRevision, 2)
+        XCTAssertEqual(health.snapshot().livePresentationLatency.sampleCount, 3)
+    }
+
+    @MainActor
+    func testHostEpochSwitchClearsInteractionAndIgnoresQueuedOldPresentations() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let scene = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+        let timeline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: 30))
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        let firstID = ChartPresentationID(stream: stream, epoch: fixture.frame.epoch)
+        let nextID = ChartPresentationID(stream: stream, epoch: KlineStreamEpoch(generation: 78))
+        var presentations: [ChartPresentationID] = []
+        host.observeFirstPresentation(for: firstID) { id, _ in presentations.append(id) }
+        host.configureTimelineInteraction(viewport: timeline, totalSlotCount: 221) { _ in }
+        host.submit(scene.renderState)
+        host.setLoadingPresentation(false)
+        let gesture = ContinuousScaleTestPan()
+        gesture.phase = .began
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        gesture.phase = .changed
+        gesture.translationX = 60
+        host.perform(NSSelectorFromString("handleTimelinePan:"), with: gesture)
+        host.diagnosticInteractionFrame(at: 10)
+        XCTAssertTrue(host.diagnosticHasInteractionBaseline)
+        // Replay an already completed GPU command whose MainActor delivery is still queued.
+        host.diagnosticRecordPresentation(for: firstID, at: 10)
+        host.observeFirstPresentation(for: nextID) { id, _ in presentations.append(id) }
+        XCTAssertFalse(host.diagnosticHasInteractionBaseline)
+        host.configureTimelineInteraction(viewport: timeline, totalSlotCount: 221) { _ in }
+        host.submit(scene.renderState)
+        host.setLoadingPresentation(false)
+        // A live update may replace the callback, but cannot re-arm the epoch's observer.
+        host.observeFirstPresentation(for: nextID) { id, _ in presentations.append(id) }
+        host.diagnosticRecordPresentation(for: firstID, at: 11)
+        host.diagnosticRecordPresentation(for: nextID, at: 20)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(presentations, [nextID])
+        host.observeFirstPresentation(for: nextID) { id, _ in presentations.append(id) }
+        host.diagnosticRecordPresentation(for: nextID, at: 21)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(presentations, [nextID])
+        let tagged = scene.renderState.withPresentationID(nextID)
+        XCTAssertEqual(tagged.withAppearance(.light).withAxisPriceLabels([]).presentationID, nextID)
+        host.diagnosticSetApplicationActive(false)
+        host.observeFirstPresentation(for: nil) { id, _ in presentations.append(id) }
+        let resumedID = ChartPresentationID(stream: stream, epoch: KlineStreamEpoch(generation: 79))
+        host.observeFirstPresentation(for: resumedID) { id, _ in presentations.append(id) }
+        host.submit(scene.renderState)
+        host.setLoadingPresentation(false)
+        host.diagnosticSetApplicationActive(true)
+        host.diagnosticRecordPresentation(for: nextID, at: 22)
+        host.diagnosticRecordPresentation(for: resumedID, at: 30)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(presentations, [nextID, resumedID])
+    }
+
+    @MainActor
+    func testHostStreamSwitchCancelsPinchInertiaAndCrosshair() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let scene = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+        let timeline = try XCTUnwrap(ChartTimelineViewport(visibleSlotCount: 40, trailingOffsetSlots: 30))
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        for mode in 0..<3 {
+            host.observeFirstPresentation(for: ChartPresentationID(stream: stream,
+                epoch: KlineStreamEpoch(generation: UInt64(mode * 2 + 1)))) { _, _ in }
+            host.configureTimelineInteraction(viewport: timeline, totalSlotCount: 221) { _ in }
+            host.submit(scene.renderState)
+            host.setLoadingPresentation(false)
+            if mode == 0 {
+                let pinch = ContinuousScaleTestPinch()
+                pinch.phase = .began
+                host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
+                pinch.phase = .changed
+                pinch.scale = 1.3
+                host.perform(NSSelectorFromString("handleTimelinePinch:"), with: pinch)
+            } else if mode == 1 {
+                let pan = ContinuousScaleTestPan()
+                pan.phase = .began
+                host.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+                pan.phase = .ended
+                pan.velocityX = 900
+                host.perform(NSSelectorFromString("handleTimelinePan:"), with: pan)
+            } else {
+                let press = ContinuousScaleTestLongPress()
+                press.phase = .began
+                host.perform(NSSelectorFromString("handleCrosshair:"), with: press)
+            }
+            XCTAssertTrue(host.diagnosticHasInteractionBaseline, "Fixture mode \(mode) must start an interaction")
+            host.observeFirstPresentation(for: ChartPresentationID(
+                stream: ChartStreamKey(symbol: "ETHUSDT", interval: "5m"),
+                epoch: KlineStreamEpoch(generation: UInt64(mode * 2 + 2)))) { _, _ in }
+            XCTAssertFalse(host.diagnosticHasInteractionBaseline, "Switch must clear mode \(mode)")
+            XCTAssertFalse(host.diagnosticIsInteractionActive)
+        }
+    }
+
+    @MainActor
+    func testLoadingCoverKeepsRendererFailureVisibleBeforeTheFirstFrame() {
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        host.observeFirstPresentation(for: ChartPresentationID(stream: stream,
+            epoch: KlineStreamEpoch(generation: 1))) { _, _ in XCTFail("A failed renderer cannot present") }
+        host.setLoadingPresentation(true)
+        for _ in 0..<3 { host.diagnosticInjectCommandFailure() }
+        XCTAssertTrue(host.diagnosticIsRendererStopped)
+        XCTAssertTrue(host.diagnosticIsLoadingCovered)
+        XCTAssertEqual(host.diagnosticVisibleRendererError, "K线 GPU 连续渲染失败，请重新进入页面")
+        XCTAssertFalse(host.isUserInteractionEnabled)
+    }
+
+    func testPlotStartsAtCanvasEdgeAndRetainsSquarePriceArea() throws {
+        for scale in [2.0, 3.0] {
+            let height = ChartPanelLayout.squareViewportHeightPoints(widthPoints: 390, indicatorPanelCount: 1)
+            let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: height, displayScale: scale))
+            let layout = try XCTUnwrap(ChartPanelLayout.make(viewport: viewport, indicatorPanelIDs: [ChartPanelID.volume]))
+            XCTAssertEqual(layout.plotLeft, 0, "The chart must not leave a blank strip at the canvas edge")
+            let price = try XCTUnwrap(layout.pricePanel)
+            XCTAssertEqual(price.plot.width, price.plot.height, accuracy: 0.01)
+        }
+    }
+
+    @MainActor
+    func testCrosshairPriceDistanceRendersExactlyTwoFractionDigits() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let examples: [(Double, String)] = [
+            (0.039110270783, "+3.91%"), (-0.039110270783, "-3.91%"),
+            (0.001234, "+0.12%"), (-0.001234, "-0.12%"),
+            (0.01, "+1.00%"), (0, "0.00%"),
+            (0.0000001, "0.00%"), (-0.0000001, "0.00%"),
+            (1.23456, "+123.46%"),
+        ]
+        for scale in [2.0, 3.0] {
+            let viewport = try XCTUnwrap(ChartSceneViewport(
+                widthPoints: 390, heightPoints: 396, displayScale: scale))
+            let output = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+            let data = try XCTUnwrap(output.renderState.staticScene.crosshairData)
+            let layout = output.panelLayout
+            let panel = try XCTUnwrap(layout.pricePanel)
+            let hit = try XCTUnwrap(ChartCrosshairResolver.resolve(
+                screenX: Double(layout.plotLeft + 180),
+                screenY: Double((panel.plot.top + panel.plot.bottom) / 2),
+                transform: .identity, data: data,
+                liveData: output.renderState.liveTail.crosshairLiveData))
+            for (rate, expected) in examples {
+                let snapshot = ChartCrosshairOverlayBuilder().makeSnapshot(
+                    hit: hit, data: data, latestPrice: hit.selection.panelValue / (1 + rate))
+                let storage = try XCTUnwrap(snapshot.batches.first?.storage)
+                let label = try XCTUnwrap(storage.barInstances.first {
+                    $0.color == .crosshairAxisLabelBackground && $0.left >= layout.plotRight
+                })
+                let rateGlyphs = storage.glyphInstances.filter {
+                    $0.color == .crosshairAxisLabelText && $0.left >= layout.plotRight
+                        && ($0.top + $0.bottom) / 2 >= (label.top + label.bottom) / 2
+                        && $0.bottom <= label.bottom
+                }
+                let expectedGlyphs = MetalTextLayouter.layout(text: expected, atlas: data.glyphAtlas,
+                    originX: 0, baselineY: 0, color: .crosshairAxisLabelText).instances
+                XCTAssertEqual(rateGlyphs.count, expectedGlyphs.count, expected)
+                for (actual, expectedGlyph) in zip(rateGlyphs, expectedGlyphs) {
+                    XCTAssertEqual(actual.uvLeft, expectedGlyph.uvLeft, expected)
+                    XCTAssertEqual(actual.uvTop, expectedGlyph.uvTop, expected)
+                    XCTAssertEqual(actual.uvRight, expectedGlyph.uvRight, expected)
+                    XCTAssertEqual(actual.uvBottom, expectedGlyph.uvBottom, expected)
+                }
+            }
+        }
+    }
+
     func testOrderPriceAxisLabelsKeepCompletePricesInsideTheFixedAxis() async throws {
         let fixture = try await makeChartSceneFixture()
         for width in [320.0, 390.0] {
@@ -8126,6 +8416,42 @@ private final class ContinuousScaleTestPan: UIPanGestureRecognizer {
     override func location(in view: UIView?) -> CGPoint { point }
 }
 
+final class ChartOrderOverlayRenderingTests: XCTestCase {
+    @MainActor
+    func testRiskFillReachesRightEdgeAndClipsToThePricePlot() throws {
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
+            plotLeft: 0, plotTop: 20, plotRight: 302, plotBottom: 300))
+        for scale in [2.0, 3.0] {
+            for side in [ChartOrderSide.long, .short] {
+                let state = ChartOrderDrawingState(side: side, entryOrderType: .limit,
+                    referencePrice: 100, riskAmount: 10, entryPrice: 100,
+                    stopLossPrice: side == .long ? 60 : 140)
+                let renderer = ImageRenderer(content: ChartOrderDrawingOverlay(drawing: .constant(state),
+                    projection: projection, formatPrice: { String($0) }, showsSummary: false)
+                    .frame(width: 360, height: 320))
+                renderer.scale = scale
+                let image = try XCTUnwrap(renderer.cgImage)
+                var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+                try pixels.withUnsafeMutableBytes { bytes in
+                    let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width,
+                        height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                }
+                func alpha(_ x: Double, _ y: Double) -> UInt8 {
+                    pixels[(Int(y * scale) * image.width + Int(x * scale)) * 4 + 3]
+                }
+                let y = side == .long ? 188.0 : 132.0
+                XCTAssertGreaterThan(alpha(358, y), 10, "Fill must reach the outer edge of the right price axis")
+                XCTAssertEqual(alpha(358, y), alpha(280, y), "The right axis must use the same risk tint")
+                XCTAssertEqual(alpha(358, 10), 0)
+                XCTAssertEqual(alpha(358, 310), 0)
+            }
+        }
+    }
+}
+
+@MainActor
 final class ChartPositionContextTests: XCTestCase {
     private func row(_ changes: [String: JSONValue] = [:]) -> JSONValue {
         .object(["id": .number(101), "symbol": .string("BTCUSDT"), "side": .number(0),
@@ -8460,5 +8786,22 @@ final class ChartPositionEntryMarkerTests: XCTestCase {
             plot: plot, domain: domain, transform: .identity, displayScale: 1))
         XCTAssertNil(ChartCandleMarkerLayout.frame(marker: marker(timestamp: 2_000), candle: candle(), baselineX: 120,
             plot: plot, domain: domain, transform: .identity, displayScale: 1))
+    }
+}
+
+@MainActor
+private final class ChartHostedReuseFixtureModel: ObservableObject {
+    @Published var frame: ChartDataFrame?
+    var presentations: [(KlineStreamEpoch, TimeInterval)] = []
+    init(frame: ChartDataFrame?) { self.frame = frame }
+}
+
+@MainActor
+private struct ChartHostedReuseFixture: View {
+    @ObservedObject var model: ChartHostedReuseFixtureModel
+    var body: some View {
+        KlineChartSceneView(frame: model.frame, onFirstFramePresented: { epoch, time in
+            model.presentations.append((epoch, time))
+        }).frame(width: 390, height: 396)
     }
 }

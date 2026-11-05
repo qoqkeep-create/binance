@@ -521,10 +521,16 @@ struct AppLaunchView: View {
     var body: some View {
         ZStack {
             Color.white
-                .ignoresSafeArea()
 
-            BinanceLogoMark(size: 96)
+            Image("LaunchBrandMark")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 96, height: 96)
+                .accessibilityHidden(true)
         }
+        // Match the storyboard's full-window center, including asymmetric safe areas.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 }
 

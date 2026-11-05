@@ -851,7 +851,12 @@ final class ChartCrosshairOverlayBuilder {
         ))
         if panel.isPricePanel {
             let rateText = axisPriceChangeRate.map {
-                DisplayNumber.text($0 * 100, signed: true) + "%"
+                let percent = $0 * 100
+                guard percent.isFinite else { return "--" }
+                let text = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), percent)
+                let normalized = text == "-0.00" ? "0.00" : text
+                let sign = percent > 0 && normalized != "0.00" ? "+" : ""
+                return sign + normalized + "%"
             } ?? "--"
             glyphs.append(contentsOf: axisLabelGlyphs(
                 rateText, data: data, left: left, right: right,

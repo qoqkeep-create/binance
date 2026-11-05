@@ -154,7 +154,10 @@ def run_next(lane="history"):
             else:
                 exhausted, delay = repair_history(task)
                 from market_stream import service
-                service.warm_history(task.symbol, task.interval, task.before or None)
+                # Routine market-wide maintenance must not evict windows that
+                # users just read. On-demand repairs retain foreground priority.
+                service.warm_history(task.symbol, task.interval, task.before or None,
+                                     prewarm=task.kind == "maintenance")
             completed = time.time()
             # On-demand tasks stop after success; maintenance rotates fairly.
             due = completed + delay if task.kind == "maintenance" else completed + 86400 * 365

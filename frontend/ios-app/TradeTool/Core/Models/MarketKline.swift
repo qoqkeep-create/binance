@@ -87,6 +87,7 @@ struct MarketKlineHistoryResponse: Decodable, Sendable {
     var historyPending: Bool? = nil
     var statisticsPending: Bool? = nil
     var hasMoreHistory: Bool? = nil
+    var serverTime: Int64? = nil
 }
 
 struct MarketChartTradingData: Decodable, Equatable, Hashable, Sendable {
