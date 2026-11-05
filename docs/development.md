@@ -2,6 +2,37 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## API 共享行情分发器（2026-11-06，本地）
+
+基线为已推送的 `c96fcbc`。先扩展实际三连接／三事件回归，旧实现明确失败 `AssertionError: 9 != 3`，日志 `.integration-runtime/shared-fanout-baseline.log`；此前已验证的公共重复编码仍应为 0。新 `fanout.py` 接管 Redis 接收、主题合并与重叠 pattern 去重，原 ASGI `matches` 逐连接过滤、发送队列和客户端恢复协议保留；方案及 USDC 比较见 [行情](market-data.md#api-共享行情分发器2026-11-06本地)。
+
+新增 11 项边界回归：真实临时回环 Redis 检查精确／通配重叠订阅只解码／投递一次、订阅引用及替换／退订／最后关闭、慢连接隔离与顺序、无效主题隔离、实际 Redis `CLIENT KILL TYPE pubsub` 后重建，以及 ASGI shutdown。可控 ACK 替身覆盖命令发送期间阻塞的超时边界、实际确认前不就绪、更新途中取消、首次 attach 取消和 Redis 故障唤醒全部等待者；替身不执行交易所／资金调用。
+
+补充突发回归曾复现：两个正常 ASGI send 回调、8 条发送队列连续接收 64 条 Redis 事件时，被误判 `slow_consumer`，测试收到 `websocket.close` 而非完整事件。共享 reader 在缓冲数据就绪时可能连续执行而不悬停；现每次分发后以 `asyncio.sleep(0)` 交还执行机会，无固定等待时间，让正常 sender 排空。修复后该用例及完整套件通过，失败证据 `shared-fanout-burst-baseline.log`。
+
+最终完整 `market_stream` **105 项通过（5.581 秒，0 跳过）**，包括新增 11 项和已有鉴权、私有事件范围、发送超时、token 到期及序列回归。既有三连接 ASGI 测试现确认三公共事件的服务端解码 **9→3** 次，重复编码维持 **0** 次，原身份 BUS 的订阅客户端 **3→1**；内部元数据仍不外发，用户及普通／带单模式不串流。复现命令：
+
+```bash
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py market_stream
+server/.venv/bin/python .integration-runtime/bench_shared_fanout.py
+```
+
+隔离运行器禁外网、dotenv、账户流和 scheduler，使用临时 SQLite／Redis；完整日志为 `.integration-runtime/shared-fanout-full-final.log`，定向日志为 `shared-fanout-boundaries.log`／`shared-fanout-protocol.log`。实现及测试输入 SHA-256 位于 `shared-fanout-source-manifest.json`。本轮没有 iOS 代码变更，不重复启动模拟器或 Xcode 构建。
+
+### 本机分发对照
+
+使用同一临时回环 Redis，在同一 Python 进程中分别载入 Git `c96fcbc` 的旧 ASGI 与本地新 ASGI，每连接数各发布 100 条行情，等待全部 send 回调返回；先完成鉴权替身和订阅 ack，再进行采样。表为最终源码在完整回归结束后的独立单轮结果，不作为容量／生产 P95 承诺。表中 CPU 为整个 100 事件循环的进程 CPU 时间，包含发布调用和接收回调；P50／P95 为单事件发布开始至全部 ASGI send 回调的墙钟时间，不含 TLS、公网、手机和绘制。
+
+| 连接数 | Redis 订阅客户端 旧→新 | 解码次数 旧→新 | CPU ms 旧→新 | P50 ms 旧→新 | P95 ms 旧→新 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1→1 | 100→100 | 13.379→13.441 | 0.235→0.228 | 0.267→0.262 |
+| 3 | 3→1 | 300→100 | 19.811→16.051 | 0.288→0.243 | 0.339→0.278 |
+| 30 | 30→1 | 3000→100 | 89.815→37.142 | 0.996→0.463 | 1.057→0.487 |
+
+证据为 `.integration-runtime/shared-fanout-benchmark.json` 和 `shared-fanout-benchmark.log`。这证明连接增加时重复接收／解码和 CPU 成本减少；单连接结果接近，不能由此推断手机切周期少等多少毫秒。该对照是当前 Python 旧版与新版，不是重新运行 USDC Java 的 A/B。
+
+本轮本地实现无新依赖、协议／配置、数据库迁移或交易策略变更。未提交／推送、部署到 47.80.22.243（首尔服务器）或上传 TestFlight；新后端的真实端到端延迟和在线负载仍待发布后验证。
+
 ## 刷新图标稳定与保证金紧凑展示（2026-11-06，本地）
 
 旧实现松手后将 28 pt 指示器行插入 ScrollView 内容，实际 UI 回归 `testRefreshReleaseKeepsContentAtRestPosition` 记录同一文字锚点从 y=190.333 移到 218.333（+28 pt，断言失败）。改为拖动与刷新共用同一覆盖层，20×20 pt 图标位于 36 pt 高区域，不再改动内容布局；仍观察原 pan／offset、70 pt 释放触发。旧版证据 `.integration-runtime/refresh-release-baseline.log`、`.integration-runtime/RefreshBadgeNov6/Baseline.xcresult`。

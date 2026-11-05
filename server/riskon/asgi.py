@@ -26,6 +26,8 @@ async def application(scope, receive, send):
             if event["type"] == "lifespan.startup":
                 await send({"type": "lifespan.startup.complete"})
             elif event["type"] == "lifespan.shutdown":
+                from market_stream.fanout import close_fanout
+                await close_fanout()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
     else:

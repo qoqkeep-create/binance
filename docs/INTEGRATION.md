@@ -6,7 +6,7 @@
 
 ```text
 Binance /market WebSocket -> market_stream -> MySQL 收盘线 + Redis 热数据 / PubSub
-                                                     -> ASGI /ws/v1 -> SwiftUI / Metal
+                                                     -> ASGI 共享接收／内存分发 -> /ws/v1 -> SwiftUI / Metal
 原 USDT /v1 HTTP <------------------------------------------ 原生业务页面
 原生交易命令 -> mobile 持久化命令 -> 账户 lease / fence -> 原 USDT 交易服务
 Binance /private 用户流 -> Inbox -> 账户串行归并 / REST 对账 -> Outbox -> iOS 刷新
@@ -37,6 +37,8 @@ Python 保留原交易业务、Decimal 精度、账户模式、绑定代际、�
 | `/api/commands`、`/api/commands/<UUID>` | 带幂等键提交、当前用户/模式查询 |
 | `/v1/*` | 原 USDT 业务接口；原生页面使用既有字段与规则 |
 | `/ws/v1` | Bearer JWT 与 `X-Trading-Mode`；ready / ack / ping / pong / event |
+
+2026-11-06 本地将每连接 Redis 订阅／解码改成 API 事件循环内共享，按全部连接主题并集合并接收、一次解码后内存投递；实际订阅确认后 ack、私有身份过滤及连接发送队列保留。Redis 中断仍由 WSS 重连与快照恢复；采集服务与 API 继续独立。当前实现及未部署范围见 [共享分发](market-data.md#api-共享行情分发器2026-11-06本地)。
 
 WSS 分发行情及 `trading.account/position/order/fill`，按用户和交易模式过滤。每连接 128 条有界队列，慢客户端超时断开重连；access token 到期关闭 4401，客户端合并 refresh 后重连。REST 遇 401 最多 refresh 并重试一次；身份已经切换时旧请求不能覆盖新会话。
 

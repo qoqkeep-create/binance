@@ -1,12 +1,12 @@
 # 整合版架构
 
-当前数据流程与接口见 [整合说明](INTEGRATION.md)。本文维护模块边界；核对日期为 2026-11-01。
+当前数据流程与接口见 [整合说明](INTEGRATION.md)。本文维护模块边界；运行单元与分发边界于 2026-11-06 复核，其余按各节日期区分。
 
 ## 运行单元
 
 | 单元 | 入口与责任 |
 | --- | --- |
-| API | `riskon.asgi` / Uvicorn：认证、业务 HTTP、鉴权 WSS |
+| API | `riskon.asgi` / Uvicorn：认证、业务 HTTP、鉴权 WSS；每事件循环共享 Redis 接收／解码，向独立连接队列分发（2026-11-06 本地） |
 | market | `manage.py market_stream`：独立 live 分发、ticker、收线存储／聚合、历史补全、6 个统计 worker、热窗口预热与心跳 |
 | worker | `manage.py mobile_worker`：账户用户流、持久化命令、Inbox / Outbox 与对账 |
 | scheduler | `manage.py run_scheduler`：已有订单保护、结算、资金及业务维护 |
@@ -42,7 +42,7 @@
 
 `Features/USDT/` 是整合后原生业务页面，`Features/Dashboard/`、`Chart/`、`ChartEngine/` 负责行情和图表。共享网络、认证、图表模型保留在 `Core/`。客户端提交原业务请求，持仓与命令状态以服务端对账为准。
 
-行情连接先于账户资料刷新，图表只读取行情，点击下单入口后再刷新业务资料并进入原 USDT 表单。公共 K 线／ticker／补全就绪通过 Redis 主题筛选，账户事件保留原身份总线；live 缓存锁不覆盖数据库操作，补全通知仅在成功提交后发布。当前 Python 与 Redis 的进程边界继续保留；与原 USDC 的对照及发布兼容见 [行情](market-data.md)。
+行情连接先于账户资料刷新，图表只读取行情，点击下单入口后再刷新业务资料并进入原 USDT 表单。公共 K 线／ticker／补全就绪通过 Redis 主题筛选，账户事件保留原身份总线；live 缓存锁不覆盖数据库操作，补全通知仅在成功提交后发布。当前 Python 与 Redis 的进程边界继续保留。2026-11-06 本地新增 API 共享接收器，主题按连接引用合并，逐连接鉴权及有界发送保留；Redis 故障仍关闭连接并由客户端重连恢复，最后连接退出／ASGI shutdown 释放资源。采集与 API 完整同进程尚未实现，决策与 USDC 取舍见 [行情](market-data.md#api-共享行情分发器2026-11-06本地)。
 
 2026-11-01 本地进一步统一 iOS 最新快照任务，分页单独按边界读取；`ChartDataPipeline` actor 独占同步 `CandleStorage`，避免状态修改跨 actor 悬停，相同历史复用不可变对象与指标。后端冷读使用有界窗口锁／Redis owner lease；公共上游建连由 Redis 共享准入，行情 REST 显式要求共享预算，交易调用保留原降级规则。该轮尚未发布，阈值、共享出口边界及验收见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。
 

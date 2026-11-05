@@ -296,18 +296,19 @@ class HistoryRepairCachePriorityTests(IsolatedMarketRedisMixin, TestCase):
 @skipUnless(os.getenv("MARKET_TEST_REDIS_BINARY"), "opt-in isolated Redis protocol test")
 class RedisMarketProtocolTests(IsolatedMarketRedisMixin, SimpleTestCase):
     async def test_public_fanout_reuses_wire_encoding_and_private_events_stay_scoped(self):
-        from market_stream import websocket
+        from market_stream import fanout, websocket
         queues, tasks = [], []
         encoder = Mock(wraps=json.dumps)
-        # Patch only the ASGI module, so publisher/client encoding is measured separately.
-        codec = SimpleNamespace(loads=json.loads, dumps=encoder)
+        decoder = Mock(wraps=json.loads)
+        # Patch receiving modules only; publisher/client codecs are not measured.
+        codec = SimpleNamespace(loads=decoder, dumps=encoder)
         async def next_message(sent):
             wire = await asyncio.wait_for(sent.get(), 2)
             self.assertEqual(wire["type"], "websocket.send")
             return json.loads(wire["text"])
 
         with patch.object(websocket, "authenticate", return_value=("qa", int(time.time()) + 100)), \
-             patch.object(websocket, "json", codec):
+             patch.object(websocket, "json", codec), patch.object(fanout, "json", codec):
             try:
                 for mode in ("ordinary", "ordinary", "lead"):
                     incoming, sent = asyncio.Queue(), asyncio.Queue()
@@ -324,6 +325,7 @@ class RedisMarketProtocolTests(IsolatedMarketRedisMixin, SimpleTestCase):
                         ]})})
                     self.assertEqual((await next_message(sent))["type"], "ack")
                 encoder.reset_mock()
+                decoder.reset_mock()
                 for channel in ("market.kline", "market.ticker", "market.history"):
                     data = candle()
                     if channel == "market.ticker":
@@ -334,6 +336,10 @@ class RedisMarketProtocolTests(IsolatedMarketRedisMixin, SimpleTestCase):
                     self.assertEqual(delivered[0]["channel"], channel)
                 self.assertEqual(encoder.call_count, 0,
                     "Public fanout must not encode the same Redis envelope again per connection")
+                self.assertEqual(decoder.call_count, 3,
+                    "Each public event must be decoded once regardless of connection count")
+                subscribers = await asyncio.to_thread(bus.connection().pubsub_numsub, bus.BUS_CHANNEL)
+                self.assertEqual(subscribers[0][1], 1)
                 # Even on a market topic, internal metadata must never pass through.
                 public = {"channel": "market.kline", "type": "event", "data": candle(), "_trace": "internal"}
                 await asyncio.to_thread(bus.connection().publish, bus.delivery_topic(public), json.dumps(public))

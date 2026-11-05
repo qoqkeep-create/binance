@@ -119,7 +119,7 @@ class SocketDiagnosticTests(SimpleTestCase):
     async def run_socket(self, reason):
         import time
         from redis.exceptions import ConnectionError as RedisConnectionError
-        from market_stream import websocket
+        from market_stream import fanout, websocket
         incoming, sent = asyncio.Queue(), []
         await incoming.put({"type": "websocket.connect"})
         if reason == "client_disconnect":
@@ -131,10 +131,20 @@ class SocketDiagnosticTests(SimpleTestCase):
             await incoming.put({"type": "websocket.receive", "text": '{"type":"subscribe","subscriptions":[{"channel":"market.ticker"}]}'})
         elif reason == "invalid_event":
             pass
-        pubsub = Mock(subscribe=AsyncMock(), psubscribe=AsyncMock(), aclose=AsyncMock())
+        acknowledgements = asyncio.Queue()
+        async def subscribe(*topics):
+            for topic in topics:
+                await acknowledgements.put({"type": "subscribe", "channel": topic})
+        async def psubscribe(*topics):
+            if reason != "subscription_timeout":
+                for topic in topics:
+                    await acknowledgements.put({"type": "psubscribe", "channel": topic})
+        pubsub = Mock(subscribe=subscribe, psubscribe=psubscribe, aclose=AsyncMock())
         first = True
         async def get_message(**_):
             nonlocal first
+            if not acknowledgements.empty():
+                return await acknowledgements.get()
             if reason == "redis_error":
                 raise RedisConnectionError("fixture secret must not be logged")
             if reason == "invalid_event" and first:
@@ -150,7 +160,7 @@ class SocketDiagnosticTests(SimpleTestCase):
                 await asyncio.Event().wait()
         expires = int(time.time()) + (-1 if reason == "token_expired" else 100)
         with patch.object(websocket, "authenticate", return_value=("qa", expires)), \
-             patch.object(websocket.redis.Redis, "from_url", return_value=client), \
+             patch.object(fanout.redis.Redis, "from_url", return_value=client), \
              patch.object(websocket, "SEND_TIMEOUT", 0.03, create=True), \
              patch.object(websocket, "SUBSCRIPTION_TIMEOUT", 0.03, create=True), \
              patch.object(websocket, "OUTGOING_CAPACITY", 4, create=True), \

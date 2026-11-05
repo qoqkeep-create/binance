@@ -6,14 +6,13 @@ import time
 import uuid
 
 from asgiref.sync import sync_to_async
-from django.conf import settings
 from django.core.cache import cache
 from django.db import close_old_connections
-import redis.asyncio as redis
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from market_stream.bus import BUS_CHANNEL, MARKET_CHANNELS, subscription_topics
+from market_stream.bus import subscription_topics
 from market_stream.core import INTERVAL_MS
+from market_stream.fanout import FanoutError, get_fanout
 
 PUBLIC_CHANNELS = {"market.kline", "market.ticker", "market.history", "strategy.signal"}
 PRIVATE_CHANNELS = {"trading.account", "trading.position", "trading.order", "trading.fill"}
@@ -116,12 +115,8 @@ async def application(scope, receive, send):
     await send({"type": "websocket.accept"})
     outgoing = asyncio.Queue(maxsize=OUTGOING_CAPACITY)
     subscriptions = {}
-    client = redis.Redis.from_url(settings.MARKET_REDIS_URL, socket_connect_timeout=3)
-    pubsub = client.pubsub()
+    member = None
     tasks = []
-    topics = set()
-    applied_topics = set()
-    subscription_applied = asyncio.Event()
 
     async def enqueue_wire(wire):
         try:
@@ -142,7 +137,6 @@ async def application(scope, receive, send):
                 raise SocketEnded("send_timeout") from None
 
     async def receiver():
-        nonlocal topics
         while True:
             try:
                 async with asyncio.timeout(60):
@@ -171,22 +165,10 @@ async def application(scope, receive, send):
                             subscriptions[channel] = filters
                         else:
                             subscriptions.pop(channel, None)
-                    desired = subscription_topics(subscriptions)
-                    if desired - topics:
-                        await pubsub.psubscribe(*sorted(desired - topics))
-                    if topics - desired:
-                        await pubsub.punsubscribe(*sorted(topics - desired))
-                    topics = desired
                     # Acknowledge only after Redis has installed the new routes.
                     # The client can then read once to recover a notice published
                     # before its subscription became active.
-                    while not desired.issubset(applied_topics):
-                        subscription_applied.clear()
-                        try:
-                            async with asyncio.timeout(SUBSCRIPTION_TIMEOUT):
-                                await subscription_applied.wait()
-                        except TimeoutError:
-                            raise SocketEnded("subscription_timeout") from None
+                    await member.update(subscription_topics(subscriptions), SUBSCRIPTION_TIMEOUT)
                     await enqueue(message("ack", requestId=request_id, data={"subscriptions": items}))
                 else:
                     raise ValueError("Unsupported message type")
@@ -194,52 +176,25 @@ async def application(scope, receive, send):
                 await enqueue(message("error", error={"code": "INVALID_MESSAGE", "message": "订阅参数不正确"}))
 
     async def subscriber():
-        while True:
-            if time.time() >= expires:
-                return "token_expired"
-            incoming = await pubsub.get_message(ignore_subscribe_messages=False, timeout=1)
-            if incoming is None:
-                await asyncio.sleep(0.01)
-                continue
-            if incoming["type"] not in {"message", "pmessage"}:
-                topic = incoming["channel"]
-                topic = topic.decode() if isinstance(topic, bytes) else topic
-                if incoming["type"] == "psubscribe":
-                    applied_topics.add(topic)
-                elif incoming["type"] == "punsubscribe":
-                    applied_topics.discard(topic)
-                subscription_applied.set()
-                continue
-            try:
-                payload = json.loads(incoming["data"])
-                if not isinstance(payload, dict):
-                    raise ValueError("Invalid event")
-                if matches(payload, subscriptions, user_id, mode):
-                    # The publisher already encoded public market events. Reuse
-                    # that envelope after filtering; no encoding per recipient.
-                    # Internal metadata (including private identity) still needs
-                    # stripping, even if it arrives on a public topic.
-                    if payload.get("channel") in MARKET_CHANNELS and not any(key.startswith("_") for key in payload):
-                        raw = incoming["data"]
-                        await enqueue_wire(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
-                    else:
-                        await enqueue({key: value for key, value in payload.items() if not key.startswith("_")})
-            except (ValueError, TypeError, KeyError, AttributeError):
-                raise SocketEnded("invalid_event") from None
+        return await member.failure
+
+    async def expiry():
+        await asyncio.sleep(max(0, expires - time.time()))
+        return "token_expired"
 
     reason = "internal_error"
     try:
-        await pubsub.subscribe(BUS_CHANNEL)
+        member = await get_fanout().attach(outgoing,
+            lambda payload: matches(payload, subscriptions, user_id, mode), SUBSCRIPTION_TIMEOUT)
         await enqueue(message("ready", data={"connectionId": str(uuid.uuid4()), "heartbeatIntervalMillis": 20000,
                                               "clientTimeoutMillis": 60000, "capabilities": ["market.history"]}))
-        tasks = [asyncio.create_task(sender()), asyncio.create_task(receiver()), asyncio.create_task(subscriber())]
+        tasks = [asyncio.create_task(sender()), asyncio.create_task(receiver()),
+                 asyncio.create_task(subscriber()), asyncio.create_task(expiry())]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             reason = task.result() or reason
-    except SocketEnded as exc:
+    except (SocketEnded, FanoutError) as exc:
         reason = exc.reason
-    except redis.RedisError:
-        reason = "redis_error"
     except asyncio.CancelledError:
         reason = "cancelled"
         raise
@@ -249,12 +204,8 @@ async def application(scope, receive, send):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        for resource in (pubsub, client):
-            try:
-                async with asyncio.timeout(3):
-                    await resource.aclose()
-            except Exception:
-                pass
+        if member is not None:
+            await member.close()
         await asyncio.to_thread(record_close, reason)
         try:
             code = 4401 if reason == "token_expired" else 1000 if reason == "client_disconnect" else 1013
