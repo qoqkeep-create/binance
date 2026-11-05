@@ -824,14 +824,6 @@ struct USDTPositionsView: View {
           }
         }.frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
           .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-          .background {
-            PositionPageSwipeObserver { horizontal, vertical in
-              guard isVisible, scenePhase == .active, !chart,
-                let next = PositionPageSwipe.destination(from: segment,
-                  horizontal: horizontal, vertical: vertical) else { return }
-              segment = next
-            }
-          }
       }.id(segment).scrollIndicators(.hidden).scrollBounceBehavior(.always)
         .accessibilityIdentifier("positions.list")
         .webRefreshable {
@@ -850,7 +842,15 @@ struct USDTPositionsView: View {
           }.value
         }
       }
-    }.usdtPage("持仓")
+    }.background {
+      PositionPageSwipeGesture(enabled: isVisible && scenePhase == .active && !chart
+        && !binding && !marginDetails && !closeAllConfirm && operation == nil) { horizontal, vertical in
+        guard let next = PositionPageSwipe.destination(from: segment,
+          horizontal: horizontal, vertical: vertical) else { return }
+        segment = next
+      }
+    }
+      .usdtPage("持仓")
       .task(id: "margin:\(store.scope):\(store.isBound):\(isVisible):\(scenePhase):\(chart)") {
         guard isVisible, scenePhase == .active, !chart, store.isBound else {
           margin.suspend()

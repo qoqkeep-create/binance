@@ -3458,6 +3458,47 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["85%"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["合计初始保证金占用"].exists)
     capture("positions-margin-danger-details")
+    app.swipeLeft()
+    app.buttons["关闭"].firstMatch.tap()
+    XCTAssertTrue(position.isSelected, "A modal drag must not switch the page underneath")
+  }
+
+  func testPositionPageSwipesCoverHeaderCardsAndEmptySpace() {
+    launch("positions")
+    let position = app.buttons["positions.tabs.positions"]
+    let limits = app.buttons["positions.tabs.limits"]
+    let history = app.buttons["positions.tabs.history"]
+    XCTAssertTrue(position.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS %@", "开仓额度：")).firstMatch.waitForExistence(timeout: 5))
+
+    func swipe(_ element: XCUIElement, y: CGFloat, left: Bool, destination: XCUIElement) {
+      let start = element.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.85 : 0.15, dy: y))
+      let end = element.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.15 : 0.85, dy: y))
+      start.press(forDuration: 0.05, thenDragTo: end)
+      let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: destination)
+      XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed)
+    }
+
+    // Anchor to the visible tab: the header AX group also includes the status safe area.
+    // The old observer was inside the scroll content and missed this button row.
+    let window = app.windows.firstMatch
+    let headerY = position.frame.midY / window.frame.height
+    swipe(window, y: headerY, left: true, destination: limits)
+    swipe(app.scrollViews["positions.list"], y: 0.18, left: true, destination: history)
+    swipe(app.scrollViews["positions.list"], y: 0.9, left: false, destination: limits)
+    swipe(window, y: headerY, left: false, destination: position)
+    swipe(app.scrollViews["positions.list"], y: 0.2, left: true, destination: limits)
+
+    for options in [["--fixture-empty"], ["--fixture-unbound"]] {
+      launch("positions", options)
+      XCTAssertTrue(position.waitForExistence(timeout: 5))
+      swipe(app.scrollViews["positions.list"], y: 0.9, left: true, destination: limits)
+      swipe(app.scrollViews["positions.list"], y: 0.9, left: true, destination: history)
+      swipe(app.scrollViews["positions.list"], y: 0.9, left: false, destination: limits)
+      swipe(app.scrollViews["positions.list"], y: 0.9, left: false, destination: position)
+    }
+    capture("positions-full-surface-swipes")
   }
 
   func testAllPositionTabsRefreshFromEmptyLists() {
@@ -3480,6 +3521,18 @@ final class WebParityUITests: XCTestCase {
     }
   }
 
+  private var refreshIndicator: XCUIElement {
+    app.activityIndicators.matching(NSPredicate(format: "label == %@", "正在刷新")).firstMatch
+  }
+
+  private func assertRefreshIndicatorVisible(_ indicator: XCUIElement, page: String = "",
+    file: StaticString = #filePath, line: UInt = #line) {
+    // The overlay is intentionally passive, so tappability is not a visibility check.
+    XCTAssertEqual(indicator.frame.width, 20, accuracy: 1, page, file: file, line: line)
+    XCTAssertEqual(indicator.frame.height, 20, accuracy: 1, page, file: file, line: line)
+    XCTAssertTrue(app.windows.firstMatch.frame.contains(indicator.frame), page, file: file, line: line)
+  }
+
   private func pullToRefresh(_ list: XCUIElement, distance: CGFloat? = nil) {
     let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
     let end = distance.map { start.withOffset(CGVector(dx: 0, dy: $0)) }
@@ -3491,14 +3544,30 @@ final class WebParityUITests: XCTestCase {
     launch("signals", ["--fixture-page-state", "--fixture-refresh-delay"])
     XCTAssertTrue(app.staticTexts["读取 1 · 测试信号 1"].waitForExistence(timeout: 10))
     let list = app.scrollViews["signals.list"]
-    let indicator = app.descendants(matching: .any)["refresh.indicator"].firstMatch
+    let indicator = refreshIndicator
     pullToRefresh(list, distance: 30)
     XCTAssertFalse(indicator.exists)
     XCTAssertTrue(app.staticTexts["读取 1 · 测试信号 1"].exists)
     pullToRefresh(list)
     XCTAssertTrue(indicator.waitForExistence(timeout: 2))
-    XCTAssertTrue(indicator.isHittable)
+    assertRefreshIndicatorVisible(indicator)
     capture("signals-pull-refresh-indicator")
+    XCTAssertTrue(app.staticTexts["读取 2 · 测试信号 1"].waitForExistence(timeout: 10))
+    XCTAssertFalse(indicator.exists)
+  }
+
+  func testRefreshReleaseKeepsContentAtRestPosition() {
+    launch("signals", ["--fixture-page-state", "--fixture-refresh-delay"])
+    let first = app.staticTexts["读取 1 · 测试信号 1"]
+    XCTAssertTrue(first.waitForExistence(timeout: 10))
+    let restingY = first.frame.minY
+    pullToRefresh(app.scrollViews["signals.list"])
+    let indicator = refreshIndicator
+    XCTAssertTrue(indicator.waitForExistence(timeout: 2))
+    assertRefreshIndicatorVisible(indicator)
+    capture("refresh-after-release")
+    XCTAssertEqual(first.frame.minY, restingY, accuracy: 1,
+      "Releasing the pull must not insert a new row and move the list")
     XCTAssertTrue(app.staticTexts["读取 2 · 测试信号 1"].waitForExistence(timeout: 10))
     XCTAssertFalse(indicator.exists)
   }
@@ -3520,9 +3589,9 @@ final class WebParityUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
       }
       pullToRefresh(list)
-      let indicator = app.descendants(matching: .any)["refresh.indicator"].firstMatch
+      let indicator = refreshIndicator
       XCTAssertTrue(indicator.waitForExistence(timeout: 2), page)
-      XCTAssertTrue(indicator.isHittable, page)
+      assertRefreshIndicatorVisible(indicator, page: page)
       capture(page + "-pull-refresh-indicator")
       let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
         object: indicator)

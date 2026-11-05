@@ -215,36 +215,62 @@ struct WebTabs: View {
   var body: some View {
     GeometryReader { geometry in
       let slotWidth = geometry.size.width / CGFloat(max(1, tabs.count))
-      let selectedIndex = tabs.firstIndex { $0.0 == selection } ?? 0
       let titleWidth = ("持仓" as NSString).size(withAttributes: [
         .font: UIFont.boldSystemFont(ofSize: 20)
       ]).width
       let lineWidth = max(0, min(titleWidth - 8, slotWidth - 12))
-      HStack(spacing: 0) {
-        ForEach(tabs, id: \.0) { key, title in
+      if compact {
+        // Preserve the original glyph size. On narrow phones the strip follows
+        // the selected tab rather than shrinking all three equal slots.
+        let naturalWidths = tabs.map { key, title in
           let selected = selection == key
-          Button { selection = key } label: {
-            Text(title).font(.system(size: compact ? 17 : 20, weight: selected ? .bold : .regular))
-              .lineLimit(1).minimumScaleFactor(compact ? 0.6 : 0.95)
-              .foregroundStyle(selected ? WebTheme.text : WebTheme.secondary)
-              // Keep one glyph layer: only its scale animates, never cross-fade fonts.
-              .transaction { $0.animation = nil }
-              .scaleEffect(selected ? 1 : 0.75)
-              .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selected)
-              .frame(maxWidth: .infinity).frame(height: 44)
-              .contentShape(Rectangle())
-          }.buttonStyle(.plain).accessibilityIdentifier("positions.tabs." + key)
-            .accessibilityAddTraits(selected ? .isSelected : [])
+          let font = UIFont.systemFont(ofSize: 20, weight: selected ? .bold : .regular)
+          return max(44, ceil((title as NSString).size(withAttributes: [.font: font]).width
+            * (selected ? 1 : 0.75)) + 10)
         }
+        let extra = max(0, geometry.size.width - naturalWidths.reduce(0, +)) / CGFloat(max(1, tabs.count))
+        let widths = naturalWidths.map { $0 + extra }
+        let selected = tabs.firstIndex { $0.0 == selection } ?? 0
+        let center = widths.prefix(selected).reduce(0, +) + (widths.indices.contains(selected) ? widths[selected] / 2 : 0)
+        let offset = min(0, max(geometry.size.width - widths.reduce(0, +), geometry.size.width / 2 - center))
+        tabStrip(widths: widths, lineWidth: lineWidth).offset(x: offset)
+          .frame(width: geometry.size.width, alignment: .leading).clipped().contentShape(Rectangle())
+          .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selection)
+      } else {
+        tabStrip(widths: Array(repeating: slotWidth, count: tabs.count), lineWidth: lineWidth)
       }
-      RoundedRectangle(cornerRadius: 2, style: .continuous)
-        .fill(BinanceTheme.accent).frame(width: lineWidth, height: 4)
-        .offset(x: slotWidth * (CGFloat(selectedIndex) + 0.5) - lineWidth / 2, y: 35)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selection)
-        .allowsHitTesting(false).accessibilityHidden(true)
     }
       .frame(height: 44)
       .accessibilityElement(children: .contain).accessibilityIdentifier("positions.tabs")
+  }
+
+  private func tabStrip(widths: [CGFloat], lineWidth: CGFloat) -> some View {
+    let selectedIndex = tabs.firstIndex { $0.0 == selection } ?? 0
+    return HStack(spacing: 0) {
+      ForEach(Array(tabs.enumerated()), id: \.element.0) { index, tab in
+        let (key, title) = tab
+        let selected = selection == key
+        Button { selection = key } label: {
+          Text(title).font(.system(size: 20, weight: selected ? .bold : .regular))
+            .lineLimit(1).minimumScaleFactor(0.95)
+            .fixedSize(horizontal: compact, vertical: false)
+            .foregroundStyle(selected ? WebTheme.text : WebTheme.secondary)
+            // Keep one glyph layer: only its scale animates, never cross-fade fonts.
+            .transaction { $0.animation = nil }
+            .scaleEffect(selected ? 1 : 0.75)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selected)
+            .frame(width: widths[index], height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).id(key).accessibilityIdentifier("positions.tabs." + key)
+          .accessibilityAddTraits(selected ? .isSelected : [])
+      }
+    }.overlay(alignment: .topLeading) {
+      RoundedRectangle(cornerRadius: 2, style: .continuous)
+        .fill(BinanceTheme.accent).frame(width: lineWidth, height: 4)
+        .offset(x: widths.prefix(selectedIndex).reduce(0, +)
+          + (widths.indices.contains(selectedIndex) ? widths[selectedIndex] : 0) / 2 - lineWidth / 2, y: 35)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selection)
+        .allowsHitTesting(false).accessibilityHidden(true)
+    }
   }
 }
 
@@ -379,7 +405,7 @@ private struct WebRefreshScrollObserver: UIViewRepresentable {
   }
 }
 
-/// Shares one compact indicator and the same release threshold across list pages.
+/// One overlay survives pull/release without inserting a row into the scrolling content.
 struct WebRefreshScrollView<Content: View>: View {
   var isActive = true
   @ViewBuilder var content: Content
@@ -390,7 +416,6 @@ struct WebRefreshScrollView<Content: View>: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 0) {
-        if interaction.isRefreshing { indicator.frame(height: 28) }
         content
       }
       .background {
@@ -410,9 +435,10 @@ struct WebRefreshScrollView<Content: View>: View {
       }
     }.scrollBounceBehavior(.always)
       .overlay(alignment: .top) {
-        if isActive, action != nil, !interaction.isRefreshing, interaction.distance > 0 {
-          indicator.frame(height: 28).offset(y: min(interaction.distance, 28) - 28)
-            .allowsHitTesting(false).accessibilityHidden(true)
+        if isActive, action != nil, interaction.isRefreshing || interaction.distance > 0 {
+          indicator.frame(maxWidth: .infinity).frame(height: 36)
+            .offset(y: interaction.isRefreshing ? 0 : min(interaction.distance, 36) - 36)
+            .allowsHitTesting(false).accessibilityHidden(!interaction.isRefreshing)
         }
       }
       .accessibilityAction(named: Text("刷新")) {
@@ -425,7 +451,7 @@ struct WebRefreshScrollView<Content: View>: View {
   }
 
   private var indicator: some View {
-    ProgressView().controlSize(.regular).scaleEffect(0.5).frame(maxWidth: .infinity)
+    ProgressView().controlSize(.regular).frame(width: 20, height: 20)
       .accessibilityLabel("正在刷新").accessibilityIdentifier("refresh.indicator")
   }
 

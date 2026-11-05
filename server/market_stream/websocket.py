@@ -12,7 +12,7 @@ from django.db import close_old_connections
 import redis.asyncio as redis
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from market_stream.bus import BUS_CHANNEL, subscription_topics
+from market_stream.bus import BUS_CHANNEL, MARKET_CHANNELS, subscription_topics
 from market_stream.core import INTERVAL_MS
 
 PUBLIC_CHANNELS = {"market.kline", "market.ticker", "market.history", "strategy.signal"}
@@ -123,11 +123,14 @@ async def application(scope, receive, send):
     applied_topics = set()
     subscription_applied = asyncio.Event()
 
-    async def enqueue(payload):
+    async def enqueue_wire(wire):
         try:
-            outgoing.put_nowait(json.dumps(payload, separators=(",", ":")))
+            outgoing.put_nowait(wire)
         except asyncio.QueueFull:
             raise SocketEnded("slow_consumer") from None
+
+    async def enqueue(payload):
+        await enqueue_wire(json.dumps(payload, separators=(",", ":")))
 
     async def sender():
         while True:
@@ -212,7 +215,15 @@ async def application(scope, receive, send):
                 if not isinstance(payload, dict):
                     raise ValueError("Invalid event")
                 if matches(payload, subscriptions, user_id, mode):
-                    await enqueue({key: value for key, value in payload.items() if not key.startswith("_")})
+                    # The publisher already encoded public market events. Reuse
+                    # that envelope after filtering; no encoding per recipient.
+                    # Internal metadata (including private identity) still needs
+                    # stripping, even if it arrives on a public topic.
+                    if payload.get("channel") in MARKET_CHANNELS and not any(key.startswith("_") for key in payload):
+                        raw = incoming["data"]
+                        await enqueue_wire(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+                    else:
+                        await enqueue({key: value for key, value in payload.items() if not key.startswith("_")})
             except (ValueError, TypeError, KeyError, AttributeError):
                 raise SocketEnded("invalid_event") from None
 

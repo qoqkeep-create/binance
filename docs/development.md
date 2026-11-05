@@ -2,6 +2,55 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 刷新图标稳定与保证金紧凑展示（2026-11-06，本地）
+
+旧实现松手后将 28 pt 指示器行插入 ScrollView 内容，实际 UI 回归 `testRefreshReleaseKeepsContentAtRestPosition` 记录同一文字锚点从 y=190.333 移到 218.333（+28 pt，断言失败）。改为拖动与刷新共用同一覆盖层，20×20 pt 图标位于 36 pt 高区域，不再改动内容布局；仍观察原 pan／offset、70 pt 释放触发。旧版证据 `.integration-runtime/refresh-release-baseline.log`、`.integration-runtime/RefreshBadgeNov6/Baseline.xcresult`。
+
+保证金徽标改为系统压缩宽度的 heavy 数字，普通 20 pt／52×28 pt，三位整数 16 pt／60×28 pt，触摸高度保留 44 pt。顶部整数／个位补零，不显示比较符号，100 以上保留实际整数；明细保留精确值。host 模型／分页／格式 **11 项通过**，实际生产 Header 320／393／440 pt × 浅深主题 × 4 种比例（3.45／55／85／121.25）× 3 个选中页共 **72 个布局**，已查看 `03%` 和 `121%` 的字形及风险颜色；无效／过期仍灰色。复现命令：
+
+```bash
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/RefreshBadgeNov6/Header
+```
+
+最终在 iPhone 18 Pro／iOS 27.2 专用模拟器（`6D67613C-F801-48BA-A3FF-0726A254389A`）**3 项 UI 用例通过（171.343 秒，0 失败）**：
+
+- `testRefreshReleaseKeepsContentAtRestPosition`：实际图标 20×20 pt，松手后同一内容锚点相对静止位置差不超过 1 pt，刷新后出现第 2 次读取结果、指示器收起。
+- `testSignalsPullRefreshShowsIndicatorAndLoadsNewSnapshot`：30 pt 短拖不刷新，完整下拉显示指示器、更新内容并收起。
+- `testSharedRefreshIndicatorOnMarketProfileCommandsAndRecords`：行情、账户、命令、操作日志、归集、策略日志和内嵌记录七类页面均检查图标尺寸／屏幕内位置及刷新后消失。
+
+无交互覆盖层以 ActivityIndicator 类型及“正在刷新”标签定位，并检查实际尺寸和截图；不以可点击性判断可见。SwiftUI 外层列表的 identifier 会覆盖部分子元素，旧 `refresh.indicator` 定位不适用于这些覆盖层。本轮较早的 `Final.xcresult` 中，`testAllPositionTabsRefreshFromEmptyLists`（29.612 秒）和 `testPositionPagesSwipeAndMarginDetailsStayReadOnly`（19.184 秒）已通过，覆盖持仓三页从空列表刷新、页签横滑、徽标点击／明细及弹窗隔离；该混合结果包内另外三项旧定位／点击断言失败已修正，以最终 `Verified.xcresult` 为准，不将整个旧包记为通过。
+
+最终结果 `.integration-runtime/RefreshBadgeNov6/Verified.xcresult`，日志 `.integration-runtime/refresh-badge-verified-ui.log`；旧位移与修复后截图已对照。主 App／Widget 的 generic iOS 无签名 Release 构建通过（`.integration-runtime/refresh-badge-passive-release.log`），测试目标编译通过（`refresh-badge-verified-build.log`）。最终 host 11 项通过（2.820 秒），日志 `refresh-badge-header-final.log`，输入哈希保存在 Header 目录。复现 UI 命令：
+
+```bash
+xcodebuild test-without-building -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Chart Calibration' -destination 'platform=iOS Simulator,id=6D67613C-F801-48BA-A3FF-0726A254389A' -derivedDataPath .integration-runtime/PositionSwipeNov6/Tests -only-testing:TradeToolChartCalibrationUITests/WebParityUITests/testRefreshReleaseKeepsContentAtRestPosition -only-testing:TradeToolChartCalibrationUITests/WebParityUITests/testSignalsPullRefreshShowsIndicatorAndLoadsNewSnapshot -only-testing:TradeToolChartCalibrationUITests/WebParityUITests/testSharedRefreshIndicatorOnMarketProfileCommandsAndRecords CODE_SIGNING_ALLOWED=NO
+```
+
+本轮只改本地客户端显示和共用刷新布局，没有新增接口／配置或数据库迁移；既有后端待提交改动保留。未提交／推送、部署到 47.80.22.243（首尔服务器）或上传 TestFlight，没有真实交易／资金／保护单操作；iOS 17 和新包 iPhone 动态手感待验。展示口径见 [资金](capital-and-transfers.md#持仓页保证金率2026-11-05本地实现)，共用容器见 [页面规范](ios-web-parity.md#账户设置与紧凑刷新2026-11-05本地)。
+
+## 公共行情编码复用与持仓整页手势（2026-11-06，本地）
+
+公共行情原字符串复用的新增回归运行三个实际 ASGI 连接及临时回环 Redis：旧实现三种事件重复编码 9 次，修改后 0 次；含内部字段的公共事件仍清理，私有事件按用户／模式过滤，ping 作为队列屏障检查没有额外私有事件。全量 `market_stream` **94 项通过（14.433 秒，0 跳过）**。运行器禁外网／dotenv、关闭账户流和 scheduler，使用隔离 SQLite 及交易所替身：
+
+```bash
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py market_stream
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/PositionSwipeNov6/HeaderFinal
+```
+
+后端旧版失败日志为 `.integration-runtime/market-wire-baseline.log`，最终为 `market-wire-final.log`。客户端 host **10 项通过（2.020 秒）**，包含 9 项模型／分页／阈值回归及 1 项实际 Header 渲染：320／393／440 pt × 浅深主题 × 三种风险比例 × 三个选中页，共 54 个布局，检查外溢及页签文字确实渲染；已查看恢复后的生产字形。host 不执行 UIKit 手势。
+
+旧版 `fcffac9` 的只读归档配合同一修正坐标 UI 用例，在页头按钮行横滑处失败（15.793 秒，`LegacyActual.xcresult`）；修复版已经单独通过页头、卡片、空白、空列表及未绑定状态往返（56.631 秒，`Coordinates.xcresult`）。最初测试用页头无障碍分组的中点，实际分组 frame 为 y=0…106，按钮行在 y=62…106，中点位于状态栏安全区；该无应用触摸回调的失败不作为产品复现。最终用可见页签按钮的真实中线起手，并在旧归档重新确认失败。归档与模拟器证据均位于忽略目录 `.integration-runtime/PositionSwipeNov6/`；临时触摸探针已移除。
+
+去掉探针后，iPhone 18 Pro／iOS 27.2 专用模拟器（`6D67613C-F801-48BA-A3FF-0726A254389A`）最终 **3 项 UI 用例通过（85.956 秒，0 失败）**：`testPositionPageSwipesCoverHeaderCardsAndEmptySpace`、`testPositionPagesSwipeAndMarginDetailsStayReadOnly`、`testAllPositionTabsRefreshFromEmptyLists`。覆盖页头按钮起手／卡片／空白／空和未绑定列表往返、短竖拖不切页、三页真实下拉刷新后出现数据、徽标点击及明细、弹窗横拖不切底层页。结果为 `Final.xcresult`，日志 `.integration-runtime/position-swipe-ui-final.log`。完整复现命令：
+
+```bash
+xcodebuild test-without-building -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Chart Calibration' -destination 'platform=iOS Simulator,id=6D67613C-F801-48BA-A3FF-0726A254389A' -derivedDataPath .integration-runtime/PositionSwipeNov6/Tests -only-testing:TradeToolChartCalibrationUITests/WebParityUITests/testPositionPageSwipesCoverHeaderCardsAndEmptySpace -only-testing:TradeToolChartCalibrationUITests/WebParityUITests/testPositionPagesSwipeAndMarginDetailsStayReadOnly -only-testing:TradeToolChartCalibrationUITests/WebParityUITests/testAllPositionTabsRefreshFromEmptyLists CODE_SIGNING_ALLOWED=NO
+```
+
+最终主 App／Widget 的 generic iOS 无签名 Release 构建通过，日志 `.integration-runtime/position-swipe-release-final.log`，测试目标也已实际编译运行。只有本地假数据和系统手势，不做真实交易／划转／撤保护单。实际截图已核对恢复后的页签和保证金率排布；iOS 17 与手机动态手感仍需新包验收。
+
+本轮不含提交／推送、47.80.22.243（首尔服务器）部署、TestFlight 或新包实机验收。当前编码复用范围与后续共享分发器边界见 [行情](market-data.md#公共行情编码复用与-usdc-思路2026-11-06本地)，页面手势及字号见 [页面规范](ios-web-parity.md#保证金徽标与手势切页2026-11-05本地)。
+
 ## USDC 前端与推送源码对照（2026-11-05）
 
 按用户要求先将当前全部安全改动以 `dd4e5db` 推送 GitHub `codex/integrated-ios`，再只读比较 USDC `104d7d7`。本轮不改业务代码、不新增测试；沿既有验证记录核对交付内容，执行 Git 差异／敏感模式／未追踪文件检查，并验证远端分支包含提交。`.build/` 加入忽略，未收录原始诊断、凭证或来源目录。

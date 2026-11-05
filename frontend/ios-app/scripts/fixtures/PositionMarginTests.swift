@@ -18,6 +18,16 @@ final class PositionMarginTests: XCTestCase {
     }
     XCTAssertEqual(PositionMarginPresentation(snapshot: data("121.25"), isCurrent: true).percentText, "121.25%")
   }
+  func testCompactBadgeKeepsTwoDigitsAndLiquidationWarning() {
+    for (ratio, expected) in [("0", "00%"), ("0.99", "00%"), ("3.45", "03%"), ("9.99", "09%"),
+      ("49.99", "49%"), ("50", "50%"), ("79.99", "79%"), ("80", "80%"),
+      ("99.99", "99%"), ("100", "100%"), ("121.25", "121%")] {
+      XCTAssertEqual(PositionMarginPresentation(snapshot: data(ratio), isCurrent: true).badgePercentText, expected)
+    }
+    XCTAssertEqual(PositionMarginPresentation(snapshot: data("3.45"), isCurrent: false).badgePercentText, "--%")
+    XCTAssertEqual(PositionMarginPresentation(snapshot: .object([
+      "supported": .bool(true), "liquidation_reached": .bool(true)]), isCurrent: true).badgePercentText, "100%")
+  }
   func testUnavailableNeverLooksLikeGreenZero() {
     for snapshot in [JSONValue.null, .object([:]), data("NaN"), data("-1"),
       .object(["supported": .bool(false), "margin_ratio_percent": .string("0")])] {
@@ -29,7 +39,7 @@ final class PositionMarginTests: XCTestCase {
     let negativeEquity: JSONValue = .object(["supported": .bool(true), "liquidation_reached": .bool(true)])
     let critical = PositionMarginPresentation(snapshot: negativeEquity, isCurrent: true)
     XCTAssertEqual(critical.level, .danger)
-    XCTAssertEqual(critical.percentText, "≥100%")
+    XCTAssertEqual(critical.percentText, "100%")
   }
   func testHorizontalSwipeOnlyAndEdgesDoNotWrap() {
     XCTAssertEqual(PositionPageSwipe.destination(from: "positions", horizontal: -100, vertical: 10), "limits")

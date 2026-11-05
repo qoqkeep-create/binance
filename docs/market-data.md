@@ -32,7 +32,7 @@
 | --- | --- | --- | --- |
 | 原始行情 | 主配置 continuous 1m、每连接 50 streams，按 pair 队列由虚拟线程消费，依次调用 handlers | continuous 1m、每连接 80 streams；async 接收，live／收线／ticker／历史／6 路统计分别执行 | 两者都以 1m 为基础；当前普通 live 发布不等数据库收线 |
 | 未收盘发布路径 | handler → 内存 dispatcher → WebSocket session；先检查订阅者，无人订阅即返回 | pending 按 symbol／interval 保留较新事件，唤醒发布 → live cache → Redis Lua PubSub → ASGI → WebSocket | 当前多缓存访问、跨进程 hop 和 JSON 编解码；发布忙时合并中间 live 事件，无固定 200ms 节流等待 |
-| 序列化与扇出 | 匹配 recipients 后 ObjectMapper 编码一次，再向各 session 派发同一字符串 | 采集端编码并发布，ASGI 解码、筛选、剔除内部字段再编码；Redis 主题先筛选公共行情 | USDC 无订阅市场的编码／分发工作较少；当前主题路由减少每个连接收到无关事件的成本 |
+| 序列化与扇出 | 匹配 recipients 后 ObjectMapper 编码一次，再向各 session 派发同一字符串 | 采集端编码并发布；ASGI 解码／筛选后复用公共行情原字符串，含内部字段及其他事件剔除后重编码；Redis 主题先筛选公共行情 | 后续已去掉公共行情每连接重编码；每连接解码和 Redis 跳转仍存在。USDC 无订阅市场的编码／分发工作仍较少 |
 | 顺序 | 进程内每流 AtomicLong；默认 4 线程 dispatcher／5000 任务队列 | Redis Lua 原子分配 sequence 并 publish，同批 pipeline；每连接单 sender／128 条队列、5 秒发送超时 | 当前跨生产者 sequence 与发布一致；USDC 多线程发送不能由 sequence 分配推断绝对有序。队列不同单位，不能直接比较容量优劣 |
 | 收盘与聚合 | 事务内写库／ZSET 并聚合，提交后发 closed 事件；同 pair handler 顺序执行 | 收线独立任务先提交数据库再发布，随后对到边界的大周期聚合／持久化／发布；缺分钟不伪造 | USDC 收线 handler 可能占用该 pair 消费线程；当前将实时与收线工作分开 |
 | 首次 HTTP | Controller 直接查 Mapper／MySQL；不足时同步 Binance 补线；所选统计并发请求后 join | 版本化压缩历史缓存，冷态查 MySQL；缺线／统计 pending 排后台，完成后 market.history 通知 | 当前首响应不等外部补线，但可能要后续读取；USDC HTTP 并不读其维护用 Redis ZSET |
@@ -44,6 +44,14 @@
 证据入口：当前 [`MarketChartViewModel`](../frontend/ios-app/TradeTool/Features/Chart/MarketChartViewModel.swift)、[`ChartDataPipeline`](../frontend/ios-app/TradeTool/Features/ChartEngine/Data/ChartDataPipeline.swift)、[`Host`](../frontend/ios-app/TradeTool/Features/ChartEngine/Host/KlineChartHostView.swift)、[`collector`](../server/market_stream/collector.py)、[`service`](../server/market_stream/service.py)、[`bus`](../server/market_stream/bus.py)、[`websocket`](../server/market_stream/websocket.py)。USDC 同名 iOS 文件，以及 `backend/app-service/src/main/java/com/oovso/` 下 `realtime/RealtimeLiveKlineHandler.java`、`RealtimeEventPublisher.java`、`RealtimeClientSession.java`、`market/MarketKlineController.java`、`MarketKlineService.java`、`KlineAggregationService.java` 和 `binance/BinanceUsdMarginedPerpetualContinuousKlineConnector.java`；配置以 `src/main/resources/application.yaml` 的显式 1m 为准，不能仅看 properties 类的 1h 默认值。
 
 剩余性能判断：USDC 的进程内实时路径更短是源码事实；它贡献多少毫秒、当前更多绘制工作占多少 CPU/GPU，仍缺同条件分段测量。优先测采集接收→cache／Redis 发布→ASGI→手机收到→场景→呈现，并分别观察切周期与持续拖动；现有 87ms ping RTT 不能代替行情端到端延迟。当前缓存与宿主优化已推送，真实手机效果、后端统计 lane／SQL／网络波动仍待验证。
+
+## 公共行情编码复用与 USDC 思路（2026-11-06，本地）
+
+已复用 USDC“一次编码、按订阅分发”的一部分：`market.kline`／`market.ticker`／`market.history` 事件由发布端编码后，ASGI 仍验证 JSON 和当前订阅，顶层不含内部 `_` 字段时直接把 Redis 原字符串放入该连接的发送队列。含内部字段的行情及其他事件仍剔除内部字段后编码；用户／模式过滤先于入队。Redis Lua 的 sequence＋publish、订阅实际安装后 ack、128 条队列和 5 秒发送超时保持原语义。没有协议、配置或数据库变更，可独立发布后端。
+
+真实 Redis＋三个 ASGI 连接（两个普通模式、一个带单模式）的隔离回归中，同一组三种公共行情在旧实现产生 9 次 ASGI 编码，修改后为 0；同时核对内部字段不外发、跨用户／模式私有事件不串流。完整行情 94 项通过。此结果证明重复工作减少，不是手机端到端延迟测量，也不证明半秒切周期等待已经消失，验证入口见 [开发](development.md#公共行情编码复用与持仓整页手势2026-11-06本地)。
+
+当前 Compose 中 market collector 与 Uvicorn API 是独立服务，直接内存回调无法跨进程，所以本轮保留 Redis。下一步可评估 API 进程共享一个订阅分发器：对相同事件只接收／解码一次，再按连接订阅投递同一字符串；需要覆盖订阅引用计数、ack 就绪边界、断线重连及慢连接隔离。这个共享分发器、采集端先检查接收者以及采集与 API 合并部署均**尚未实现**。无人订阅时也不能直接跳过供 HTTP 使用的 live cache／收线落库；如跳过发布，还需明确 sequence 连续性及恢复规则。若要完整移除 Redis 跳转，应单独设计行情网关与唯一采集者的生命周期，不能直接将原 Java 内存 dispatcher 搬入当前进程结构。
 
 ## 周期切换耗时与十字线百分比（2026-11-05）
 

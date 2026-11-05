@@ -28,7 +28,16 @@ struct PositionMarginPresentation {
   }
   var percentText: String {
     guard level != .unavailable else { return "--%" }
-    return ratio.map { Self.percent($0) } ?? "≥100%"
+    return ratio.map { Self.percent($0) } ?? "100%"
+  }
+  var badgePercentText: String {
+    guard level != .unavailable else { return "--%" }
+    guard let ratio else { return "100%" }
+    // Keep the compact integer in the same risk band as the unrounded value.
+    var source = ratio, whole = Decimal()
+    NSDecimalRound(&whole, &source, 0, .down)
+    let digits = NSDecimalNumber(decimal: whole).stringValue
+    return (digits.count < 2 ? "0" : "") + digits + "%"
   }
   static func percent(_ value: Decimal?) -> String {
     guard let value, !value.isNaN else { return "--" }
@@ -99,46 +108,59 @@ final class PositionMarginModel: ObservableObject {
   }
 }
 
-/// Observe the existing scroll pan; do not add a recognizer that competes with refresh.
-struct PositionPageSwipeObserver: UIViewRepresentable {
+/// Page-wide horizontal gesture, including controls and blank scroll space.
+struct PositionPageSwipeGesture: UIViewRepresentable {
+  var enabled: Bool
   var onEnd: (Double, Double) -> Void
-  func makeUIView(context: Context) -> ObserverView {
-    let view = ObserverView(); view.isUserInteractionEnabled = false; view.onEnd = onEnd
+  func makeUIView(context: Context) -> GestureView {
+    let view = GestureView(); view.isUserInteractionEnabled = false
+    view.enabled = enabled; view.onEnd = onEnd
     return view
   }
-  func updateUIView(_ view: ObserverView, context: Context) { view.onEnd = onEnd }
-  static func dismantleUIView(_ view: ObserverView, coordinator: ()) { view.detach() }
+  func updateUIView(_ view: GestureView, context: Context) {
+    view.enabled = enabled; view.onEnd = onEnd
+  }
+  static func dismantleUIView(_ view: GestureView, coordinator: ()) { view.detach() }
 
-  final class ObserverView: UIView {
+  final class GestureView: UIView, UIGestureRecognizerDelegate {
+    var enabled = false
     var onEnd: ((Double, Double) -> Void)?
-    private weak var scroll: UIScrollView?
+    private weak var installedWindow: UIWindow?
+    private lazy var pan: UIPanGestureRecognizer = {
+      let gesture = UIPanGestureRecognizer(target: self, action: #selector(ended))
+      gesture.maximumNumberOfTouches = 1
+      gesture.delegate = self
+      return gesture
+    }()
     override func didMoveToWindow() {
       super.didMoveToWindow()
-      if window == nil { detach() } else { attach() }
-    }
-    override func layoutSubviews() { super.layoutSubviews(); if window != nil { attach() } }
-    private func attach() {
-      var ancestor = superview
-      while let view = ancestor {
-        if let candidate = view as? UIScrollView {
-          guard scroll !== candidate else { return }
-          detach(); scroll = candidate
-          candidate.panGestureRecognizer.addTarget(self, action: #selector(ended))
-          return
-        }
-        ancestor = view.superview
-      }
+      detach()
+      installedWindow = window
+      window?.addGestureRecognizer(pan)
     }
     func detach() {
-      scroll?.panGestureRecognizer.removeTarget(self, action: #selector(ended)); scroll = nil
+      installedWindow?.removeGestureRecognizer(pan); installedWindow = nil
     }
-    @objc private func ended(_ pan: UIPanGestureRecognizer) {
-      guard pan.state == .ended else { return }
-      let translation = pan.translation(in: scroll)
-      DispatchQueue.main.async { [weak self] in
-        guard let self, self.window != nil, self.scroll != nil else { return }
-        self.onEnd?(translation.x, translation.y)
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+      guard enabled, window != nil, bounds.contains(pan.location(in: self)) else { return false }
+      let velocity = pan.velocity(in: self)
+      return abs(velocity.x) > abs(velocity.y) * 1.8
+    }
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+      guard enabled, bounds.contains(touch.location(in: self)) else { return false }
+      var view = touch.view
+      while let current = view, current !== window {
+        if current is UISlider || current is UITextField || current is UITextView { return false }
+        view = current.superview
       }
+      return true
+    }
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+    @objc private func ended(_ gesture: UIPanGestureRecognizer) {
+      guard enabled, gesture.state == .ended else { return }
+      let translation = gesture.translation(in: self)
+      onEnd?(translation.x, translation.y)
     }
   }
 }
@@ -171,15 +193,18 @@ struct PositionMarginBadge: View {
       let value = PositionMarginPresentation(snapshot: model.snapshot,
         isCurrent: model.isCurrent(scope: scope, now: timeline.date))
       Button(action: action) {
-        HStack(spacing: 3) {
-          Image(systemName: "shield.lefthalf.filled").font(.system(size: 10, weight: .semibold))
-          Text(value.percentText).font(.system(size: 11, weight: .semibold)).monospacedDigit()
-            .lineLimit(1).minimumScaleFactor(0.65)
-        }.foregroundStyle(value.level.foreground).padding(.horizontal, 5).frame(width: 68, height: 28)
+        HStack(spacing: 2) {
+          Image(systemName: "shield.lefthalf.filled").font(.system(size: 9, weight: .semibold))
+          Text(value.badgePercentText)
+            .font(.system(size: value.badgePercentText.count > 3 ? 16 : 20, weight: .heavy).width(.compressed))
+            .monospacedDigit()
+            .lineLimit(1).minimumScaleFactor(0.9)
+        }.foregroundStyle(value.level.foreground).padding(.horizontal, 4)
+          .frame(width: value.badgePercentText.count > 3 ? 60 : 52, height: 28)
           .background(value.level.background, in: RoundedRectangle(cornerRadius: 7))
           .frame(height: 44).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityIdentifier("positions.margin")
-        .accessibilityLabel("币安保证金率").accessibilityValue(value.percentText)
+        .accessibilityLabel("币安保证金率").accessibilityValue(value.badgePercentText)
     }
   }
 }

@@ -36,6 +36,9 @@ def visual_sources(destination):
   @State var segment = "positions"
   var floatingPositions = false
   var liveActivity = VisualLiveState()
+  init(store: USDTStore, margin: PositionMarginModel, selection: String = "positions") {
+    self.store = store; self.margin = margin; _segment = State(initialValue: selection)
+  }
   var body: some View {
 ''' + header + "\n  }\n}\n"
     adapters = '''struct VisualLiveState { var isStarting = false; var isRegistering = false; var isActive = false }
@@ -52,7 +55,7 @@ def run(destination):
     for path in (destination / "Tests").glob("*.swift"):
         path.unlink()
     margin_path = APP / "Features/USDT/PositionMargin.swift"
-    source = margin_path.read_text().split("/// Observe the existing scroll pan;", 1)[0]
+    source = margin_path.read_text().split("/// Page-wide horizontal gesture", 1)[0]
     source = source.replace("import UIKit\n", "")
     (destination / "Sources/PositionMargin.swift").write_text(source)
     store = (APP / "Features/USDT/USDTStore.swift").read_text()

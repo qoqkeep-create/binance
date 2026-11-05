@@ -7,8 +7,9 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest import skipUnless
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.conf import settings
 from django.core.cache import cache
@@ -294,6 +295,67 @@ class HistoryRepairCachePriorityTests(IsolatedMarketRedisMixin, TestCase):
 
 @skipUnless(os.getenv("MARKET_TEST_REDIS_BINARY"), "opt-in isolated Redis protocol test")
 class RedisMarketProtocolTests(IsolatedMarketRedisMixin, SimpleTestCase):
+    async def test_public_fanout_reuses_wire_encoding_and_private_events_stay_scoped(self):
+        from market_stream import websocket
+        queues, tasks = [], []
+        encoder = Mock(wraps=json.dumps)
+        # Patch only the ASGI module, so publisher/client encoding is measured separately.
+        codec = SimpleNamespace(loads=json.loads, dumps=encoder)
+        async def next_message(sent):
+            wire = await asyncio.wait_for(sent.get(), 2)
+            self.assertEqual(wire["type"], "websocket.send")
+            return json.loads(wire["text"])
+
+        with patch.object(websocket, "authenticate", return_value=("qa", int(time.time()) + 100)), \
+             patch.object(websocket, "json", codec):
+            try:
+                for mode in ("ordinary", "ordinary", "lead"):
+                    incoming, sent = asyncio.Queue(), asyncio.Queue()
+                    queues.append((incoming, sent))
+                    await incoming.put({"type": "websocket.connect"})
+                    tasks.append(asyncio.create_task(websocket.application({"path": "/ws/v1",
+                        "headers": [(b"x-trading-mode", mode.encode())]}, incoming.get, sent.put)))
+                    self.assertEqual((await asyncio.wait_for(sent.get(), 2))["type"], "websocket.accept")
+                    self.assertEqual((await next_message(sent))["type"], "ready")
+                    await incoming.put({"type": "websocket.receive", "text": json.dumps({
+                        "type": "subscribe", "subscriptions": [
+                            {"channel": channel, "filters": {"symbols": ["BTCUSDT"]}}
+                            for channel in ("market.kline", "market.ticker", "market.history", "trading.order")
+                        ]})})
+                    self.assertEqual((await next_message(sent))["type"], "ack")
+                encoder.reset_mock()
+                for channel in ("market.kline", "market.ticker", "market.history"):
+                    data = candle()
+                    if channel == "market.ticker":
+                        data.pop("interval")
+                    await asyncio.to_thread(bus.publish_batch, channel, [("BTCUSDT:1m", data)])
+                    delivered = [await next_message(sent) for _, sent in queues]
+                    self.assertTrue(all(item == delivered[0] for item in delivered))
+                    self.assertEqual(delivered[0]["channel"], channel)
+                self.assertEqual(encoder.call_count, 0,
+                    "Public fanout must not encode the same Redis envelope again per connection")
+                # Even on a market topic, internal metadata must never pass through.
+                public = {"channel": "market.kline", "type": "event", "data": candle(), "_trace": "internal"}
+                await asyncio.to_thread(bus.connection().publish, bus.delivery_topic(public), json.dumps(public))
+                for _, sent in queues:
+                    self.assertNotIn("_trace", await next_message(sent))
+                await asyncio.to_thread(bus.publish_private_batch, [
+                    ("trading.order", "qa-order", {"symbol": "BTCUSDT", "status": "NEW", "scope": mode}, user, mode)
+                    for user, mode in (("other", "ordinary"), ("qa", "lead"), ("qa", "ordinary"))])
+                for index, (_, sent) in enumerate(queues):
+                    order = await next_message(sent)
+                    self.assertEqual(order["channel"], "trading.order")
+                    self.assertEqual(order["data"]["scope"], "lead" if index == 2 else "ordinary")
+                    self.assertFalse(any(key.startswith("_") for key in order))
+                # Ping is a delivery barrier: no extra private event may precede pong.
+                for incoming, sent in queues:
+                    await incoming.put({"type": "websocket.receive", "text": '{"type":"ping"}'})
+                    self.assertEqual((await next_message(sent))["type"], "pong")
+            finally:
+                for incoming, _ in queues:
+                    await incoming.put({"type": "websocket.disconnect"})
+                await asyncio.wait_for(asyncio.gather(*tasks), 3)
+
     def test_private_batch_uses_one_roundtrip_and_preserves_order_and_account_scope(self):
         from market_stream.websocket import matches
         client = bus.connection()
