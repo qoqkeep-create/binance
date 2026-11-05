@@ -1,12 +1,20 @@
 # 整合环境部署与运维
 
-唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。
+唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。各日期段落描述当时状态，当前运行版本以上方最新实际发布为准。
 
 ## 历史缓存与统计限定发布（2026-11-06）
 
-本次 SSH 只读核验 **47.80.22.243（首尔服务器）**：`current`／API 为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`，market 为 `integrated-20261102-git-171be8d74c50`；worker 为 `integrated-20261103-worker-retire-entry-ema-f7a289ab3c7d`，scheduler 为 `integrated-20261103-position-live-activity-3a1a95e914ba`。六个服务健康，API／market 分别核对 304／295 个 Python／requirements 哈希。源码已推送的共享分发及近期周期扩展未在该运行基线生效；不能据 GitHub HEAD 推断实际发布或提速归因。
+发布前 SSH 只读核验 **47.80.22.243（首尔服务器）**：`current`／API 为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`，market 为 `integrated-20261102-git-171be8d74c50`；worker 为 `integrated-20261103-worker-retire-entry-ema-f7a289ab3c7d`，scheduler 为 `integrated-20261103-position-live-activity-3a1a95e914ba`。六个服务健康，API／market 分别核对 304／295 个 Python／requirements 哈希。源码已推送的共享分发及近期周期扩展未在该运行基线生效；不能据 GitHub HEAD 推断实际发布或提速归因。
 
-用户授权完成后推送部署。本次只叠加统计最小上下文、历史 revision 回收／回填保护及关联 maintenance 让位，按 API／market 各自实际基线构建两个独立镜像；各包 92 项隔离回归通过，详见 [开发](development.md#历史缓存生命周期与统计隔离2026-11-06)。不得整包覆盖为 HEAD，或漏带既有 Compose override 而回退其他业务。发布将重新核对容器／源码基线，备份数据库，保留环境、迁移及原镜像，只替换 API／market；worker、scheduler、MySQL、Redis 容器不变。此处目前为发布准备状态，实际结果将在完成后补记。
+用户授权完成后推送部署。本次只叠加统计最小上下文、历史 revision 回收／回填保护及关联 maintenance 让位，按 API／market 各自实际基线构建两个独立镜像；各包 92 项隔离回归通过，详见 [开发](development.md#历史缓存生命周期与统计隔离2026-11-06)。不得整包覆盖为 HEAD，或漏带既有 Compose override 而回退其他业务。发布时已重新核对容器／源码基线并备份数据库，保留环境、迁移及原镜像，只替换 API／market；worker、scheduler、MySQL、Redis 容器不变。实际发布结果如下。
+
+### 实际发布与验收
+
+2026-11-06 02:14:01（北京时间）已将源码 `a91850bce48235e313478ebd5f523e2b5b2930aa` 的限定改动部署至 **47.80.22.243（首尔服务器）**：API 为 `integrated-20261106-history-cache-api-a91850b`，market 为 `integrated-20261106-history-cache-market-a91850b`，`current` 指向新 API release。两镜像各保留原有基线，manifest 的 `scope=limited-history-cache-statistics` 明确不是完整 HEAD 发布。原 Compose override 全部保留，再叠加 `compose.history-cache.yaml` 固定两目标镜像及其余服务实际镜像；切换前比较解析后的目标配置，除镜像／构建目录外一致，环境文件未变。
+
+切换前数据库一致性备份与 gzip 校验通过；只执行 `migrate --check`，没有应用迁移、重置队列或交易／资金／保护单操作。切换后六服务健康，新 API／market 全部 Python／requirements 哈希与限定 manifest 一致；worker、scheduler、MySQL、Redis 的容器 ID 与镜像哈希保持原样。备份、前后容器、来源 manifest、部署日志及 `rollback.sh` 均在 `/opt/trade-tools-integrated/backups/integrated-20261106-history-cache-api-a91850b/`；回滚仅恢复 API／market 原镜像及 `current`，不恢复数据库、不反迁移。后续 Compose 操作须使用新 API release 的原三份配置加 `compose.history-cache.yaml`，避免误用旧镜像。
+
+2026-11-06 02:15:17（北京时间）公网验收通过：HTTPS 健康 200、既有 QA 鉴权、BTCUSDT 1h 完整 1500 根／尾部 2 根历史、gzip、六类统计响应、WSS ready／订阅 ack／ping-pong 及 BTCUSDT 实时 K 线／ticker。统计最终 pending=false，响应中有 501 根含统计；这是接口与后台可用性验收，不能视为手机延迟 A/B。只读缓存检查记录 64 个索引窗口、0 个旧 revision 窗口；其范围为该次采样，不作长期命中率承诺。完整证据在本机忽略目录 `.integration-runtime/HistoryCacheNov6/`。本轮无需新客户端，未上传 TestFlight；共享分发／编码复用仍未纳入这两个线上镜像，真实手机收益与此前提速归因仍待测。
 
 ## 周期切换只读测量（2026-11-05）
 
@@ -237,7 +245,7 @@ Compose 继续使用本版 `compose.integrated.yaml`＋`compose.signal-leverage.
 
 ## 当前部署结构
 
-- `/opt/trade-tools-integrated/releases/<内容版本>`：发布源码；`current` 指向当前版本。
+- `/opt/trade-tools-integrated/releases/<内容版本>`：发布源码；`current` 指向当前 API／主要 Compose 版本。各服务可以使用不同限定基线镜像，须同时核对实际容器及当次 override，不能据此推定四个 Python 进程均为同一源码版本。
 - `/opt/trade-tools-integrated/server.env`：600 权限的独立配置，各 release 通过链接读取。
 - Compose 项目 `tradetools-integrated`，使用 `--profile pro`；API、market、worker、scheduler、MySQL、Redis 共六个服务，仅使用项目默认网络。
 - API 仅发布 `127.0.0.1:8787`。MySQL、Redis 不发布宿主端口，使用各自命名卷 `integrated-mysql`、`integrated-redis`。
@@ -357,7 +365,7 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 ## 更新与回滚
 
-更新使用新 release、受限配置和同一个 Compose 项目。不要推送父 Gitee 仓库 main 触发来源系统自动部署。
+更新使用新 release、受限配置和同一个 Compose 项目。限定发布须带齐当次 Compose override、固定非目标镜像，并用 `--no-deps` 只替换授权服务；当前文件清单见 [历史缓存限定发布](#历史缓存与统计限定发布2026-11-06)。不要推送父 Gitee 仓库 main 触发来源系统自动部署。
 
 回滚先核对 migration 与目标镜像兼容，保存数据库备份；代码回滚不会还原数据库。兼容时选择保留的 release / 镜像，指定对应 `INTEGRATED_RELEASE` 执行 `docker compose ... up -d --no-build`，更新 `current` 后复验健康、认证和 WSS。不得通过撤单或重发 UNKNOWN 命令实现回滚。
 
