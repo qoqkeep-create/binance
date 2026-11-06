@@ -72,7 +72,7 @@ SMTP 的 `EMAIL_*`、通知的 `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALER
 
 ## iOS 信号和浮盈通知
 
-本轮新增可选配置，默认全部关闭；模板为 [server.env.example](../deploy/integrated/server.env.example)，消息口径及重试见 [通知](signals-and-notifications.md)。
+通知可选配置及各自默认值如下；保证金开关默认 true，但接收用户默认为 0 时不读取或发送；模板为 [server.env.example](../deploy/integrated/server.env.example)，消息口径及重试见 [通知](signals-and-notifications.md)。
 
 | 参数 | 用途 |
 | --- | --- |
@@ -86,12 +86,12 @@ SMTP 的 `EMAIL_*`、通知的 `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALER
 | `POSITION_PROFIT_CALL_ENABLED` | 原 USDT 浮盈 Echobell 监控／投递，默认 false |
 | `POSITION_PROFIT_CALL_USER_ID` | 整合数据库中的接收用户，默认 0；迁移时按身份核对，不能照搬旧库主键 |
 | `POSITION_PROFIT_CALL_URL` | 既有 Echobell 通道，浮盈和保证金共享，仅存受限环境文件 |
-| `POSITION_MARGIN_CALL_ENABLED` | 独立保证金 Echobell 后台检查，默认 true；复用上述指定用户／通道，用户 0 时不工作，严格 >75% 的持仓账户触发；本轮源码尚未部署 |
+| `POSITION_MARGIN_CALL_ENABLED` | 独立保证金 Echobell 后台检查，默认 true；复用上述指定用户／通道，用户 0 时不工作，严格 >75% 的持仓账户触发；2026-11-06 已随完整版本配套部署 |
 | `SIGNAL_ECHOBELL_ENABLED`（已退役） | 2026-11-03 起普通信号固定只走 App APNs，旧环境即使保留 true 也不入队／发送 Echo；浮盈仍由独立开关控制 |
 
 p8 只挂载到 scheduler，不进入镜像或 Git；部署前创建来源目录，限制目录访问并确保容器 UID 10001 可读该文件，例如通过专用所有者／组和文件 0400／0440 权限。不能用向所有用户开放私钥的方式修权限。APNs 的 Key 可属于既有团队，但 topic、描述文件和客户端签名环境必须对应整合应用。
 
-保证金监控另需新增 `positions.0030_position_margin_alerts`，不修改已有订单／资金表。它与浮盈共用通道冷却但开关独立，迁移与上线规则见 [通知](signals-and-notifications.md#保证金-echobell-与-app-币种导航2026-11-06本地)。本轮未变更任何运行环境或通道凭证。
+保证金监控依赖 `positions.0030_position_margin_alerts`，2026-11-06 已与 `positions.0029` 一并应用，仅新增通知相关表，不修改已有订单／资金表。它与浮盈共用通道冷却但开关独立，迁移与上线规则见 [通知](signals-and-notifications.md#保证金-echobell-与-app-币种导航2026-11-06本地)。2026-11-06 在 **47.80.22.243（首尔服务器）** 核验完整 API／scheduler 已加载原环境中的 App／live APNs、浮盈及保证金开关，均为 true，接收人及通道已配置；仓位通知和外部接收等原暂停开关仍为 false。环境文件与通道凭证保持原样，保证金 watch 已自然更新，未创建测试告警或发送测试通知，见[完整发布](operations.md#完整同源发布2026-11-06)。
 
 完整 App／浮盈通知部署需先应用 `mobile.0002` 与 `positions.0029` 两个仅新增模型的 migration；仅 App 注册／派发限定包只依赖已应用的 `mobile.0002`，不加载浮盈模型和任务。回滚到旧代码可以保留新增表，代码回滚不还原数据库，也不重放已尝试通知。
 

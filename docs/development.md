@@ -1,5 +1,15 @@
 # 开发与验证
 
+## 完整版本发布验证（2026-11-06）
+
+用户明确要求全部提交推送部署。本批以 `97953e6` 为基线，将换根修复／文档和完整交付规则提交为 `79f812b`，随后将 MySQL 测试事务兼容修正提交为 `7e29236`；两者均推送 GitHub，全部后端从后一提交的完整 Git 存档构建，没有摘选或跳过其他会话改动。实际发布见[运维](operations.md#完整同源发布2026-11-06)。
+
+使用 `.integration-runtime/backend_slim_test_runner.py` 跑完整后端，SQLite／独立本地 Redis、禁止外部 socket／DNS，运行器最终 **Ran 1141 tests／267.482 秒／OK (skipped=6)**，发现数为 1158，不能将发现数减跳过数当作实际运行数；opt-in 两个类的 setUpClass 跳过解释了计数差异。日志 `FullReleaseNov6/backend-tests.log`。完整包的 Django `check`、`makemigrations --check --dry-run` 与生产只读迁移计划核验均通过。
+
+在 **47.80.22.243（首尔服务器）** 使用同一完整镜像及独立 `--internal` Docker 网络、临时 MySQL／Redis、临时凭据和存储，运行 `integration_tests positions.test_margin_alerts positions.test_profit_alerts mobile.test_event_delivery`，**55 项／32.468 秒／0 失败／0 跳过**；未挂生产环境文件、密钥或数据卷，不启动交易 worker／scheduler，通知和交易所边界均用替身。临时容器、网络、数据和凭据已删除。首轮测试 MySQL 的 tmpfs 初始化超时后改用独立磁盘临时目录；随后 MySQL 暴露 `AccountEventDeliveryTests(TestCase)` 的事务问题：生产函数调用 `close_old_connections()` 会关闭不符合自动提交状态的测试连接，破坏外层 atomic。改用真实事务边界的 `TransactionTestCase`，本地六项 **1.545 秒**和完整包 MySQL 六项及其余用例全部通过；只改变测试，不改变生产交易逻辑。证据 `FullReleaseNov6/isolated-tests-final.log`。
+
+iOS 换根修复继续使用下节 **64 项 host + App／Widget Release** 结果，46 个输入文件哈希仍与当前源码一致，未重复无变化的构建；新增 MySQL 测试修正不涉及 Swift。公网部署后验证了 1500／2 根历史、统计、gzip、三连接共享接收与新增 2h 周期，详见运行证据和运维；不把接口冒烟、隔离数据库或 Cloud 结果写成手机呈现通过。
+
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
 ## K 线换根连续性回归（2026-11-06，本地）
@@ -13,7 +23,7 @@ python3 frontend/ios-app/scripts/test_chart_recovery.py .integration-runtime/Can
 xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Release' -configuration Release -destination 'generic/platform=iOS' -derivedDataPath .integration-runtime/CandleRolloverNov6/Release CODE_SIGNING_ALLOWED=NO build
 ```
 
-主 App／Widget generic iOS 无签名 **Release 构建通过**（`candle-rollover-release.log`）；本轮未启动模拟器、执行 iOS UI 测试或进行手机换根验收，host 场景图元检查不能等同实机呈现。修改保留本地，未提交／推送、部署或上传 TestFlight；需要新客户端才能获得修复。
+主 App／Widget generic iOS 无签名 **Release 构建通过**（`candle-rollover-release.log`）；本轮未启动模拟器、执行 iOS UI 测试或进行手机换根验收，host 场景图元检查不能等同实机呈现。本地验证阶段未提交／推送或发布；后续已随上方完整交付提交推送，Cloud／TestFlight 状态见[客户端交付](testflight.md#换根修复与完整源码交付2026-11-06)，需要新客户端才能获得修复。
 
 ## 首屏同步补齐与传输调整（2026-11-06）
 

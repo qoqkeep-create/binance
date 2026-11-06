@@ -1,5 +1,19 @@
 # 整合环境部署与运维
 
+## 完整同源发布（2026-11-06）
+
+2026-11-06 **17:43:52（北京时间）**，按用户“全部提交推送部署，不绕过其他更改”的要求，将完整源码 `7e29236` 部署至 **47.80.22.243（首尔服务器）**。`current` 为 `integrated-20261106-full-7e29236`，API／market／worker／scheduler 均使用同一完整镜像 `tradetools-integrated:integrated-20261106-full-7e29236`，不再组合不同限定源码；331 个归档文件与 Git 存档逐项相符，四个进程各 **317 个运行 Python／requirements** 哈希完全匹配。包含此前已推送但未上线的 API 共享行情分发、私有事件批量投递／余额事实分流、账户流连接守卫、调度预热去重、全部 13 种行情周期、注册权限／短 Key、浮盈与 >75% 保证金独立 Echobell 任务，以及已有首屏同步补线／缓存／gzip 改动。
+
+发布前只读确认本地活动仓位、待成交限价和 RUNNING 命令均为 0，未把这些计数当成交易所完整对账。完整后端 SQLite／隔离 Redis 回归最终运行器计数 **1141 项、零失败、6 项 opt-in 跳过**；另在无生产环境、无生产数据卷、无外部网络的临时 MySQL／Redis 上 **55 项通过、0 跳过**，涵盖这些并发／迁移合约及新增通知。账户事件测试因 `TestCase` 包装事务与真实连接清理不兼容而在 MySQL 首轮失败，已改为 `TransactionTestCase` 并重跑通过，未绕过测试。验证详见 [开发](development.md#完整版本发布验证2026-11-06)。
+
+一致性数据库备份 **371387962 bytes**，完整 gzip 解压与 SHA-256 校验通过；目录 `/opt/trade-tools-integrated/backups/integrated-20261106-full-7e29236/` 为 0700，含前版容器、来源、受限配置与回退脚本。仅应用 `positions.0029_positionprofitwatch_positionprofitalert` 和 `positions.0030_position_margin_alerts`，各新增两张通知状态／投递表；没有改写既有订单、策略、账号或迁移回填。随后 `migrate --check` 通过。停止旧 worker／scheduler 后启动同源四服务，避免旧新后台混跑；没有初始化账号、重置队列、手工交易、资金划转或撤保护单。
+
+MySQL／Redis 容器 ID、镜像及数据卷原样，Redis 保持 AOF、256 MiB maxmemory／320 MiB 容器限额，MySQL 保持 1／2 GiB 内存／swap 限额；本轮无需再次重建 Redis。环境文件 inode／大小／mtime／权限不变。宿主 nginx snippet 与完整源码模板哈希相同，`nginx -t` 通过，继续 gzip；没有为相同配置再 reload。后续 Compose 使用本 release 的 `compose.integrated.yaml` **加 `compose.runtime.yaml`**，设置 `INTEGRATED_RELEASE=integrated-20261106-full-7e29236`；后者仅固定当前 MySQL／Redis 镜像，四个 Python 服务同源，原六层限定 override 留在旧 release 作历史证据。
+
+六服务 healthy，公网 HTTPS／QA 鉴权、BTC1h 1500 根／尾部 2 根及六类统计、鉴权 WSS ready／订阅 ACK／ping-pong 和 K 线／ticker 通过。**3 个同时连接均收到订阅行情，Redis 实际仅 1 条 Pub/Sub 连接（公共主题使用模式订阅）**，确认共享分发实际运行；不是纯进程内采集网关。新增 BTC2h 两根读取通过。公网 gzip **69850 bytes**、解压 JSON **423035 bytes**，identity 响应与 Vary 正常。注册开关仍为 true，QA 无管理权；普通／live APNs、浮盈和保证金监控开启，仓位通知、外部交易通知和外部 HTTP 接收继续关闭。自动通知自然触发、手机点击和首帧性能仍待实机验收，本轮没有发送测试通知。
+
+回滚执行备份中的 `rollback.sh`，恢复原四个 Python 镜像和 `current`，保留 MySQL／Redis、已新增通知表及实际投递记录；**不恢复数据库、不反迁移、不重放未知通知或交易命令**。本地证据在忽略的 `.integration-runtime/FullReleaseNov6/`。客户端换根修复在 `79f812b`，完整后端在 `7e29236`；全部源码已推送 `codex/integrated-ios`，后续验收文档另提交。客户端 Cloud／TestFlight 与手机状态见 [TestFlight](testflight.md#换根修复与完整源码交付2026-11-06)，后端部署不能使旧安装包获得换根修复。
+
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。各日期段落描述当时状态，当前运行版本以上方最新实际发布为准。
 
 ## 首屏补齐、Redis 扩容与 nginx 压缩发布（2026-11-06）
@@ -311,7 +325,7 @@ Compose 继续使用本版 `compose.integrated.yaml`＋`compose.signal-leverage.
 
 ## 注册开关
 
-注册状态存于 `users.SystemSetting` 的 `open_registration` 数据库项，`1` 为开启，默认关闭；不属于 `server.env` 配置。匿名 `GET /v1/auth/admin-settings` 可读取当前状态。2026-11-06 本地源码将写权限收紧为有效登录邮箱 `qqqqqq@qq.com`，尚未部署；旧运行版本仍按原管理员标志。新版本可在 App 设置或通过同路径的鉴权 `POST` 提交 `{"open_registration": true}` / `false` 修改，重启和代码发布不重置已有设置。
+注册状态存于 `users.SystemSetting` 的 `open_registration` 数据库项，`1` 为开启，默认关闭；不属于 `server.env` 配置。匿名 `GET /v1/auth/admin-settings` 可读取当前状态。2026-11-06 已随[完整同源发布](#完整同源发布2026-11-06)将写权限收紧为有效登录邮箱 `qqqqqq@qq.com`，不继承其他管理员标志；本轮没有改变持久化的开关值。新版本可在 App 设置或通过同路径的鉴权 `POST` 提交 `{"open_registration": true}` / `false` 修改，重启和代码发布不重置已有设置。
 
 2026-11-01 03:04（北京时间）在 47.80.22.243（首尔服务器）核对六个整合容器均 healthy、当前发布仍为 `integrated-20261031-d2498172efa6`，再经 SSH 在现有 API 容器调用 `SystemSetting.set_open_registration(True)`，只改变这一设置。匿名公网状态返回 true、HTTPS 健康检查为 200；未重建容器或执行真实注册、邮件发送及交易操作。管理员需要关闭时修改同一设置即可。
 
@@ -395,7 +409,7 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 ## 更新与回滚
 
-更新使用新 release、受限配置和同一个 Compose 项目。限定发布须带齐当次 Compose override、固定非目标镜像，并用 `--no-deps` 只替换授权服务；当前文件清单见 [首屏限定发布](#首屏补齐redis-扩容与-nginx-压缩发布2026-11-06)。不要推送父 Gitee 仓库 main 触发来源系统自动部署。
+更新使用新 release、受限配置和同一个 Compose 项目，完整交付范围遵守[协作规则](../AGENTS.md#发布与验证)。从确定 Git 提交生成全部后端／部署源码存档，核对四个 Python 服务的完整来源和配套迁移后统一发布；当前配置链见[完整同源发布](#完整同源发布2026-11-06)。用户明确要求限定发布时，才保留完整 override 并固定非目标镜像。不要推送父 Gitee 仓库 main 触发来源系统自动部署。
 
 回滚先核对 migration 与目标镜像兼容，保存数据库备份；代码回滚不会还原数据库。兼容时选择保留的 release / 镜像，指定对应 `INTEGRATED_RELEASE` 执行 `docker compose ... up -d --no-build`，更新 `current` 后复验健康、认证和 WSS。不得通过撤单或重发 UNKNOWN 命令实现回滚。
 
@@ -445,7 +459,7 @@ git --git-dir=.integration-runtime/github-publish.git --work-tree=. diff --check
 
 Xcode Cloud 必须单独获得指定 GitHub 仓库的访问授权；本机 Deploy key 可推送不代表 Cloud 已获授权。
 
-只提交本任务交付文件；来源目录、父仓库改动与历史不混入。环境文件、私钥、备份、日志、构建和 IDE 用户状态保持忽略。GitHub Deploy key 与目标机 SSH 密钥是不同认证，均不随代码交付。本机 SSH 443 / 代理设置只存于忽略的独立 Git 配置，其他机器正常 clone 即可。
+整合工作区的交付范围以[协作规则](../AGENTS.md#发布与验证)为准；来源目录、父仓库改动与历史不混入。环境文件、私钥、备份、日志、构建和 IDE 用户状态保持忽略。GitHub Deploy key 与目标机 SSH 密钥是不同认证，均不随代码交付。本机 SSH 443 / 代理设置只存于忽略的独立 Git 配置，其他机器正常 clone 即可。
 
 推送授权以 [项目协作规则](../AGENTS.md#发布与验证) 为准。2026-11-01 用户明确授权本次 K 线诊断在需要发布客户端时完成后直接推送，并说明由其既有 Jenkins 调用 Apple 打包服务；这是本次任务授权，后续任务仍默认经用户批准再推送。本轮不修改 Jenkins 或 Apple 工作流；推送成功不代表打包、分发或手机安装成功。2026-11-01 的名称 / 图标 / 认证 / 白底启动页及开启注册整批获单次推送授权；验收见 [变更记录](changes.md)。推送可能触发 Xcode Cloud，源码推送与开启注册的授权范围不包含真实交易。
 

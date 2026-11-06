@@ -1,5 +1,13 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
+## 换根修复与完整源码交付（2026-11-06）
+
+用户授权全部提交推送部署。换根连续性修复 `79f812b` 已推送 GitHub `codex/integrated-ios`，后续 `7e29236` 只修正后端 MySQL 测试事务，Swift 源码与前者相同；配套完整后端已在 **47.80.22.243（首尔服务器）** 发布，见[运维](operations.md#完整同源发布2026-11-06)。先前的账号／通知导航／持仓界面改动均已包含在这套完整源码，未摘除其他会话修改。
+
+本轮通过 GitHub 公开 check 确认 `79f812b` 自动触发既有 Apple 工作流，[Archive](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/d743f35b-7c9c-49ca-acc1-ea954e70b33a/action/230698b7-b7ba-4c72-a2d5-1f8341106946) 已成功，[Test](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/d743f35b-7c9c-49ca-acc1-ea954e70b33a/action/b0cf2d3f-011d-448b-ac4f-96171576b989) 截至 2026-11-06 17:50（北京时间）为 **in_progress／尚无结论**，见交付时 check 记录。本轮未手动改 Jenkins／Apple 工作流、上传或加内部组，准确 Build Number／TestFlight 处理与分发／手机安装尚未核实。源码推送、Archive、Test 和手机可安装分别判断；后端上线不会修复旧安装包中的换根逻辑。
+
+本地 64 项 host 及 generic iOS App／Widget Release 通过；多周期真实换根、迟到收盘、后台恢复及通知点击仍需安装包含 `79f812b` 的新客户端验收。证据在忽略的 `.integration-runtime/FullReleaseNov6/cloud-checks-ios.json`，没有保存 Apple 凭证。
+
 核对日期：2026-11-01。工程配置以当前源码为准，Apple 操作依据文末官方文档。已补主 App 隐私清单，并核对 Xcode Cloud 所需的共享 Scheme、Metal 准备脚本和自动构建号机制。Apple 团队已核实为 GUANGDONG ZHANG / `756Y5JKBUD`；新 App ID 已注册并启用 Push Notifications，App Store Connect 已创建 `TradeTools USDT`（App ID `6829222305`）。已保存新应用的 `iOS TestFlight` 工作流，仓库授权、分支 / 路径触发、必过单测、App Store Connect 归档和内部测试自动分发均已配置；编号从 `4` 开始自动递增；构建 `7` 已完成云端测试、归档、上传和内部自动分发。后续用户先确认手机为 13／14，现已从实际 iPhone 诊断确认正在运行 `1.0.1 (15)`；K 线真机结果见下节，准确的 Cloud commit／配置映射仍待后台核对。
 
 2026-11-02 用户确认构建 **26 已成功**，本轮停止追查此前 Cloud 构建失败。该反馈不等于下面新增图表／通知代码已上传或已在手机验收；准确 commit 映射仍以 Apple 记录为准。
