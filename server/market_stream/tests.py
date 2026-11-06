@@ -136,20 +136,22 @@ class MarketHistoryTests(TestCase):
 
     @patch("market_stream.service.time.time", return_value=600)
     @patch("market_stream.service.public_request")
-    def test_stale_database_tail_is_repaired_even_when_page_is_full(self, request, _time):
+    def test_stale_tail_is_healed_within_the_first_request(self, request, _time):
         service.persist([rest_candle("BTCUSDT", "1m", row, 600000) for row in self.rows()])
         request.return_value = [[540000, "1", "2", "1", "1.5", "3", 599999, "4.5"]]
         result = service.load_history("BTCUSDT", "1m", 5)
-        self.assertEqual(result["lastOpenTime"], 240000)
-        self.assertTrue(result["historyPending"])
-        request.assert_not_called()
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertTrue(repair.run_next())
-        result = service.load_history("BTCUSDT", "1m", 5)
         self.assertEqual(result["lastOpenTime"], 540000)
         self.assertFalse(result["stale"])
-        self.assertEqual(MarketCandle.objects.count(), 6)
         request.assert_called_once()
+        self.assertEqual(MarketCandle.objects.count(), 6)
+        # The internal gap outside the fetched page still belongs to the worker,
+        # and the cooldown keeps a second read from calling the exchange again.
+        self.assertTrue(result["historyPending"])
+        result = service.load_history("BTCUSDT", "1m", 5)
+        self.assertEqual(result["lastOpenTime"], 540000)
+        request.assert_called_once()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(repair.run_next())
 
     @patch("market_stream.service.time.time", return_value=600)
     @patch("market_stream.service.public_request")
@@ -202,15 +204,17 @@ class BackgroundRepairTests(TestCase):
         notice.start()
         self.addCleanup(notice.stop)
 
-    @patch("market_stream.service.public_request", side_effect=AssertionError("HTTP must not call Binance"))
-    def test_empty_read_is_immediate_and_coalesces_repair(self, request):
+    @patch("market_stream.service.public_request", side_effect=TimeoutError("exchange unavailable"))
+    def test_empty_read_falls_back_to_the_worker_and_coalesces(self, request):
         from market_stream.models import MarketHistoryTask
         for _ in range(3):
             result = service.load_history("BTCUSDT", "1h", 1500)
             self.assertEqual(result["items"], [])
             self.assertTrue(result["historyPending"])
         self.assertEqual(MarketHistoryTask.objects.count(), 1)
-        request.assert_not_called()
+        # The bounded in-request fill is attempted once; its cooldown key
+        # coalesces the remaining reads onto the durable repair worker.
+        self.assertEqual(request.call_count, 1)
 
     @patch("market_stream.service.public_request", side_effect=TimeoutError)
     def test_failure_retries_with_backoff_and_expired_lease_recovers(self, request):
@@ -371,9 +375,7 @@ class FastHistoryApiTests(TestCase):
         self.client.force_authenticate(User.objects.create_user("history-qa@example.invalid", "test-only-password"))
 
     @patch("market_stream.service.load_history")
-    def test_history_compresses_on_the_wire_without_changing_the_snapshot(self, history):
-        import gzip
-        import json
+    def test_history_response_leaves_wire_compression_to_the_proxy(self, history):
         from market_stream.core import wire_candle
         cache.set("market:universe", ["BTCUSDT"])
         rows = [wire_candle(rest_candle("BTCUSDT", "1h", [
@@ -383,24 +385,22 @@ class FastHistoryApiTests(TestCase):
         history.return_value = {"symbol": "BTCUSDT", "interval": "1h", "items": rows,
                                 "historyPending": False, "hasMoreHistory": True}
         params = {"symbol": "BTCUSDT", "interval": "1h", "limit": 1500}
-        plain = self.client.get("/api/market/klines", params, HTTP_ACCEPT_ENCODING="identity")
-        compressed = self.client.get("/api/market/klines", params, HTTP_ACCEPT_ENCODING="gzip")
-        self.assertEqual(compressed.status_code, 200)
-        self.assertEqual(compressed.get("Content-Encoding"), "gzip")
-        self.assertIn("Accept-Encoding", compressed["Vary"])
-        self.assertIn("history;dur=", compressed["Server-Timing"])
-        self.assertEqual(json.loads(gzip.decompress(compressed.content)), plain.json())
-        self.assertLess(len(compressed.content), len(plain.content) // 2)
-        self.assertNotIn("Content-Encoding", plain)
+        response = self.client.get("/api/market/klines", params, HTTP_ACCEPT_ENCODING="gzip")
+        self.assertEqual(response.status_code, 200)
+        # nginx owns gzip for /integrated/; the app must not spend the shared
+        # sync-view thread compressing ~400 KiB per chart open.
+        self.assertNotIn("Content-Encoding", response)
+        self.assertIn("history;dur=", response["Server-Timing"])
+        self.assertEqual(len(response.data["data"]["items"]), 1500)
 
-    @patch("market_stream.service.public_request", side_effect=AssertionError("No exchange I/O in HTTP"))
-    def test_api_warms_asynchronously_and_reports_timing(self, request):
+    @patch("market_stream.service.public_request", side_effect=TimeoutError("exchange unavailable"))
+    def test_api_degrades_to_pending_history_and_reports_timing(self, request):
         cache.set("market:universe", ["BTCUSDT"])
         response = self.client.get("/api/market/klines", {"symbol": "BTCUSDT", "interval": "1h", "limit": 1500})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["data"]["historyPending"])
         self.assertIn("history;dur=", response["Server-Timing"])
-        request.assert_not_called()
+        self.assertEqual(request.call_count, 1)
 
     @patch("market_stream.service.public_request", side_effect=AssertionError("No exchange I/O in HTTP"))
     def test_cold_universe_returns_retryable_status_without_exchange(self, request):

@@ -2,8 +2,6 @@ import time
 import logging
 
 from django.conf import settings
-from django.utils.decorators import method_decorator
-from django.views.decorators.gzip import gzip_page
 from rest_framework import serializers
 from rest_framework.views import APIView
 from common.response import fail, ok
@@ -78,9 +76,9 @@ class WatchlistInput(serializers.Serializer):
 
 
 class KlinesView(APIView):
-    # Keep the full indicator warm-up window without sending ~400 KiB of
-    # repetitive JSON over the mobile link. URLSession negotiates gzip itself.
-    @method_decorator(gzip_page)
+    # Wire compression belongs to nginx (see deploy/integrated/nginx-location.conf):
+    # compressing ~400 KiB here would occupy the single shared sync-view thread
+    # that every other HTTP request also waits on.
     def get(self, request):
         received_at_ms = int(time.time() * 1000)
         trace = correlation(request)

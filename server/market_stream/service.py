@@ -24,9 +24,11 @@ HOT_WINDOW_SIZE = {interval: 1500 for interval in INTERVAL_MS}
 LIVE_STATE_LOCK = RLock()
 
 
-def public_request(path, query=None):
+def public_request(path, query=None, *, budget_priority="background", timeout=None):
     client = BinanceFuturesClient(BinanceCredentials("", ""))
-    return client._request("GET", path, query=query, signed=False, budget_priority="background",
+    if timeout is not None:
+        client.timeout_seconds = timeout
+    return client._request("GET", path, query=query, signed=False, budget_priority=budget_priority,
                            require_shared_budget=settings.USE_REDIS_CACHE)
 
 
@@ -150,16 +152,60 @@ def partial_bucket(symbol, interval, now):
     return aggregate_bucket(ordered, interval, source_interval=source_interval, partial=True)
 
 
+SYNC_FILL_COOLDOWN = 30
+SYNC_FILL_TIMEOUT = 4
+
+
+def sync_backfill(symbol, interval):
+    """One bounded in-request exchange page so a stale first screen heals itself.
+
+    Mirrors the USDC controller: fall back to the durable repair worker whenever
+    the shared budget, cooldown or exchange is unavailable, never retry in a
+    loop; the per-stream cooldown key coalesces concurrent readers.
+    """
+    from common.binance import rate_limit_cooldown_remaining
+    from market_stream import repair
+    if rate_limit_cooldown_remaining("futures") > 0:
+        return False
+    if not cache.add(f"market:syncfill:{symbol}:{interval}", 1, SYNC_FILL_COOLDOWN):
+        return False
+    try:
+        rows = repair.fetch_page(symbol, interval, budget_priority="normal",
+                                 timeout=SYNC_FILL_TIMEOUT)
+    except Exception as exc:
+        log.info("Market sync backfill deferred symbol=%s interval=%s (%s)",
+                 symbol, interval, type(exc).__name__)
+        return False
+    if not rows:
+        return False
+    with transaction.atomic():
+        persist(rows)
+    # TestCase never commits, and readers must not wait for the commit hook.
+    history_cache.invalidate(symbol, interval)
+    publish_live_batch([row for row in rows if not row["closed"]], emit=False)
+    return True
+
+
 def load_history(symbol, interval, limit=300, before=None, *, schedule_repair=True):
-    """Read a local snapshot only. Exchange I/O belongs to the repair worker."""
+    """Local snapshot first; one bounded exchange page heals a stale or gapped tail."""
     from market_stream import repair
     now = int(time.time() * 1000)
     width = INTERVAL_MS[interval]
     stored = warm_history(symbol, interval, before)[-limit:]
     current_open = bucket_open_time(now, interval)
-    latest_closed_open = current_open - width
-    stale = before is None and (not stored or stored[-1]["openTime"] < latest_closed_open)
-    gaps = any(b["openTime"] - a["openTime"] != width for a, b in zip(stored, stored[1:]))
+
+    def tail_state():
+        stale = not stored or stored[-1]["openTime"] < current_open - width
+        gaps = any(b["openTime"] - a["openTime"] != width for a, b in zip(stored, stored[1:]))
+        return stale, gaps
+
+    stale, gaps = tail_state()
+    stale = before is None and stale
+    if schedule_repair and before is None and (stale or gaps) and sync_backfill(symbol, interval):
+        now = int(time.time() * 1000)
+        stored = warm_history(symbol, interval, before)[-limit:]
+        current_open = bucket_open_time(now, interval)
+        stale, gaps = tail_state()
     pending = False
     if schedule_repair and (len(stored) < limit or stale or gaps):
         task = repair.schedule(symbol, interval, before=before)

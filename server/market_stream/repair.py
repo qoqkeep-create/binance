@@ -39,23 +39,26 @@ def seed(symbols):
             schedule(symbol, interval, kind="maintenance", priority=10)
 
 
-def _fetch(task, *, start=None, end=None):
+def fetch_page(symbol, interval, *, start=None, end=None, budget_priority="background", timeout=None):
+    """One bounded 1500-row exchange page, normalized and retention-filtered."""
     from market_stream import service
     now = int(time.time() * 1000)
-    source_interval = "8h" if task.interval == "16h" else task.interval
-    params = {"pair": task.symbol, "contractType": "PERPETUAL", "interval": source_interval, "limit": 1500}
+    source_interval = "8h" if interval == "16h" else interval
+    params = {"pair": symbol, "contractType": "PERPETUAL", "interval": source_interval, "limit": 1500}
     if start is not None:
         params["startTime"] = start
     if end is not None:
         params["endTime"] = end
-    raw = service.public_request("/fapi/v1/continuousKlines", params)
-    if task.interval == "16h":
+    raw = service.public_request("/fapi/v1/continuousKlines", params,
+                                 budget_priority=budget_priority, timeout=timeout)
+    if interval == "16h":
         # Binance has no native 16h interval. Two bounded 8h pages produce up to 1500 16h bars.
         if len(raw) == 1500 and (start is None or min(row[0] for row in raw) > start):
             older = service.public_request("/fapi/v1/continuousKlines",
-                {**params, "endTime": min(row[0] for row in raw) - 1})
+                {**params, "endTime": min(row[0] for row in raw) - 1},
+                budget_priority=budget_priority, timeout=timeout)
             raw = older + raw
-        sources = {int(row[0]): rest_candle(task.symbol, source_interval, row, now) for row in raw}
+        sources = {int(row[0]): rest_candle(symbol, source_interval, row, now) for row in raw}
         groups = {}
         for row in sources.values():
             groups.setdefault(bucket_open_time(row["openTime"], "16h"), []).append(row)
@@ -66,10 +69,15 @@ def _fetch(task, *, start=None, end=None):
             if row is not None:
                 rows.append(row)
     else:
-        rows = [rest_candle(task.symbol, task.interval, row, now) for row in raw]
-    cutoff = bucket_open_time(now - service.RETENTION_DAYS[task.interval] * 86400000, task.interval)
-    rows = [row for row in rows if row["openTime"] >= cutoff
+        rows = [rest_candle(symbol, interval, row, now) for row in raw]
+    cutoff = bucket_open_time(now - service.RETENTION_DAYS[interval] * 86400000, interval)
+    return [row for row in rows if row["openTime"] >= cutoff
             and (start is None or row["openTime"] >= start) and (end is None or row["openTime"] <= end)]
+
+
+def _fetch(task, *, start=None, end=None):
+    from market_stream import service
+    rows = fetch_page(task.symbol, task.interval, start=start, end=end)
     with transaction.atomic():
         service.persist(rows)
     # HTTP readers see a repaired snapshot immediately, without replaying old

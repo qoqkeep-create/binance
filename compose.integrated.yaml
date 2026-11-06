@@ -90,8 +90,8 @@ services:
     image: redis:7.4-alpine
     profiles: [pro]
     restart: unless-stopped
-    command: [redis-server, --appendonly, 'yes', --maxmemory, 80mb, --maxmemory-policy, noeviction]
-    mem_limit: 128m
+    command: [redis-server, --appendonly, 'yes', --maxmemory, 256mb, --maxmemory-policy, noeviction]
+    mem_limit: 320m
     volumes: [integrated-redis:/data]
     healthcheck:
       test: [CMD, redis-cli, ping]

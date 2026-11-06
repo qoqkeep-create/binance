@@ -201,7 +201,8 @@ class HistoryFastPathTests(TestCase):
         request.assert_not_called()
 
     @patch("market_stream.service.time.time", return_value=600)
-    def test_larger_interval_first_snapshot_contains_the_local_partial_bucket(self, _):
+    @patch("market_stream.service.public_request", return_value=[])
+    def test_larger_interval_first_snapshot_contains_the_local_partial_bucket(self, _request, _time):
         service.persist([candle(at, closed=True) for at in range(300000, 600000, 60000)])
         # At 10 minutes this is the completed 5m bucket; add a fresh minute in
         # the new bucket and inspect while it is still forming.

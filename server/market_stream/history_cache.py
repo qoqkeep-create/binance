@@ -10,7 +10,9 @@ from redis.exceptions import RedisError
 from django.conf import settings
 from django.core.cache import cache
 
-MAX_WINDOWS = 64
+# 192 windows × 256 KiB worst case = 48 MiB; sized against the 256 MiB Redis
+# budget so cold symbols stop thrashing the shared LRU on every first screen.
+MAX_WINDOWS = 192
 MAX_WINDOW_BYTES = 256 * 1024
 TTL = 300
 INDEX = "market:history:v4:lru"
