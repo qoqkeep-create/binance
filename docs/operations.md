@@ -2,6 +2,18 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。各日期段落描述当时状态，当前运行版本以上方最新实际发布为准。
 
+## 保证金只读接口限定发布（2026-11-06）
+
+2026-11-06 15:36:55（北京时间）已将 `ba4b9e0` 中的保证金读取范围部署至 **47.80.22.243（首尔服务器）**。`current`／API 为 `integrated-20261106-margin-api-ba4b9e0`，以上一版 `integrated-20261106-history-cache-api-a91850b` 的实际归档为基线；market 继续为 `integrated-20261106-history-cache-market-a91850b`，worker／scheduler／MySQL／Redis 保留原镜像，六服务 healthy。下方历史记录保留各时点，当前 API 以本节为准。
+
+此前运行包缺少 `GET /v1/position/margin`，本次只叠加该接口、路由、只读账户适配器、带单读取允许路径及两个 GET 的权重声明，附对应测试；共 6 个允许路径，321 个来源文件中 315 个原样。适配器只 GET `accountConfig`／`fapi/v2/account`，使用 BACKGROUND 预算且各权重 5，不执行交易对账或订单／资金／保护操作。缓存 1 秒，事件／详情／手动请求 `fresh=1` 可绕缓存；无需 schema／数据迁移。限定包 63 项隔离回归通过，见 [开发](development.md#持仓紧凑切页与保证金双卡片2026-11-06)。没有整包替换为 HEAD，未带入共享行情分发或其他交易修改。
+
+归档 SHA-256 为 `aed3f83215e391cae32fc4e8957a4c26e39cd79849d4fcf681c0a23c9cf9c959`，两端相同；307 个运行 Python／requirements 哈希与 manifest 一致。备份位于 `/opt/trade-tools-integrated/backups/integrated-20261106-margin-api-ba4b9e0/`（0700），含前版、容器、来源、配置回退命令与结果；数据库 gzip **369640322 bytes**，进程返回和完整解压校验通过。仅 `migrate --check`，没有应用迁移／恢复数据库／重放队列。切换前 RUNNING 命令计数为 0；仅替换 API，其余五服务容器 ID 与镜像哈希不变，环境文件的 inode／大小／mtime／权限未变。
+
+沿用前三份 Compose 加 `compose.history-cache.yaml`，再叠加 `compose.margin.yaml` 固定新 API 及其他实际镜像，API 配置除镜像／构建路径外与原版一致；后续 Compose 操作不能遗漏任一 override。`INTEGRATED_RELEASE=integrated-20261106-margin-api-ba4b9e0`。回滚执行上述备份的 `rollback.sh`，只恢复原 API 镜像和 `current`，保留数据库、其他服务及环境；保证金接口会随回滚消失，需评估客户端兼容，不反迁移。
+
+15:37:15（北京时间）复核六服务健康，公网 HTTPS 健康 200、匿名保证金读取 401；新 API 进程内以 SQL／网络均禁止的替身验证普通／带单读取、绑定变更 409、匿名拒绝、适配器只有 GET 及完整后台权重。没有真实绑定查询或交易所调用，不能把替身验收写成真实账户保证金／手机时效通过。证据在本机忽略目录 `.integration-runtime/PositionMarginTabsNov6/` 的 manifest、`deploy-remote.log`、`deployment-result.json` 与 `verify-release.log`；远端备份保留部署结果。客户端空仓／双卡片及切页改动需要新包，TestFlight 分发和 iPhone 安装仍待验。
+
 ## 历史缓存与统计限定发布（2026-11-06）
 
 发布前 SSH 只读核验 **47.80.22.243（首尔服务器）**：`current`／API 为 `integrated-20261103-retire-entry-ema-2d2d93f13dbf`，market 为 `integrated-20261102-git-171be8d74c50`；worker 为 `integrated-20261103-worker-retire-entry-ema-f7a289ab3c7d`，scheduler 为 `integrated-20261103-position-live-activity-3a1a95e914ba`。六个服务健康，API／market 分别核对 304／295 个 Python／requirements 哈希。源码已推送的共享分发及近期周期扩展未在该运行基线生效；不能据 GitHub HEAD 推断实际发布或提速归因。
