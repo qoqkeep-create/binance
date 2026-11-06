@@ -10,7 +10,7 @@ final class PositionMarginHeaderTests: XCTestCase {
     let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
       .appendingPathComponent("rendered", isDirectory: true)
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-    for ratio in ["3.45", "55", "85", "121.25"] {
+    for ratio in ["empty", "3.45", "55", "85", "121.25"] {
       let store = USDTStore(api: HeaderFixtureAPI(ratio: ratio))
       store.binding = .object(["id": .string("fixture")])
       let model = PositionMarginModel()
@@ -64,7 +64,10 @@ final class PositionMarginHeaderTests: XCTestCase {
 private struct HeaderFixtureAPI: APIClient {
   let ratio: String
   func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
-    JSONValue.object(["supported": .bool(true), "observed_at": .number(Date().timeIntervalSince1970 * 1000),
-      "max_age_seconds": .number(20), "margin_ratio_percent": .string(ratio), "liquidation_reached": .bool(false)]) as! Response
+    var data: [String: JSONValue] = ["supported": .bool(true), "observed_at": .number(Date().timeIntervalSince1970 * 1000),
+      "max_age_seconds": .number(20), "margin_ratio_percent": .string(ratio == "empty" ? "0" : ratio),
+      "liquidation_reached": .bool(false)]
+    if ratio == "empty" { data["positions"] = .array([]) }
+    return JSONValue.object(data) as! Response
   }
 }

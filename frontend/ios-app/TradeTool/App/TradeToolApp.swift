@@ -380,6 +380,22 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         await requests.next(request.path) == 1 {
         value = .array([])
       }
+      if ProcessInfo.processInfo.arguments.contains("--fixture-position-pager"),
+        ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list"].contains(request.path),
+        let sample = value.rows.first ?? value["items"]?.rows.first {
+        let page = Int(request.queryItems.first { $0.name == "page" }?.value ?? "1") ?? 1
+        let prefix = request.path == "/v1/position/list" ? "POS" : request.path == "/v1/position/history" ? "HIS" : "LIM"
+        let records: [JSONValue] = (1...5).map { offset in
+          let index = (page - 1) * 5 + offset
+          var fields = sample.fields
+          fields["id"] = .number(Double(index))
+          fields["symbol"] = .string(prefix + String(format: "%02d", index) + "USDT")
+          return .object(fields)
+        }
+        value = request.path == "/v1/position/list" ? .array(records)
+          : .object(["items": .array(records), "pagination": .object([
+            "has_next": .bool(page < 2), "total": .number(10)])])
+      }
       if request.path == "/v1/auth/admin-settings",
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-open") {
         value = .object(["open_registration": .bool(true)])

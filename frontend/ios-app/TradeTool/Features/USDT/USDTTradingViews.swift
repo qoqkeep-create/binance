@@ -687,17 +687,12 @@ struct USDTPositionsView: View {
   @StateObject private var historyModel = USDTPageModel()
   @StateObject private var margin = PositionMarginModel()
   @State private var marginDetails = false
-  private var model: USDTPageModel { segment == "limits" ? limitsModel : historyModel }
+  private func pageModel(_ page: String) -> USDTPageModel { page == "limits" ? limitsModel : historyModel }
+  private var model: USDTPageModel { pageModel(segment) }
   private var liveQuotes: PositionLiveQuotes { store.positionQuotes }
   private var snapshots: FloatingPositionsModel { store.positionSnapshots }
   private var rows: [JSONValue] {
-    segment == "positions" ? (snapshots.scope == store.scope ? snapshots.rows : [])
-      : (modelScope == store.scope ? model.items : [])
-  }
-  private var loading: Bool { segment == "positions" ? snapshots.loading : model.loading }
-  private var refreshing: Bool { segment != "positions" && model.refreshing }
-  private var loadError: String {
-    segment == "positions" ? (snapshots.failed ? "持仓更新失败，请稍后重试" : "") : model.error
+    snapshots.scope == store.scope ? snapshots.rows : []
   }
   @State private var segment = "positions"
   @State private var filter = "all"
@@ -724,139 +719,14 @@ struct USDTPositionsView: View {
     return Array(Set(rows.map { $0.value("symbol", fallback: "").uppercased() }
       .filter { !$0.isEmpty })).sorted()
   }
+  private var pagingEnabled: Bool {
+    isVisible && scenePhase == .active && !chart && !binding && !marginDetails
+      && !closeAllConfirm && operation == nil
+  }
   var body: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: 4) {
-        WebTabs(
-          tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment, compact: true)
-          .frame(maxWidth: 248).frame(height: 44)
-          .padding(.leading, 8)
-        Spacer(minLength: 0)
-        PositionMarginBadge(model: margin, scope: store.scope, exposure: margin.exposure(in: store)) {
-          marginDetails = true
-          Task { await margin.refresh(store, afterChange: true) }
-        }
-        Button { liveActivity.toggle(store: store, container: container) } label: {
-          VStack(spacing: 1) {
-            if liveActivity.isStarting || liveActivity.isRegistering {
-              ProgressView().controlSize(.mini).frame(height: 17)
-            } else {
-              Image(systemName: "waveform.path.ecg").font(.system(size: 17, weight: .medium))
-            }
-            Text("live").font(.system(size: 9, weight: .semibold))
-          }.foregroundStyle(liveActivity.isActive ? WebTheme.brand : WebTheme.secondary)
-            .frame(width: 44, height: 44).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityIdentifier("positions.liveActivity")
-          .accessibilityLabel("live 持仓实时活动")
-          .accessibilityValue(liveActivity.isActive ? "已开启" : "未开启")
-        Button { floatingPositions.toggle() } label: {
-          Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")
-            .font(.system(size: 18, weight: .medium))
-            .foregroundStyle(floatingPositions ? WebTheme.brand : WebTheme.secondary)
-            .frame(width: 44, height: 44).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityIdentifier("positions.floatingPositions")
-          .accessibilityLabel("持仓浮窗").accessibilityValue(floatingPositions ? "已开启" : "未开启")
-      }.padding(.horizontal, 8).frame(height: WebTheme.rootHeaderHeight)
-        .background(WebTheme.surface).overlay(alignment: .bottom) {
-          Rectangle().fill(WebTheme.border).frame(height: 1)
-        }.accessibilityElement(children: .contain).accessibilityIdentifier("positions.header")
-      GeometryReader { geometry in
-      ScrollViewReader { scroll in
-      WebRefreshScrollView(isActive: isVisible && scenePhase == .active) {
-        LazyVStack(spacing: 10) {
-          if segment == "history" && store.isBound {
-            HStack(spacing: 8) {
-              ForEach(
-                [("all", "全部"), ("day", "一天内"), ("three-days", "三天"), ("week", "一周")], id: \.0
-              ) { key, label in
-                Button(label) { filter = key }
-                  .font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(height: 32)
-                  .foregroundStyle(filter == key ? WebTheme.color(0x735500, 0xFFE58A) : WebTheme.secondary)
-                  .background(filter == key ? WebTheme.color(0xFFF5CC, 0x51451F) : WebTheme.secondaryButton,
-                    in: RoundedRectangle(cornerRadius: 8))
-                  .overlay { RoundedRectangle(cornerRadius: 8).stroke(filter == key ? BinanceTheme.accent : WebTheme.border, lineWidth: 1) }
-                  .frame(minHeight: 44).contentShape(Rectangle())
-                  .accessibilityAddTraits(filter == key ? .isSelected : [])
-              }
-              Spacer()
-            }
-          }
-          if !store.isBound {
-            Button { binding = true } label: {
-              HStack(spacing: 6) {
-                Text("请先绑定 Binance API").underline()
-                WebIcon("chevron-right", size: 16)
-              }.font(.system(size: 16)).foregroundStyle(WebTheme.muted)
-                .frame(minHeight: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityIdentifier("positions.bind")
-          } else {
-            USDTNotice(text: notice)
-            if refreshing {
-              Text("正在更新历史记录…").font(.system(size: 13)).foregroundStyle(WebTheme.muted)
-            }
-            if !rows.isEmpty { USDTNotice(text: loadError) }
-            if loading && rows.isEmpty {
-              Text("加载中...").font(.system(size: 16)).foregroundStyle(WebTheme.muted).frame(
-                maxWidth: .infinity
-              ).padding(.vertical, 48)
-            }
-            if !loading && !refreshing && rows.isEmpty {
-              USDTEmptyState(
-                title: segment == "positions" ? "暂无持仓" : segment == "limits" ? "暂无限价委托" : "暂无历史仓位记录",
-                error: loadError
-              ) { Task { await reload() } }
-            }
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-              if segment == "positions" {
-                positionCard(row)
-              } else if segment == "limits" {
-                limitCard(row)
-              } else {
-                historyCard(row)
-              }
-            }
-            if segment == "positions", rows.count > 1 || !closeQueue.isEmpty { closeAllBar }
-            if segment != "positions", model.hasNext {
-              Button("加载更多") {
-                model.page += 1
-                Task { await reload(append: true) }
-              }.buttonStyle(WebButtonStyle(kind: .secondary, fontSize: 14))
-                .disabled(loading || refreshing)
-            }
-          }
-        }.id("positions.page.top").frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
-          .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-      }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
-        .onChange(of: segment) { _, _ in
-          var transaction = Transaction(); transaction.disablesAnimations = true
-          withTransaction(transaction) { scroll.scrollTo("positions.page.top", anchor: .top) }
-        }
-        .accessibilityIdentifier("positions.list")
-        .webRefreshable {
-          let scope = store.scope
-          let refreshSegment = segment
-          let refreshFilter = filter
-          // Account publication can cancel SwiftUI's refresh action. Keep this
-          // read independent, then recheck the selected account and page.
-          await Task { @MainActor in
-            await store.refresh()
-            guard scope == store.scope, refreshSegment == segment, refreshFilter == filter else { return }
-            model.page = 1
-            async let marginRefresh: Void = margin.refresh(store, afterChange: true)
-            await reload()
-            await marginRefresh
-          }.value
-        }
-      }
-      }
-    }.background {
-      PositionPageSwipeGesture(enabled: isVisible && scenePhase == .active && !chart
-        && !binding && !marginDetails && !closeAllConfirm && operation == nil) { horizontal, vertical in
-        guard let next = PositionPageSwipe.destination(from: segment,
-          horizontal: horizontal, vertical: vertical) else { return }
-        segment = next
-      }
-    }
+    PositionNativePager(selection: $segment, enabled: pagingEnabled, headerHeight: WebTheme.rootHeaderHeight,
+      header: { pageHeader }, page: { pageContent($0) })
+      .id(store.scope + ":" + String(store.isBound))
       .usdtPage("持仓")
       .task(id: "margin:\(store.scope):\(store.isBound):\(isVisible):\(scenePhase):\(chart)") {
         guard isVisible, scenePhase == .active, !chart, store.isBound else {
@@ -899,14 +769,14 @@ struct USDTPositionsView: View {
         }
         guard store.isBound else { limitsModel.reset(); historyModel.reset(); return }
         guard isVisible, scenePhase == .active, !chart else { return }
-        model.page = 1
+        if segment != "positions" { model.page = 1 }
         let scope = store.scope
         let requestedSegment = segment
         let requestedFilter = filter
         // Keep an initial read alive across tab visibility changes.
         await Task { @MainActor in
           guard scope == store.scope, requestedSegment == segment, requestedFilter == filter else { return }
-          await reload(reuseIfLoaded: true)
+          await reload(page: requestedSegment, reuseIfLoaded: true)
         }.value
       }
       .onChange(of: store.positionDataRevision) { _, _ in
@@ -926,7 +796,7 @@ struct USDTPositionsView: View {
       }
       .onChange(of: scenePhase) { old, phase in
         guard old != .active, phase == .active, isVisible, store.isBound else { return }
-        model.page = 1
+        if segment != "positions" { model.page = 1 }
         Task { await reload() }
       }
       .webModal(isPresented: $closeAllConfirm) {
@@ -965,6 +835,135 @@ struct USDTPositionsView: View {
             realtimeClient: container.realtimeClient,
             onStop: { dashboard.restoreRealtimeSubscriptions() })
       }
+  }
+  private var pageHeader: some View {
+      HStack(spacing: 4) {
+        WebTabs(
+          tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment, compact: true)
+          .frame(maxWidth: 248).frame(height: 44)
+          .padding(.leading, 8)
+        Spacer(minLength: 0)
+        PositionMarginBadge(model: margin, scope: store.scope, exposure: margin.exposure(in: store)) {
+          marginDetails = true
+          Task { await margin.refresh(store, afterChange: true) }
+        }
+        Button { liveActivity.toggle(store: store, container: container) } label: {
+          VStack(spacing: 1) {
+            if liveActivity.isStarting || liveActivity.isRegistering {
+              ProgressView().controlSize(.mini).frame(height: 17)
+            } else {
+              Image(systemName: "waveform.path.ecg").font(.system(size: 17, weight: .medium))
+            }
+            Text("live").font(.system(size: 9, weight: .semibold))
+          }.foregroundStyle(liveActivity.isActive ? WebTheme.brand : WebTheme.secondary)
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("positions.liveActivity")
+          .accessibilityLabel("live 持仓实时活动")
+          .accessibilityValue(liveActivity.isActive ? "已开启" : "未开启")
+        Button { floatingPositions.toggle() } label: {
+          Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")
+            .font(.system(size: 18, weight: .medium))
+            .foregroundStyle(floatingPositions ? WebTheme.brand : WebTheme.secondary)
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityIdentifier("positions.floatingPositions")
+          .accessibilityLabel("持仓浮窗").accessibilityValue(floatingPositions ? "已开启" : "未开启")
+      }.padding(.horizontal, 8).frame(height: WebTheme.rootHeaderHeight)
+        .background(WebTheme.surface).overlay(alignment: .bottom) {
+          Rectangle().fill(WebTheme.border).frame(height: 1)
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("positions.header")
+  }
+  private func pageContent(_ page: String) -> some View {
+    let model = pageModel(page)
+    let pageRows = page == "positions" ? rows : (modelScope == store.scope ? model.items : [])
+    let loading = page == "positions" ? snapshots.loading : model.loading
+    let refreshing = page != "positions" && model.refreshing
+    let loadError = page == "positions" ? (snapshots.failed ? "持仓更新失败，请稍后重试" : "") : model.error
+    let awaitingFirstRead = page != "positions" && model.value == .null && loadError.isEmpty
+    return
+      GeometryReader { geometry in
+      WebRefreshScrollView(isActive: isVisible && scenePhase == .active && segment == page) {
+        LazyVStack(spacing: 10) {
+          if page == "history" && store.isBound {
+            HStack(spacing: 8) {
+              ForEach(
+                [("all", "全部"), ("day", "一天内"), ("three-days", "三天"), ("week", "一周")], id: \.0
+              ) { key, label in
+                Button(label) { filter = key }
+                  .font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(height: 32)
+                  .foregroundStyle(filter == key ? WebTheme.color(0x735500, 0xFFE58A) : WebTheme.secondary)
+                  .background(filter == key ? WebTheme.color(0xFFF5CC, 0x51451F) : WebTheme.secondaryButton,
+                    in: RoundedRectangle(cornerRadius: 8))
+                  .overlay { RoundedRectangle(cornerRadius: 8).stroke(filter == key ? BinanceTheme.accent : WebTheme.border, lineWidth: 1) }
+                  .frame(minHeight: 44).contentShape(Rectangle())
+                  .accessibilityAddTraits(filter == key ? .isSelected : [])
+              }
+              Spacer()
+            }
+          }
+          if !store.isBound {
+            Button { binding = true } label: {
+              HStack(spacing: 6) {
+                Text("请先绑定 Binance API").underline()
+                WebIcon("chevron-right", size: 16)
+              }.font(.system(size: 16)).foregroundStyle(WebTheme.muted)
+                .frame(minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("positions.bind")
+          } else {
+            USDTNotice(text: notice)
+            if refreshing {
+              Text("正在更新历史记录…").font(.system(size: 13)).foregroundStyle(WebTheme.muted)
+            }
+            if !pageRows.isEmpty { USDTNotice(text: loadError) }
+            if (loading || awaitingFirstRead) && pageRows.isEmpty {
+              Text("加载中...").font(.system(size: 16)).foregroundStyle(WebTheme.muted).frame(
+                maxWidth: .infinity
+              ).padding(.vertical, 48)
+            }
+            if !loading && !awaitingFirstRead && !refreshing && pageRows.isEmpty {
+              USDTEmptyState(
+                title: page == "positions" ? "暂无持仓" : page == "limits" ? "暂无限价委托" : "暂无历史仓位记录",
+                error: loadError
+              ) { Task { await reload(page: page) } }
+            }
+            ForEach(Array(pageRows.enumerated()), id: \.offset) { _, row in
+              if page == "positions" {
+                positionCard(row)
+              } else if page == "limits" {
+                limitCard(row)
+              } else {
+                historyCard(row)
+              }
+            }
+            if page == "positions", pageRows.count > 1 || !closeQueue.isEmpty { closeAllBar }
+            if page != "positions", model.hasNext {
+              Button("加载更多") {
+                model.page += 1
+                Task { await reload(page: page, append: true) }
+              }.buttonStyle(WebButtonStyle(kind: .secondary, fontSize: 14))
+                .disabled(loading || refreshing)
+            }
+          }
+        }.frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
+          .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
+      }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
+        .accessibilityIdentifier(segment == page ? "positions.list" : "positions.list." + page)
+        .webRefreshable {
+          let scope = store.scope
+          let refreshSegment = page
+          let refreshFilter = filter
+          // Account publication can cancel SwiftUI's refresh action. Keep this
+          // read independent, then recheck the selected account and page.
+          await Task { @MainActor in
+            await store.refresh()
+            guard scope == store.scope, refreshSegment == segment, refreshFilter == filter else { return }
+            if page != "positions" { model.page = 1 }
+            async let marginRefresh: Void = margin.refresh(store, afterChange: true)
+            await reload(page: page)
+            await marginRefresh
+          }.value
+        }
+      }
+      .accessibilityHidden(segment != page)
   }
   private var closeAllBar: some View {
     HStack(spacing: 8) {
@@ -1046,24 +1045,26 @@ struct USDTPositionsView: View {
       UserDefaults.standard.set(data, forKey: key)
     }
   }
-  private func reload(append: Bool = false, reuseIfLoaded: Bool = false) async {
+  private func reload(page: String? = nil, append: Bool = false, reuseIfLoaded: Bool = false) async {
+    let page = page ?? segment
+    let model = pageModel(page)
     guard store.isBound else {
       model.reset()
       return
     }
-    if segment == "positions" {
+    if page == "positions" {
       if reuseIfLoaded, snapshots.scope == store.scope, snapshots.hasLoaded, !snapshots.failed,
         let date = snapshots.updatedAt, Date().timeIntervalSince(date) < 3 { return }
       await store.refreshPositions()
       return
     }
-    let path = segment == "limits" ? "/v1/trade/limit-order/list" : "/v1/position/history"
+    let path = page == "limits" ? "/v1/trade/limit-order/list" : "/v1/position/history"
     await model.load(
       store, path: path,
       query: [
-        .init(name: "filter", value: filter), .init(name: "page", value: String(model.page)),
+        .init(name: "filter", value: page == "history" ? filter : "all"), .init(name: "page", value: String(model.page)),
         .init(name: "page_size", value: "20"),
-      ], append: append, snapshotFirst: segment == "history" && !append, reuseIfLoaded: reuseIfLoaded)
+      ], append: append, snapshotFirst: page == "history" && !append, reuseIfLoaded: reuseIfLoaded)
   }
   private func positionCard(_ row: JSONValue) -> some View {
     let valuation = liveValuation(row)

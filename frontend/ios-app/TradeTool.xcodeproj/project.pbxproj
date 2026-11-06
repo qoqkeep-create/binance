@@ -88,6 +88,8 @@
 		010000000000000000000056 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005D /* PrivacyInfo.xcprivacy */; };
 		059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C443B8F02115C83974CD29 /* USDTStore.swift */; };
 		A1C000000000000000000001 /* PositionMargin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000002 /* PositionMargin.swift */; };
+		A1D000000000000000000001 /* PositionNativePager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000002 /* PositionNativePager.swift */; };
+		A1D000000000000000000003 /* PositionPagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000004 /* PositionPagerTests.swift */; };
 		0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0000000000000000000002 /* ChartEngineCoreTests.swift */; };
 		0C0000000000000000000001 /* ChartEngineOnscreenStressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */; };
 		0D0000000000000000000001 /* ChartCalibrationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0000000000000000000002 /* ChartCalibrationUITests.swift */; };
@@ -262,6 +264,8 @@
 		120000000000000000000005 /* ServerSwitchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSwitchingTests.swift; sourceTree = "<group>"; };
 		18C443B8F02115C83974CD29 /* USDTStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTStore.swift; sourceTree = "<group>"; };
 		A1C000000000000000000002 /* PositionMargin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionMargin.swift; sourceTree = "<group>"; };
+		A1D000000000000000000002 /* PositionNativePager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionNativePager.swift; sourceTree = "<group>"; };
+		A1D000000000000000000004 /* PositionPagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionPagerTests.swift; sourceTree = "<group>"; };
 		33600721399D7B8EDD04A732 /* USDTComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTComponents.swift; sourceTree = "<group>"; };
 		7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTRecordsViews.swift; sourceTree = "<group>"; };
 		7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTAccountViews.swift; sourceTree = "<group>"; };
@@ -634,6 +638,7 @@
 			children = (
 				120000000000000000000005 /* ServerSwitchingTests.swift */,
 				A17000000000000000000004 /* FloatingPositionsTests.swift */,
+				A1D000000000000000000004 /* PositionPagerTests.swift */,
 				A18000000000000000000004 /* PositionTrendAdviceTests.swift */,
 				A19000000000000000000004 /* PositionLiveValuationTests.swift */,
 				A1B000000000000000000006 /* PositionLiveActivityTests.swift */,
@@ -664,6 +669,7 @@
 				DD7B56A4F1642013DF78DC36 /* USDTSession.swift */,
 				18C443B8F02115C83974CD29 /* USDTStore.swift */,
 				A1C000000000000000000002 /* PositionMargin.swift */,
+				A1D000000000000000000002 /* PositionNativePager.swift */,
 				A18000000000000000000002 /* PositionTrendAdvice.swift */,
 				A19000000000000000000002 /* PositionLiveValuation.swift */,
 				A1B000000000000000000004 /* PositionLiveActivity.swift */,
@@ -867,6 +873,7 @@
 				4A46A45239A7D88CFDED346E /* USDTSession.swift in Sources */,
 				059CAE2A2623E349DF99DBDC /* USDTStore.swift in Sources */,
 				A1C000000000000000000001 /* PositionMargin.swift in Sources */,
+				A1D000000000000000000001 /* PositionNativePager.swift in Sources */,
 				A18000000000000000000001 /* PositionTrendAdvice.swift in Sources */,
 				A19000000000000000000001 /* PositionLiveValuation.swift in Sources */,
 				A1B000000000000000000005 /* PositionLiveActivity.swift in Sources */,
@@ -964,6 +971,7 @@
 			files = (
 				130000000000000000000005 /* ServerSwitchingTests.swift in Sources */,
 				A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */,
+				A1D000000000000000000003 /* PositionPagerTests.swift in Sources */,
 				A18000000000000000000003 /* PositionTrendAdviceTests.swift in Sources */,
 				A19000000000000000000003 /* PositionLiveValuationTests.swift in Sources */,
 				A1B000000000000000000007 /* PositionLiveActivityTests.swift in Sources */,

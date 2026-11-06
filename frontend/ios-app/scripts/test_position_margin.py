@@ -25,8 +25,8 @@ def visual_sources(destination):
     source = (APP / "Features/USDT/PositionMargin.swift").read_text()
     badge = source[source.index("@MainActor extension PositionMarginLevel"):source.index("struct PositionMarginDetails:")]
     view = (APP / "Features/USDT/USDTTradingViews.swift").read_text()
-    start = view.index("      HStack(spacing: 4) {", view.index("struct USDTPositionsView:"))
-    header = view[start:view.index("      GeometryReader", start)]
+    header = block(view, "private var pageHeader: some View {")
+    header = header[header.index("{") + 1:header.rfind("}")]
     header = header.replace("marginDetails = true\n          Task { await margin.refresh(store, afterChange: true) }", "")
     header = header.replace("liveActivity.toggle(store: store, container: container)", "")
     header = header.replace("floatingPositions.toggle()", "")
@@ -55,7 +55,7 @@ def run(destination):
     for path in (destination / "Tests").glob("*.swift"):
         path.unlink()
     margin_path = APP / "Features/USDT/PositionMargin.swift"
-    source = margin_path.read_text().split("/// Page-wide horizontal gesture", 1)[0]
+    source = margin_path.read_text().split("@MainActor extension PositionMarginLevel", 1)[0]
     source = source.replace("import UIKit\n", "")
     (destination / "Sources/PositionMargin.swift").write_text(source)
     store = (APP / "Features/USDT/USDTStore.swift").read_text()

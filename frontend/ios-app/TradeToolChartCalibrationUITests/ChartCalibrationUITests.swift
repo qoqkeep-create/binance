@@ -3596,6 +3596,88 @@ final class WebParityUITests: XCTestCase {
     capture("positions-same-side-short-swipes")
   }
 
+  func testNativePositionPagingCancelsShortDragAndKeepsIndependentOffsets() {
+    launch("positions", ["--fixture-position-pager"])
+    let position = app.buttons["positions.tabs.positions"]
+    let limits = app.buttons["positions.tabs.limits"]
+    let history = app.buttons["positions.tabs.history"]
+    XCTAssertTrue(position.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["position.symbol.1"].waitForExistence(timeout: 5))
+    let list = app.scrollViews["positions.list"]
+    let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.75))
+    start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -20, dy: 0)))
+    XCTAssertTrue(position.isSelected, "A partial drag returns to the original page")
+
+    list.swipeUp()
+    let row = list.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "position.symbol."))
+      .allElementsBoundByIndex.first { $0.isHittable && list.frame.contains($0.frame) }
+    guard let row else { return XCTFail("Expected a visible position after scrolling") }
+    let rowID = row.identifier
+    let positionY = row.frame.midY
+    XCTAssertNotEqual(rowID, "position.symbol.1")
+
+    limits.tap()
+    waitForNativePositionPageToSettle()
+    XCTAssertTrue(app.staticTexts["LIM01USDT"].waitForExistence(timeout: 5))
+    list.swipeUp()
+    let limitRow = list.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIM"))
+      .allElementsBoundByIndex.first { $0.isHittable && list.frame.contains($0.frame) }
+    guard let limitRow else { return XCTFail("Expected a visible limit order after scrolling") }
+    let limitSymbol = limitRow.label
+    let limitY = limitRow.frame.midY
+    XCTAssertNotEqual(limitSymbol, "LIM01USDT")
+
+    history.tap()
+    waitForNativePositionPageToSettle()
+    XCTAssertTrue(app.staticTexts["HIS01USDT"].waitForExistence(timeout: 5))
+    list.swipeUp()
+    position.tap()
+    waitForNativePositionPageToSettle()
+    let restored = app.buttons[rowID]
+    XCTAssertTrue(restored.waitForExistence(timeout: 5))
+    XCTAssertTrue(restored.isHittable)
+    XCTAssertEqual(restored.frame.midY, positionY, accuracy: 2)
+    limits.tap()
+    waitForNativePositionPageToSettle()
+    XCTAssertTrue(app.staticTexts[limitSymbol].isHittable)
+    XCTAssertEqual(app.staticTexts[limitSymbol].frame.midY, limitY, accuracy: 2)
+    capture("positions-native-independent-scroll")
+  }
+
+  func testNativePositionPagingRetainsLoadedPagination() {
+    launch("positions", ["--fixture-position-pager"])
+    let limits = app.buttons["positions.tabs.limits"]
+    XCTAssertTrue(limits.waitForExistence(timeout: 5))
+    limits.tap()
+    waitForNativePositionPageToSettle()
+    XCTAssertTrue(app.staticTexts["LIM01USDT"].waitForExistence(timeout: 5))
+    let list = app.scrollViews["positions.list"]
+    let more = app.buttons["加载更多"]
+    for _ in 0..<8 where !more.isHittable { list.swipeUp() }
+    XCTAssertTrue(more.isHittable)
+    more.tap()
+    XCTAssertTrue(app.staticTexts["LIM06USDT"].waitForExistence(timeout: 5))
+    for _ in 0..<4 where !app.staticTexts["LIM06USDT"].isHittable { list.swipeUp() }
+    let y = app.staticTexts["LIM06USDT"].frame.midY
+    app.buttons["positions.tabs.history"].tap()
+    waitForNativePositionPageToSettle()
+    XCTAssertTrue(app.staticTexts["HIS01USDT"].waitForExistence(timeout: 5))
+    limits.tap()
+    waitForNativePositionPageToSettle()
+    XCTAssertTrue(app.staticTexts["LIM06USDT"].isHittable)
+    XCTAssertEqual(app.staticTexts["LIM06USDT"].frame.midY, y, accuracy: 2)
+    capture("positions-native-retained-pagination")
+  }
+
+  private func waitForNativePositionPageToSettle(file: StaticString = #filePath, line: UInt = #line) {
+    let settled = XCTNSPredicateExpectation(predicate: NSPredicate { [self] _, _ in
+      let frame = app.scrollViews["positions.list"].frame
+      let window = app.windows.firstMatch.frame
+      return abs(frame.minX - window.minX) < 0.5 && abs(frame.width - window.width) < 0.5
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 4), .completed, file: file, line: line)
+  }
+
   func testAllPositionTabsRefreshFromEmptyLists() {
     launch("positions", ["--fixture-refresh-lists"])
     for (tab, empty, content) in [

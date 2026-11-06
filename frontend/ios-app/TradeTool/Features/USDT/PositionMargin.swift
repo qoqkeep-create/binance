@@ -52,7 +52,7 @@ struct PositionMarginPresentation {
   }
   var ratio: Decimal? { PositionMarginNumber.decimal(snapshot["margin_ratio_percent"]).flatMap { $0 < 0 ? nil : $0 } }
   var level: PositionMarginLevel {
-    if isEmpty { return .normal }
+    if isEmpty { return .unavailable }
     guard isCurrent, snapshot["supported"]?.flag == true else { return .unavailable }
     if snapshot["liquidation_reached"]?.flag == true { return .danger }
     guard let ratio else { return .unavailable }
@@ -201,77 +201,6 @@ final class PositionMarginModel: ObservableObject {
   }
 }
 
-/// Page-wide horizontal gesture, including controls and blank scroll space.
-struct PositionPageSwipeGesture: UIViewRepresentable {
-  var enabled: Bool
-  var onSwipe: (Double, Double) -> Void
-  func makeUIView(context: Context) -> GestureView {
-    let view = GestureView(); view.isUserInteractionEnabled = false
-    view.enabled = enabled; view.onSwipe = onSwipe
-    return view
-  }
-  func updateUIView(_ view: GestureView, context: Context) {
-    view.enabled = enabled; view.onSwipe = onSwipe
-  }
-  static func dismantleUIView(_ view: GestureView, coordinator: ()) { view.detach() }
-
-  final class GestureView: UIView, UIGestureRecognizerDelegate {
-    var enabled = false
-    var onSwipe: ((Double, Double) -> Void)?
-    private var didSwitchPage = false
-    private var touchOrigin: CGPoint?
-    private weak var installedWindow: UIWindow?
-    private lazy var pan: UIPanGestureRecognizer = {
-      let gesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
-      gesture.maximumNumberOfTouches = 1
-      gesture.delegate = self
-      return gesture
-    }()
-    override func didMoveToWindow() {
-      super.didMoveToWindow()
-      detach()
-      installedWindow = window
-      window?.addGestureRecognizer(pan)
-    }
-    func detach() {
-      installedWindow?.removeGestureRecognizer(pan); installedWindow = nil; touchOrigin = nil
-    }
-    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      guard enabled, window != nil, bounds.contains(pan.location(in: self)) else { return false }
-      let velocity = pan.velocity(in: self)
-      return abs(velocity.x) > abs(velocity.y) * 1.8
-    }
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-      guard enabled, bounds.contains(touch.location(in: self)) else { return false }
-      var view = touch.view
-      while let current = view, current !== window {
-        if current is UISlider || current is UITextField || current is UITextView { return false }
-        view = current.superview
-      }
-      if pan.numberOfTouches == 0 { touchOrigin = touch.location(in: window) }
-      return true
-    }
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-      if gesture.state == .began { didSwitchPage = false }
-      defer {
-        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed { touchOrigin = nil }
-      }
-      guard enabled, !didSwitchPage,
-        gesture.state == .began || gesture.state == .changed || gesture.state == .ended,
-        let touchOrigin else { return }
-      // Measure from the actual touch-down in fixed window coordinates. The
-      // recognizer's translation can reset when recognition/scrolling begins.
-      let location = gesture.location(in: window)
-      let translation = CGPoint(x: location.x - touchOrigin.x, y: location.y - touchOrigin.y)
-      guard PositionPageSwipe.reachedThreshold(horizontal: translation.x, vertical: translation.y) else { return }
-      didSwitchPage = true
-      onSwipe?(translation.x, translation.y)
-    }
-  }
-}
-
 @MainActor extension PositionMarginLevel {
   var foreground: Color {
     switch self {
@@ -303,7 +232,7 @@ struct PositionMarginBadge: View {
       let fontSize: CGFloat = value.badgePercentText.count > 3 ? 16 : 20
       Button(action: action) {
         HStack(spacing: 2) {
-          Image(systemName: "shield.lefthalf.filled").font(.system(size: fontSize, weight: .semibold))
+          Image(systemName: "shield.lefthalf.filled").font(.system(size: fontSize * 0.9, weight: .semibold))
           Text(value.badgePercentText)
             .font(.system(size: fontSize, weight: .heavy).width(.compressed))
             .monospacedDigit()

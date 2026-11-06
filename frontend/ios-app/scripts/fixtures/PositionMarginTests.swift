@@ -47,6 +47,19 @@ final class PositionMarginTests: XCTestCase {
     XCTAssertEqual(PositionMarginPresentation(snapshot: empty, isCurrent: true).badgePercentText, "0%")
     XCTAssertEqual(PositionMarginPresentation(snapshot: empty, isCurrent: false).badgePercentText, "--%")
   }
+  func testConfirmedEmptyUsesGrayWhileOpenPositionsKeepRiskColors() {
+    let empty = PositionMarginPresentation(snapshot: .null, isCurrent: false, exposure: .empty)
+    XCTAssertEqual(empty.level, .unavailable)
+    XCTAssertEqual(empty.badgePercentText, "0%")
+    let orderOnly: JSONValue = .object(["supported": .bool(true), "margin_ratio_percent": .string("55"),
+      "positions": .array([.object(["quantity": .string("0"), "open_order_initial_margin": .string("50")])])])
+    let value = PositionMarginPresentation(snapshot: orderOnly, isCurrent: true)
+    XCTAssertEqual(value.level, .unavailable)
+    XCTAssertEqual(value.badgePercentText, "0%")
+    XCTAssertEqual(PositionMarginPresentation(snapshot: data("0"), isCurrent: true, exposure: .open).level, .normal)
+    XCTAssertEqual(PositionMarginPresentation(snapshot: data("55"), isCurrent: true, exposure: .open).level, .caution)
+    XCTAssertEqual(PositionMarginPresentation(snapshot: data("85"), isCurrent: true, exposure: .open).level, .danger)
+  }
   func testInvalidNumbersCannotBecomeZeroAndNonpositiveEquityCannotDivide() {
     for invalid in [JSONValue.null, .bool(false), .string("--"), .string("12x"), .string("NaN"), .number(.infinity)] {
       XCTAssertNil(PositionMarginNumber.decimal(invalid))

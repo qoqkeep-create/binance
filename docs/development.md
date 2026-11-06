@@ -1,5 +1,36 @@
 # 开发与验证
 
+## 持仓原生分页与系统组件盘点（2026-11-06，本地）
+
+用户确认采用原生分页后，新增 `PositionNativePager`，以 UIKit UIScrollView 和三个保留的 SwiftUI 页面宿主替换共享列表／窗口级即时切页手势。页头同属滚动宿主并固定，页面身份、读取、分页和刷新独立；scope／绑定状态变化重新建立宿主。实现及未改动组件的优先级盘点见 [页面规范](ios-web-parity.md#持仓原生分页实现与边界2026-11-06本地)和[原生／系统组件清单](ios-web-parity.md#原生实现与系统组件盘点2026-11-06源码核对)。没有 WebKit／WKWebView 业务页面，不把自定义 SwiftUI 外观误称为网页。
+
+首次原生系统 UI 的全区域长滑通过，52 pt 同侧短滑失败；临时坐标探针记录实际 52 pt 拖动仅剩 `translation=-42`、滚动偏移约 35.67 pt，而原生建议落点已是下一页，说明不能用识别后的剩余位移套用 44 pt 门槛。现以立即失败的被动触摸观察器记录真实起点，继续由系统 pan 和减速负责移动；所有临时打印／文件探针已移除。最终同侧短滑有仓／空仓及双向连续换页通过，释放才提交页码，小拖或回拉不切页。
+
+新增 `PositionPagerTests` **3 项通过、0 跳过**，验证部分偏移同时露出两页、顶部固定、拖动中不发布选中页、回弹／落定、数据更新复用宿主及偏移、停用和旋转对齐、隐藏页面无障碍隔离。首个单测设备因旧数据目录缺失无法启动，不计为源码失败；新建独立设备 `CB5F80F1-AA79-4603-819D-162EB6D966A8` 后通过（`NativeUnitFinal.xcresult`，0.042 秒）。实际 Store／分页／保证金／Header 的 host **25 项通过、0 跳过**，含 90 组空仓／风险／主题／宽度／选中页头渲染；不以这些结果代替真机性能测试。
+
+系统 UI 使用 `B2FE5A8D-DD9B-4850-80C8-B2D6C7916967` 专用 iOS 27.2 模拟器及 DEBUG 静态 API，交易写入仍拒绝。分页定向三项 **83.446 秒通过**（`PagingUI.xcresult`）：20 pt 拖动取消、三页独立位置、加载第二页后返回保留以及同侧 52 pt 短滑。原功能六项 **137.167 秒通过**（`RegressionUI.xcresult`）：页头／卡片／空白起滑，有仓／空仓／未绑定，稳定紧凑页签，三页空列表下拉，保证金双卡片及弹窗横滑隔离，刷新松手不插行。返回位置与分页两项随后补强落定断言并复验通过（`SettledUI.xcresult`，52.620 秒）；截图先等待列表横向对齐窗口再检查，避免把原生切页动画中的中间帧当作静止布局。上述合计 9 项不同 UI 用例，重复复验不累加为新用例；图片和录屏保留于同目录的附件归档。
+
+证据在忽略目录 `.integration-runtime/PositionNativeNov6/` 及 `.integration-runtime/position-native-{host,unit-final,paging-ui,regression-ui,release}.log`。主 App／Widget generic iOS 无签名 **Release 构建通过**，仍使用 `PositionInteractionsNov6/Release` 派生目录；仅有无 AppIntents 依赖而跳过 metadata 的提示。参考命令：
+
+```bash
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/PositionNativeNov6/Host
+xcodebuild test -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool -destination 'platform=iOS Simulator,id=CB5F80F1-AA79-4603-819D-162EB6D966A8' -derivedDataPath .integration-runtime/FrontendBuildNov6/Tests -only-testing:TradeToolTests/PositionPagerTests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+本轮保留此前空仓灰态和盾牌缩小的未提交改动，没有后端／交易逻辑／轮询频率变更，没有真实交易或资金操作。上述为本地开发验证；用户随后授权先将当前全部改动提交推送 GitHub，见 [交付记录](changes.md#2026-11-06持仓原生分页与空仓灰态源码交付)。未手动上传 TestFlight 或验收新包手机手感；本批系统组件清单中的大面板、开关和资金页签仍只给建议，后续改造另记。
+
+## 空仓灰色徽标与盾牌缩小（2026-11-06，本地）
+
+原实现虽有不可用灰态，但成功确认空仓仍落入绿色 normal。新增回归在旧实现中出现两处断言失败，分别复现显式空仓与仅委托占用快照错误变绿（`position-margin-gray-baseline.log`）。现确认空仓复用中性灰色，文字继续为 `0%`；有仓且有效比例仍按原阈值着色。盾牌单独缩小 10%，数字、徽标尺寸和点击区不变；现行规范见 [页面](ios-web-parity.md#保证金徽标与手势切页2026-11-05本地)与[资金](capital-and-transfers.md#持仓页保证金率2026-11-05本地实现)。
+
+实际 Store／模型／分页／Header 的 host **25 项全部通过、0 跳过**，包含 90 组 320／393／440 pt、深浅主题、三种选中页签及空仓／四种有仓比例的生产 Header 离屏渲染；人工查看空仓浅色与窄屏深色风险页头。回归覆盖空仓灰色、仅委托仍为灰色 `0%`，以及有仓 0／55／85% 仍分别为绿／黄／红。命令：
+
+```bash
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/PositionMarginGrayNov6/Host
+```
+
+日志 `.integration-runtime/position-margin-gray-final.log`，图片与生产输入哈希清单在 `PositionMarginGrayNov6/Host/`；主 App／Widget generic iOS 无签名 **Release 构建通过**（`.integration-runtime/position-margin-gray-release.log`），复用 `PositionInteractionsNov6/Release` 派生目录。此轮未新增模拟器 UI 或真机验证，host 渲染不代表 iOS 实机观感；没有后端、刷新频率或交易逻辑变更。本轮仅保留本地改动，未提交／推送。本次徽标调整结束时，真正随手指分页仅完成评估；用户随后确认采用原生，后续实现与验证见 [原生分页](#持仓原生分页与系统组件盘点2026-11-06本地)。
+
 ## 持仓短滑切页与空仓低频刷新（2026-11-06，本地）
 
 保证金盾牌原为 9 pt，现与数字使用相同的 20／16 pt 字号，徽标宽度 52／60 → 66／74 pt，保留 28 pt 底色和 44 pt 点击高度。原切页并无屏幕中线判断，但只在释放时判断累计 60 pt；现使用同一原生 pan，在移动达到 44 pt 且横向距离超过纵向 1.8 倍时立即切换，每手势最多一次，仍保留弹窗／后台／图表隔离和竖向刷新。
