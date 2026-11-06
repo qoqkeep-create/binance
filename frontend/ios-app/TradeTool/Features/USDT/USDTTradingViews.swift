@@ -676,22 +676,13 @@ struct USDTEntryDraft: Equatable {
 
 struct PositionLiveButtonLabel: View {
   let isActive: Bool
-  let isPending: Bool
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var bright = false
 
   var body: some View {
     VStack(spacing: 1) {
       Image(systemName: "waveform.path.ecg").font(.system(size: 17, weight: .medium))
       Text("live").font(.system(size: 9, weight: .semibold))
     }
-    .foregroundStyle(isActive || isPending ? WebTheme.brand : WebTheme.secondary)
-    .opacity(isPending && !reduceMotion && !bright ? 0.35 : 1)
-    .animation(isPending && !reduceMotion
-      ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .easeOut(duration: 0.15), value: bright)
-    .onChange(of: isPending && !reduceMotion, initial: true) { _, breathing in
-      bright = breathing
-    }
+    .foregroundStyle(isActive ? BinanceTheme.accent : WebTheme.secondary)
   }
 }
 
@@ -878,8 +869,7 @@ struct USDTPositionsView: View {
           Task { await margin.refresh(store, afterChange: true) }
         }
         Button { liveActivity.toggle(store: store, container: container) } label: {
-          PositionLiveButtonLabel(isActive: liveActivity.isActive,
-            isPending: liveActivity.isStarting || liveActivity.isRegistering)
+          PositionLiveButtonLabel(isActive: liveActivity.isActive)
             .frame(width: 44, height: 44).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("positions.liveActivity")
           .accessibilityLabel("live 持仓实时活动")

@@ -8050,6 +8050,88 @@ final class ChartEngineCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testLoadingIndicatorStaysVisibleUntilTheMatchingFrameIsPresented() async throws {
+        let fixture = try await makeChartSceneFixture()
+        let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 700, displayScale: 3))
+        let scene = try await ChartSceneBuilder().build(frame: fixture.frame, viewport: viewport)
+        let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        defer { host.dispose() }
+        let id = ChartPresentationID(stream: fixture.frame.stream, epoch: fixture.frame.epoch)
+        host.observeFirstPresentation(for: id) { _, _ in }
+        host.setLoadingPresentation(true)
+        host.submit(scene.renderState)
+        host.setLoadingPresentation(false)
+        XCTAssertTrue(host.diagnosticIsLoadingIndicatorVisible,
+            "Scene readiness must not remove the loading indicator before GPU presentation")
+        let stale = ChartPresentationID(stream: id.stream, epoch: KlineStreamEpoch(generation: 1))
+        host.diagnosticRecordPresentation(for: stale, at: 10)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertTrue(host.diagnosticIsLoadingIndicatorVisible,
+            "A late frame from another epoch must not uncover a blank chart")
+        host.diagnosticRecordPresentation(for: id, at: 20)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertFalse(host.diagnosticIsLoadingIndicatorVisible)
+        XCTAssertFalse(host.diagnosticIsLoadingCovered)
+        XCTAssertTrue(host.isUserInteractionEnabled)
+    }
+
+    @MainActor
+    func testLoadingCoverRendersTheIndicatorInBothThemes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
+        window.makeKeyAndVisible()
+        let host = KlineChartHostView(frame: window.bounds)
+        controller.view.addSubview(host)
+        defer { host.dispose(); window.isHidden = true; window.rootViewController = nil }
+        host.diagnosticSetApplicationActive(false)
+        host.setLoadingPresentation(true)
+        for appearance in [ChartAppearance.light, .dark] {
+            host.setAppearance(appearance)
+            controller.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(50))
+            let snapshot = UIGraphicsImageRenderer(bounds: host.bounds).image { _ in
+                host.drawHierarchy(in: host.bounds, afterScreenUpdates: true)
+            }
+            let image = try XCTUnwrap(snapshot.cgImage)
+            let scale = snapshot.scale
+            let region = try XCTUnwrap(image.cropping(to: CGRect(
+                x: (host.bounds.midX - 20) * scale, y: (host.bounds.midY - 12) * scale,
+                width: 40 * scale, height: 24 * scale)))
+            var pixels = [UInt8](repeating: 0, count: region.width * region.height * 4)
+            try pixels.withUnsafeMutableBytes { buffer in
+                let context = try XCTUnwrap(CGContext(data: buffer.baseAddress,
+                    width: region.width, height: region.height, bitsPerComponent: 8,
+                    bytesPerRow: region.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(region, in: CGRect(x: 0, y: 0, width: region.width, height: region.height))
+            }
+            let yellowPixels = stride(from: 0, to: pixels.count, by: 4).filter {
+                Int(pixels[$0]) - Int(pixels[$0 + 2]) > 100
+                    && Int(pixels[$0 + 1]) - Int(pixels[$0 + 2]) > 80
+            }.count
+            XCTAssertGreaterThan(yellowPixels, 20, "The loading cover must contain visible bars in \(appearance)")
+            let attachment = XCTAttachment(image: snapshot)
+            attachment.name = "chart-loading-cover-\(appearance)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        host.diagnosticSetApplicationActive(true)
+        XCTAssertTrue(host.diagnosticIsLoadingIndicatorAnimating)
+        host.diagnosticSetApplicationActive(false)
+        XCTAssertFalse(host.diagnosticIsLoadingIndicatorAnimating)
+        host.diagnosticSetApplicationActive(true)
+        for _ in 0..<3 { host.diagnosticInjectCommandFailure() }
+        XCTAssertFalse(host.diagnosticIsLoadingIndicatorAnimating,
+            "A renderer error must stop the loading animation behind its message")
+        XCTAssertNotNil(host.diagnosticVisibleRendererError)
+        host.dispose()
+        XCTAssertFalse(host.diagnosticIsLoadingIndicatorVisible)
+    }
+
+    @MainActor
     func testLoadingCoverKeepsRendererFailureVisibleBeforeTheFirstFrame() {
         let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
         defer { host.dispose() }
@@ -8060,6 +8142,7 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertTrue(host.diagnosticIsRendererStopped)
         XCTAssertTrue(host.diagnosticIsLoadingCovered)
         XCTAssertEqual(host.diagnosticVisibleRendererError, "K线 GPU 连续渲染失败，请重新进入页面")
+        XCTAssertFalse(host.diagnosticIsLoadingIndicatorAnimating)
         XCTAssertFalse(host.isUserInteractionEnabled)
     }
 

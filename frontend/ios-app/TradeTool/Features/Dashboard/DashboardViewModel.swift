@@ -27,6 +27,8 @@ final class DashboardViewModel: ObservableObject {
     private let watchlistStore: (any MarketWatchlistStoring)?
     private var realtimeEventsTask: Task<Void, Never>?
     private var defaultWatchlistTask: Task<Void, Never>?
+    private var defaultWatchlistCompletion: SharedReadCompletion?
+    private var refreshCompletion: SharedReadCompletion?
     private var tickerSnapshotTask: Task<Void, Never>?
     private var tickerFlushTask: Task<Void, Never>?
     private var pendingTickerUpdates: [String: MarketTickerPayload] = [:]
@@ -84,8 +86,15 @@ final class DashboardViewModel: ObservableObject {
         realtimeClient.subscribe([
             .strategySignal(),
         ])
+        let completion = SharedReadCompletion()
+        defaultWatchlistCompletion = completion
         defaultWatchlistTask = Task { [weak self] in
-            await self?.loadDefaultWatchlist(for: userID)
+            guard let self else { completion.finish(); return }
+            defer {
+                if self.defaultWatchlistCompletion === completion { self.defaultWatchlistCompletion = nil }
+                completion.finish()
+            }
+            await self.loadDefaultWatchlist(for: userID)
         }
     }
 
@@ -94,6 +103,11 @@ final class DashboardViewModel: ObservableObject {
         watchlistSyncTask = nil
         defaultWatchlistTask?.cancel()
         defaultWatchlistTask = nil
+        defaultWatchlistCompletion?.finish()
+        defaultWatchlistCompletion = nil
+        refreshCompletion?.finish()
+        refreshCompletion = nil
+        isRefreshing = false
         realtimeEventsTask?.cancel()
         realtimeEventsTask = nil
         realtimeClient?.unsubscribe(
@@ -337,13 +351,24 @@ final class DashboardViewModel: ObservableObject {
     }
 
     func refresh() async {
-        guard !isRefreshing else { return }
-
+        if isRefreshing { await refreshCompletion?.wait(); return }
+        guard !Task.isCancelled else { return }
+        let completion = SharedReadCompletion()
+        refreshCompletion = completion
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer {
+            if refreshCompletion === completion { isRefreshing = false; refreshCompletion = nil }
+            completion.finish()
+        }
 
         realtimeClient?.connect()
-        await loadMarketTickerSnapshot()
+        if let initialRead = defaultWatchlistCompletion {
+            // The first watchlist read already includes its ticker snapshot.
+            await initialRead.wait()
+        } else {
+            await loadMarketTickerSnapshot()
+        }
+        guard !Task.isCancelled, refreshCompletion === completion else { return }
         lastUpdated = .now
     }
 
@@ -595,6 +620,7 @@ final class DashboardViewModel: ObservableObject {
         guard let apiClient else {
             return
         }
+        let revision = catalogRevision
 
         do {
             let response = try await apiClient.send(
@@ -603,7 +629,7 @@ final class DashboardViewModel: ObservableObject {
                     showsErrorToast: false
                 )
             )
-            guard activeUserID == userID else {
+            guard !Task.isCancelled, activeUserID == userID, revision == catalogRevision else {
                 return
             }
             applyMarketConfiguration(
@@ -614,6 +640,7 @@ final class DashboardViewModel: ObservableObject {
             updateRealtimeSubscriptions()
             await loadMarketTickerSnapshot()
         } catch {
+            guard !Task.isCancelled, activeUserID == userID, revision == catalogRevision else { return }
             // Keep the last market configuration and retry next launch.
             updateRealtimeSubscriptions()
             await loadMarketTickerSnapshot()
@@ -906,6 +933,7 @@ final class DashboardViewModel: ObservableObject {
               let activeQuoteAsset else {
             return
         }
+        let revision = catalogRevision
 
         do {
             let response = try await apiClient.send(
@@ -914,7 +942,9 @@ final class DashboardViewModel: ObservableObject {
                     showsErrorToast: false
                 )
             )
-            guard Self.normalizedQuoteAsset(response.quoteAsset)
+            guard !Task.isCancelled, revision == catalogRevision,
+                  self.activeQuoteAsset == activeQuoteAsset,
+                  Self.normalizedQuoteAsset(response.quoteAsset)
                     == activeQuoteAsset else {
                 return
             }

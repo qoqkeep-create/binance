@@ -95,6 +95,7 @@ final class PositionMarginModel: ObservableObject {
   private var requestID = UUID()
   private var monitorID = UUID()
   private var refreshAfterChange = false
+  private var readCompletion: SharedReadCompletion?
   private let waitForPoll: (TimeInterval) async throws -> Void
 
   init(waitForPoll: @escaping (TimeInterval) async throws -> Void = {
@@ -133,6 +134,7 @@ final class PositionMarginModel: ObservableObject {
   }
 
   func reset(scope: String) {
+    readCompletion?.finish(); readCompletion = nil
     requestID = UUID()
     self.scope = scope; snapshot = .null; loading = false; error = ""; active = false
     refreshAfterChange = false
@@ -151,9 +153,18 @@ final class PositionMarginModel: ObservableObject {
     let owner = store.scope
     if scope != owner { reset(scope: owner) }
     guard store.isBound else { return }
-    guard !loading else { refreshAfterChange = refreshAfterChange || afterChange; return }
+    if loading {
+      refreshAfterChange = refreshAfterChange || afterChange
+      await readCompletion?.wait()
+      return
+    }
+    guard !Task.isCancelled else { return }
+    let completion = SharedReadCompletion(); readCompletion = completion
     let id = UUID(); requestID = id; loading = true
-    defer { if requestID == id { loading = false; refreshAfterChange = false } }
+    defer {
+      if requestID == id { loading = false; refreshAfterChange = false; readCompletion = nil }
+      completion.finish()
+    }
     var fresh = afterChange
     repeat {
       refreshAfterChange = false
@@ -179,6 +190,7 @@ final class PositionMarginModel: ObservableObject {
         active = false
         // A cancelled read must not prevent a new foreground read.
         requestID = UUID(); loading = false; refreshAfterChange = false
+        readCompletion?.finish(); readCompletion = nil
       }
     }
     while !Task.isCancelled, monitorID == id, owner == store.scope, store.isBound {
@@ -197,6 +209,7 @@ final class PositionMarginModel: ObservableObject {
   }
 
   func suspend() {
+    readCompletion?.finish(); readCompletion = nil
     monitorID = UUID(); requestID = UUID(); active = false; loading = false; refreshAfterChange = false
   }
 }

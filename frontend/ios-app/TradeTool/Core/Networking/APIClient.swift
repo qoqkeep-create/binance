@@ -6,6 +6,35 @@ protocol APIClient {
     ) async throws -> Response
 }
 
+/// Callers sharing a read also share its completion, without owning or cancelling
+/// the original request. Resetting its presentation releases obsolete waiters.
+@MainActor
+final class SharedReadCompletion {
+    private var finished = false
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+    func wait() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !finished, !Task.isCancelled else { continuation.resume(); return }
+                waiters[id] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.resume(id) }
+        }
+    }
+
+    func finish() {
+        finished = true
+        let pending = waiters.values
+        waiters = [:]
+        for continuation in pending { continuation.resume() }
+    }
+
+    private func resume(_ id: UUID) { waiters.removeValue(forKey: id)?.resume() }
+}
+
 struct URLSessionAPIClient: APIClient {
     let baseURL: URL
     let session: URLSession

@@ -133,13 +133,14 @@ final class PositionMarginTests: XCTestCase {
     let store = bound(api)
     let first = Task { await model.refresh(store) }
     await wait(api, count: 1)
-    await model.refresh(store, afterChange: true)
-    await model.refresh(store, afterChange: true)
+    let second = Task { await model.refresh(store, afterChange: true) }
+    let third = Task { await model.refresh(store, afterChange: true) }
+    try? await Task.sleep(for: .milliseconds(5))
     await api.finish(0, value: data("5"))
     await wait(api, count: 2)
     let request = await api.requests[1]
     XCTAssertEqual(request.queryItems.first(where: { $0.name == "fresh" })?.value, "1")
-    await api.finish(1, value: data("85")); await first.value
+    await api.finish(1, value: data("85")); await first.value; await second.value; await third.value
     XCTAssertEqual(model.snapshot.value("margin_ratio_percent"), "85")
     let count = await api.requests.count
     XCTAssertEqual(count, 2)
@@ -148,8 +149,11 @@ final class PositionMarginTests: XCTestCase {
     let api = MarginFixtureAPI(), model = PositionMarginModel()
     let store = bound(api)
     let first = Task { await model.refresh(store) }
-    await wait(api, count: 1); await model.refresh(store, afterChange: true)
+    await wait(api, count: 1)
+    let second = Task { await model.refresh(store, afterChange: true) }
+    try? await Task.sleep(for: .milliseconds(5))
     model.suspend()
+    await second.value
     await api.finish(0, value: data("5")); await first.value
     XCTAssertEqual(model.snapshot, .null)
     let count = await api.requests.count
@@ -322,10 +326,11 @@ final class PositionMarginTests: XCTestCase {
     let store = bound(api)
     let first = Task { await model.refresh(store) }
     await wait(api, count: 1)
-    await model.refresh(store)
+    let second = Task { await model.refresh(store) }
+    await Task.yield()
     let count = await api.requests.count
     XCTAssertEqual(count, 1)
-    await api.finish(0, value: data()); await first.value
+    await api.finish(0, value: data()); await first.value; await second.value
   }
   func testLateCancelledMonitorCannotKeepBadgeActiveOrBlockForegroundRead() async {
     let api = MarginFixtureAPI(), model = PositionMarginModel()

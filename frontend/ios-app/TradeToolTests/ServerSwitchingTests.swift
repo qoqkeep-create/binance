@@ -565,6 +565,316 @@ private actor NativeFixtureClient: APIClient {
 }
 
 @MainActor
+final class SharedLoadingHandoffTests: XCTestCase {
+    func testPageRefreshWaitsForTheReadAlreadyLoadingItsContent() async {
+        let api = SharedLoadingFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        let original = Task { await model.load(store, path: "/slow") }
+        await api.waitUntilBlocked()
+        var joinedFinished = false
+        let joined = Task { await model.load(store, path: "/slow"); joinedFinished = true }
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertFalse(joinedFinished, "Refresh feedback must remain until the shared content read finishes")
+        XCTAssertTrue(model.loading)
+        await api.finish()
+        await original.value
+        await joined.value
+        XCTAssertTrue(joinedFinished)
+        XCTAssertEqual(model.items.first?.value("symbol"), "READYUSDT")
+        XCTAssertFalse(model.loading)
+        let reads = await api.count("/slow")
+        XCTAssertEqual(reads, 1, "Joining refreshes must not create duplicate HTTP reads")
+    }
+
+    func testProfileRefreshWaitsForTheReadAlreadyLoadingItsContent() async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/v1/api/info")
+        let store = USDTStore(api: api)
+        let original = Task { await store.refresh() }
+        await api.waitUntilBlocked()
+        var joinedFinished = false
+        let joined = Task { await store.refresh(); joinedFinished = true }
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertFalse(joinedFinished, "The profile refresh action must wait for its in-flight account read")
+        XCTAssertTrue(store.isLoading)
+        await api.finish()
+        await original.value
+        await joined.value
+        XCTAssertEqual(store.account.value("balance"), "50")
+        XCTAssertFalse(store.isLoading)
+        let reads = await api.count("/v1/api/info")
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testCancelledPageWaiterFinishesWithoutCancellingTheOriginalRead() async {
+        let api = SharedLoadingFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        let original = Task { await model.load(store, path: "/slow") }
+        await api.waitUntilBlocked()
+        let joined = Task { await model.load(store, path: "/slow") }
+        await Task.yield()
+        joined.cancel()
+        await joined.value
+        XCTAssertTrue(model.loading)
+        await api.finish()
+        await original.value
+        XCTAssertEqual(model.items.first?.value("symbol"), "READYUSDT")
+        let reads = await api.count("/slow")
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testPageResetReleasesWaitersAndRejectsLateContent() async {
+        let api = SharedLoadingFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        let original = Task { await model.load(store, path: "/slow") }
+        await api.waitUntilBlocked()
+        let joined = Task { await model.load(store, path: "/slow") }
+        await Task.yield()
+        model.reset()
+        await joined.value
+        XCTAssertFalse(model.loading)
+        await api.finish()
+        await original.value
+        XCTAssertTrue(model.items.isEmpty)
+    }
+
+    func testSwitchingPageReleasesOldWaitersAndKeepsTheNewContent() async {
+        let api = SharedLoadingFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        let original = Task { await model.load(store, path: "/slow") }
+        await api.waitUntilBlocked()
+        let joined = Task { await model.load(store, path: "/slow") }
+        await Task.yield()
+        await model.load(store, path: "/fast")
+        await joined.value
+        XCTAssertEqual(model.items.first?.value("symbol"), "FASTUSDT")
+        await api.finish()
+        await original.value
+        XCTAssertEqual(model.items.first?.value("symbol"), "FASTUSDT")
+        XCTAssertFalse(model.loading)
+    }
+
+    func testIdentityChangeReleasesProfileWaitersAndClearsProgress() async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/v1/api/info")
+        let store = USDTStore(api: api)
+        let original = Task { await store.refresh() }
+        await api.waitUntilBlocked()
+        let joined = Task { await store.refresh() }
+        await Task.yield()
+        store.prepareSession(userID: UUID().uuidString)
+        await joined.value
+        XCTAssertFalse(store.isLoading)
+        await api.finish()
+        await original.value
+        XCTAssertTrue(store.account.fields.isEmpty)
+        XCTAssertFalse(store.isBound)
+    }
+
+    func testFailedSharedReadFinishesAllWaitersWithVisibleError() async {
+        let api = SharedLoadingFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        let original = Task { await model.load(store, path: "/slow") }
+        await api.waitUntilBlocked()
+        let joined = Task { await model.load(store, path: "/slow") }
+        await Task.yield()
+        await api.finish(failed: true)
+        await original.value
+        await joined.value
+        XCTAssertFalse(model.loading)
+        XCTAssertFalse(model.error.isEmpty)
+        let reads = await api.count("/slow")
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testMarketRefreshWaitsForItsExistingTickerSnapshot() async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/api/market/tickers")
+        let model = DashboardViewModel(apiClient: api)
+        await model.loadSymbolCatalog()
+        let original = Task { await model.refresh() }
+        await api.waitUntilBlocked()
+        var joinedFinished = false
+        let joined = Task { await model.refresh(); joinedFinished = true }
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertFalse(joinedFinished, "Market refresh feedback must wait for its shared ticker snapshot")
+        XCTAssertTrue(model.isRefreshing)
+        await api.finish()
+        await original.value
+        await joined.value
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertEqual(model.markets.first?.price, 123)
+        let reads = await api.count("/api/market/tickers")
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testMarketStopReleasesWaitersWithoutApplyingLateContent() async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/api/market/tickers")
+        let model = DashboardViewModel(apiClient: api)
+        await model.loadSymbolCatalog()
+        let original = Task { await model.refresh() }
+        await api.waitUntilBlocked()
+        let joined = Task { await model.refresh() }
+        await Task.yield()
+        model.stopRealtime()
+        await joined.value
+        XCTAssertFalse(model.isRefreshing)
+        await api.finish()
+        await original.value
+        XCTAssertEqual(model.markets.first?.price, 0)
+    }
+
+    func testMarketRefreshJoinsTheFirstWatchlistTickerRead() async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/api/market/tickers")
+        let realtime = RealtimeClient(baseURL: URL(string: "https://example.invalid")!, tokenProvider: { nil })
+        let model = DashboardViewModel(apiClient: api, realtimeClient: realtime)
+        model.startRealtime(userID: "fixture-user")
+        defer { model.stopRealtime() }
+        await api.waitUntilBlocked()
+        var refreshFinished = false
+        let refresh = Task { await model.refresh(); refreshFinished = true }
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertFalse(refreshFinished, "The first ticker snapshot must reach the page before refresh ends")
+        await api.finish()
+        await refresh.value
+        XCTAssertEqual(model.markets.first?.price, 123)
+        let reads = await api.count("/api/market/tickers")
+        XCTAssertEqual(reads, 1, "Refresh must join the initial snapshot instead of duplicating it")
+    }
+
+    func testMarginRefreshWaitsForExistingReadAndQueuedFreshFollowup() async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/v1/position/margin", blockedReads: 2)
+        let store = USDTStore(api: api)
+        store.binding = .object(["id": .string("fixture")])
+        let model = PositionMarginModel()
+        let original = Task { await model.refresh(store) }
+        await api.waitUntilBlocked()
+        var joinedFinished = false
+        let joined = Task { await model.refresh(store, afterChange: true); joinedFinished = true }
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertFalse(joinedFinished, "A margin refresh must wait for the queued fresh account read too")
+        await api.finish()
+        await api.waitUntilBlocked()
+        XCTAssertFalse(joinedFinished)
+        await api.finish()
+        await original.value
+        await joined.value
+        XCTAssertFalse(model.loading)
+        XCTAssertEqual(model.snapshot.value("margin_ratio_percent"), "55")
+        let reads = await api.count("/v1/position/margin")
+        XCTAssertEqual(reads, 2)
+    }
+
+    func testMarginSuspensionReleasesWaitersAndRejectsLateContent() async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/v1/position/margin")
+        let store = USDTStore(api: api)
+        store.binding = .object(["id": .string("fixture")])
+        let model = PositionMarginModel()
+        let original = Task { await model.refresh(store) }
+        await api.waitUntilBlocked()
+        let joined = Task { await model.refresh(store) }
+        await Task.yield()
+        model.suspend()
+        await joined.value
+        XCTAssertFalse(model.loading)
+        await api.finish()
+        await original.value
+        XCTAssertEqual(model.snapshot, .null)
+    }
+
+    func testCancelledInitialWatchlistCannotOverwriteRestartedSameUser() async {
+        await checkCancelledInitialWatchlistRestart(failed: false)
+    }
+
+    func testCancelledInitialWatchlistFailureCannotRefreshRestartedSameUser() async {
+        await checkCancelledInitialWatchlistRestart(failed: true)
+    }
+
+    private func checkCancelledInitialWatchlistRestart(failed: Bool) async {
+        let api = SharedLoadingFixtureAPI(blockedPath: "/api/market/watchlist/defaults")
+        let realtime = RealtimeClient(baseURL: URL(string: "https://example.invalid")!, tokenProvider: { nil })
+        let model = DashboardViewModel(apiClient: api, realtimeClient: realtime)
+        model.startRealtime(userID: "fixture-user")
+        defer { model.stopRealtime() }
+        await api.waitUntilBlocked()
+        model.stopRealtime()
+        model.startRealtime(userID: "fixture-user")
+        await model.refresh()
+        XCTAssertEqual(model.markets.map(\.symbol), ["BTCUSDT"])
+        XCTAssertEqual(model.markets.first?.price, 123)
+        let oldConfiguration = JSONValue.object([
+            "quoteAsset": .string("USDT"), "symbols": .array([.string("OLDUSDT")]),
+            "availableSymbols": .array([.string("OLDUSDT")])])
+        await api.finish(failed: failed, value: oldConfiguration)
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.markets.map(\.symbol), ["BTCUSDT"],
+            "An obsolete initial read must not replace the restarted user's watchlist")
+        XCTAssertEqual(model.markets.first?.price, 123)
+        let tickerReads = await api.count("/api/market/tickers")
+        XCTAssertEqual(tickerReads, 1,
+            "Neither success nor failure of an obsolete initial read may start another ticker request")
+    }
+}
+
+private actor SharedLoadingFixtureAPI: APIClient {
+    private let blockedPath: String
+    private let blockedReads: Int
+    private var continuation: CheckedContinuation<JSONValue, Error>?
+    private var started: [CheckedContinuation<Void, Never>] = []
+    private var counts: [String: Int] = [:]
+    init(blockedPath: String = "/slow", blockedReads: Int = 1) {
+        self.blockedPath = blockedPath; self.blockedReads = blockedReads
+    }
+    func count(_ path: String) -> Int { counts[path, default: 0] }
+    func waitUntilBlocked() async {
+        if continuation != nil { return }
+        await withCheckedContinuation { started.append($0) }
+    }
+    func finish(failed: Bool = false, value: JSONValue? = nil) {
+        if failed { continuation?.resume(throwing: URLError(.notConnectedToInternet)) }
+        else { continuation?.resume(returning: value ?? self.value(for: blockedPath)) }
+        continuation = nil
+    }
+    private func value(for path: String) -> JSONValue {
+        switch path {
+        case "/slow": return .array([.object(["symbol": .string("READYUSDT")])])
+        case "/v1/api/info": return .object(["alias": .string("fixture")])
+        case "/v1/account/info": return .object(["balance": .string("50")])
+        case "/v1/strategy/list": return .array([])
+        case "/api/market/symbols": return .object([
+            "quoteAsset": .string("USDT"), "symbols": .array([.string("BTCUSDT")])])
+        case "/api/market/watchlist/defaults": return .object([
+            "quoteAsset": .string("USDT"), "symbols": .array([.string("BTCUSDT")]),
+            "availableSymbols": .array([.string("BTCUSDT")])])
+        case "/api/market/tickers": return .object([
+            "quoteAsset": .string("USDT"), "tickers": .array([.object([
+                "symbol": .string("BTCUSDT"), "lastPrice": .number(123),
+                "quoteVolume24h": .number(100), "priceChangePercent24h": .number(1),
+                "eventTime": .number(Double(Int64(Date().timeIntervalSince1970 * 1000)))])])])
+        case "/v1/position/margin": return .object([
+            "supported": .bool(true), "margin_ratio_percent": .string("55")])
+        default: return .array([.object(["symbol": .string("FASTUSDT")])])
+        }
+    }
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        counts[request.path, default: 0] += 1
+        let value: JSONValue
+        if request.path == blockedPath, counts[request.path, default: 0] <= blockedReads {
+            value = try await withCheckedThrowingContinuation { continuation in
+                self.continuation = continuation
+                started.forEach { $0.resume() }
+                started = []
+            }
+        } else {
+            value = self.value(for: request.path)
+        }
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}
+
+@MainActor
 final class MarketFastPathTests: XCTestCase {
     func testReturningToRecentIntervalUsesCompleteCachedFrameWithoutDownloading() async throws {
         let api = GatedChartHistoryAPI()

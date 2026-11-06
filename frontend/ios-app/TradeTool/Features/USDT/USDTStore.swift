@@ -76,6 +76,7 @@ final class USDTStore: ObservableObject {
     private var signalReadCursor = LocalSignalReadCursor()
     private var signalPageVisible = false
     private var refreshScope = ""
+    private var refreshCompletion: SharedReadCompletion?
     private var strategyReadRevision = 0
     private var eventRefresh: Task<Void, Never>?
     var scope: String { "\(userID):\(mode):\(revision)" }
@@ -163,6 +164,10 @@ final class USDTStore: ObservableObject {
 
     func invalidate() {
         stopRealtime()
+        refreshCompletion?.finish()
+        refreshCompletion = nil
+        refreshScope = ""
+        isLoading = false
         revision += 1
         positionSnapshots.reset(scope: scope)
         positionQuotes.reset()
@@ -214,10 +219,20 @@ final class USDTStore: ObservableObject {
 
     func refresh(includeAccount: Bool = true, freshBalance: Bool = false) async {
         let requestScope = scope
-        guard !isLoading || refreshScope != requestScope else { return }
+        if isLoading, refreshScope == requestScope {
+            await refreshCompletion?.wait()
+            return
+        }
+        guard !Task.isCancelled else { return }
+        let completion = SharedReadCompletion()
+        refreshCompletion?.finish()
+        refreshCompletion = completion
         refreshScope = requestScope
         isLoading = true
-        defer { if refreshScope == requestScope { isLoading = false } }
+        defer {
+            if refreshCompletion === completion { isLoading = false; refreshCompletion = nil }
+            completion.finish()
+        }
         do {
             let latestBinding = try await get("/v1/api/info")
             guard requestScope == scope, !Task.isCancelled else { return }
@@ -334,6 +349,7 @@ final class USDTPageModel: ObservableObject {
     private var loadingScope = ""
     private var loadID = UUID()
     private var requestInFlight = false
+    private var readCompletion: SharedReadCompletion?
     private struct PageSnapshot {
         let value: JSONValue
         let page: Int
@@ -344,6 +360,8 @@ final class USDTPageModel: ObservableObject {
     private var cacheScope = ""
 
     func reset() {
+        readCompletion?.finish()
+        readCompletion = nil
         loadID = UUID()
         loadingScope = ""
         cacheScope = ""
@@ -361,11 +379,17 @@ final class USDTPageModel: ObservableObject {
               snapshotFirst: Bool = false, reuseIfLoaded: Bool = false) async {
         let scope = store.scope
         let context = scope + path + query.filter { !["page", "cursor"].contains($0.name) }.description
-        guard !requestInFlight || loadingScope != context else { return }
+        if requestInFlight, loadingScope == context {
+            await readCompletion?.wait()
+            return
+        }
+        guard !Task.isCancelled else { return }
         if cacheScope != scope { cachedPages = [:]; cacheScope = scope }
         if reuseIfLoaded, let cached = cachedPages[context] {
             if loadingScope != context {
                 // A cache hit also supersedes an in-flight read of another tab.
+                readCompletion?.finish()
+                readCompletion = nil
                 loadID = UUID()
                 requestInFlight = false
                 loading = false
@@ -390,12 +414,18 @@ final class USDTPageModel: ObservableObject {
                 liveRevision: verified ? revision : nil)
         }
         let requestID = UUID()
+        let completion = SharedReadCompletion()
+        readCompletion?.finish()
+        readCompletion = completion
         loadID = requestID
         requestInFlight = true
         loading = true
         refreshing = false
         defer {
-            if loadID == requestID { loading = false; refreshing = false; requestInFlight = false }
+            if loadID == requestID {
+                loading = false; refreshing = false; requestInFlight = false; readCompletion = nil
+            }
+            completion.finish()
         }
         let previousItems = items
         do {

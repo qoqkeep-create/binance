@@ -1,4 +1,5 @@
 import MetalKit
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -8,6 +9,12 @@ final class KlineChartHostView: UIView {
     private let metalView: MTKView
     private let candleMarkerContainer = UIView()
     private let loadingCover = UIView()
+    private var loadingIndicator: (UIView & UIContentView)?
+    private struct LoadingIndicatorState: Equatable {
+        let appearance: ChartAppearance
+        let isAnimating: Bool
+    }
+    private var loadingIndicatorState: LoadingIndicatorState?
     private var candleMarkers: [ChartCandleMarker] = []
     private var candleMarkerExclusions: [CGRect] = []
     private var candleMarkerLabels: [String: UILabel] = [:]
@@ -115,6 +122,7 @@ final class KlineChartHostView: UIView {
                 self.firstPresentationDelivered = true
                 self.isUserInteractionEnabled = !self.isLoadingPresentation
                 if !self.isLoadingPresentation { self.loadingCover.isHidden = true }
+                self.updateLoadingIndicator()
                 self.onFirstFramePresented?(submittedID, time)
             }
         }
@@ -135,6 +143,35 @@ final class KlineChartHostView: UIView {
         reconcileRenderingActivity()
     }
 
+    private func updateLoadingIndicator() {
+        guard !isDisposed, !loadingCover.isHidden else {
+            loadingIndicator?.removeFromSuperview()
+            loadingIndicator = nil
+            loadingIndicatorState = nil
+            return
+        }
+        let state = LoadingIndicatorState(appearance: appearance,
+            isAnimating: window != nil && isApplicationActive && errorLabel.isHidden)
+        guard loadingIndicatorState != state else { return }
+        let configuration = UIHostingConfiguration {
+            BinanceKlineLoadingIndicator(isAnimating: state.isAnimating)
+                .environment(\.colorScheme, state.appearance == .light ? .light : .dark)
+                .ignoresSafeArea()
+        }.margins(.all, 0)
+        if let loadingIndicator {
+            loadingIndicator.configuration = configuration
+        } else {
+            let view = configuration.makeContentView()
+            view.frame = loadingCover.bounds
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.isUserInteractionEnabled = false
+            view.accessibilityIdentifier = "market-chart-loading-indicator"
+            loadingCover.addSubview(view)
+            loadingIndicator = view
+        }
+        loadingIndicatorState = state
+    }
+
     private var isApplicationActive: Bool {
         applicationActivity == .active
     }
@@ -147,6 +184,7 @@ final class KlineChartHostView: UIView {
         Self.diagnosticInitializationCount += 1
 #endif
 
+        loadingCover.isHidden = true
         configureMetalView()
         candleMarkerContainer.isUserInteractionEnabled = false
         candleMarkerContainer.clipsToBounds = true
@@ -381,6 +419,7 @@ final class KlineChartHostView: UIView {
             alpha: Double(linear.w)
         )
         errorLabel.backgroundColor = color
+        updateLoadingIndicator()
         errorLabel.textColor = .secondaryLabel
         updateCandleMarkers()
     }
@@ -502,6 +541,7 @@ final class KlineChartHostView: UIView {
             return
         }
         isDisposed = true
+        updateLoadingIndicator()
         cancelActiveInteraction(publishViewport: false)
         onTimelineViewportChange = nil
         onPriceViewportChange = nil
@@ -534,6 +574,14 @@ final class KlineChartHostView: UIView {
     }
 
     var diagnosticIsLoadingCovered: Bool { !loadingCover.isHidden }
+
+    var diagnosticIsLoadingIndicatorVisible: Bool {
+        !loadingCover.isHidden && loadingCover.subviews.contains {
+            !$0.isHidden && $0.accessibilityIdentifier == "market-chart-loading-indicator"
+        }
+    }
+
+    var diagnosticIsLoadingIndicatorAnimating: Bool { loadingIndicatorState?.isAnimating == true }
 
     var diagnosticVisibleRendererError: String? {
         guard !isHidden, !errorLabel.isHidden,
@@ -654,6 +702,7 @@ final class KlineChartHostView: UIView {
             return
         }
         updateHostPresentationContext()
+        updateLoadingIndicator()
         if window != nil, isApplicationActive, !isLoadingPresentation {
             frameCoordinator?.resume()
         } else {
@@ -1717,6 +1766,7 @@ final class KlineChartHostView: UIView {
         errorLabel.text = message
         errorLabel.isHidden = false
         bringSubviewToFront(errorLabel)
+        updateLoadingIndicator()
     }
 
     private func rendererDidStop(_ message: String) {

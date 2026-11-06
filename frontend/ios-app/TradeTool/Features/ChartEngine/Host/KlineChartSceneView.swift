@@ -451,9 +451,6 @@ struct KlineChartSceneView: View {
           onCrosshairDismiss: onCrosshairDismiss
         )
         .allowsHitTesting(isPresented)
-        if renderState == nil {
-          BinanceKlineLoadingIndicator()
-        }
       }
       .background(BinanceTheme.background)
       .task(id: key) {
@@ -568,7 +565,8 @@ enum BinanceKlineLoadingAnimation {
   }
 }
 
-private struct BinanceKlineLoadingIndicator: View {
+struct BinanceKlineLoadingIndicator: View {
+  var isAnimating = true
   @Environment(\.accessibilityReduceMotion)
   private var reduceMotion
 
@@ -576,12 +574,12 @@ private struct BinanceKlineLoadingIndicator: View {
     TimelineView(
       .animation(
         minimumInterval: 1 / 60,
-        paused: reduceMotion
+        paused: reduceMotion || !isAnimating
       )
     ) { timeline in
       let elapsed = timeline.date
         .timeIntervalSinceReferenceDate
-      let heights = reduceMotion
+      let heights = reduceMotion || !isAnimating
         ? [
           BinanceKlineLoadingAnimation.minimumHeight,
           5.5,
