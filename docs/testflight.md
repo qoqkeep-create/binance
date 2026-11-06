@@ -4,6 +4,8 @@
 
 用户明确要求修改少量文件并推送，以触发新一轮自动构建。本批从修复提交 `ab37c98` 继续，在主 App 入口 `TradeToolApp.swift` 补充 APNs 注册事件与通知解析／导航责任的说明注释，连同全部待提交的 Build 49／50 核对文档一起交付 GitHub `codex/integrated-ios`。App 行为、版本号、签名配置与工作流保持原样；通知修复沿用已通过的 402 项 Xcode 单测、15 项 host 和 App／Widget Release 结果，注释修改不重复运行这些测试。新提交须通过公开 check 或 Xcode Cloud 概览确认自动启动及源码提交号，构建结果、TestFlight 分发与手机安装分别核验。
 
+提交 **`3cf10c2`** 已推送。2026-11-06 **19:10（北京时间）** 的 GitHub check 确认该提交自动生成新的 Cloud 运行 `411d8f9d-73b1-495f-a29f-186d8f3cd161`，[Test](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/411d8f9d-73b1-495f-a29f-186d8f3cd161/action/f1c5b65a-ac01-4eac-808a-3303eeb71e00) 与 [Archive](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/411d8f9d-73b1-495f-a29f-186d8f3cd161/action/632a1448-ecd0-4112-882a-a674014bb01d) 均为 **queued／尚无结论**。该源码包含 `ab37c98`，不再是旧 `79f812b` 的手动重建；触发目标已达到，云端测试／导出／后续分发待完成。公开 check 证据在忽略目录 `FrontendBuildNov6/cloud-trigger-checks.json`，本段后续以纯文档提交补记。
+
 ## Cloud 通知单测阻塞排查（2026-11-06）
 
 18:42（北京时间）核对：`97953e6` 的旧 Test action 报告包含通知恢复用例的 `XCTUnwrap` 失败，action 最终状态为 cancelled；同轮 Archive 成功。最新客户端提交 `79f812b` 的 Archive 已 success，Test 仍 in_progress，不能将其写为已失败或已通过。准确 Build Number、平台处理／内部组及手机安装本轮仍未核实。
