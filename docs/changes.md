@@ -1,5 +1,13 @@
 # 变更与验收记录
 
+## 2026-11-06：首屏提速上线实测验收（只读）
+
+`bb5e53b` 的首屏同步补线／192 窗缓存／nginx gzip 已随 16:44 限定发布和 **17:43:52** 完整源码 `integrated-20261106-full-7e29236` 上线 **47.80.22.243（首尔服务器）**。19:26～19:29（北京时间）只读验收：SSH 核验 `current` 为完整发布、六容器 healthy、Redis `maxmemory` 实际 268435456（256MB）、宿主 snippet 含 gzip 配置、API 容器内 `MAX_WINDOWS = 192` 与 `SYNC_FILL_*` 常量在位。
+
+公网独立探针（QA 鉴权 GET `/api/market/klines`，4 币种×12 样本）：TTFB 中位 147.8 ms、完整响应中位 401.4 ms、服务端 `history` 热窗 6.8～17.3 ms（首轮冷读最高 388.7 ms）；`stale` 0/12、`historyPending` 1/12（BTC 4h 首轮，次轮已消除）。identity 请求确认应用不再压缩，gzip（约 66～72 KB／423 KB）由 nginx 承担。部署后真机 `ChartLoadReport` 49 份 displayed 样本（18:13～19:19）对比部署前 49 份（14:46～16:20）：首帧中位 1119→**766 ms**（max 8901→4001）、服务端 history 中位 130.3→**20.6 ms**、TTFB 中位 291→209 ms、传输中位 219→199 ms、ready 后首帧中位 115→99 ms（max 7836→1454）、首屏多次请求 4/49→**2/49**。
+
+归因限制：完整发布同时包含共享行情分发等其他改动，两组样本时段与用户行为不同且为蜂窝网络，不能把全部降幅单独归因于本轮三项；上述为观测对比，不是受控 A/B。证据在本机忽略目录 `.integration-runtime/SyncBackfillNov6/`（`wire-after.json`、`post-release/reports-summary.json` 及日志），基线为 `.integration-runtime/FirstScreenDeployNov6/` 的 `wire-before.json`、`reports-summary.json`。仅只读查询，无部署、缓存变更、交易／资金／保护单操作。实现与本地验证见[开发](development.md#首屏同步补齐与传输调整2026-11-06)，机制见[行情](market-data.md#首屏同步补齐与传输调整2026-11-06)。
+
 ## 2026-11-06：推送 App 入口说明以触发修复版自动构建
 
 用户授权在 `ab37c98` 之后做少量文件修改并提交 GitHub，触发包含通知单测修复的新构建。主 App 入口仅补充通知责任说明注释，全部待提交 Build 49／50 核对文档一并交付；本地已通过的 402 项单测、15 项 host 与 Release 结果继续有效。自动启动、准确提交及新构建状态记录于[TestFlight](testflight.md#通知测试修复后的自动构建触发2026-11-06)，不把旧 `79f812b` 的重建结果当作修复版验收。

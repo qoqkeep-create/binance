@@ -55,6 +55,8 @@ server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolat
 
 2026-11-06 16:44:27（北京时间）已部署到 **47.80.22.243（首尔服务器）**；Redis 保留 AOF 卷重建、nginx 同步 reload、API／market 配套更新，六服务与全部运行哈希通过。16:45:12 公网健康、1500／2 根、原始 gzip／identity 字节、统计和鉴权 WSS ready／ack／心跳／实时 K 线／ticker 冒烟通过；没有真实交易、资金、保护单或通知测试。`migrate --check` 通过但没有应用迁移，环境文件不变。证据为 `deploy-remote.log`、`deployment-result.json`、`smoke-result.json`；操作边界与回退见 [运维](operations.md#首屏补齐redis-扩容与-nginx-压缩发布2026-11-06)。本轮推送交给现有客户端自动构建，未手动构建／上传新客户端；手机首屏收益待真实 `ChartLoadReport`，不能把本地回归或 HTTP 冒烟写成实机通过。
 
+2026-11-06 19:29（北京时间）只读实测补记：完整发布 `integrated-20261106-full-7e29236`（17:43:52）后真机 49 份 displayed 样本（18:13～19:19）首帧中位 1119→**766 ms**（max 8901→4001）、服务端 history 中位 130.3→**20.6 ms**、TTFB 中位 291→209 ms、首屏多次请求 4/49→2/49；公网探针 12 样本 stale 0／pending 1、TTFB 中位 147.8 ms、服务端 history 热窗 6.8～17.3 ms。归因限制（完整发布含共享分发等其他改动、非受控 A/B）与证据见[变更](changes.md#2026-11-06首屏提速上线实测验收只读)。
+
 ## 账户入口与保证金通知（2026-11-06，本地）
 
 账号头像／短 Key／指定邮箱注册权限见 [认证](ios-authentication.md#账户标识与注册权限2026-11-06本地)，保证金独立监控、通道去重与通知路由见 [通知](signals-and-notifications.md#保证金-echobell-与-app-币种导航2026-11-06本地)。验证证据集中在忽略目录 `.integration-runtime/AccountRiskNov6/`，没有真实通知、邮件、交易、资金或保护单操作。
