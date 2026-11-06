@@ -1,6 +1,8 @@
 import SwiftUI
 import UIKit
 
+// Forward APNs registration events; StrategySignalNotificationManager owns
+// notification payload validation and navigation.
 final class TradeToolApplicationDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,

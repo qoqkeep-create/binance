@@ -1,10 +1,18 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
+## 通知测试修复后的自动构建触发（2026-11-06）
+
+用户明确要求修改少量文件并推送，以触发新一轮自动构建。本批从修复提交 `ab37c98` 继续，在主 App 入口 `TradeToolApp.swift` 补充 APNs 注册事件与通知解析／导航责任的说明注释，连同全部待提交的 Build 49／50 核对文档一起交付 GitHub `codex/integrated-ios`。App 行为、版本号、签名配置与工作流保持原样；通知修复沿用已通过的 402 项 Xcode 单测、15 项 host 和 App／Widget Release 结果，注释修改不重复运行这些测试。新提交须通过公开 check 或 Xcode Cloud 概览确认自动启动及源码提交号，构建结果、TestFlight 分发与手机安装分别核验。
+
 ## Cloud 通知单测阻塞排查（2026-11-06）
 
 18:42（北京时间）核对：`97953e6` 的旧 Test action 报告包含通知恢复用例的 `XCTUnwrap` 失败，action 最终状态为 cancelled；同轮 Archive 成功。最新客户端提交 `79f812b` 的 Archive 已 success，Test 仍 in_progress，不能将其写为已失败或已通过。准确 Build Number、平台处理／内部组及手机安装本轮仍未核实。
 
 确定错误是测试样本沿用 `BTCUSDC`，而当前整合通知只允许 USDT 合约；本地已修正样本并补拒绝与规范化回归，没有放宽 App 校验。Xcode 27.2 临时签名模拟器完整 **402 项零失败／零跳过**，独立 App／Widget Release 构建和实际通知模型 host 15 项通过，详见[开发验证](development.md#cloud-通知测试失败与本地-xcode-复验2026-11-06)。用户随后授权提交全部改动，本批将修正、快速检查脚本和所有排障文档一并提交推送 GitHub `codex/integrated-ios`；未手动重启、取消或修改 Apple 工作流。云端需对本次新提交重新验证，旧运行不会自动获得测试修正，源码推送不能代替 Cloud／TestFlight 结果。
+
+修复实际提交为 **`ab37c98`**。用户随后提供 Build 50 的测试截图：401 项中 400 项通过，仍失败在同一通知恢复用例。2026-11-06 从 Xcode Cloud **Build 50 → Overview** 直接核对，启动方式为 **Manual rebuild**，18:53 启动，Last Commit 明确为 **`79f812b`**，Cloud 为 Xcode 27.1／iOS 27.1；因此它没有包含修复，不能据此判断 `ab37c98` 回归失败。应从 `codex/integrated-ios` 最新提交新建构建，并核对 Last Commit 为 `ab37c98` 或包含它的后续提交；重建旧 Build 继续使用原提交。19:01 GitHub 查询尚未找到 `ab37c98` 的 check，未取得新提交已启动或通过 Cloud 的证据。
+
+同次只读核对 Build 49 日志，还发现该旧版通知测试三次均失败，测试本身约 57–59 秒，保存 XCResult 产物另耗 431–514 秒且均报内部上传错误，触发重复尝试；这解释了此前 Test 长时间显示运行中，不能把这些平台产物保存耗时当成 App 编译或 K 线运行耗时。当时只读核验，未手动启动／取消构建或更改工作流；记录随上方用户后续授权的自动构建触发批次交付。
 
 ## 换根修复与完整源码交付（2026-11-06）
 
