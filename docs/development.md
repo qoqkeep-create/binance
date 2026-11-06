@@ -1,5 +1,20 @@
 # 开发与验证
 
+## Cloud 通知测试失败与本地 Xcode 复验（2026-11-06）
+
+用户反馈构建一直未通过，本轮从 GitHub check 查到 `97953e6` 的 Test action 以 cancelled 结束，但报告明确包含 `ChartEngineCoreTests.testStrategyNotificationPayloadRestoresSignal` 第 179 行 `XCTUnwrap` 失败；同轮 Archive 成功，不能称为 Swift 编译失败。最新含客户端改动的 `79f812b` 截至 18:42（北京时间）Archive 为 success，Test 仍为 in_progress，尚无最终结论。来源证据为忽略目录 `.integration-runtime/FrontendBuildNov6/cloud-checks.json` 与 `cloud-latest.json`。
+
+根因为 `261cf59` 将通知币种解析收紧为整合版 USDT 合约后，旧恢复测试仍使用 `BTCUSDC`，解析正确拒绝而测试期待非空。本地提取实际解析器与原用例先复现同一失败（`payload-host-reproduced.log`）；修正样本为 `BTCUSDT`，同时检查实际导航结果，新增不支持币种／非法字符串拒绝及大小写、空白规范化用例。没有放宽生产币种校验。快速脚本此前只跑通知偏好与导航的 12 项测试，且替身 `StrategySignal.Direction` 的 raw value 与真实模型不同，未覆盖该失败；现直接复用真实信号模型及三条 Xcode 通知载荷测试，**15 项全部通过**（`notification-host-verified.log`），输入清单包括模型和 Xcode 测试文件。
+
+本机为 **Xcode 27.2（27B52）／iOS 27.2**。首次本地尝试因磁盘耗尽和模拟器启动错误中断，不计为源码测试失败或通过；清理本项目生成的编译缓存和旧专用模拟器数据，保留源码／报告后，以新专用设备 `8AC2CEAF-0418-4CF0-89AF-8E731C670C1E` 复验。第一轮完整单测使用无签名启动，402 项中仅 Keychain 测试报 `-34018`；按现有规范启用临时签名后，**402 项／48.580 秒／0 失败／0 跳过**，总命令耗时 64.62 秒。没有跳过 Keychain 用例或修改其断言。命令如下（完整参数及输出保存在 `xcode-full-signed-tests.log`／`FullSignedTests.xcresult`）：
+
+```bash
+xcodebuild test -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool -destination 'platform=iOS Simulator,id=8AC2CEAF-0418-4CF0-89AF-8E731C670C1E' -derivedDataPath .integration-runtime/FrontendBuildNov6/Tests -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 60 -maximum-test-execution-time-allowance 90 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+python3 frontend/ios-app/scripts/test_notification_preferences.py .integration-runtime/FrontendBuildNov6/PayloadHostBaseline
+```
+
+另以独立派生目录执行 `TradeTool Release`、Release、generic iOS、`CODE_SIGNING_ALLOWED=NO` 的 App／Widget 构建，**BUILD SUCCEEDED／72.20 秒**（`release-verified.log`）；唯一提示为无 AppIntents 依赖而跳过 metadata 提取。串行本地测试、无签名 Release 编译、Cloud 签名／并行运行及 TestFlight 分发分别判断。本轮只修测试与检查脚本；用户随后授权将当前全部改动提交 GitHub，本批连同全部排障文档一并提交推送至 `codex/integrated-ios`。本次交付不执行后端发布、真实通知或交易操作，云端需包含修正的新提交再次验证。
+
 ## 完整版本发布验证（2026-11-06）
 
 用户明确要求全部提交推送部署。本批以 `97953e6` 为基线，将换根修复／文档和完整交付规则提交为 `79f812b`，随后将 MySQL 测试事务兼容修正提交为 `7e29236`；两者均推送 GitHub，全部后端从后一提交的完整 Git 存档构建，没有摘选或跳过其他会话改动。实际发布见[运维](operations.md#完整同源发布2026-11-06)。

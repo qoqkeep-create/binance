@@ -158,7 +158,7 @@ final class ChartEngineCoreTests: XCTestCase {
             id: try XCTUnwrap(UUID(
                 uuidString: "5D9A41AB-5B6A-4E11-94E5-0FEE84C784EF"
             )),
-            symbol: "BTCUSDC",
+            symbol: "BTCUSDT",
             interval: "4h",
             strategyName: "EMA144回踩",
             direction: .long,
@@ -181,6 +181,37 @@ final class ChartEngineCoreTests: XCTestCase {
         )
 
         XCTAssertEqual(restored, signal)
+        XCTAssertEqual(
+            StrategySignalNotificationManager.destination(from: remotePayload),
+            .strategy(signal)
+        )
+    }
+
+    func testStrategyNotificationPayloadRejectsUnsupportedMarketSymbols() {
+        let validPayload: [AnyHashable: Any] = [
+            "route": "strategy.signal",
+            "id": "5D9A41AB-5B6A-4E11-94E5-0FEE84C784EF",
+            "symbol": "BTCUSDT",
+            "interval": "4h",
+            "strategyName": "EMA144回踩",
+            "direction": "LONG",
+            "triggerPrice": 64_123.45,
+            "triggeredAt": 1_786_156_800.0,
+        ]
+
+        for symbol in ["BTCUSDC", "", "../../BTCUSDT", "BTCUSDT?token=fixture"] {
+            var payload = validPayload
+            payload["symbol"] = symbol
+            XCTAssertNil(StrategySignalNotificationManager.signal(from: payload), symbol)
+            XCTAssertNil(StrategySignalNotificationManager.destination(from: payload), symbol)
+        }
+
+        var normalizedPayload = validPayload
+        normalizedPayload["symbol"] = " 1000pepeusdt "
+        XCTAssertEqual(
+            StrategySignalNotificationManager.signal(from: normalizedPayload)?.symbol,
+            "1000PEPEUSDT"
+        )
     }
 
     func testExternalNotificationIsSuppressedWhileAppTradeRoutesToPositions() {

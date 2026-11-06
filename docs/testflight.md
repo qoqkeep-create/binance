@@ -1,5 +1,11 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
+## Cloud 通知单测阻塞排查（2026-11-06）
+
+18:42（北京时间）核对：`97953e6` 的旧 Test action 报告包含通知恢复用例的 `XCTUnwrap` 失败，action 最终状态为 cancelled；同轮 Archive 成功。最新客户端提交 `79f812b` 的 Archive 已 success，Test 仍 in_progress，不能将其写为已失败或已通过。准确 Build Number、平台处理／内部组及手机安装本轮仍未核实。
+
+确定错误是测试样本沿用 `BTCUSDC`，而当前整合通知只允许 USDT 合约；本地已修正样本并补拒绝与规范化回归，没有放宽 App 校验。Xcode 27.2 临时签名模拟器完整 **402 项零失败／零跳过**，独立 App／Widget Release 构建和实际通知模型 host 15 项通过，详见[开发验证](development.md#cloud-通知测试失败与本地-xcode-复验2026-11-06)。用户随后授权提交全部改动，本批将修正、快速检查脚本和所有排障文档一并提交推送 GitHub `codex/integrated-ios`；未手动重启、取消或修改 Apple 工作流。云端需对本次新提交重新验证，旧运行不会自动获得测试修正，源码推送不能代替 Cloud／TestFlight 结果。
+
 ## 换根修复与完整源码交付（2026-11-06）
 
 用户授权全部提交推送部署。换根连续性修复 `79f812b` 已推送 GitHub `codex/integrated-ios`，后续 `7e29236` 只修正后端 MySQL 测试事务，Swift 源码与前者相同；配套完整后端已在 **47.80.22.243（首尔服务器）** 发布，见[运维](operations.md#完整同源发布2026-11-06)。先前的账号／通知导航／持仓界面改动均已包含在这套完整源码，未摘除其他会话修改。
@@ -56,6 +62,8 @@ GitHub 公开 check 与 combined status 确认该提交对应 [Xcode Cloud 运�
 ## live 扩展的 Cloud 导出签名修复（2026-11-04）
 
 Xcode Cloud 构建 37（`15b4784`）成功；38（`8593267`）首次嵌入 `PositionLiveWidget.appex` 后失败，39（`482c0fb`）沿用该工程配置。39 的 Test 通过，但 Archive action 在 ad-hoc、App Store、development 三种导出阶段退出 70；不能把这一状态称为 Swift 编译失败，也不能以本地无签名构建通过说明分发签名已通过。38 的具体导出日志本轮未下载，不把与 39 相同的根因推断写为已核验。
+
+2026-11-06 用户补充构建 38 截图，确认 `ci_pre_xcodebuild.sh`、`xcodebuild archive` 与工程配置检查均成功，ad-hoc／App Store／development 三种导出均退出 70，TestFlight 后续操作未执行。截图没有给出具体签名错误文本，仍不能仅由退出码断言 38 的精确根因；它属于历史导出失败记录，与本页上方最新通知单测失败分开判断。后续 39 的详细错误与 40 的实际修复结果如下。
 
 已下载 39 的 Archive Logs，三种 `xcodebuild-export-archive.log` 均明确报告 `Automatic signing cannot register bundle identifier` 和 `No profiles`，对象都是 `com.waibao2025.trade.integrated.PositionLiveWidget`。Apple Developer 团队 `756Y5JKBUD` 的 App IDs 列表中已有主 App、未找到该扩展。2026-11-04 已在同团队以 Explicit 登记该 Bundle ID，并在列表核验存在。主 App／扩展继续使用现有 Automatic 签名，由 Cloud 获取匹配的描述文件；本轮不更改 Bundle ID、签名团队、业务源码或测试门槛。
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run actual App notification preference and cancellation logic on macOS.
 
-The production notification manager and API request/protocol are extracted.
+The production notification manager, signal model and API request/protocol are extracted.
 Only access control is widened; UIKit, UserNotifications and HTTP transport use
 in-memory platform fixtures. No real registration, push or network send occurs.
 Pass an output directory to retain the generated package and input hashes, or
@@ -48,6 +48,8 @@ def generate(destination):
     (out / 'Sources/NotificationChecks/APIClient.swift').write_text(api.read_text().split('struct URLSessionAPIClient', 1)[0])
     request = app / 'Core/Networking/APIRequest.swift'
     (out / 'Sources/NotificationChecks/APIRequest.swift').write_text(request.read_text())
+    signal = app / 'Core/Models/StrategySignal.swift'
+    (out / 'Sources/NotificationChecks/StrategySignal.swift').write_text(signal.read_text())
     (out / 'Package.swift').write_text('''// swift-tools-version: 6.0
     import PackageDescription
     let package = Package(name: "NotificationChecks", platforms: [.macOS(.v14)], targets: [
@@ -58,16 +60,6 @@ def generate(destination):
     (out / 'Sources/NotificationChecks/PlatformBoundaries.swift').write_text('''import Foundation
     struct RequestDiagnostics {}
     enum APIError: Error { case requestEncoding, invalidURL, invalidResponse }
-    struct StrategySignal: Equatable, Sendable {
-      enum Direction: String, Sendable { case long, short }
-      let id: UUID
-      let symbol: String
-      let interval: String
-      let strategyName: String
-      let direction: Direction
-      let triggerPrice: Double
-      let triggeredAt: Date
-    }
     enum MarketKlineInterval: String { case oneHour = "1h" }
     enum UNAuthorizationStatus { case notDetermined, denied, authorized, provisional, ephemeral }
     struct UNNotificationSettings { let authorizationStatus: UNAuthorizationStatus }
@@ -316,12 +308,23 @@ def generate(destination):
       }
     }
     ''')
+    xcode_tests = IOS / 'TradeToolTests/ChartEngineCoreTests.swift'
+    payload_tests = '\n'.join(block(xcode_tests.read_text(), 'func ' + name + '(') for name in [
+        'testStrategyNotificationPayloadRestoresSignal',
+        'testStrategyNotificationPayloadRejectsUnsupportedMarketSymbols',
+        'testExternalSourcesCannotShowOrNavigateOrdinaryNotificationRoutes',
+    ])
+    (out / 'Tests/NotificationChecksTests/NotificationPayloadChecks.swift').write_text(
+        'import Foundation\nimport XCTest\n@testable import NotificationChecks\n'
+        '@MainActor\nfinal class NotificationPayloadChecks: XCTestCase {\n'
+        + payload_tests + '\n}\n'
+    )
     (out / 'production-inputs.json').write_text(json.dumps({
-        'sources': {str(p.relative_to(IOS)): hashlib.sha256(p.read_bytes()).hexdigest() for p in [container, api, request]},
-        'test_count': 12, 'network': False, 'simulator': False,
+        'sources': {str(p.relative_to(IOS)): hashlib.sha256(p.read_bytes()).hexdigest() for p in [container, api, request, signal, xcode_tests]},
+        'test_count': 15, 'network': False, 'simulator': False,
         'changes': ['Access control only', 'UIKit/UserNotifications replaced at platform boundary']
     }, indent=2) + '\n')
-    print('Extracted actual notification manager + navigation + request/protocol for 12 isolated host tests')
+    print('Extracted actual notification manager + signal model + Xcode payload tests for 15 isolated host tests')
 
 
 def run(destination):
