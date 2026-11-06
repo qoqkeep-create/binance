@@ -1,5 +1,19 @@
 # 开发与验证
 
+## 持仓短滑切页与空仓低频刷新（2026-11-06，本地）
+
+保证金盾牌原为 9 pt，现与数字使用相同的 20／16 pt 字号，徽标宽度 52／60 → 66／74 pt，保留 28 pt 底色和 44 pt 点击高度。原切页并无屏幕中线判断，但只在释放时判断累计 60 pt；现使用同一原生 pan，在移动达到 44 pt 且横向距离超过纵向 1.8 倍时立即切换，每手势最多一次，仍保留弹窗／后台／图表隔离和竖向刷新。
+
+保证金模型按确认空仓 30 秒、有仓或未知 2 秒调度。空仓等待期间每 2 秒只查内存状态，以便交易事件立即重读后恢复快刷；新旧监控代际与取消继续隔离。空仓事实保留上限 32 秒，风险百分比有效期仍为 20 秒，具体口径见 [资金](capital-and-transfers.md#持仓页保证金率2026-11-05本地实现)。
+
+先用原逻辑跑新增回归，21 项中 4 个断言失败，复现短滑阈值、空仓持续 2 秒请求和 20 秒状态过期；日志 `.integration-runtime/position-interactions-baseline.log`。修复后实际 Store／模型／Header host **24 项全部通过、0 跳过**，含 72 组宽度／双主题／风险／页签渲染，以及虚拟等待下的 30 秒无重复读取、有仓／未知 2 秒、开仓事件恢复快刷、末仓关闭后降频、空仓状态与风险时效分离；已查看实际页头渲染。命令：
+
+```bash
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/PositionInteractionsNov6/Host
+```
+
+模拟器 UI 首次因旧专用设备数据目录缺失而无法启动，不计源码失败或通过；新建独立测试设备后，首轮 5 项中的快速滑动和同侧短滑仍失败。临时原生手势探针复现 52 pt 实际拖动被 `translation` 少算为约 26 pt，识别开始时计数归零；因此不能只降低阈值。现从 `shouldReceive touch` 保存窗口坐标的真实按下点，以当前位置差累计位移，避免识别起点重置和布局坐标漂移。修正后这两项系统 UI 定向复验全部通过（`SwipeOrigin.xcresult`）；临时探针已移除。最终移除探针的版本在 Xcode 27.2／iOS 27.2 模拟器执行 **5 项 UI 全部通过、0 跳过／152.355 秒**（`position-interactions-ui-verified.log`／`VerifiedUI.xcresult`），覆盖同侧 52 pt 短滑（有仓／空仓、左右各两次）、页头／卡片／空白区域、长滑一次一页、竖向下拉不切页、弹窗隔离、稳定页签和空仓双卡片；已查看导出的顶部及空仓详情截图。主 App／Widget generic iOS 无签名 **Release 构建通过**（`position-interactions-release-final.log`）；host 最终仍为 24 项全部通过（`position-interactions-final.log`），输入哈希与当前文件一致。运行与图片证据保留在忽略目录 `.integration-runtime/PositionInteractionsNov6/`，未使用真实交易、资金或交易所操作。用户随后明确授权提交并推送，本轮实现、回归和相关文档随完整工作区交付 GitHub `codex/integrated-ios`；客户端修改需新包后验收实机观感，云端构建与手机安装不能以本地通过代替。
+
 ## Cloud 通知测试失败与本地 Xcode 复验（2026-11-06）
 
 用户反馈构建一直未通过，本轮从 GitHub check 查到 `97953e6` 的 Test action 以 cancelled 结束，但报告明确包含 `ChartEngineCoreTests.testStrategyNotificationPayloadRestoresSignal` 第 179 行 `XCTUnwrap` 失败；同轮 Archive 成功，不能称为 Swift 编译失败。最新含客户端改动的 `79f812b` 截至 18:42（北京时间）Archive 为 success，Test 仍为 in_progress，尚无最终结论。来源证据为忽略目录 `.integration-runtime/FrontendBuildNov6/cloud-checks.json` 与 `cloud-latest.json`。

@@ -69,7 +69,8 @@ final class PositionMarginTests: XCTestCase {
     XCTAssertEqual(model.exposure(in: store), .empty)
     XCTAssertEqual(PositionMarginPresentation(snapshot: model.snapshot, isCurrent: false,
       exposure: model.exposure(in: store)).badgePercentText, "0%")
-    XCTAssertEqual(model.exposure(in: store, now: .now.addingTimeInterval(21)), .unknown)
+    XCTAssertEqual(model.exposure(in: store, now: .now.addingTimeInterval(21)), .empty)
+    XCTAssertEqual(model.exposure(in: store, now: .now.addingTimeInterval(33)), .unknown)
     let failed = Task { await store.refreshPositions() }
     await wait(api, count: 3); await api.fail(2); await failed.value
     XCTAssertEqual(model.exposure(in: store), .unknown, "Read failure must not confirm empty")
@@ -159,6 +160,8 @@ final class PositionMarginTests: XCTestCase {
     XCTAssertEqual(store.liveRevision, 1)
   }
   func testHorizontalSwipeOnlyAndEdgesDoNotWrap() {
+    XCTAssertEqual(PositionPageSwipe.destination(from: "positions", horizontal: -44, vertical: 0), "limits")
+    XCTAssertEqual(PositionPageSwipe.destination(from: "limits", horizontal: 44, vertical: 0), "positions")
     XCTAssertEqual(PositionPageSwipe.destination(from: "positions", horizontal: -100, vertical: 10), "limits")
     XCTAssertEqual(PositionPageSwipe.destination(from: "limits", horizontal: -100, vertical: 0), "history")
     XCTAssertEqual(PositionPageSwipe.destination(from: "history", horizontal: 100, vertical: 0), "limits")
@@ -168,6 +171,94 @@ final class PositionMarginTests: XCTestCase {
     for (x, y) in [(10.0, 100.0), (40, 0), (60, 60), (100, 100), (.nan, 0), (.infinity, 0)] {
       XCTAssertNil(PositionPageSwipe.destination(from: "limits", horizontal: x, vertical: y))
     }
+  }
+  func testEmptyMonitorReadsAtThirtySecondIntervals() async {
+    var elapsed: TimeInterval = 0
+    var reads: [TimeInterval] = []
+    let api = PollingMarginAPI {
+      reads.append(elapsed)
+      return self.account(quantity: "0")
+    }
+    let model = PositionMarginModel(waitForPoll: { seconds in
+      elapsed += seconds
+      if elapsed >= 60 { throw CancellationError() }
+    })
+    await model.monitor(bound(api))
+    XCTAssertEqual(reads, [0, 30], "Confirmed empty accounts must poll every thirty seconds")
+  }
+  func testOpenAndUnknownAccountsKeepTwoSecondPolling() async {
+    for quantity in ["1", "invalid"] {
+      var elapsed: TimeInterval = 0
+      var reads: [TimeInterval] = []
+      let api = PollingMarginAPI {
+        reads.append(elapsed)
+        return self.account(quantity: quantity)
+      }
+      let model = PositionMarginModel(waitForPoll: { seconds in
+        elapsed += seconds
+        if elapsed >= 6 { throw CancellationError() }
+      })
+      await model.monitor(bound(api))
+      XCTAssertEqual(reads, [0, 2, 4])
+    }
+  }
+  func testTradeEventInterruptsEmptyPollingAndRestoresFastUpdates() async {
+    var elapsed: TimeInterval = 0
+    var quantity = "0"
+    var reads: [TimeInterval] = []
+    let api = PollingMarginAPI {
+      reads.append(elapsed)
+      return self.account(quantity: quantity)
+    }
+    let store = bound(api)
+    var model: PositionMarginModel!
+    model = PositionMarginModel(waitForPoll: { seconds in
+      elapsed += seconds
+      if elapsed == 4 {
+        quantity = "1"
+        await model.refresh(store, afterChange: true)
+      }
+      if elapsed >= 10 { throw CancellationError() }
+    })
+    await model.monitor(store)
+    XCTAssertEqual(reads, [0, 4, 4, 6, 8], "An open position must not wait for the remaining empty-account delay")
+    model = nil
+  }
+  func testClosingLastPositionReturnsToSlowPolling() async {
+    var elapsed: TimeInterval = 0
+    var quantity = "1"
+    var reads: [TimeInterval] = []
+    let api = PollingMarginAPI {
+      reads.append(elapsed)
+      return self.account(quantity: quantity)
+    }
+    let store = bound(api)
+    var model: PositionMarginModel!
+    model = PositionMarginModel(waitForPoll: { seconds in
+      elapsed += seconds
+      if elapsed == 4 {
+        quantity = "0"
+        await model.refresh(store, afterChange: true)
+      }
+      if elapsed >= 34 { throw CancellationError() }
+    })
+    await model.monitor(store)
+    XCTAssertEqual(reads, [0, 2, 4, 4])
+    model = nil
+  }
+  func testSlowEmptyExposureDoesNotExtendRiskPercentageValidity() async {
+    let api = MarginFixtureAPI(), model = PositionMarginModel(), store = bound(api)
+    let observed = Date.now
+    let monitor = Task { await model.monitor(store) }
+    await wait(api, count: 1)
+    await api.finish(0, value: .object(["supported": .bool(true),
+      "observed_at": .number(observed.timeIntervalSince1970 * 1000), "max_age_seconds": .number(20),
+      "margin_ratio_percent": .string("0"), "positions": .array([])]))
+    for _ in 0..<20 { await Task.yield() }
+    XCTAssertEqual(model.exposure(in: store, now: observed.addingTimeInterval(21)), .empty)
+    XCTAssertFalse(model.isCurrent(scope: store.scope, now: observed.addingTimeInterval(21)))
+    XCTAssertEqual(model.exposure(in: store, now: observed.addingTimeInterval(33)), .unknown)
+    monitor.cancel(); await monitor.value
   }
   func testSnapshotExpirySuspensionAndTradingModeHeader() async {
     let api = MarginFixtureAPI()
@@ -263,7 +354,11 @@ final class PositionMarginTests: XCTestCase {
     .object(["items": .array([.object(["id": .string(id)])]), "pagination": .object(["has_next": .bool(next)])])
   }
   private func page(_ number: Int) -> [URLQueryItem] { [.init(name: "page", value: String(number))] }
-  private func bound(_ api: MarginFixtureAPI) -> USDTStore {
+  private func account(quantity: String) -> JSONValue {
+    .object(["supported": .bool(true), "observed_at": .number(Date.now.timeIntervalSince1970 * 1000),
+      "max_age_seconds": .number(20), "positions": .array([.object(["quantity": .string(quantity)])])])
+  }
+  private func bound(_ api: any APIClient) -> USDTStore {
     let store = USDTStore(api: api); store.binding = .object(["id": .string("fixture")]); return store
   }
   private func wait(_ api: MarginFixtureAPI, count: Int) async {
@@ -273,6 +368,12 @@ final class PositionMarginTests: XCTestCase {
     }
     XCTFail("Expected \(count) in-memory reads")
   }
+}
+
+@MainActor
+private struct PollingMarginAPI: APIClient {
+  let value: () -> JSONValue
+  func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response { value() as! Response }
 }
 
 private actor MarginFixtureAPI: APIClient {

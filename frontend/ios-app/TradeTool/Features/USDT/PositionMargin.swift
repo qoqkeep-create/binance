@@ -5,9 +5,12 @@ import UIKit
 
 enum PositionPageSwipe {
   static let pages = ["positions", "limits", "history"]
+  static func reachedThreshold(horizontal: Double, vertical: Double) -> Bool {
+    horizontal.isFinite && vertical.isFinite && abs(horizontal) >= 44
+      && abs(horizontal) > abs(vertical) * 1.8
+  }
   static func destination(from page: String, horizontal: Double, vertical: Double) -> String? {
-    guard horizontal.isFinite, vertical.isFinite, abs(horizontal) >= 60,
-      abs(horizontal) > abs(vertical) * 1.8, let index = pages.firstIndex(of: page)
+    guard reachedThreshold(horizontal: horizontal, vertical: vertical), let index = pages.firstIndex(of: page)
     else { return nil }
     let next = index + (horizontal < 0 ? 1 : -1)
     return pages.indices.contains(next) ? pages[next] : nil
@@ -80,6 +83,10 @@ struct PositionMarginPresentation {
 @MainActor
 final class PositionMarginModel: ObservableObject {
   static let refreshInterval: TimeInterval = 2
+  static let emptyRefreshInterval: TimeInterval = 30
+  // Keep the last confirmed empty state through the next poll, without extending
+  // the 20-second validity of an actual risk percentage.
+  private static let emptyExposureMaxAge = emptyRefreshInterval + refreshInterval
   @Published private(set) var snapshot: JSONValue = .null
   @Published private(set) var scope = ""
   @Published private(set) var loading = false
@@ -88,6 +95,13 @@ final class PositionMarginModel: ObservableObject {
   private var requestID = UUID()
   private var monitorID = UUID()
   private var refreshAfterChange = false
+  private let waitForPoll: (TimeInterval) async throws -> Void
+
+  init(waitForPoll: @escaping (TimeInterval) async throws -> Void = {
+    try await Task.sleep(for: .seconds($0))
+  }) {
+    self.waitForPoll = waitForPoll
+  }
 
   func exposure(in store: USDTStore, now: Date = .now) -> PositionExposureState {
     guard store.isBound else { return .unknown }
@@ -95,17 +109,22 @@ final class PositionMarginModel: ObservableObject {
     var state = PositionExposureState.unknown
     var observed = Date.distantPast
     if positions.scope == store.scope, positions.hasLoaded, !positions.failed,
-      let date = positions.updatedAt, now.timeIntervalSince(date) <= 20 {
+      let date = positions.updatedAt, now.timeIntervalSince(date) >= -2,
+      now.timeIntervalSince(date) <= (positions.rows.isEmpty ? Self.emptyExposureMaxAge : 20) {
       state = positions.rows.isEmpty ? .empty : .open
       observed = date
     }
-    if isCurrent(scope: store.scope, now: now), snapshot["supported"]?.flag == true,
+    if active, scope == store.scope, error.isEmpty, snapshot["supported"]?.flag == true,
       let timestamp = PositionMarginNumber.decimal(snapshot["observed_at"]),
+      let maximumAge = PositionMarginNumber.decimal(snapshot["max_age_seconds"]), maximumAge > 0,
       case .array(let rows)? = snapshot["positions"] {
       let date = Date(timeIntervalSince1970: NSDecimalNumber(decimal: timestamp).doubleValue / 1000)
       let quantities = rows.compactMap { PositionMarginNumber.decimal($0["quantity"]) }
       guard quantities.count == rows.count else { return state }
       let hasPosition = quantities.contains(where: { $0 != 0 })
+      let age = now.timeIntervalSince(date)
+      guard hasPosition ? isCurrent(scope: store.scope, now: now)
+        : (age.isFinite && age >= -2 && age <= Self.emptyExposureMaxAge) else { return state }
       // The app list can omit external positions or return cached rows. A live
       // exchange position must not become zero just because that list is empty.
       if hasPosition || date >= observed { state = hasPosition ? .open : .empty }
@@ -162,9 +181,18 @@ final class PositionMarginModel: ObservableObject {
         requestID = UUID(); loading = false; refreshAfterChange = false
       }
     }
-    while !Task.isCancelled, owner == store.scope, store.isBound {
+    while !Task.isCancelled, monitorID == id, owner == store.scope, store.isBound {
       await refresh(store)
-      do { try await Task.sleep(for: .seconds(Self.refreshInterval)) } catch { return }
+      guard !Task.isCancelled, monitorID == id else { return }
+      var remaining = exposure(in: store) == .empty ? Self.emptyRefreshInterval : Self.refreshInterval
+      repeat {
+        let delay = min(remaining, Self.refreshInterval)
+        do { try await waitForPoll(delay) } catch { return }
+        guard !Task.isCancelled, monitorID == id, owner == store.scope, store.isBound else { return }
+        remaining -= delay
+        // Trade-event reads still happen immediately. Once exposure is open or
+        // unknown, resume fast polling within two seconds.
+      } while remaining > 0 && exposure(in: store) == .empty
     }
   }
 
@@ -176,23 +204,25 @@ final class PositionMarginModel: ObservableObject {
 /// Page-wide horizontal gesture, including controls and blank scroll space.
 struct PositionPageSwipeGesture: UIViewRepresentable {
   var enabled: Bool
-  var onEnd: (Double, Double) -> Void
+  var onSwipe: (Double, Double) -> Void
   func makeUIView(context: Context) -> GestureView {
     let view = GestureView(); view.isUserInteractionEnabled = false
-    view.enabled = enabled; view.onEnd = onEnd
+    view.enabled = enabled; view.onSwipe = onSwipe
     return view
   }
   func updateUIView(_ view: GestureView, context: Context) {
-    view.enabled = enabled; view.onEnd = onEnd
+    view.enabled = enabled; view.onSwipe = onSwipe
   }
   static func dismantleUIView(_ view: GestureView, coordinator: ()) { view.detach() }
 
   final class GestureView: UIView, UIGestureRecognizerDelegate {
     var enabled = false
-    var onEnd: ((Double, Double) -> Void)?
+    var onSwipe: ((Double, Double) -> Void)?
+    private var didSwitchPage = false
+    private var touchOrigin: CGPoint?
     private weak var installedWindow: UIWindow?
     private lazy var pan: UIPanGestureRecognizer = {
-      let gesture = UIPanGestureRecognizer(target: self, action: #selector(ended))
+      let gesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
       gesture.maximumNumberOfTouches = 1
       gesture.delegate = self
       return gesture
@@ -204,7 +234,7 @@ struct PositionPageSwipeGesture: UIViewRepresentable {
       window?.addGestureRecognizer(pan)
     }
     func detach() {
-      installedWindow?.removeGestureRecognizer(pan); installedWindow = nil
+      installedWindow?.removeGestureRecognizer(pan); installedWindow = nil; touchOrigin = nil
     }
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
       guard enabled, window != nil, bounds.contains(pan.location(in: self)) else { return false }
@@ -218,14 +248,26 @@ struct PositionPageSwipeGesture: UIViewRepresentable {
         if current is UISlider || current is UITextField || current is UITextView { return false }
         view = current.superview
       }
+      if pan.numberOfTouches == 0 { touchOrigin = touch.location(in: window) }
       return true
     }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
       shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
-    @objc private func ended(_ gesture: UIPanGestureRecognizer) {
-      guard enabled, gesture.state == .ended else { return }
-      let translation = gesture.translation(in: self)
-      onEnd?(translation.x, translation.y)
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+      if gesture.state == .began { didSwitchPage = false }
+      defer {
+        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed { touchOrigin = nil }
+      }
+      guard enabled, !didSwitchPage,
+        gesture.state == .began || gesture.state == .changed || gesture.state == .ended,
+        let touchOrigin else { return }
+      // Measure from the actual touch-down in fixed window coordinates. The
+      // recognizer's translation can reset when recognition/scrolling begins.
+      let location = gesture.location(in: window)
+      let translation = CGPoint(x: location.x - touchOrigin.x, y: location.y - touchOrigin.y)
+      guard PositionPageSwipe.reachedThreshold(horizontal: translation.x, vertical: translation.y) else { return }
+      didSwitchPage = true
+      onSwipe?(translation.x, translation.y)
     }
   }
 }
@@ -258,15 +300,16 @@ struct PositionMarginBadge: View {
     TimelineView(.periodic(from: .now, by: 1)) { timeline in
       let value = PositionMarginPresentation(snapshot: model.snapshot,
         isCurrent: model.isCurrent(scope: scope, now: timeline.date), exposure: exposure)
+      let fontSize: CGFloat = value.badgePercentText.count > 3 ? 16 : 20
       Button(action: action) {
         HStack(spacing: 2) {
-          Image(systemName: "shield.lefthalf.filled").font(.system(size: 9, weight: .semibold))
+          Image(systemName: "shield.lefthalf.filled").font(.system(size: fontSize, weight: .semibold))
           Text(value.badgePercentText)
-            .font(.system(size: value.badgePercentText.count > 3 ? 16 : 20, weight: .heavy).width(.compressed))
+            .font(.system(size: fontSize, weight: .heavy).width(.compressed))
             .monospacedDigit()
             .lineLimit(1).minimumScaleFactor(0.9)
         }.foregroundStyle(value.level.foreground).padding(.horizontal, 4)
-          .frame(width: value.badgePercentText.count > 3 ? 60 : 52, height: 28)
+          .frame(width: value.badgePercentText.count > 3 ? 74 : 66, height: 28)
           .background(value.level.background, in: RoundedRectangle(cornerRadius: 7))
           .frame(height: 44).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityIdentifier("positions.margin")

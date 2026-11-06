@@ -3573,6 +3573,29 @@ final class WebParityUITests: XCTestCase {
     capture("positions-full-surface-swipes")
   }
 
+  func testShortPositionSwipesStayOnOneSideOfTheScreen() {
+    for options in [[], ["--fixture-empty"]] {
+      launch("positions", options)
+      let position = app.buttons["positions.tabs.positions"]
+      let limits = app.buttons["positions.tabs.limits"]
+      let history = app.buttons["positions.tabs.history"]
+      XCTAssertTrue(position.waitForExistence(timeout: 5))
+      let list = app.scrollViews["positions.list"]
+      func shortSwipe(left: Bool, destination: XCUIElement) {
+        let start = list.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.88 : 0.12, dy: 0.75))
+        let end = start.withOffset(CGVector(dx: left ? -52 : 52, dy: 0))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: destination)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed)
+      }
+      shortSwipe(left: true, destination: limits)
+      shortSwipe(left: true, destination: history)
+      shortSwipe(left: false, destination: limits)
+      shortSwipe(left: false, destination: position)
+    }
+    capture("positions-same-side-short-swipes")
+  }
+
   func testAllPositionTabsRefreshFromEmptyLists() {
     launch("positions", ["--fixture-refresh-lists"])
     for (tab, empty, content) in [
