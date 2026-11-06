@@ -392,3 +392,29 @@ class PositionProfitAlert(models.Model):
     class Meta:
         db_table = "position_profit_alert"
         constraints = [models.UniqueConstraint(fields=["watch", "threshold"], name="uniq_position_profit_threshold")]
+
+
+class PositionMarginWatch(models.Model):
+    """One risk episode stream per immutable account binding and mode."""
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE)
+    scope = models.CharField(max_length=64, unique=True)
+    trading_mode = models.CharField(max_length=16)
+    above_threshold = models.BooleanField(default=False)
+    observed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "position_margin_watch"
+
+
+class PositionMarginAlert(models.Model):
+    """Persisted threshold event and single Echobell delivery attempt."""
+    watch = models.ForeignKey(PositionMarginWatch, on_delete=models.CASCADE, related_name="alerts")
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, default="pending", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    attempted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=80, blank=True, default="")
+
+    class Meta:
+        db_table = "position_margin_alert"

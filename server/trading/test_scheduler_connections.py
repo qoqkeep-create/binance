@@ -20,6 +20,11 @@ class SchedulerConnectionTests(SimpleTestCase):
                 self.assertEqual("prewarm_market_snapshots" in jobs, cdn)
                 self.assertTrue({"sync_limit_orders", "reconcile_order_protection", "reconcile_external_positions",
                                  "lead_sync_limit_orders", "lead_order_protection", "lead_external_positions"} <= jobs)
+                margin = next(call for call in factory.return_value.add_job.call_args_list
+                              if call.kwargs["id"] == "dispatch_margin_alerts")
+                self.assertEqual(margin.args[0], scheduler._dispatch_margin_alerts_job)
+                self.assertEqual(margin.kwargs["trigger"].interval.total_seconds(), 10)
+                self.assertEqual(margin.kwargs["max_instances"], 1)
 
     JOBS = (
         ("_sync_limit_orders_job", "trading.services.sync_all_pending_limit_orders"),
@@ -38,6 +43,7 @@ class SchedulerConnectionTests(SimpleTestCase):
         ("_prewarm_market_snapshots_job", "trading.snapshot_prewarm.prewarm_public_snapshot_caches"),
         ("_balance_cap_cycle_job", "trading.balance_cap.run_capital_reminder_cycle"),
         ("_sync_transfer_history_job", "accounts.transfer_history.sync_all_transfer_histories"),
+        ("_dispatch_margin_alerts_job", "positions.margin_alerts.dispatch_margin_alerts"),
     )
 
     def test_every_business_job_discards_stale_connections_before_and_after_work(self):

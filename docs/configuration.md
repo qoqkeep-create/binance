@@ -36,7 +36,9 @@
 
 Binance REST 请求预算由 `common/binance_rate_limit.py` 与 settings 管理；增加 worker 或缩短轮询不扩大交易所配额。保持保护 / 交易请求的预算优先级。
 
-2026-11-01 新增上表两个公共连接守卫参数，缺省即启用，无新增必填凭证；后续客户端诊断另有 `market_stream.0003_chartloadreport` 迁移，见下文。`collector.py` 仍为历史任务 1 路、统计 6 路，启动和每 5 分钟按容量预热；收线缓冲上限 10,000。`service.HOT_WINDOW_SIZE` 定义窗口，本地已统一上限 1500 根，与 HTTP 单页相同；47.80.22.243（首尔服务器）已随 `7daa362` 同步为 1500，发布状态见 [构建 13／14 排查](market-data.md#构建-1314-速度回退排查2026-11-01)。`history_cache.py` 仍限 64 窗、每窗压缩后最多 256 KiB、TTL 300 秒，不改共享 Redis 的 80 MB / noeviction。冷读增加 300 ms 锁竞争预算和 10 秒 owner lease；上游冷却、轮换及共享预算失败处理见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。同出口其他应用不共享 Redis／key prefix 时仍会消耗总额度，应核对实际出口并预留配额。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN，v2 主题及 API / market 配套发布边界不变。
+2026-11-01 新增上表两个公共连接守卫参数，缺省即启用，无新增必填凭证；后续客户端诊断另有 `market_stream.0003_chartloadreport` 迁移，见下文。`collector.py` 仍为历史任务 1 路、统计 6 路，启动和每 5 分钟按容量预热；收线缓冲上限 10,000。`service.HOT_WINDOW_SIZE` 定义窗口，本地已统一上限 1500 根，与 HTTP 单页相同；47.80.22.243（首尔服务器）已随 `7daa362` 同步为 1500，发布状态见 [构建 13／14 排查](market-data.md#构建-1314-速度回退排查2026-11-01)。`history_cache.py` 当时限 64 窗、每窗压缩后最多 256 KiB、TTL 300 秒，不改共享 Redis 的 80 MB / noeviction（两项均已于 2026-11-06 调整，见下段）。冷读增加 300 ms 锁竞争预算和 10 秒 owner lease；上游冷却、轮换及共享预算失败处理见 [行情](market-data.md#读取协调与出口保护2026-11-01本地)。同出口其他应用不共享 Redis／key prefix 时仍会消耗总额度，应核对实际出口并预留配额。`MARKET_SNAPSHOT_PREWARM_ENABLED` 仍只控制旧 Web CDN，v2 主题及 API / market 配套发布边界不变。
+
+2026-11-06 首屏提速调整（本地实现，未部署）：`history_cache.MAX_WINDOWS` 64→192（单窗 256 KiB、TTL 300 秒不变）；`compose.integrated.yaml` Redis `maxmemory` 80mb→256mb、`mem_limit` 128m→320m，仍 `noeviction`＋AOF，部署需重建 redis 容器。`/api/market/klines` 压缩从 Django `@gzip_page` 移交宿主 nginx（`deploy/integrated/nginx-location.conf` 内 `gzip on / gzip_proxied any / gzip_comp_level 5 / gzip_types application/json / gzip_vary on`），部署时必须同步该 snippet，否则响应暂为未压缩。首屏 stale／缺口的请求内同步补齐无新增 env，约束为代码内固定常量：一页 ≤1500 根、4 秒超时、每 symbol／interval 30 秒冷却、normal 优先级预算、上游冷却期跳过。详见 [行情](market-data.md#首屏同步补齐与传输调整2026-11-06-本地)。
 
 ## 可选能力
 
@@ -83,10 +85,13 @@ SMTP 的 `EMAIL_*`、通知的 `EXTERNAL_TRADE_SIGNAL_*` / `MARKET_ANALYSIS_ALER
 | `APNS_BUNDLE_ID` | 固定为整合应用 `com.waibao2025.trade.integrated`，注册及 topic 需匹配 |
 | `POSITION_PROFIT_CALL_ENABLED` | 原 USDT 浮盈 Echobell 监控／投递，默认 false |
 | `POSITION_PROFIT_CALL_USER_ID` | 整合数据库中的接收用户，默认 0；迁移时按身份核对，不能照搬旧库主键 |
-| `POSITION_PROFIT_CALL_URL` | 沿用旧 Echobell 通道，仅存受限环境文件 |
+| `POSITION_PROFIT_CALL_URL` | 既有 Echobell 通道，浮盈和保证金共享，仅存受限环境文件 |
+| `POSITION_MARGIN_CALL_ENABLED` | 独立保证金 Echobell 后台检查，默认 true；复用上述指定用户／通道，用户 0 时不工作，严格 >75% 的持仓账户触发；本轮源码尚未部署 |
 | `SIGNAL_ECHOBELL_ENABLED`（已退役） | 2026-11-03 起普通信号固定只走 App APNs，旧环境即使保留 true 也不入队／发送 Echo；浮盈仍由独立开关控制 |
 
 p8 只挂载到 scheduler，不进入镜像或 Git；部署前创建来源目录，限制目录访问并确保容器 UID 10001 可读该文件，例如通过专用所有者／组和文件 0400／0440 权限。不能用向所有用户开放私钥的方式修权限。APNs 的 Key 可属于既有团队，但 topic、描述文件和客户端签名环境必须对应整合应用。
+
+保证金监控另需新增 `positions.0030_position_margin_alerts`，不修改已有订单／资金表。它与浮盈共用通道冷却但开关独立，迁移与上线规则见 [通知](signals-and-notifications.md#保证金-echobell-与-app-币种导航2026-11-06本地)。本轮未变更任何运行环境或通道凭证。
 
 完整 App／浮盈通知部署需先应用 `mobile.0002` 与 `positions.0029` 两个仅新增模型的 migration；仅 App 注册／派发限定包只依赖已应用的 `mobile.0002`，不加载浮盈模型和任务。回滚到旧代码可以保留新增表，代码回滚不还原数据库，也不重放已尝试通知。
 

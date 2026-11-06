@@ -4,6 +4,7 @@ import ObjectiveC
 
 struct RootView: View {
     @EnvironmentObject private var authStore: AuthStore
+    @EnvironmentObject private var notifications: StrategySignalNotificationManager
 
     var body: some View {
         ZStack {
@@ -18,6 +19,9 @@ struct RootView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: stateIdentifier)
         .background(KeyboardDismissGestureInstaller())
+        .onChange(of: stateIdentifier, initial: true) { _, state in
+            if state == 1 { notifications.deactivateSession() }
+        }
         .task {
             if case .restoring = authStore.state {
                 await authStore.restore()
@@ -98,9 +102,16 @@ private struct MainAppView: View {
         }
         .onChange(of: notifications.navigationRequest, initial: true) { _, request in
             guard let request, let userID = container.authStore.session?.user.id else { return }
+            guard request.recipientUserID == nil || request.recipientUserID == userID else {
+                notifications.consumeNavigationRequest(request.id)
+                return
+            }
             store.prepareSession(userID: userID, signalReadNamespace: container.baseURL.absoluteString)
             switch request.destination {
             case .strategy(let signal): openChart(signal.symbol, signal.interval)
+            case .chart(let symbol, let interval, let tradingMode):
+                if let tradingMode, tradingMode != store.mode { store.switchMode(tradingMode) }
+                openChart(symbol, interval)
             case .positions(let tradingMode):
                 if let tradingMode, tradingMode != store.mode { store.switchMode(tradingMode) }
                 selectedMarket = nil

@@ -667,11 +667,26 @@ class ApiBindingTests(APITestCase):
         resp = self.client.get("/v1/api/info")
 
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(resp.data["data"], {"alias": "main-api", "status": 1})
+        self.assertEqual(resp.data["data"], {"alias": "main-api", "status": 1,
+                                            "api_key_masked": "kkkkk**kkkkk"})
         self.assertNotIn("api_key", resp.data["data"])
-        self.assertNotIn("api_key_masked", resp.data["data"])
         self.assertNotIn("secret_key", resp.data["data"])
         mock_validate.assert_not_called()
+
+    def test_api_key_label_is_bounded_and_never_reveals_entire_short_key(self):
+        binding = ApiBinding.objects.create(user=self.user, api_key=aes_encrypt("fixture"),
+            secret_key=aes_encrypt("secret-fixture"), alias="label", status=1)
+        for key, expected in (("a", "**"), ("ab", "**"), ("abc", "a**c"),
+                              ("abcdefghijk", "abcde**ghijk"), ("A" * 64, "AAAAA**AAAAA")):
+            binding.api_key = aes_encrypt(key)
+            binding.save(update_fields=["api_key"])
+            data = self.client.get("/v1/api/info").data["data"]
+            self.assertEqual(data["api_key_masked"], expected)
+            self.assertLessEqual(len(data["api_key_masked"]), 12)
+            self.assertNotIn("secret-fixture", str(data))
+        binding.api_key = "invalid-ciphertext"
+        binding.save(update_fields=["api_key"])
+        self.assertEqual(self.client.get("/v1/api/info").data["data"]["api_key_masked"], "**")
 
     @patch("api_bindings.views.validate_binance_binding")
     def test_bind_allows_same_account_alias_from_other_user(self, mock_validate):

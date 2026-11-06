@@ -150,12 +150,14 @@ final class AppContainer: ObservableObject {
 
 enum SignalNotificationDestination: Equatable, Sendable {
     case strategy(StrategySignal)
+    case chart(symbol: String, interval: String, tradingMode: String?)
     case positions(tradingMode: String?)
 }
 
 struct SignalNotificationNavigationRequest: Equatable, Sendable {
     let id: UUID
     let destination: SignalNotificationDestination
+    var recipientUserID: String? = nil
 }
 
 @MainActor
@@ -177,6 +179,7 @@ final class StrategySignalNotificationManager:
     private let apiClient: any APIClient
     private let installationID: String
     private var isSessionActive = false
+    private var acceptsLaunchNavigation = true
     private var deviceTokenObserver: NSObjectProtocol?
     private var registrationFailureObserver: NSObjectProtocol?
     private var registrationTask: Task<Void, Never>?
@@ -240,6 +243,7 @@ final class StrategySignalNotificationManager:
 
     func activateSession() {
         isSessionActive = true
+        acceptsLaunchNavigation = true
         if isEnabled {
             scheduleAuthorization()
         } else {
@@ -249,6 +253,8 @@ final class StrategySignalNotificationManager:
 
     func deactivateSession() {
         isSessionActive = false
+        acceptsLaunchNavigation = false
+        navigationRequest = nil
         registrationTask?.cancel()
         registrationTask = nil
         authorizationTask?.cancel()
@@ -258,6 +264,7 @@ final class StrategySignalNotificationManager:
     }
 
     func setEnabled(_ enabled: Bool) {
+        if !enabled { navigationRequest = nil }
         userDefaults.set(enabled, forKey: Self.enabledDefaultsKey)
         isEnabled = enabled
         if enabled {
@@ -313,17 +320,21 @@ final class StrategySignalNotificationManager:
         let destination = Self.destination(
             from: response.notification.request.content.userInfo
         )
+        let recipient = response.notification.request.content.userInfo["recipientUserId"] as? String
         completionHandler()
         guard let destination else { return }
 
         Task { @MainActor [weak self] in
-            guard let self, self.isEnabled, self.isSessionActive else { return }
-            if case .strategy = destination { self.recordSignalReceipt() }
-            self.navigationRequest = SignalNotificationNavigationRequest(
-                id: UUID(),
-                destination: destination
-            )
+            self?.handleNavigation(destination, recipientUserID: recipient)
         }
+    }
+
+    private func handleNavigation(_ destination: SignalNotificationDestination, recipientUserID: String?) {
+        // Preserve a cold-launch tap until session restoration creates MainAppView.
+        guard isEnabled, isSessionActive || acceptsLaunchNavigation else { return }
+        if case .strategy = destination { recordSignalReceipt() }
+        navigationRequest = SignalNotificationNavigationRequest(
+            id: UUID(), destination: destination, recipientUserID: recipientUserID)
     }
 
     nonisolated static func destination(
@@ -333,7 +344,11 @@ final class StrategySignalNotificationManager:
         switch userInfo["route"] as? String {
         case "trade.notification":
             let mode = userInfo["tradingMode"] as? String
-            return .positions(tradingMode: mode.flatMap { ["ordinary", "lead"].contains($0) ? $0 : nil })
+            let tradingMode = mode.flatMap { ["ordinary", "lead"].contains($0) ? $0 : nil }
+            if let symbol = chartSymbol(userInfo["symbol"]) {
+                return .chart(symbol: symbol, interval: userInfo["interval"] as? String ?? "1h", tradingMode: tradingMode)
+            }
+            return .positions(tradingMode: tradingMode)
         case "strategy.signal":
             guard let signal = signal(from: userInfo) else { return nil }
             return .strategy(signal)
@@ -348,6 +363,13 @@ final class StrategySignalNotificationManager:
             && !["external", "tradingview", "tv"].contains(source ?? "")
     }
 
+    nonisolated private static func chartSymbol(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let symbol = value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard symbol.range(of: "^[A-Z0-9]{1,24}USDT$", options: .regularExpression) != nil else { return nil }
+        return symbol
+    }
+
     private func recordSignalReceipt() {
         guard isSessionActive else { return }
         signalReceiptRevision += 1
@@ -360,7 +382,7 @@ final class StrategySignalNotificationManager:
               userInfo["route"] as? String == "strategy.signal",
               let idValue = userInfo["id"] as? String,
               let id = UUID(uuidString: idValue),
-              let symbol = userInfo["symbol"] as? String,
+              let symbol = chartSymbol(userInfo["symbol"]),
               let strategyName = userInfo["strategyName"] as? String,
               let directionValue = userInfo["direction"] as? String,
               let direction = StrategySignal.Direction(

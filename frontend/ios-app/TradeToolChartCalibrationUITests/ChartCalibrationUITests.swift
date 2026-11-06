@@ -3299,7 +3299,7 @@ final class WebParityUITests: XCTestCase {
     let tradeFooter = app.buttons["stop-loss.submit"].frame
     capture("trade-shared-stop-loss")
     app.buttons["关闭"].firstMatch.tap()
-    app.buttons["我的"].firstMatch.tap()
+    launch("profile", ["--fixture-unbound"])
     let bind = app.buttons["profile.bind"]
     let avatar = app.descendants(matching: .any)["profile.avatar"].firstMatch
     XCTAssertTrue(bind.waitForExistence(timeout: 5))
@@ -3318,6 +3318,35 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.sliders["stop-loss.percentage"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["stop-loss.submit"].frame.height, tradeFooter.height, accuracy: 1)
     XCTAssertEqual(app.buttons["stop-loss.submit"].frame.maxY, tradeFooter.maxY, accuracy: 1)
+  }
+
+  func testAccountInitialIgnoresBindingAndMaskedKeyIsCompact() {
+    for unbound in [false, true] {
+      launch("profile", unbound ? ["--fixture-unbound"] : [])
+      let avatar = app.descendants(matching: .any)["profile.avatar"].firstMatch
+      XCTAssertTrue(avatar.waitForExistence(timeout: 5))
+      let ready = NSPredicate(format: "value == %@", "V")
+      expectation(for: ready, evaluatedWith: avatar)
+      waitForExpectations(timeout: 5)
+      if !unbound {
+        let key = app.staticTexts["profile.apiKeyLabel"]
+        XCTAssertTrue(key.waitForExistence(timeout: 5))
+        XCTAssertEqual(key.label, "abcde**vwxyz")
+        XCTAssertLessThanOrEqual(key.label.count, 12)
+        XCTAssertLessThan(key.frame.maxX, app.buttons["解除 API 绑定"].frame.minX)
+      }
+      capture(unbound ? "profile-account-initial-unbound" : "profile-account-initial-bound")
+    }
+  }
+
+  func testRegistrationControlOnlyAppearsForOperator() {
+    launch("settings")
+    XCTAssertTrue(app.descendants(matching: .any)["settings.notifications"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.descendants(matching: .any)["settings.registration"].firstMatch.exists)
+    launch("settings", ["--fixture-registration-operator"])
+    XCTAssertTrue(app.descendants(matching: .any)["settings.registration"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["开启注册"].exists)
+    capture("settings-registration-operator")
   }
 
   func testAllUnboundPositionTabsOnlyShowBindingPrompt() {
@@ -3449,6 +3478,7 @@ final class WebParityUITests: XCTestCase {
       }
     }
     XCTAssertLessThan(frames[2].maxX - frames[0].minX, 225, "Keep the tab strip compact")
+    XCTAssertGreaterThanOrEqual(frames[0].minX - app.otherElements["positions.header"].frame.minX, 16)
     capture("positions-compact-stable-tabs")
   }
 

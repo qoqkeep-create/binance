@@ -382,6 +382,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-open") {
         value = .object(["open_registration": .bool(true)])
       }
+      if request.path == "/v1/auth/admin-settings",
+        ProcessInfo.processInfo.arguments.contains("--fixture-registration-operator") {
+        value = .object(["open_registration": .bool(false), "is_admin": .bool(true)])
+      }
       if request.path == "/v1/trade/tradingview/signals",
         ProcessInfo.processInfo.arguments.contains("--fixture-page-state"),
         let sample = value.rows.first {
@@ -482,6 +486,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         "/v1/api/info": {
           "id": 1,
           "alias": "视觉校准",
+          "api_key_masked": "abcde**vwxyz",
           "status": 1
         },
         "/v1/account/info": {
@@ -784,11 +789,27 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       """#
   }
 
+  private struct WebParityFixtureAuthenticationService: AuthenticationService {
+    func storedSession() throws -> AuthSession? {
+      AuthSession(accessToken: "visual-fixture-only", user: AuthUser(id: "_web_visual_fixture",
+        email: ProcessInfo.processInfo.arguments.contains("--fixture-registration-operator")
+          ? "qqqqqq@qq.com" : "visual@example.com", displayName: "视觉校准",
+        canViewReferenceNotifications: false))
+    }
+    func refresh(_ session: AuthSession) async throws -> AuthSession { session }
+    func clearStoredSession() throws {}
+    func login(account: String, password: String) async throws -> AuthSession { throw APIError.invalidResponse }
+    func register(account: String, password: String) async throws -> AuthSession { throw APIError.invalidResponse }
+    func logout() async {}
+  }
+
   private struct WebParityFixtureView: View {
     @StateObject private var container = AppContainer(
       baseURL: URL(string: "http://127.0.0.1:1/")!, bundleIdentifier: "com.riskon.visual-fixture")
     @StateObject private var store = USDTStore(api: WebParityFixtureAPI())
     @StateObject private var livePositions = PositionLiveActivityController()
+    @StateObject private var fixtureAuth = AuthStore(
+      service: WebParityFixtureAuthenticationService(), toastCenter: AppToastCenter())
     @StateObject private var dashboard = DashboardViewModel(markets: [
       MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 68000, changePercent24h: 1, updatedAt: .now),
       MarketSnapshot(symbol: "ETHUSDT", quoteAsset: "USDT", price: 2600, changePercent24h: 2, updatedAt: .now),
@@ -825,12 +846,14 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       .floatingPositionsOverlay()
       .globalAPIToasts(using: container.toastCenter)
-      .environmentObject(container).environmentObject(container.authStore).environmentObject(
+      .environmentObject(container).environmentObject(page == "login" ? container.authStore : fixtureAuth).environmentObject(
         container.toastCenter
       ).environmentObject(store).environmentObject(dashboard)
       .environmentObject(livePositions)
+      .environmentObject(container.strategySignalNotifications)
       .preferredColorScheme(dark ? .dark : .light)
       .task {
+        if page != "login" { await fixtureAuth.restore() }
         FloatingPositionsPreferences.defaults.set(false, forKey: FloatingPositionsPreferences.enabledKey)
         FloatingPositionsPreferences.defaults.set(1.0, forKey: "integrated.floatingPositions.x")
         FloatingPositionsPreferences.defaults.set(0.22, forKey: "integrated.floatingPositions.y")

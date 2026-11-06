@@ -29,7 +29,7 @@ from users.serializers import (
     RegisterSerializer,
 )
 
-# 管理员权限基于 User.is_admin 标志位（迁移 0006 种子初始管理员），不再硬编码邮箱
+REGISTRATION_OPERATOR_EMAIL = "qqqqqq@qq.com"
 
 
 logger = logging.getLogger(__name__)
@@ -427,12 +427,14 @@ class PasswordResetConfirmView(APIView):
 
 class AdminSettingsView(APIView):
     """管理员设置：GET 允许匿名读取开放注册状态（注册页需展示提示）；
-    仅带 is_admin 标志的账号可写，POST 修改开放注册开关"""
+    仅指定的有效登录账号可修改开放注册，不继承其他管理员权限。"""
 
     permission_classes = [AllowAny]
 
     def _is_admin(self, request) -> bool:
-        return bool(getattr(request.user, "is_admin", False))
+        user = request.user
+        return bool(user.is_authenticated and user.is_active
+                    and user.email == REGISTRATION_OPERATOR_EMAIL)
 
     def get(self, request):
         is_admin = self._is_admin(request)

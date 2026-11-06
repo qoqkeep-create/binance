@@ -343,3 +343,5 @@ LIVE_ACTIVITIES_ENABLED = os.getenv('LIVE_ACTIVITIES_ENABLED', 'False').lower() 
 POSITION_PROFIT_CALL_ENABLED = os.getenv('POSITION_PROFIT_CALL_ENABLED', 'False').lower() == 'true'
 POSITION_PROFIT_CALL_USER_ID = int(os.getenv('POSITION_PROFIT_CALL_USER_ID', '0') or '0')
 POSITION_PROFIT_CALL_URL = os.getenv('POSITION_PROFIT_CALL_URL', '').strip()
+# Reuse the explicitly configured single-user channel, independently of profit alerts.
+POSITION_MARGIN_CALL_ENABLED = os.getenv('POSITION_MARGIN_CALL_ENABLED', 'True').lower() == 'true'

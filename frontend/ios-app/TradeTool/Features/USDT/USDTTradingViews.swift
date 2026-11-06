@@ -730,6 +730,7 @@ struct USDTPositionsView: View {
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment, compact: true)
           .frame(maxWidth: 248).frame(height: 44)
+          .padding(.leading, 8)
         Spacer(minLength: 0)
         PositionMarginBadge(model: margin, scope: store.scope, exposure: margin.exposure(in: store)) {
           marginDetails = true

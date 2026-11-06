@@ -99,6 +99,7 @@ class TradeNotificationTemplateTests(SimpleTestCase):
         enqueue.assert_called_once()
         self.assertEqual(enqueue.call_args.kwargs["user_id"], 42)
         self.assertEqual(enqueue.call_args.kwargs["payload"]["route"], "trade.notification")
+        self.assertEqual(enqueue.call_args.kwargs["payload"]["recipientUserId"], "42")
         self.assertEqual(enqueue.call_args.kwargs["payload"]["aps"]["alert"]["title"], "开单成功")
         urlopen.assert_not_called()
 

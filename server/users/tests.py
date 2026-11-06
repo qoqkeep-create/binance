@@ -175,9 +175,8 @@ class AuthApiTests(APITestCase):
         self.assertEqual(first.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(blocked.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
-    def test_admin_settings_toggle_only_for_admin_flag(self):
-        # 管理员基于 is_admin 标志位，而非邮箱硬编码
-        admin = User.objects.create_user(email="admin@example.com", password="123456", is_admin=True)
+    def test_admin_settings_toggle_only_for_designated_account(self):
+        admin = User.objects.create_user(email="QQQQQQ@QQ.COM", password="123456")
         other = User.objects.create_user(email="other@example.com", password="123456")
 
         # 非管理员：看不到开关，也无权修改
@@ -196,8 +195,21 @@ class AuthApiTests(APITestCase):
         self.assertEqual(closed.status_code, status.HTTP_200_OK)
         self.assertFalse(SystemSetting.is_open_registration())
 
+    def test_other_administrators_and_anonymous_cannot_change_registration(self):
+        SystemSetting.set_open_registration(False)
+        for fields in ({"is_admin": True}, {"is_staff": True, "is_superuser": True}):
+            user = User.objects.create_user(email=f"admin{len(fields)}@example.com", password="test", **fields)
+            self.client.force_authenticate(user)
+            self.assertFalse(self.client.get("/v1/auth/admin-settings").data["data"]["is_admin"])
+            self.assertEqual(self.client.post("/v1/auth/admin-settings", {"open_registration": True},
+                                              format="json").status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.post("/v1/auth/admin-settings", {"open_registration": True},
+                                          format="json").status_code, 403)
+        self.assertFalse(self.client.get("/v1/auth/admin-settings").data["data"]["open_registration"])
+
     def test_admin_settings_rejects_string_false(self):
-        admin = User.objects.create_user(email="strict-admin@example.com", password="123456", is_admin=True)
+        admin = User.objects.create_user(email="qqqqqq@qq.com", password="123456")
         self.client.force_authenticate(admin)
         response = self.client.post(
             "/v1/auth/admin-settings",
@@ -214,7 +226,7 @@ class AuthApiTests(APITestCase):
                 self.assertEqual(response.data["message"], "请求参数必须是对象")
 
     def test_admin_settings_rejects_json_array(self):
-        admin = User.objects.create_user(email="array-admin@example.com", password="123456", is_admin=True)
+        admin = User.objects.create_user(email="qqqqqq@qq.com", password="123456")
         self.client.force_authenticate(admin)
 
         response = self.client.post("/v1/auth/admin-settings", [], format="json")

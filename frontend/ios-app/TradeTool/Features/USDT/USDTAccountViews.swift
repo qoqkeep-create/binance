@@ -19,16 +19,12 @@ struct USDTProfileView: View {
       VStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 0) {
           HStack(alignment: .center, spacing: 8) {
-            AsyncImage(url: store.isBound ? URL(string: store.profile.value("avatar_url", fallback: "")) : nil) { phase in
-              if let image = phase.image {
-                image.resizable().scaledToFill()
-              } else {
-                RoundedRectangle(cornerRadius: 14).fill(WebTheme.gradient).overlay {
-                  Text("B").font(.system(size: 20, weight: .bold)).foregroundStyle(.black)
-                }
-              }
-            }.frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 14))
-              .accessibilityLabel("头像").accessibilityIdentifier("profile.avatar")
+            RoundedRectangle(cornerRadius: 14).fill(WebTheme.gradient).overlay {
+              Text(String((auth.session?.user.email ?? "").prefix(1)).uppercased())
+                .font(.system(size: 20, weight: .bold)).foregroundStyle(.black)
+            }.frame(width: 48, height: 48)
+              .accessibilityLabel("账号头像").accessibilityIdentifier("profile.avatar")
+              .accessibilityValue(String((auth.session?.user.email ?? "").prefix(1)).uppercased())
             if store.isBound {
               VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
@@ -41,8 +37,13 @@ struct USDTProfileView: View {
                     .background(WebTheme.brand.opacity(0.1), in: Capsule()).fixedSize()
                     .accessibilityIdentifier("profile.accountType")
                 }.frame(minHeight: 20)
-                Button("解除 API 绑定") { binding = true }.font(.system(size: 12)).underline()
-                  .foregroundStyle(WebTheme.danger).frame(height: 28)
+                HStack(spacing: 8) {
+                  Text(store.binding.value("api_key_masked", fallback: "**"))
+                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(WebTheme.secondary)
+                    .lineLimit(1).accessibilityIdentifier("profile.apiKeyLabel")
+                  Button("解除 API 绑定") { binding = true }.font(.system(size: 12)).underline()
+                    .foregroundStyle(WebTheme.danger)
+                }.frame(height: 28)
               }
             }
             if !store.isBound {
@@ -1147,17 +1148,19 @@ struct USDTSettingsView: View {
           WebLabel("管理员", "gearshape").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
           HStack {
             VStack(alignment: .leading, spacing: 4) {
-              Text("开放注册").font(.system(size: 16, weight: .medium))
+              Text("开启注册").font(.system(size: 16, weight: .medium))
               Text("开启后其他用户可以注册新账号；关闭后注册将被拒绝").font(.system(size: 12)).foregroundStyle(
                 WebTheme.muted)
             }
-            Toggle("开放注册", isOn: Binding(get: { enabled }, set: { value in save(value) }))
+            Toggle("开启注册", isOn: Binding(get: { enabled }, set: { value in save(value) }))
               .labelsHidden().toggleStyle(WebSwitchStyle()).frame(width: 48).disabled(saving)
+              .accessibilityIdentifier("settings.registration")
           }
         }
       }
       USDTNotice(text: notice)
-    }.usdtPage("设置").task {
+    }.usdtPage("设置").task(id: store.scope) {
+      isAdmin = false
       await notifications.refreshAuthorizationStatus()
       if let result = try? await store.get("/v1/auth/admin-settings") {
         isAdmin = result["is_admin"]?.flag ?? false

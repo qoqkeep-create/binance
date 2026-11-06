@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from positions.models import Order, PositionProfitAlert, PositionProfitWatch
 from positions.profit_alerts import (THRESHOLDS, claim_profit_alert, dispatch_profit_alerts,
     observe_profit_alerts, send_echobell, scan_profit_alerts, load_live_profit_orders)
@@ -70,6 +71,17 @@ class ProfitAlertTests(TestCase):
         self.order.realized_pnl = Decimal('500')
         observe_profit_alerts(self.live('8'))
         self.assertEqual(PositionProfitAlert.objects.count(), 0)
+
+    def test_margin_attempt_also_throttles_profit_channel(self):
+        from positions.models import PositionMarginAlert, PositionMarginWatch
+        watch = PositionMarginWatch.objects.create(user=self.user, scope="f" * 64, trading_mode="ordinary")
+        margin = PositionMarginAlert.objects.create(watch=watch, status="unknown", attempted_at=timezone.now())
+        observe_profit_alerts(self.live())
+        alert = PositionProfitAlert.objects.get()
+        self.assertIsNone(claim_profit_alert(alert.pk))
+        margin.attempted_at -= timedelta(seconds=61)
+        margin.save(update_fields=["attempted_at"])
+        self.assertIsNotNone(claim_profit_alert(alert.pk))
 
     @patch('positions.profit_alerts.load_live_profit_orders')
     @patch('positions.profit_alerts.send_echobell')

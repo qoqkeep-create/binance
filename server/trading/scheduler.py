@@ -153,6 +153,15 @@ def _dispatch_mobile_notifications_job():
 
 
 @_with_database_connections
+def _dispatch_margin_alerts_job():
+    from positions.margin_alerts import dispatch_margin_alerts
+    try:
+        dispatch_margin_alerts()
+    except Exception as exc:
+        logger.warning('margin notification job failed error_type=%s', type(exc).__name__)
+
+
+@_with_database_connections
 def _dispatch_live_activities_job():
     """Read-only position snapshots; never calls the trading/protection workers."""
     from mobile.live_activities import dispatch_live_activities
@@ -401,6 +410,11 @@ def start_scheduler():
         _dispatch_mobile_notifications_job, trigger=IntervalTrigger(seconds=10),
         id='dispatch_mobile_notifications', name='iOS信号与浮盈通知', replace_existing=True,
         next_run_time=now + timedelta(seconds=8), max_instances=1, coalesce=True,
+    )
+    _scheduler.add_job(
+        _dispatch_margin_alerts_job, trigger=IntervalTrigger(seconds=10),
+        id='dispatch_margin_alerts', name='保证金风险通知', replace_existing=True,
+        next_run_time=now + timedelta(seconds=10), max_instances=1, coalesce=True,
     )
 
     if getattr(settings, 'LIVE_ACTIVITIES_ENABLED', False):

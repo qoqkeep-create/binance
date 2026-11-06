@@ -2,6 +2,35 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 首屏同步补齐与传输调整（2026-11-06，本地）
+
+按 [行情](market-data.md#首屏同步补齐与传输调整2026-11-06-本地) 实施三项服务端改动：`load_history` 对最新窗 stale／缺口做一次有界同步补线（`service.sync_backfill` → `repair.fetch_page`，一页 ≤1500 根、4 秒超时、30 秒冷却键合并、normal 预算、上游冷却跳过，失败回落持久任务）；`history_cache.MAX_WINDOWS` 64→192 并同步扩大 Compose Redis 配额（256mb／320m）；`KlinesView` 移除 `@gzip_page`，压缩移交 `deploy/integrated/nginx-location.conf` 的 gzip（level 5）。WSS 认证／ack 审查后不改，理由见行情文档。
+
+测试按新契约改写：stale 尾部在首个请求内治愈且冷却期内不二次外呼（`test_stale_tail_is_healed_within_the_first_request`）、空读一次外呼失败后由冷却合并到后台（`test_empty_read_falls_back_to_the_worker_and_coalesces`）、API 降级仍返回 pending（`test_api_degrades_to_pending_history_and_reports_timing`）、压缩断言移交代理（`test_history_response_leaves_wire_compression_to_the_proxy`）、5m 部分桶测试显式替身外呼。隔离回归（禁外网运行器）**`market_stream` 114 项通过（6.803 秒，0 跳过）、`common`＋`trading` 574 项通过（193.618 秒，0 跳过）**；日志在 `.integration-runtime/SyncBackfillNov6/`：
+
+```bash
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py market_stream
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py common trading
+```
+
+仅本地实现与验证，未推送、未部署 47.80.22.243（首尔服务器）；无数据库迁移、无新 env、无客户端／协议字段变更。部署时须重建 redis 容器（内存配额）并同步宿主 nginx snippet（gzip），否则分别回退为 64 窗竞争风险和未压缩响应；真机首屏收益待部署后用 `ChartLoadReport` 阶段数据验证。
+
+## 账户入口与保证金通知（2026-11-06，本地）
+
+账号头像／短 Key／指定邮箱注册权限见 [认证](ios-authentication.md#账户标识与注册权限2026-11-06本地)，保证金独立监控、通道去重与通知路由见 [通知](signals-and-notifications.md#保证金-echobell-与-app-币种导航2026-11-06本地)。验证证据集中在忽略目录 `.integration-runtime/AccountRiskNov6/`，没有真实通知、邮件、交易、资金或保护单操作。
+
+后端隔离回归 **164 项通过**（`backend-final.log`），涵盖注册权限（含其他管理员／匿名拒绝）、布尔输入、脱敏 Key 长度及短值／损坏密文、严格 Decimal >75%、持续超限去重、回落重新武装、空仓／非正权益／不支持模式、过期和迟到快照、绑定代际／停用／用户／模式隔离、跨浮盈通道冷却、锁外发送、失败／超时不重拨、独立 scheduler 注册和连接清理。SQLite 从空库应用到 `positions.0030`；`makemigrations --check --dry-run` 无遗漏。运行命令：
+
+```bash
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py users.tests api_bindings.tests positions.test_margin_alerts positions.test_profit_alerts positions.test_margin positions.test_notifications mobile.test_push trading.test_scheduler_connections trading.test_external_scheduler
+python3 frontend/ios-app/scripts/test_notification_preferences.py .integration-runtime/AccountRiskNov6/Notifications
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/AccountRiskNov6/MarginHost
+```
+
+通知实际 manager／导航模型 host **12 项通过**：结构化币种和模式、非法币种回退、旧外部来源拒绝、冷启动保留／消费、退出及关闭清空。保证金 Store／模型／实际 Header host **19 项通过，含 72 组 320／393／440 pt、双主题和页签状态布局**；已打开查看渲染。系统 UI 使用 DEBUG 静态 API 和独立内存认证会话，不使用生产 Keychain；Release 不包含这些替身。主 App／Widget generic iOS 无签名 **Release 构建通过**，日志 `release.log`。
+
+首轮 UI 中账号头像／短 Key 用例通过；另两项因 Switch 被按 Button 查询、独立 trade fixture 未提供底栏而失败，已修正测试入口与控件查询，不将首轮记为全通过。最终 **4 项系统 UI 全部通过**（`ui-final.log` / `AccountUIFinal.xcresult`）：绑定／未绑定头像一致、短 Key 与按钮排布、仅指定账号展示注册控件、持仓页签右移及切换固定槽位，另回归共用止损面板和未绑定头部。已查看导出的账号、注册设置及持仓截图。本轮仅本地提交，未推送／部署／上传 TestFlight；真实设备的后台通知点击和 Echo 自动提醒待后续发布验收。
+
 ## 持仓紧凑切页与保证金双卡片（2026-11-06）
 
 原空账户回归在旧实现中复现 `00% != 0%`，日志 `.integration-runtime/position-margin-tabs-baseline.log`。本轮保留滚动宿主、惰性构建列表、固定紧凑页签槽宽，并区分确认空仓／有仓／未知；现行显示及金额口径见 [页面](ios-web-parity.md#保证金徽标与手势切页2026-11-05本地)和[资金](capital-and-transfers.md#持仓页保证金率2026-11-05本地实现)。

@@ -16,7 +16,7 @@ from api_bindings.services import (
 from common.binance import BinanceApiError, BinanceCredentials, BinanceFuturesClient, validate_binance_binding
 from common.errors import safe_error_summary
 from common.response import fail, ok
-from common.utils import aes_encrypt
+from common.utils import aes_decrypt, aes_encrypt
 from common.trading_mode import TradingMode, request_trading_mode
 from trading.locks import (
     api_binding_lifecycle_lock,
@@ -126,10 +126,21 @@ class ApiInfoView(APIView):
                 validation_error = exc
             status = apply_manual_validation_result(binding, validation_error)
 
+        # Only a short label leaves the server; even short fixture keys must
+        # retain an undisclosed middle, and corrupt credentials stay hidden.
+        masked_key = "**"
+        try:
+            key = aes_decrypt(binding.api_key)
+            edge = min(5, (len(key) - 1) // 2)
+            if edge > 0:
+                masked_key = key[:edge] + "**" + key[-edge:]
+        except Exception:
+            pass
         return ok(
             data={
                 "alias": binding.alias,
                 "status": status,
+                "api_key_masked": masked_key,
             }
         )
 

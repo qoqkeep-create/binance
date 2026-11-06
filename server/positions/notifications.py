@@ -232,7 +232,8 @@ def send_trade_notification(payload: dict[str, Any], *, recipient_user_id: Optio
         context = {}
     app_payload = {"aps": {"alert": {"title": payload["title"], "body": payload["content"]},
             "sound": "default"}, "route": "trade.notification",
-        "eventId": event_key, "type": payload["type"], **context}
+        "eventId": event_key, "type": payload["type"],
+        "recipientUserId": str(recipient_user_id), **context}
     enqueue_app_notification(event_key=event_key, payload=app_payload, user_id=recipient_user_id)
     return {"ok": True, "queued": True}
 

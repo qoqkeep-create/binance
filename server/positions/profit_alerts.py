@@ -188,8 +188,8 @@ def claim_profit_alert(alert_id, *, current_pnl=None):
                 status='cancelled', last_error='binding_changed')
             return None
         now = timezone.now()
-        if PositionProfitAlert.objects.filter(watch__order__user_id=user_id,
-                attempted_at__gt=now-timedelta(seconds=CALL_INTERVAL_SECONDS)).exists():
+        from positions.margin_alerts import channel_on_cooldown
+        if channel_on_cooldown(user_id, now):
             return None
         pnl = _decimal(current_pnl if current_pnl is not None else alert.observed_pnl)
         risk = alert.watch.risk_amount

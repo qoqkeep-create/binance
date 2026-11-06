@@ -42,7 +42,8 @@ def generate(destination):
     manager = manager.replace('private(set) ', '').replace('private ', '')
     manager += '\n' + block(source, 'private struct PushDeviceRegistrationBody:').replace('private ', '')
     manager += '\n' + block(source, 'private struct PushDeviceIdentityBody:').replace('private ', '')
-    (out / 'Sources/NotificationChecks/Manager.swift').write_text('import Foundation\nimport Combine\n' + manager + '\n')
+    navigation = block(source, 'enum SignalNotificationDestination:') + '\n' + block(source, 'struct SignalNotificationNavigationRequest:')
+    (out / 'Sources/NotificationChecks/Manager.swift').write_text('import Foundation\nimport Combine\n' + navigation + '\n' + manager + '\n')
     api = app / 'Core/Networking/APIClient.swift'
     (out / 'Sources/NotificationChecks/APIClient.swift').write_text(api.read_text().split('struct URLSessionAPIClient', 1)[0])
     request = app / 'Core/Networking/APIRequest.swift'
@@ -68,14 +69,6 @@ def generate(destination):
       let triggeredAt: Date
     }
     enum MarketKlineInterval: String { case oneHour = "1h" }
-    enum SignalNotificationDestination: Equatable, Sendable {
-      case strategy(StrategySignal)
-      case positions(tradingMode: String?)
-    }
-    struct SignalNotificationNavigationRequest: Equatable, Sendable {
-      let id: UUID
-      let destination: SignalNotificationDestination
-    }
     enum UNAuthorizationStatus { case notDetermined, denied, authorized, provisional, ephemeral }
     struct UNNotificationSettings { let authorizationStatus: UNAuthorizationStatus }
     struct UNAuthorizationOptions: OptionSet {
@@ -251,6 +244,52 @@ def generate(destination):
         await work.value
         XCTAssertEqual(attempts, 1)
       }
+      func testTradeNotificationsOpenTheirSymbolAndMode() {
+        XCTAssertEqual(StrategySignalNotificationManager.destination(from: [
+          "route": "trade.notification", "symbol": " 1000pepeUSDT ", "tradingMode": "lead"
+        ]), .chart(symbol: "1000PEPEUSDT", interval: "1h", tradingMode: "lead"))
+        XCTAssertEqual(StrategySignalNotificationManager.destination(from: [
+          "route": "trade.notification", "symbol": "ETHUSDT", "interval": "15m", "tradingMode": "ordinary"
+        ]), .chart(symbol: "ETHUSDT", interval: "15m", tradingMode: "ordinary"))
+      }
+      func testMalformedOrMissingSymbolFallsBackAndExternalIsIgnored() {
+        for symbol in ["", "../../BTCUSDT", "BTCUSDC", "BTCUSDT?token=fixture"] {
+          XCTAssertEqual(StrategySignalNotificationManager.destination(from: [
+            "route": "trade.notification", "symbol": symbol, "tradingMode": "invalid"
+          ]), .positions(tradingMode: nil))
+        }
+        XCTAssertNil(StrategySignalNotificationManager.destination(from: [
+          "route": "trade.notification", "source": "external", "symbol": "BTCUSDT"
+        ]))
+      }
+      func testColdLaunchTapSurvivesUntilSessionActivationAndIsConsumedOnce() async {
+        let (manager, _, _, defaults) = fixture()
+        defer { clean(manager, defaults) }
+        let target = SignalNotificationDestination.chart(symbol: "BTCUSDT", interval: "1h", tradingMode: "ordinary")
+        manager.handleNavigation(target, recipientUserID: "42")
+        XCTAssertEqual(manager.navigationRequest?.destination, target)
+        XCTAssertEqual(manager.navigationRequest?.recipientUserID, "42")
+        manager.activateSession()
+        XCTAssertEqual(manager.navigationRequest?.destination, target)
+        manager.consumeNavigationRequest(manager.navigationRequest!.id)
+        XCTAssertNil(manager.navigationRequest)
+      }
+      func testSignOutAndDisableClearAndSuppressPendingRoutes() {
+        let (manager, _, _, defaults) = fixture()
+        defer { clean(manager, defaults) }
+        let target = SignalNotificationDestination.chart(symbol: "BTCUSDT", interval: "1h", tradingMode: nil)
+        manager.handleNavigation(target, recipientUserID: nil)
+        manager.deactivateSession()
+        XCTAssertNil(manager.navigationRequest)
+        manager.handleNavigation(target, recipientUserID: nil)
+        XCTAssertNil(manager.navigationRequest)
+        manager.activateSession()
+        manager.handleNavigation(target, recipientUserID: nil)
+        manager.setEnabled(false)
+        XCTAssertNil(manager.navigationRequest)
+        manager.handleNavigation(target, recipientUserID: nil)
+        XCTAssertNil(manager.navigationRequest)
+      }
       private func fixture() -> (StrategySignalNotificationManager, UNUserNotificationCenter, MemoryAPI, UserDefaults) {
         UIApplication.shared.registrations = 0
         let defaults = UserDefaults(suiteName: "NotificationChecks." + UUID().uuidString)!
@@ -279,10 +318,10 @@ def generate(destination):
     ''')
     (out / 'production-inputs.json').write_text(json.dumps({
         'sources': {str(p.relative_to(IOS)): hashlib.sha256(p.read_bytes()).hexdigest() for p in [container, api, request]},
-        'test_count': 8, 'network': False, 'simulator': False,
+        'test_count': 12, 'network': False, 'simulator': False,
         'changes': ['Access control only', 'UIKit/UserNotifications replaced at platform boundary']
     }, indent=2) + '\n')
-    print('Extracted actual notification manager + request/protocol for 8 isolated host tests')
+    print('Extracted actual notification manager + navigation + request/protocol for 12 isolated host tests')
 
 
 def run(destination):
