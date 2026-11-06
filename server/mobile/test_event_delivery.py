@@ -3,7 +3,7 @@ from threading import Event
 from unittest.mock import patch
 
 from django.db import connection
-from django.test import TestCase
+from django.test import TransactionTestCase
 from django.test.utils import CaptureQueriesContext
 
 from api_bindings.models import ApiBinding
@@ -14,7 +14,7 @@ from mobile.models import AccountFact, AccountInbox, AccountOutbox, AccountWorke
 from users.models import User
 
 
-class AccountEventDeliveryTests(TestCase):
+class AccountEventDeliveryTests(TransactionTestCase):
     def setUp(self):
         self.user = User.objects.create_user("delivery@example.invalid", "test-password-only")
         self.binding = ApiBinding.objects.create(user=self.user, alias="test", api_key="placeholder",
