@@ -1107,7 +1107,7 @@ struct USDTSettingsView: View {
           Spacer(minLength: 0)
           Toggle("开启通知", isOn: Binding(
             get: { notifications.isEnabled }, set: { notifications.setEnabled($0) }
-          )).labelsHidden().toggleStyle(AccountSwitchStyle(label: "开启通知"))
+          )).labelsHidden().toggleStyle(AccountSwitchStyle(label: "开启通知")).fixedSize()
             .accessibilityIdentifier("settings.notifications")
         }
         if notifications.isEnabled && notifications.systemNotificationsDenied {
@@ -1121,16 +1121,17 @@ struct USDTSettingsView: View {
       }
       if isAdmin {
         WebSection {
-          WebLabel("管理员", "gearshape").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
-          HStack {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("开启注册").font(.system(size: 16, weight: .medium))
-              Text("开启后其他用户可以注册新账号；关闭后注册将被拒绝").font(.system(size: 12)).foregroundStyle(
-                WebTheme.muted)
-            }
+          HStack(spacing: 12) {
+            WebLabel("管理员", "gearshape").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+            Spacer(minLength: 0)
             Toggle("开启注册", isOn: Binding(get: { enabled }, set: { value in save(value) }))
               .labelsHidden().toggleStyle(WebSwitchStyle()).fixedSize().disabled(saving)
               .accessibilityIdentifier("settings.registration")
+          }
+          VStack(alignment: .leading, spacing: 4) {
+            Text("开启注册").font(.system(size: 16, weight: .medium))
+            Text("开启后其他用户可以注册新账号；关闭后注册将被拒绝").font(.system(size: 12)).foregroundStyle(
+              WebTheme.muted)
           }
         }
       }

@@ -19,7 +19,7 @@ struct USDTSignalsView: View {
             WebIcon("info.circle", size: 18).foregroundStyle(WebTheme.muted)
           }.contentShape(Rectangle())
         }.buttonStyle(.plain).padding(.trailing, 8).zIndex(1).accessibilityLabel("内部信号规则")
-      }).accessibilityIdentifier("signals.header")
+      }).accessibilityElement(children: .contain).accessibilityIdentifier("signals.header")
       WebRefreshScrollView(isActive: isVisible && scenePhase == .active) {
         VStack(spacing: 10) {
           ForEach(model.items, id: \.signalIdentity) { row in

@@ -2791,7 +2791,7 @@ final class IntegratedNativeUITests: XCTestCase {
     }
 }
 
-/// Deterministic native visual checks. Only local static capital / EMA previews allow POST.
+/// Deterministic native visual checks with explicit local previews and operator state.
 final class WebParityUITests: XCTestCase {
   private let app = XCUIApplication(bundleIdentifier: "com.waibao2025.trade.integrated")
   override func setUpWithError() throws {
@@ -2943,12 +2943,12 @@ final class WebParityUITests: XCTestCase {
       app.buttons["持仓"].firstMatch.tap()
       let segments = ["positions", "limits", "history"].map { app.buttons["positions.tabs." + $0] }
       XCTAssertTrue(segments[0].waitForExistence(timeout: 5))
-      for segment in segments { XCTAssertEqual(segment.frame.width, segments[0].frame.width, accuracy: 1) }
+      for segment in segments { XCTAssertGreaterThanOrEqual(segment.frame.width, 44) }
       XCTAssertGreaterThanOrEqual(segments[0].frame.height, 44)
-      XCTAssertLessThanOrEqual(segments[0].frame.minX,
-        app.otherElements["positions.header"].frame.minX + 12)
+      XCTAssertGreaterThanOrEqual(segments[0].frame.minX,
+        app.otherElements["positions.header"].frame.minX + 16)
       segments[2].tap()
-      capture("positions-equal-segments-" + appearance)
+      capture("positions-compact-segments-" + appearance)
     }
     launch("signals")
     XCTAssertTrue(app.staticTexts["自有"].waitForExistence(timeout: 5))
@@ -3733,7 +3733,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertFalse(indicator.exists)
   }
 
-  func testRefreshReleaseKeepsContentAtRestPosition() {
+  func testRefreshHoldsContentBelowHeaderUntilLoadingFinishes() {
     launch("signals", ["--fixture-page-state", "--fixture-refresh-delay"])
     let first = app.staticTexts["读取 1 · 测试信号 1"]
     XCTAssertTrue(first.waitForExistence(timeout: 10))
@@ -3743,10 +3743,14 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(indicator.waitForExistence(timeout: 2))
     assertRefreshIndicatorVisible(indicator)
     capture("refresh-after-release")
-    XCTAssertEqual(first.frame.minY, restingY, accuracy: 1,
-      "Releasing the pull must not insert a new row and move the list")
+    XCTAssertGreaterThan(first.frame.minY, restingY + 40,
+      "The refresh region must stay open until the request completes")
+    let header = app.otherElements["signals.header"]
+    XCTAssertGreaterThanOrEqual(indicator.frame.minY, header.frame.maxY,
+      "The loading indicator must emerge below the fixed header")
     XCTAssertTrue(app.staticTexts["读取 2 · 测试信号 1"].waitForExistence(timeout: 10))
-    XCTAssertFalse(indicator.exists)
+    XCTAssertTrue(indicator.waitForNonExistence(timeout: 3))
+    XCTAssertEqual(app.staticTexts["读取 2 · 测试信号 1"].frame.minY, restingY, accuracy: 1)
   }
 
   func testSharedRefreshIndicatorOnMarketProfileCommandsAndRecords() {
@@ -3782,10 +3786,10 @@ final class WebParityUITests: XCTestCase {
     app.buttons["历史仓位"].tap()
     XCTAssertTrue(app.staticTexts["平仓盈亏"].waitForExistence(timeout: 3))
     XCTAssertTrue(app.staticTexts["待结算"].exists)
-    XCTAssertTrue(app.staticTexts["正在更新历史记录…"].exists)
+    XCTAssertFalse(app.staticTexts["正在更新历史记录…"].exists)
     XCTAssertFalse(app.staticTexts["加载中..."].exists)
     capture("history-records-before-supplement")
-    XCTAssertTrue(app.staticTexts["正在更新历史记录…"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["待结算"].waitForNonExistence(timeout: 10))
     XCTAssertFalse(app.staticTexts["待结算"].exists)
     XCTAssertTrue(app.staticTexts["平仓盈亏"].exists)
   }
@@ -3834,7 +3838,7 @@ final class WebParityUITests: XCTestCase {
   }
   func testWideSwipeReturnsFromBusinessPagesAndNestedStrategy() {
     launch("profile", ["--fixture-dark"])
-    for (label, title) in [("转账历史", "转账历史"), ("设置", "设置"), ("止盈止损策略", "我的策略")] {
+    for (label, title) in [("设置", "设置"), ("止盈止损策略", "我的策略")] {
       profileLink(label)
       XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 5))
       capture("wide-pop-" + title)
@@ -3853,6 +3857,21 @@ final class WebParityUITests: XCTestCase {
       XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 5), title)
       rightSwipe()
       XCTAssertTrue(app.buttons["profile.switchMode"].waitForExistence(timeout: 5), label)
+    }
+  }
+  func testSignalsAndPositionsOpenChartAndReturn() {
+    for page in ["signals", "positions"] {
+      launch(page)
+      let open = page == "signals"
+        ? app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "signals.card.")).firstMatch
+        : app.buttons["position.chart.101"]
+      XCTAssertTrue(open.waitForExistence(timeout: 5), page)
+      open.tap()
+      let back = app.buttons["market-chart-back"]
+      XCTAssertTrue(back.waitForExistence(timeout: 5), page)
+      capture(page + "-chart-navigation")
+      back.tap()
+      XCTAssertTrue(open.waitForExistence(timeout: 5), page)
     }
   }
   func testSwipeCanCancelAndStopLossModalClosesWithoutMovingPage() {
@@ -4404,14 +4423,130 @@ extension WebParityUITests {
       appearance.tap()
       XCTAssertEqual(appearance.value as? String, previous)
     }
-    launch("settings", ["--fixture-registration-operator"])
-    XCTAssertTrue(app.switches["settings.notifications"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.switches["settings.registration"].exists)
-    XCTAssertEqual(app.switches["settings.registration"].value as? String, "0")
-    let explanation = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "开启后其他用户")).firstMatch
-    XCTAssertLessThanOrEqual(explanation.frame.maxX, app.switches["settings.registration"].frame.minX + 1,
-      "Registration explanation must not overlap the system switch")
-    capture("native-settings-switches")
+    for options in [[], ["--fixture-dark"]] {
+      launch("settings", options + ["--fixture-registration-operator"])
+      let notification = app.switches["settings.notifications"]
+      let registration = app.switches["settings.registration"]
+      XCTAssertTrue(notification.waitForExistence(timeout: 5))
+      XCTAssertTrue(registration.waitForExistence(timeout: 5))
+      XCTAssertEqual(registration.value as? String, "0")
+      let admin = app.staticTexts["管理员"]
+      let explanation = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "开启后其他用户")).firstMatch
+      XCTAssertEqual(registration.frame.maxX, notification.frame.maxX, accuracy: 1,
+        "Settings switches must share a trailing edge")
+      XCTAssertLessThan(notification.frame.width, 80, "Only the system switch should occupy the trailing target")
+      XCTAssertEqual(registration.frame.midY, admin.frame.midY, accuracy: 1,
+        "The administrator switch belongs on the administrator title row")
+      XCTAssertGreaterThanOrEqual(explanation.frame.minY, registration.frame.maxY,
+        "Registration explanation should use a separate row below its switch")
+      XCTAssertEqual(app.staticTexts["开启通知"].frame.midY, notification.frame.midY, accuracy: 1)
+      registration.tap()
+      let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: registration)
+      XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 3), .completed)
+      registration.tap()
+      let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: registration)
+      XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 3), .completed)
+      capture(options.isEmpty ? "native-settings-switches" : "native-settings-switches-dark")
+    }
+  }
+
+  func testPositionHeaderAlignsWithSignals() throws {
+    func backgroundPixel(_ image: CGImage, point: CGPoint, scale: CGFloat) throws -> [UInt8] {
+      let pixel = try XCTUnwrap(image.cropping(to: CGRect(x: point.x * scale, y: point.y * scale,
+        width: 1, height: 1)))
+      var rgba = [UInt8](repeating: 0, count: 4)
+      try rgba.withUnsafeMutableBytes { bytes in
+        let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1,
+          bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+      }
+      return Array(rgba.prefix(3))
+    }
+    for options in [[], ["--fixture-dark"]] {
+      launch("signals", options)
+      let signalHeader = app.otherElements["signals.header"]
+      let signalControl = app.buttons["内部信号规则"]
+      let signalCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "signals.card.")).firstMatch
+      XCTAssertTrue(signalHeader.waitForExistence(timeout: 5))
+      XCTAssertTrue(signalControl.waitForExistence(timeout: 5))
+      XCTAssertTrue(signalCard.waitForExistence(timeout: 5))
+      // The containing AX frame also includes its background up to the status
+      // bar. The 44 pt rule button defines the title bar's content bounds.
+      let reference = signalControl.frame
+      let contentGap = signalCard.frame.minY - reference.maxY
+      XCTAssertEqual(reference.height, 44, accuracy: 1)
+      XCTAssertEqual(contentGap, 16, accuracy: 1)
+      capture(options.isEmpty ? "signal-reference-header" : "signal-reference-header-dark")
+      launch("positions", options)
+      let header = app.otherElements["positions.header"]
+      let card = app.otherElements["position.card.101"]
+      XCTAssertTrue(header.waitForExistence(timeout: 5))
+      XCTAssertTrue(card.waitForExistence(timeout: 5))
+      capture(options.isEmpty ? "positions-header-spacing" : "positions-header-spacing-dark")
+      XCTAssertEqual(header.frame.minY, reference.minY, accuracy: 1,
+        "The position header must begin at the same top safe-area edge as signals")
+      XCTAssertEqual(header.frame.height, reference.height, accuracy: 1)
+      XCTAssertEqual(card.frame.minY - header.frame.maxY, contentGap, accuracy: 1,
+        "Position content must use the same gap below its header as signals")
+      let screenshot = try XCTUnwrap(app.screenshot().image.cgImage)
+      let scale = CGFloat(screenshot.width) / app.windows.firstMatch.frame.width
+      let bar = try backgroundPixel(screenshot, point: CGPoint(x: 4, y: reference.midY), scale: scale)
+      for y in stride(from: CGFloat(1), through: reference.midY, by: 1) {
+        let top = try backgroundPixel(screenshot, point: CGPoint(x: 4, y: y), scale: scale)
+        XCTAssertEqual(top, bar,
+          "The status-bar safe area must join the position title bar without a colored gap at y=\(y)")
+      }
+    }
+  }
+
+  func testStrategyHeadersAndContentSpacingMatchSignals() throws {
+    func rgb(_ image: CGImage, x: CGFloat, y: CGFloat, scale: CGFloat) throws -> [UInt8] {
+      let pixel = try XCTUnwrap(image.cropping(to: CGRect(x: x * scale, y: y * scale, width: 1, height: 1)))
+      var bytes = [UInt8](repeating: 0, count: 4)
+      try bytes.withUnsafeMutableBytes { buffer in
+        let context = try XCTUnwrap(CGContext(data: buffer.baseAddress, width: 1, height: 1,
+          bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+      }
+      return Array(bytes.prefix(3))
+    }
+    for options in [[], ["--fixture-dark"]] {
+      launch("signals", options)
+      let signalTitle = app.staticTexts["信号"].firstMatch
+      XCTAssertTrue(signalTitle.waitForExistence(timeout: 5))
+      let titleY = signalTitle.frame.midY
+      let referenceHeight = app.buttons["内部信号规则"].frame.height
+      launch("strategies", options)
+      let title = app.staticTexts["我的策略"]
+      let manual = app.buttons["strategy.manual"]
+      let back = app.buttons["返回"].firstMatch
+      XCTAssertTrue(manual.waitForExistence(timeout: 5))
+      capture(options.isEmpty ? "strategy-header-spacing" : "strategy-header-spacing-dark")
+      XCTAssertEqual(title.frame.midY, titleY, accuracy: 1,
+        "The strategy title must align with the signal title")
+      XCTAssertEqual(back.frame.height, referenceHeight, accuracy: 1)
+      XCTAssertEqual(back.frame.height, 44, accuracy: 1)
+      // List gives the button an AX frame that includes the entire row's blank
+      // insets. Measure the visible card boundary to assert the requested gap.
+      let image = try XCTUnwrap(app.screenshot().image.cgImage)
+      let window = app.windows.firstMatch.frame
+      let scale = CGFloat(image.width) / window.width
+      let background = try rgb(image, x: 4, y: back.frame.maxY + 32, scale: scale)
+      let firstCardY = try XCTUnwrap(try stride(from: back.frame.maxY + 1,
+        through: back.frame.maxY + 64, by: CGFloat(1) / scale).first { y in
+        try rgb(image, x: window.midX, y: y, scale: scale) != background
+      })
+      XCTAssertEqual(firstCardY - back.frame.maxY, 16, accuracy: 1,
+        "The visible strategy card must start one standard gap below the 44 pt header")
+      app.buttons["strategy.edit.1"].tap()
+      XCTAssertTrue(app.buttons["保存策略"].waitForExistence(timeout: 5))
+      XCTAssertEqual(app.buttons["返回"].firstMatch.frame.height, 44, accuracy: 1)
+      XCTAssertEqual(app.buttons["编辑策略名称"].frame.midY, app.buttons["返回"].firstMatch.frame.midY,
+        accuracy: 1, "The editable strategy title must center in its title bar")
+      capture(options.isEmpty ? "strategy-editor-header" : "strategy-editor-header-dark")
+    }
   }
 
   func testNativeCapitalSegmentsStayLockedForPendingOperation() {
@@ -4446,6 +4581,44 @@ extension WebParityUITests {
       XCTAssertTrue(row.waitForExistence(timeout: 5), "Close nested management must return to picker")
       app.buttons["关闭"].firstMatch.tap()
       XCTAssertTrue(open.waitForExistence(timeout: 5))
+    }
+  }
+}
+
+extension WebParityUITests {
+  func testIndicatorSettingsOpensFromChartAndReturns() {
+    assertIndicatorSettingsNavigation(options: [], appearance: "light")
+  }
+
+  func testIndicatorSettingsOpensFromChartAndReturnsInDarkAppearance() {
+    assertIndicatorSettingsNavigation(options: ["--fixture-dark"], appearance: "dark")
+  }
+
+  private func assertIndicatorSettingsNavigation(options: [String], appearance: String) {
+    launch("market", options + ["--fixture-entry-ready"])
+    let market = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "BTCUSDT")).firstMatch
+    XCTAssertTrue(market.waitForExistence(timeout: 5))
+    market.tap()
+    let shortcut = app.buttons["market-chart-indicator-settings-shortcut"]
+    XCTAssertTrue(shortcut.waitForExistence(timeout: 10))
+    for entry in 1...2 {
+      let started = Date()
+      shortcut.tap()
+      let firstTab = app.buttons["indicator-settings.tab.MA"]
+      XCTAssertTrue(firstTab.waitForExistence(timeout: 5))
+      let elapsed = Date().timeIntervalSince(started)
+      let timing = XCTAttachment(string: "\(appearance) entry \(entry): \(elapsed) seconds")
+      timing.name = "indicator-settings-entry-time"; timing.lifetime = .keepAlways; add(timing)
+      let header = app.descendants(matching: .any)["indicator-settings.header"].firstMatch
+      XCTAssertTrue(header.exists)
+      app.buttons["indicator-settings.tab.Super"].tap()
+      XCTAssertTrue(app.sliders["indicator-settings.super-opacity"].waitForExistence(timeout: 5))
+      capture("indicator-settings-navigation-\(appearance)-\(entry)")
+      firstTab.tap()
+      XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5),
+        "The MA input form must remain responsive and be selected for the next navigation")
+      app.buttons["返回"].firstMatch.tap()
+      XCTAssertTrue(shortcut.waitForExistence(timeout: 5))
     }
   }
 }

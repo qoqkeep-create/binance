@@ -241,13 +241,18 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
 #if DEBUG
   private actor WebParityFixtureRequests {
     private var counts: [String: Int] = [:]
+    private var registrationEnabled = false
     func next(_ path: String) -> Int {
       counts[path, default: 0] += 1
       return counts[path, default: 0]
     }
+    func registration(_ enabled: Bool? = nil) -> Bool {
+      if let enabled { registrationEnabled = enabled }
+      return registrationEnabled
+    }
   }
 
-  /// Isolated visual states. This API has no network transport; only local capital previews allow POST.
+  /// Isolated visual states with no network transport. Writes only update explicit local previews or operator state.
   private struct WebParityFixtureAPI: APIClient {
     private let requests = WebParityFixtureRequests()
     static var empty: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-empty") }
@@ -256,8 +261,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-unavailable") {
         throw APIError.business(code: "VISUAL_FIXTURE", message: "注册状态测试不可用")
       }
+      let savesFixtureRegistration = request.method == .post && request.path == "/v1/auth/admin-settings"
+        && ProcessInfo.processInfo.arguments.contains("--fixture-registration-operator")
       guard
-        request.method == .get
+        request.method == .get || savesFixtureRegistration
           || ["/v1/trade/capital/precheck", "/v1/trade/capital/wallet/precheck"].contains(request.path)
       else {
         throw APIError.business(code: "VISUAL_FIXTURE", message: "视觉校准模式不执行写操作")
@@ -408,7 +415,12 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       if request.path == "/v1/auth/admin-settings",
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-operator") {
-        value = .object(["open_registration": .bool(false), "is_admin": .bool(true)])
+        if savesFixtureRegistration {
+          let body = try JSONDecoder().decode([String: Bool].self, from: request.body ?? Data())
+          guard let enabled = body["open_registration"] else { throw APIError.invalidResponse }
+          _ = await requests.registration(enabled)
+        }
+        value = .object(["open_registration": .bool(await requests.registration()), "is_admin": .bool(true)])
       }
       if request.path == "/v1/trade/tradingview/signals",
         ProcessInfo.processInfo.arguments.contains("--fixture-page-state"),

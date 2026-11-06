@@ -216,6 +216,7 @@ struct BinanceBackButton: View {
                     width: BinanceTheme.Layout.minimumTapSize,
                     height: BinanceTheme.Layout.minimumTapSize
                 )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("返回")
@@ -240,7 +241,7 @@ struct BinanceNavigationHeader: View {
             }
         }
         .padding(.horizontal, 10)
-        .frame(minHeight: 52)
+        .frame(height: BinanceTheme.Layout.minimumTapSize)
     }
 }
 

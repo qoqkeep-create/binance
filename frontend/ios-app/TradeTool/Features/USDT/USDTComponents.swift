@@ -3,7 +3,8 @@ import UIKit
 
 /// Values from the USDT Web theme.css and computed Tailwind styles. CSS px maps to logical pt.
 @MainActor enum WebTheme {
-  static let rootHeaderHeight: CGFloat = 44
+  nonisolated static let rootHeaderHeight: CGFloat = 44
+  nonisolated static let pageContentSpacing: CGFloat = 16
   static func color(
     _ light: UInt32, _ dark: UInt32, leadLight: UInt32? = nil, leadDark: UInt32? = nil
   ) -> Color {
@@ -393,7 +394,9 @@ private struct WebRefreshScrollObserver: UIViewRepresentable {
     return view
   }
 
-  func updateUIView(_ uiView: ObserverView, context: Context) { uiView.onEvent = onEvent }
+  func updateUIView(_ uiView: ObserverView, context: Context) {
+    uiView.onEvent = onEvent
+  }
   static func dismantleUIView(_ uiView: ObserverView, coordinator: ()) { uiView.detach() }
 
   final class ObserverView: UIView {
@@ -462,13 +465,18 @@ private struct WebRefreshScrollObserver: UIViewRepresentable {
   }
 }
 
-/// One overlay survives pull/release without inserting a row into the scrolling content.
+/// The fixed header stays above a clipped refresh region. Native margins keep the
+/// content lowered until loading and the indicator's fade have both completed.
 struct WebRefreshScrollView<Content: View>: View {
   var isActive = true
   @ViewBuilder var content: Content
   @Environment(\.webRefreshAction) private var action
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var interaction = WebRefreshInteraction()
   @State private var refreshTask: Task<Void, Never>?
+  @State private var retainedHeight: CGFloat = 0
+  @State private var indicatorOpacity: Double = 1
+  @State private var refreshID = UUID()
 
   var body: some View {
     ScrollView {
@@ -491,13 +499,16 @@ struct WebRefreshScrollView<Content: View>: View {
         }
       }
     }.scrollBounceBehavior(.always)
+      .contentMargins(.top, retainedHeight, for: .scrollContent)
       .overlay(alignment: .top) {
         if isActive, action != nil, interaction.isRefreshing || interaction.distance > 0 {
-          indicator.frame(maxWidth: .infinity).frame(height: 36)
-            .offset(y: interaction.isRefreshing ? 0 : min(interaction.distance, 36) - 36)
+          indicator.frame(maxWidth: .infinity).frame(height: 56)
+            .opacity(indicatorOpacity)
+            .offset(y: interaction.isRefreshing ? 0 : min(interaction.distance, 56) - 56)
             .allowsHitTesting(false).accessibilityHidden(!interaction.isRefreshing)
         }
       }
+      .clipped()
       .accessibilityAction(named: Text("刷新")) {
         guard isActive, action != nil, !interaction.isRefreshing else { return }
         interaction.update(distance: WebRefreshInteraction.triggerDistance, dragging: true)
@@ -514,11 +525,26 @@ struct WebRefreshScrollView<Content: View>: View {
 
   private func startRefresh() {
     guard isActive, let action else { interaction.complete(); return }
+    let id = UUID()
+    refreshID = id
+    indicatorOpacity = 1
+    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.24)) { retainedHeight = 56 }
     refreshTask = Task { @MainActor in
       guard !Task.isCancelled else { return }
       await action()
       guard !Task.isCancelled else { return }
-      interaction.complete()
+      // Fade first, then return the content to its original scroll margin.
+      withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16), completionCriteria: .removed) {
+        indicatorOpacity = 0
+      } completion: {
+        guard refreshID == id else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.24), completionCriteria: .removed) {
+          retainedHeight = 0
+        } completion: {
+          guard refreshID == id else { return }
+          interaction.complete()
+        }
+      }
       refreshTask = nil
     }
   }
@@ -526,6 +552,9 @@ struct WebRefreshScrollView<Content: View>: View {
   private func stopRefresh() {
     refreshTask?.cancel()
     refreshTask = nil
+    refreshID = UUID()
+    retainedHeight = 0
+    indicatorOpacity = 1
     interaction.complete()
   }
 }
@@ -583,12 +612,12 @@ struct WebPageHeader<Trailing: View>: View {
   let title: String
   var back = true
   var centered = true
-  var height: CGFloat = 60
+  var height: CGFloat = WebTheme.rootHeaderHeight
   var backAction: (() -> Void)?
   @ViewBuilder var trailing: Trailing
   @Environment(\.dismiss) private var dismiss
   init(
-    _ title: String, back: Bool = true, centered: Bool = true, height: CGFloat = 60,
+    _ title: String, back: Bool = true, centered: Bool = true, height: CGFloat = WebTheme.rootHeaderHeight,
     backAction: (() -> Void)? = nil,
     @ViewBuilder trailing: () -> Trailing = { EmptyView() }
   ) {
@@ -617,8 +646,8 @@ struct WebPageHeader<Trailing: View>: View {
         trailing
       }
     }.foregroundStyle(WebTheme.text).frame(maxWidth: 448).frame(maxWidth: .infinity).frame(
-      height: height == 60 ? 44 : height
-    ).padding(.bottom, height == 60 ? 16 : 0).padding(.horizontal, 16)
+      height: height
+    ).padding(.horizontal, 16)
       .background(WebTheme.surface.ignoresSafeArea(edges: .top))
       .overlay(alignment: .bottom) { Rectangle().fill(WebTheme.border).frame(height: 1) }
   }
@@ -701,7 +730,7 @@ private struct WebPageModifier: ViewModifier {
         if !root {
           WebPageHeader(
             title, centered: !["用户协议", "隐私政策"].contains(title),
-            height: title == "日志" ? 56 : 60, backAction: backAction
+            height: WebTheme.rootHeaderHeight, backAction: backAction
           ) {
             if let refresh {
               Button(action: refresh) {
@@ -1262,15 +1291,18 @@ private struct WebModalPresenter<Modal: View>: ViewModifier {
   var onDismiss: (() -> Void)?
   @State private var cover = false
   func body(content: Content) -> some View {
-    content.fullScreenCover(isPresented: $cover, onDismiss: onDismiss) {
-      WebModalStage(isPresented: $isPresented, preferredMotion: preferredMotion, modal: modal) {
-        var transaction = Transaction(); transaction.disablesAnimations = true
-        withTransaction(transaction) { cover = false }
-      }.presentationBackground(.clear)
-    }.transaction(value: cover) { transaction in
-      // Suppress the system cover's vertical transition for both binding and
-      // item presenters. The card/backdrop animate their own progress below.
-      transaction.disablesAnimations = true
+    content.background {
+      // Isolate system-cover suppression from the source page's buttons and
+      // navigation destinations. The card/backdrop animate their own progress.
+      Color.clear.frame(width: 0, height: 0)
+        .fullScreenCover(isPresented: $cover, onDismiss: onDismiss) {
+          WebModalStage(isPresented: $isPresented, preferredMotion: preferredMotion, modal: modal) {
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) { cover = false }
+          }.presentationBackground(.clear)
+        }.transaction(value: cover) { transaction in
+          transaction.disablesAnimations = true
+        }
     }.onChange(of: isPresented, initial: true) { _, shown in
       if shown {
         var transaction = Transaction(); transaction.disablesAnimations = true

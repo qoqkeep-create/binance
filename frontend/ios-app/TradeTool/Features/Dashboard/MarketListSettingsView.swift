@@ -20,7 +20,7 @@ struct MarketListSettingsView: View {
                 Text("拖动").fixedSize().frame(width: 24)
             }.font(BinanceTheme.Typography.sectionHeader)
                 .foregroundStyle(BinanceTheme.secondaryText)
-                .padding(.horizontal, 16).padding(.top, 24).padding(.bottom, 10)
+                .padding(.horizontal, 16).padding(.top, WebTheme.pageContentSpacing).padding(.bottom, 10)
             List {
                 ForEach(markets) { market in
                     HStack(spacing: 0) {

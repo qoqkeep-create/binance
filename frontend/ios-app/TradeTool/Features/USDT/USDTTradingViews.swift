@@ -674,6 +674,27 @@ struct USDTEntryDraft: Equatable {
   }
 }
 
+struct PositionLiveButtonLabel: View {
+  let isActive: Bool
+  let isPending: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var bright = false
+
+  var body: some View {
+    VStack(spacing: 1) {
+      Image(systemName: "waveform.path.ecg").font(.system(size: 17, weight: .medium))
+      Text("live").font(.system(size: 9, weight: .semibold))
+    }
+    .foregroundStyle(isActive || isPending ? WebTheme.brand : WebTheme.secondary)
+    .opacity(isPending && !reduceMotion && !bright ? 0.35 : 1)
+    .animation(isPending && !reduceMotion
+      ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .easeOut(duration: 0.15), value: bright)
+    .onChange(of: isPending && !reduceMotion, initial: true) { _, breathing in
+      bright = breathing
+    }
+  }
+}
+
 struct USDTPositionsView: View {
   var isVisible = true
   var onOpenChart: ((String, String) -> Void)? = nil
@@ -727,6 +748,12 @@ struct USDTPositionsView: View {
     PositionNativePager(selection: $segment, enabled: pagingEnabled, headerHeight: WebTheme.rootHeaderHeight,
       header: { pageHeader }, page: { pageContent($0) })
       .id(store.scope + ":" + String(store.isBound))
+      .background(alignment: .top) {
+        // The pager's UIKit header host deliberately ignores safe areas. Paint
+        // this strip in the outer SwiftUI context so it reaches the status bar.
+        WebTheme.surface.frame(height: WebTheme.rootHeaderHeight)
+          .background(WebTheme.surface.ignoresSafeArea(edges: .top))
+      }
       .usdtPage("持仓")
       .task(id: "margin:\(store.scope):\(store.isBound):\(isVisible):\(scenePhase):\(chart)") {
         guard isVisible, scenePhase == .active, !chart, store.isBound else {
@@ -851,18 +878,13 @@ struct USDTPositionsView: View {
           Task { await margin.refresh(store, afterChange: true) }
         }
         Button { liveActivity.toggle(store: store, container: container) } label: {
-          VStack(spacing: 1) {
-            if liveActivity.isStarting || liveActivity.isRegistering {
-              ProgressView().controlSize(.mini).frame(height: 17)
-            } else {
-              Image(systemName: "waveform.path.ecg").font(.system(size: 17, weight: .medium))
-            }
-            Text("live").font(.system(size: 9, weight: .semibold))
-          }.foregroundStyle(liveActivity.isActive ? WebTheme.brand : WebTheme.secondary)
+          PositionLiveButtonLabel(isActive: liveActivity.isActive,
+            isPending: liveActivity.isStarting || liveActivity.isRegistering)
             .frame(width: 44, height: 44).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("positions.liveActivity")
           .accessibilityLabel("live 持仓实时活动")
-          .accessibilityValue(liveActivity.isActive ? "已开启" : "未开启")
+          .accessibilityValue(liveActivity.isStarting || liveActivity.isRegistering
+            ? "正在启动" : liveActivity.isActive ? "已开启" : "未开启")
         Button { floatingPositions.toggle() } label: {
           Image(systemName: floatingPositions ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")
             .font(.system(size: 18, weight: .medium))
@@ -913,9 +935,6 @@ struct USDTPositionsView: View {
             }.buttonStyle(.plain).accessibilityIdentifier("positions.bind")
           } else {
             USDTNotice(text: notice)
-            if refreshing {
-              Text("正在更新历史记录…").font(.system(size: 13)).foregroundStyle(WebTheme.muted)
-            }
             if !pageRows.isEmpty { USDTNotice(text: loadError) }
             if (loading || awaitingFirstRead) && pageRows.isEmpty {
               Text("加载中...").font(.system(size: 16)).foregroundStyle(WebTheme.muted).frame(
@@ -1161,7 +1180,8 @@ struct USDTPositionsView: View {
         Button("立即平仓") { show("close", row) }.lineLimit(1).minimumScaleFactor(0.8)
           .buttonStyle(WebButtonStyle(height: 38, fontSize: 14))
       }
-    }
+    }.accessibilityElement(children: .contain)
+      .accessibilityIdentifier("position.card." + row.value("id"))
   }
   private func inline(_ title: String, _ value: String, color: Color? = nil, expands: Bool = true) -> some View {
     (Text(title).foregroundColor(WebTheme.muted)

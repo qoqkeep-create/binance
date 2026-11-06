@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A71A00000000000000000001 /* NavigationTransitionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71A00000000000000000002 /* NavigationTransitionTests.swift */; };
 		D15A00000000000000000001 /* DisplayNumber.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15A00000000000000000002 /* DisplayNumber.swift */; };
 		D15A00000000000000000003 /* DisplayNumberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15A00000000000000000004 /* DisplayNumberTests.swift */; };
 		D1A600000000000000000001 /* ChartLoadDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A600000000000000000011 /* ChartLoadDiagnostics.swift */; };
@@ -164,6 +165,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A71A00000000000000000002 /* NavigationTransitionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationTransitionTests.swift; sourceTree = "<group>"; };
 		D15A00000000000000000002 /* DisplayNumber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayNumber.swift; sourceTree = "<group>"; };
 		D15A00000000000000000004 /* DisplayNumberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayNumberTests.swift; sourceTree = "<group>"; };
 		D1A600000000000000000011 /* ChartLoadDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLoadDiagnostics.swift; sourceTree = "<group>"; };
@@ -646,6 +648,7 @@
 				0B0000000000000000000002 /* ChartEngineCoreTests.swift */,
 				0E0000000000000000000002 /* DashboardSignalPreferencesTests.swift */,
 				0F0000000000000000000004 /* AppearanceTests.swift */,
+				A71A00000000000000000002 /* NavigationTransitionTests.swift */,
 				0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */,
 			);
 			path = TradeToolTests;
@@ -979,6 +982,7 @@
 				0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */,
 				0E0000000000000000000001 /* DashboardSignalPreferencesTests.swift in Sources */,
 				0F0000000000000000000003 /* AppearanceTests.swift in Sources */,
+				A71A00000000000000000001 /* NavigationTransitionTests.swift in Sources */,
 				0C0000000000000000000001 /* ChartEngineOnscreenStressTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -25,6 +25,7 @@ def visual_sources(destination):
     source = (APP / "Features/USDT/PositionMargin.swift").read_text()
     badge = source[source.index("@MainActor extension PositionMarginLevel"):source.index("struct PositionMarginDetails:")]
     view = (APP / "Features/USDT/USDTTradingViews.swift").read_text()
+    live_label = block(view, "struct PositionLiveButtonLabel: View {")
     header = block(view, "private var pageHeader: some View {")
     header = header[header.index("{") + 1:header.rfind("}")]
     header = header.replace("marginDetails = true\n          Task { await margin.refresh(store, afterChange: true) }", "")
@@ -44,7 +45,7 @@ def visual_sources(destination):
     adapters = '''struct VisualLiveState { var isStarting = false; var isRegistering = false; var isActive = false }
 enum BinanceTheme { static let accent = Color.yellow }
 '''
-    (destination / "Sources/MarginVisual.swift").write_text("import AppKit\nimport SwiftUI\n" + "\n".join([theme, tabs, badge, adapters, harness]))
+    (destination / "Sources/MarginVisual.swift").write_text("import AppKit\nimport SwiftUI\n" + "\n".join([theme, tabs, badge, live_label, adapters, harness]))
     fixture = IOS / "scripts/fixtures/PositionMarginHeaderTests.swift"
     (destination / "Tests/PositionMarginHeaderTests.swift").write_text(fixture.read_text())
     return [APP / "Features/USDT/USDTComponents.swift", APP / "Features/USDT/USDTTradingViews.swift", fixture]

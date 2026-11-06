@@ -1,5 +1,19 @@
 # 开发与验证
 
+## 导航、统一标题与刷新停留（2026-11-07，本地）
+
+共用小弹窗的禁动画事务已收缩至透明 cover 宿主，业务内容继续使用系统导航。标题栏统一 44 pt，正文首块距栏底 16 pt；持仓原本尺寸一致，视觉间隙来自状态栏与标题栏底色不同，现由外层 SwiftUI 延展顶部底色。设置开关固定系统固有宽度并靠同一右边界，管理员注册开关与标题同行；Live 启动改呼吸亮度，历史补全移除重复更新文字。刷新期间保留 56 pt 原生内容边距，读取完成后先淡出图标，再让内容归位；当前规范见 [页面](ios-web-parity.md#标题栏设置与刷新2026-11-07)与 [持仓浮窗](ios-floating-positions.md)。
+
+旧实现 UI 明确复现设置开关右边缘相差 6.333 pt、刷新请求中内容已经复位，以及持仓状态栏浅色 `[245,245,245]` 对标题栏 `[255,255,255]` 的接缝。最终持仓顶部检查整个安全区至标题栏中部的连续色带，浅深色均通过，保留 44／16 pt 几何。策略 `List` 的 AX 按钮框包含行内空白，不能直接当作可见卡片边缘；回归改用截图像素定位首卡，浅深色及编辑标题居中均通过。过期的“转账历史”账户菜单入口及等宽页签断言按现行实现修正，不为旧断言改回产品布局。
+
+生产 Header／Store／保证金 host **25 项**、fade 合成 host **2 项**、策略确认 host **7 项**通过。完整 iOS 单测最终复验 **409 项／58.752 秒／0 失败／0 跳过**（`VerifiedUnit.xcresult`），包含 4 项导航与动态事务隔离回归；其中原生导航对照在旧实现也通过，早期静态探针没有收到事务回调，不能称其为原问题复现。之后仅清理未使用的标题 AX 标识并补指标标题辅助功能分组，以最终指标 UI 复验和 Release 编译验证。所有 UI 使用本地无网络 DEBUG API，管理员开关写入仅在指定测试参数下保存内存状态，交易所与资金写入仍拒绝。
+
+定向 UI 共 **14 个不同用例**均有通过记录，复验不重复计数：持仓顶部和策略标题浅深色像素／几何、设置开关、历史补全、信号刷新、刷新停留／归位、持仓三页空列表刷新、七类页面共用刷新、原生弹窗、行情搜索／编辑自选到 K 线、宽边返回与策略嵌套、信号／持仓到 K 线，以及指标浅深色往返。主要结果包为 `NavigationRefreshNov7/{RefreshSettingsUI,FinalUI,NavigationUI,ChartEntrancesUI}.xcresult`、`HeadersNov7/{HeaderContinuousFixed,StrategyVisualBounds}.xcresult` 和 `StrategySettingsNov7/IndicatorHeaderContain.xcresult`；早期失败包保留，不能把整个 `FinalUI` 记为全通过。
+
+指标页定向用例在浅深色均实际完成两次进入、切换 Super、返回 MA 输入、返回图表；最终两项 **65.904 秒／0 失败**。本机 Xcode 27.2／iOS 27.2 的辅助功能采样出现大量 attachment 通知，首进偶发长等待：最终浅色 22.285 秒、深色 1.803 秒，再次进入约 1.76 秒；此前也有更长等待，具体因果未确认。表单结构实验没有稳定收益，已撤销，原参数绑定及表单结构保留。这是功能进退记录，不能作为首进性能修复或手机时延达标证据；新包实机仍待验收。
+
+主 App／Widget 最终 generic iOS 无签名 **Release 构建通过**（`NavigationRefreshNov7/release-delivery.log`），唯一构建提示为无 AppIntents.framework 依赖而跳过 metadata。主要证据位于忽略目录 `.integration-runtime/NavigationRefreshNov7/`、`HeadersNov7/`、`NavigationNov7/` 与 `StrategySettingsNov7/`。本轮不操作真实订单、资金、保护单或生产配置；本地结果不能代替新包实机、Cloud 或 TestFlight 验收。
+
 ## 系统大面板、开关与资金分段迁移（2026-11-06，本地）
 
 按用户要求，先把此前完整工作区以 `ba5cca2` 提交推送 GitHub `codex/integrated-ios`，再实施本节本地迁移。`nativeTradingSheet` 直接使用系统 `.sheet` 的 96%／80%／60% detent，保留主题与内容，将原锁定偏好同时接入交互关闭与共用关闭动作；恢复当前层 dismiss 环境，避免继承外层自绘关闭动作。颜色／通知／注册／表单开关使用标准 switch，资金页签使用 UIKit UISegmentedControl，仍经原 `selectTab` 和同一读取、资金锁控制。详细当前规范与系统外观差异见 [页面](ios-web-parity.md#大面板开关与资金分段迁移2026-11-06本地)、[认证](ios-authentication.md)、[资金](capital-and-transfers.md#原生划转与转账2026-11-02)。小型 fade 弹窗和 70 pt 下拉刷新继续沿用。

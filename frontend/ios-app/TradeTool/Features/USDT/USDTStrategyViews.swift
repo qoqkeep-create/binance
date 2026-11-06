@@ -43,6 +43,7 @@ struct USDTStrategiesView: View {
             }
             .accessibilityAddTraits(store.activeStrategy == nil ? .isSelected : [])
         }.buttonStyle(.plain).disabled(mutating).accessibilityIdentifier("strategy.manual")
+          .listRowInsets(EdgeInsets(top: WebTheme.pageContentSpacing, leading: 16, bottom: 8, trailing: 16))
         ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
           ZStack(alignment: .bottomTrailing) {
             Button { chooseStrategy(strategy) } label: {
@@ -104,6 +105,7 @@ struct USDTStrategiesView: View {
       }.listRowSeparator(.hidden).listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
     }.listStyle(.plain).scrollContentBackground(.hidden).scrollIndicators(.hidden)
+      .contentMargins(.top, 0, for: .scrollContent)
       .usdtPage("我的策略", backAction: onClose).task { await store.refresh() }
       .navigationDestination(isPresented: $editing) {
         USDTStrategyEditor(strategy: editingStrategy)
@@ -272,7 +274,7 @@ struct USDTStrategyEditor: View {
                 WebIcon("pencil", size: 16).foregroundStyle(WebTheme.muted)
               }.accessibilityLabel("编辑策略名称")
             }
-          }.padding(.bottom, 16)
+          }
         }
       }.interactivePopGestureEnabled().onAppear {
         guard !loaded else { return }

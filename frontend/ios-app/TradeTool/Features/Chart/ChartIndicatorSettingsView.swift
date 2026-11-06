@@ -358,7 +358,7 @@ struct ChartIndicatorSettingsView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 14)
+                .padding(.top, 16)
                 .padding(.bottom, 18)
             }
 
@@ -385,7 +385,7 @@ struct ChartIndicatorSettingsView: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("indicator-settings.tab." + title)
                   .accessibilityAddTraits(selectedIndicator == title ? .isSelected : [])
             }
-        }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
+        }.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 4)
     }
 
     private var header: some View {
@@ -407,7 +407,9 @@ struct ChartIndicatorSettingsView: View {
             .foregroundStyle(BinanceTheme.accentText)
         }
         .padding(.horizontal, 16)
-        .frame(height: 52)
+        .frame(height: WebTheme.rootHeaderHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("indicator-settings.header")
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(IndicatorSettingsPalette.divider)
