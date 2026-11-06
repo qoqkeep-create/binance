@@ -36,11 +36,18 @@ struct ChartDataPipelineHealth: Sendable {
 }
 
 actor ChartDataPipeline {
+    private struct RolloverIndicatorCache {
+        let candles: ChartCandleHistory
+        let committed: ChartIndicatorHistorySnapshot
+        let engine: ChartIndicatorEngine
+    }
+
     private let stream: ChartStreamKey
     private let intervalMilliseconds: Int64
     private let historyLimit: Int
     private var store: CandleStorage
     private var indicatorHistoryDirty = false
+    private var rolloverIndicatorCache: RolloverIndicatorCache?
 
     private var epoch: KlineStreamEpoch
     private var ingress: KlineIngressState
@@ -335,7 +342,7 @@ actor ChartDataPipeline {
             base = nil
         }
 
-        let previous = current.history.candles.last
+        let previous = current.liveTail ?? current.history.candles.last
         let adjacentClose = previous.flatMap { $0.closeTime == bucketOpenTime - 1 ? $0.closePrice : nil }
         let openingPrice = base?.openPrice ?? adjacentClose ?? price
         let candle = ChartCandle(
@@ -511,7 +518,17 @@ actor ChartDataPipeline {
 
             candleSnapshot = store.apply(mutation)
             if candle.closure == .closed {
-                appendCommittedIndicators(candle)
+                // Only a contiguous, trusted prefix can advance committed state.
+                // A close for a later bar can arrive before an earlier trusted close.
+                let hasUnverifiedPredecessor = candleSnapshot.history.candles.contains {
+                    $0.openTime < candle.openTime && $0.closure == .unverifiedClosed
+                }
+                if !indicatorHistoryDirty && !hasUnverifiedPredecessor {
+                    appendCommittedIndicators(candle)
+                } else {
+                    indicatorHistoryDirty = true
+                    ingress.requireDownstreamRecovery(openTime: candle.openTime)
+                }
             }
             ingress.confirmApplied(
                 revision: mutation.revision
@@ -542,7 +559,7 @@ actor ChartDataPipeline {
               ) else {
             return false
         }
-        let health = nextEngine.installHistory(candles)
+        let health = nextEngine.installHistory(Array(candles.prefix { $0.closure == .closed }))
         indicatorEngine = nextEngine
         indicatorHistoryDirty = false
         return health.requiresRecovery
@@ -567,14 +584,36 @@ actor ChartDataPipeline {
             stream: stream,
             epoch: epoch,
             candles: candles,
-            indicators: indicatorEngine.snapshot(
-                provisional: live
-            ),
+            indicators: displayedIndicators(candles: candles, live: live),
             recoveryRequest:
                 ingress.recoveryRequest,
             readyTime:
                 ProcessInfo.processInfo.systemUptime
         )
+    }
+
+    private func displayedIndicators(candles: ChartCandleSnapshot, live: ChartCandle?) -> ChartIndicatorSnapshot {
+        guard !indicatorEngine.history.series.isEmpty,
+              let latest = candles.history.candles.last,
+              latest.openTime > (indicatorEngine.lastCommittedOpenTime ?? Int64.min) else {
+            rolloverIndicatorCache = nil
+            return indicatorEngine.snapshot(provisional: live)
+        }
+        if let cached = rolloverIndicatorCache,
+           cached.candles === candles.history, cached.committed === indicatorEngine.history {
+            return cached.engine.snapshot(provisional: live)
+        }
+        // Replay pending rollover bars into a value copy for drawing only. Their
+        // real closure remains unverified and the committed calculators stay put.
+        // Cache this projection so ordinary ticks do not rebuild indicator history.
+        var displayEngine = indicatorEngine
+        let committedOpenTime = indicatorEngine.lastCommittedOpenTime ?? Int64.min
+        for candle in candles.history.candles where candle.openTime > committedOpenTime {
+            _ = displayEngine.commit(candle.withClosure(.closed))
+        }
+        rolloverIndicatorCache = RolloverIndicatorCache(candles: candles.history,
+            committed: indicatorEngine.history, engine: displayEngine)
+        return displayEngine.snapshot(provisional: live)
     }
 
     private func normalizedSnapshot(

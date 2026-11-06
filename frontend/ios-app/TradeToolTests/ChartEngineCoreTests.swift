@@ -1883,6 +1883,178 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertNil(health.recoveryRequest)
     }
 
+    func testChartDataPipelineKeepsPreviousCandleVisibleWhenTickerRollsOver() async throws {
+        let epoch = KlineStreamEpoch(generation: 31)
+        let width: Int64 = 3_600_000
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: width, epoch: epoch))
+        let candles = (0...1).map { marketCandle(openTime: Int64($0) * width,
+            closePrice: 60_000 + Double($0)) }
+        let initial = await pipeline.installSnapshot(candles,
+            fetchedAtMilliseconds: 1 * width + 1, epoch: epoch)
+        let previous = try XCTUnwrap(initial.frame?.candles.liveTail)
+
+        let rolled = await pipeline.mergeLatestPrice(60_250,
+            eventTimeMilliseconds: 2 * width + 1, epoch: epoch)
+        let frame = try XCTUnwrap(rolled.frame)
+        let visible = frame.candles.history.candles + [try XCTUnwrap(frame.candles.liveTail)]
+        XCTAssertEqual(visible.map(\.openTime), (0...2).map { Int64($0) * width },
+            "The previous live bar must remain visible before its trusted close or HTTP repair arrives")
+        XCTAssertEqual(visible.first { $0.openTime == previous.openTime }?.closePrice, previous.closePrice)
+        XCTAssertEqual(frame.candles.liveTail?.openTime, 2 * width)
+    }
+
+    func testChartDataPipelineKeepsPreviousCandleVisibleWhenSocketRollsOver() async throws {
+        let epoch = KlineStreamEpoch(generation: 32)
+        let width: Int64 = 3_600_000
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: width, epoch: epoch))
+        let candles = (0...1).map { marketCandle(openTime: Int64($0) * width,
+            closePrice: 60_000 + Double($0)) }
+        _ = await pipeline.installSnapshot(candles,
+            fetchedAtMilliseconds: 1 * width + 1, epoch: epoch)
+        _ = await pipeline.accept(payload: realtimePayload(sequence: 1,
+            openTime: 1 * width, closePrice: 60_210, closed: false), sequence: 1, epoch: epoch)
+        _ = await pipeline.drain()
+        _ = await pipeline.accept(payload: realtimePayload(sequence: 2,
+            openTime: 2 * width, closePrice: 60_250, closed: false), sequence: 2, epoch: epoch)
+        let rolled = await pipeline.drain()
+        let frame = try XCTUnwrap(rolled.frame)
+        let visible = frame.candles.history.candles + [try XCTUnwrap(frame.candles.liveTail)]
+        XCTAssertEqual(visible.map(\.openTime), (0...2).map { Int64($0) * width },
+            "A missing close must request recovery without removing the previous candle")
+        XCTAssertEqual(visible.first { $0.openTime == 1 * width }?.closePrice, 60_210)
+        XCTAssertEqual(rolled.recoveryRequest?.reason, .missingTrustedClose(openTime: 1 * width))
+    }
+
+    func testChartDataPipelineRolloverKeepsIndicatorsAndLateCloseConsistent() async throws {
+        let epoch = KlineStreamEpoch(generation: 33)
+        let width: Int64 = 3_600_000
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: width, epoch: epoch))
+        let history = (0...200).map { marketCandle(openTime: Int64($0) * width,
+            closePrice: 60_000 + Double($0)) }
+        _ = await pipeline.installSnapshot(history, fetchedAtMilliseconds: 200 * width + 1, epoch: epoch)
+        let rolled = await pipeline.mergeLatestPrice(60_250,
+            eventTimeMilliseconds: 201 * width + 1, epoch: epoch)
+        let preview = try XCTUnwrap(rolled.frame)
+        XCTAssertEqual(preview.candles.history.candles.last?.closure, .unverifiedClosed)
+        XCTAssertTrue(preview.indicators.history.series.allSatisfy { $0.points.count == 201 },
+            "Display indicators must keep their time slots aligned with the retained rollover candle")
+        XCTAssertNotNil(preview.indicators.legends.first { $0.instanceID == "ema.21" }?.value)
+        let next = await pipeline.mergeLatestPrice(60_251,
+            eventTimeMilliseconds: 201 * width + 2, epoch: epoch)
+        XCTAssertTrue(next.frame?.indicators.history === preview.indicators.history,
+            "Ticks while awaiting the close must reuse the display history")
+
+        _ = await pipeline.accept(payload: realtimePayload(sequence: 1,
+            openTime: 200 * width, closePrice: 60_220, closed: true), sequence: 1, epoch: epoch)
+        let closed = await pipeline.drain()
+        let confirmed = try XCTUnwrap(closed.frame)
+        XCTAssertNil(closed.recoveryRequest, "An unverified display bar must not be committed to the real indicator engine")
+        XCTAssertEqual(confirmed.candles.history.candles.last?.closure, .closed)
+        XCTAssertEqual(confirmed.candles.history.candles.last?.closePrice, 60_220)
+        XCTAssertEqual(confirmed.candles.liveTail?.openTime, 201 * width)
+        XCTAssertEqual(confirmed.candles.history.candles.filter { $0.openTime == 200 * width }.count, 1)
+        let reference = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: width, epoch: epoch))
+        let corrected = Array(history.dropLast()) + [marketCandle(openTime: 200 * width, closePrice: 60_220)]
+        _ = await reference.installSnapshot(corrected, fetchedAtMilliseconds: 201 * width + 1, epoch: epoch)
+        let expected = await reference.mergeLatestPrice(60_251,
+            eventTimeMilliseconds: 201 * width + 2, epoch: epoch)
+        XCTAssertEqual(confirmed.indicators.history.series.map(\.points), expected.frame?.indicators.history.series.map(\.points))
+        XCTAssertEqual(confirmed.indicators.legends.first { $0.instanceID == "ema.21" }?.value,
+            expected.frame?.indicators.legends.first { $0.instanceID == "ema.21" }?.value)
+    }
+
+    func testChartDataPipelineRolloverStaysVisibleAcrossIntervalsAndStaleSnapshots() async throws {
+        for (interval, width) in [("1m", Int64(60_000)), ("5m", 300_000), ("1h", 3_600_000), ("1w", 604_800_000)] {
+            let base: Int64 = interval == "1w" ? 345_600_000 : 0
+            let epoch = KlineStreamEpoch(generation: 34)
+            let pipeline = try XCTUnwrap(ChartDataPipeline(stream: ChartStreamKey(symbol: "BTCUSDT", interval: interval),
+                intervalMilliseconds: width, epoch: epoch))
+            let history = (0...1).map { index in
+                MarketCandle(openTime: base + Int64(index) * width, closeTime: base + Int64(index + 1) * width - 1,
+                    openPrice: 100, highPrice: 110, lowPrice: 99, closePrice: 105, volume: 10, quoteVolume: 1000)
+            }
+            _ = await pipeline.installSnapshot(history, fetchedAtMilliseconds: base + width + 1, epoch: epoch)
+            let result = await pipeline.mergeLatestPrice(106, eventTimeMilliseconds: base + 2 * width + 1, epoch: epoch)
+            let frame = try XCTUnwrap(result.frame)
+            XCTAssertEqual(frame.candles.history.candles.map(\.openTime), [base, base + width], interval)
+            XCTAssertEqual(frame.candles.history.candles.last?.closure, .unverifiedClosed, interval)
+            XCTAssertEqual(frame.candles.liveTail?.openTime, base + 2 * width, interval)
+            XCTAssertEqual(frame.candles.liveTail?.openPrice, 105, "The new quote-only bar starts at the previous bar's close")
+            let viewport = try XCTUnwrap(ChartSceneViewport(widthPoints: 390, heightPoints: 396, displayScale: 3))
+            let scene = try await ChartSceneBuilder().build(frame: frame, viewport: viewport)
+            XCTAssertEqual(scene.renderState.staticScene.batches.flatMap { $0.storage.candleInstances }.count, 2, interval)
+            XCTAssertEqual(scene.renderState.liveTail.batches.flatMap { $0.storage.candleInstances }.count, 1, interval)
+
+            let delayed = await pipeline.installSnapshot(history, fetchedAtMilliseconds: base + width + 2,
+                epoch: epoch, preservingNewerData: true)
+            XCTAssertEqual(delayed.frame?.candles.history.candles.last?.closure, .unverifiedClosed, interval)
+            XCTAssertEqual(delayed.frame?.candles.liveTail?.openTime, base + 2 * width, interval)
+            XCTAssertEqual(delayed.frame?.candles.history.candles.count, 2, interval)
+        }
+    }
+
+    func testChartDataPipelineRolloverSnapshotAndPaginationKeepUnverifiedClosure() async throws {
+        let width: Int64 = 3_600_000
+        let epoch = KlineStreamEpoch(generation: 35)
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: width, epoch: epoch))
+        let initial = [marketCandle(openTime: 10 * width, closePrice: 110),
+            marketCandle(openTime: 11 * width, closePrice: 111)]
+        _ = await pipeline.installSnapshot(initial, fetchedAtMilliseconds: 11 * width + 1, epoch: epoch)
+        let ahead = await pipeline.installSnapshot([initial[0], marketCandle(openTime: 12 * width, closePrice: 112)],
+            fetchedAtMilliseconds: 12 * width + 1, epoch: epoch, preservingNewerData: true)
+        XCTAssertEqual(ahead.frame?.candles.history.candles.map(\.openTime), [10 * width, 11 * width])
+        XCTAssertEqual(ahead.frame?.candles.history.candles.last?.closure, .unverifiedClosed)
+        let page = await pipeline.prependHistory([marketCandle(openTime: 9 * width, closePrice: 109)], epoch: epoch)
+        XCTAssertEqual(page.frame?.candles.history.candles.map(\.openTime), [9 * width, 10 * width, 11 * width])
+        XCTAssertEqual(page.frame?.candles.history.candles.last?.closure, .unverifiedClosed,
+            "Pagination must not turn a display-only rollover bar into a trusted close")
+        _ = await pipeline.accept(payload: realtimePayload(sequence: 1,
+            openTime: 11 * width, closePrice: 111.5, closed: true), sequence: 1, epoch: epoch)
+        let confirmed = await pipeline.drain()
+        XCTAssertNil(confirmed.recoveryRequest)
+        XCTAssertEqual(confirmed.frame?.candles.history.candles.last?.closure, .closed)
+        XCTAssertEqual(confirmed.frame?.candles.liveTail?.openTime, 12 * width)
+    }
+
+    func testChartDataPipelineRolloverDefersOutOfOrderClosesUntilSnapshotRecovery() async throws {
+        let width: Int64 = 3_600_000
+        let epoch = KlineStreamEpoch(generation: 36)
+        let pipeline = try XCTUnwrap(ChartDataPipeline(stream: stream,
+            intervalMilliseconds: width, epoch: epoch, historyLimit: 3))
+        _ = await pipeline.installSnapshot([marketCandle(openTime: 0, closePrice: 100),
+            marketCandle(openTime: width, closePrice: 101)], fetchedAtMilliseconds: width + 1, epoch: epoch)
+        for index in 2...4 {
+            _ = await pipeline.mergeLatestPrice(100 + Double(index),
+                eventTimeMilliseconds: Int64(index) * width + 1, epoch: epoch)
+        }
+        let pending = await pipeline.currentFrame()
+        XCTAssertEqual(pending.candles.history.candles.map(\.openTime), [width, 2 * width, 3 * width])
+        XCTAssertTrue(pending.candles.history.candles.allSatisfy { $0.closure == .unverifiedClosed })
+        _ = await pipeline.accept(payload: realtimePayload(sequence: 1,
+            openTime: 3 * width, closePrice: 103.5, closed: true), sequence: 1, epoch: epoch)
+        let outOfOrder = await pipeline.drain()
+        XCTAssertNotNil(outOfOrder.recoveryRequest)
+        XCTAssertEqual(outOfOrder.frame?.candles.history.candles.count, 3)
+        XCTAssertEqual(outOfOrder.frame?.candles.history.candles.first?.closure, .unverifiedClosed)
+
+        // The bounded snapshot contains all three closed bars; preserve the
+        // newer quote tail separately instead of exceeding the response limit.
+        let snapshot = (1...3).map { marketCandle(openTime: Int64($0) * width,
+            closePrice: 100 + Double($0) + 0.5) }
+        let repaired = await pipeline.installSnapshot(snapshot,
+            fetchedAtMilliseconds: 4 * width + 2, epoch: epoch, preservingNewerData: true)
+        XCTAssertNil(repaired.recoveryRequest)
+        XCTAssertEqual(repaired.frame?.candles.history.candles.map(\.closure), [.closed, .closed, .closed])
+        XCTAssertEqual(repaired.frame?.candles.history.candles.count, 3)
+        XCTAssertTrue(repaired.frame?.indicators.history.series.allSatisfy { $0.points.count == 3 } == true)
+        XCTAssertEqual(repaired.frame?.candles.liveTail?.openTime, 4 * width)
+    }
+
     func testChartDataPipelineCreatesLiveTailImmediatelyAfterClosedSnapshot()
         async throws {
         let epoch = KlineStreamEpoch(generation: 22)

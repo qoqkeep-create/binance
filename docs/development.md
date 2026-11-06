@@ -2,6 +2,19 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## K 线换根连续性回归（2026-11-06，本地）
+
+按用户“多个周期都有”的反馈，在真实 `ChartDataPipeline` 构造 ticker 跨桶、Socket 缺可信 close 两条无网络回放；先以 201 根缩减为一根历史＋一根尾线，稳定复现旧尾线在换根帧消失。最小回放 **2 项／4 个断言失败**，实际 openTime 为 `[0, 7200000]`，预期 `[0, 3600000, 7200000]`；日志 `.integration-runtime/candle-rollover-baseline.log`／`candle-rollover-minimal.log`。随后补充显示指标的时间对齐及临时开盘锚点回放，防止只保留蜡烛而让指标出现断档。根因与实现边界见 [行情](market-data.md#k-线换根时旧尾线连续保留2026-11-06本地)。
+
+最终 **64 项 host 回归全部通过，0 跳过**（`candle-rollover-full-final.log`），包含新增六项：ticker／Socket 换根连续、显示指标缓存与可信 close 校正对照、1m／5m／1h／周线实际 `ChartSceneBuilder` 的两根历史＋一根 live 图元、旧快照不删除／升格旧尾线、分页保留未确认标记、3 根历史上限与乱序 close 后快照恢复；原有切周期缓存、重连、取消、快照／分页／配置并发及旧响应隔离一并通过。运行器复制并执行实际生产 Swift 源码与实际 XCTest 方法，不使用生产行情／账号，也不等待真实收线。命令：
+
+```bash
+python3 frontend/ios-app/scripts/test_chart_recovery.py .integration-runtime/CandleRolloverNov6/Host
+xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Release' -configuration Release -destination 'generic/platform=iOS' -derivedDataPath .integration-runtime/CandleRolloverNov6/Release CODE_SIGNING_ALLOWED=NO build
+```
+
+主 App／Widget generic iOS 无签名 **Release 构建通过**（`candle-rollover-release.log`）；本轮未启动模拟器、执行 iOS UI 测试或进行手机换根验收，host 场景图元检查不能等同实机呈现。修改保留本地，未提交／推送、部署或上传 TestFlight；需要新客户端才能获得修复。
+
 ## 首屏同步补齐与传输调整（2026-11-06）
 
 按 [行情](market-data.md#首屏同步补齐与传输调整2026-11-06) 实施三项服务端改动：`load_history` 对最新窗 stale／缺口做一次有界同步补线（`service.sync_backfill` → `repair.fetch_page`，一页 ≤1500 根、4 秒超时、30 秒冷却键合并、normal 预算、上游冷却跳过，失败回落持久任务）；`history_cache.MAX_WINDOWS` 64→192 并同步扩大 Compose Redis 配额（256mb／320m）；`KlinesView` 移除 `@gzip_page`，压缩移交 `deploy/integrated/nginx-location.conf` 的 gzip（level 5）。WSS 认证／ack 审查后不改，理由见行情文档。

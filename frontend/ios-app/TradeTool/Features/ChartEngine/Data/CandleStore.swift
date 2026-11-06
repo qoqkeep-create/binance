@@ -15,6 +15,7 @@ struct ChartCandleSnapshot: Sendable {
 }
 
 // Owned synchronously by the pipeline so candle and indicator updates cannot interleave.
+// History also retains rolled-over bars as unverified until a trusted close arrives.
 struct CandleStorage {
     private var history: ChartCandleHistory
     private var liveTail: ChartCandle?
@@ -28,8 +29,8 @@ struct CandleStorage {
     ) {
         self.historyLimit = max(1, historyLimit)
         history = ChartCandleHistory(
-            candles: Self.normalizedClosed(
-                initialClosed,
+            candles: Self.normalizedHistory(
+                initialClosed.map { $0.withClosure(.closed) },
                 limit: max(1, historyLimit)
             )
         )
@@ -41,11 +42,22 @@ struct CandleStorage {
         let candle = preservingTradingData(in: mutation.candle)
 
         switch candle.closure {
-        case .provisional, .unverifiedClosed:
-            if liveTail == nil
-                || candle.openTime
-                    >= (liveTail?.openTime ?? Int64.min) {
+        case .provisional:
+            if candle.openTime > (history.candles.last?.openTime ?? Int64.min),
+               liveTail == nil || candle.openTime >= (liveTail?.openTime ?? Int64.min) {
+                retainPreviousTail(before: candle.openTime)
                 liveTail = candle
+                quoteOnlyRange = nil
+            }
+
+        case .unverifiedClosed:
+            // A newer live bar must not erase this bar while recovery is pending.
+            // A late unverified mutation must never downgrade an already trusted close.
+            if !history.candles.contains(where: { $0.openTime == candle.openTime && $0.closure == .closed }) {
+                commit(candle)
+            }
+            if liveTail?.openTime == candle.openTime {
+                liveTail = nil
                 quoteOnlyRange = nil
             }
 
@@ -68,10 +80,15 @@ struct CandleStorage {
     ) -> ChartCandleSnapshot {
         let previousLive = liveTail
         let previousQuoteRange = quoteOnlyRange
-        let merged = Self.normalizedClosed(
+        var merged = Self.normalizedHistory(
             (preservingNewerData ? history.candles : []) + closedCandles,
             limit: historyLimit
         )
+        if preservingNewerData, let previousLive, let liveCandle,
+           previousLive.openTime < liveCandle.openTime,
+           !merged.contains(where: { $0.openTime == previousLive.openTime }) {
+            merged = Self.normalizedHistory(merged + [previousLive.withClosure(.unverifiedClosed)], limit: historyLimit)
+        }
         let historyChanged = merged != history.candles
         if historyChanged {
             history = ChartCandleHistory(candles: merged)
@@ -111,11 +128,13 @@ struct CandleStorage {
         let resolved = preservingTradingData(in: candle)
         guard resolved.isValid,
               resolved.closure != .closed,
+              resolved.openTime > (history.candles.last?.openTime ?? Int64.min),
               liveTail == nil
                 || resolved.openTime
                     >= (liveTail?.openTime ?? Int64.min) else {
             return snapshot()
         }
+        retainPreviousTail(before: resolved.openTime)
         if let quotedPrice {
             if liveTail?.openTime != candle.openTime {
                 quoteOnlyRange = (candle.openTime, quotedPrice, quotedPrice)
@@ -134,7 +153,7 @@ struct CandleStorage {
         guard !candles.isEmpty else {
             return snapshot()
         }
-        let merged = Self.normalizedClosed(candles + history.candles, limit: historyLimit)
+        let merged = Self.normalizedHistory(candles + history.candles, limit: historyLimit)
         if merged != history.candles {
             history = ChartCandleHistory(candles: merged)
             revision &+= 1
@@ -169,6 +188,11 @@ struct CandleStorage {
         history = ChartCandleHistory(candles: candles)
     }
 
+    private mutating func retainPreviousTail(before openTime: Int64) {
+        guard let liveTail, liveTail.openTime < openTime else { return }
+        commit(liveTail.withClosure(.unverifiedClosed))
+    }
+
     private func preservingTradingData(
         in candle: ChartCandle
     ) -> ChartCandle {
@@ -189,13 +213,14 @@ struct CandleStorage {
         return candle.withTradingData(latestTradingData)
     }
 
-    private static func normalizedClosed(
+    private static func normalizedHistory(
         _ candles: [ChartCandle],
         limit: Int
     ) -> [ChartCandle] {
         var byOpenTime: [Int64: ChartCandle] = [:]
         for candle in candles where candle.isValid {
-            byOpenTime[candle.openTime] = candle.withClosure(.closed)
+            byOpenTime[candle.openTime] = candle.closure == .unverifiedClosed
+                ? candle : candle.withClosure(.closed)
         }
         return Array(
             byOpenTime.values
