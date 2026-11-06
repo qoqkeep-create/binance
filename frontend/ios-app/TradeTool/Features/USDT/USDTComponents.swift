@@ -220,16 +220,13 @@ struct WebTabs: View {
       ]).width
       let lineWidth = max(0, min(titleWidth - 8, slotWidth - 12))
       if compact {
-        // Preserve the original glyph size. On narrow phones the strip follows
-        // the selected tab rather than shrinking all three equal slots.
-        let naturalWidths = tabs.map { key, title in
-          let selected = selection == key
-          let font = UIFont.systemFont(ofSize: 20, weight: selected ? .bold : .regular)
-          return max(44, ceil((title as NSString).size(withAttributes: [.font: font]).width
-            * (selected ? 1 : 0.75)) + 10)
+        // Stable compact hit areas prevent selection from reflowing the header.
+        // Narrow phones follow the selected title without shrinking its glyphs.
+        let widths = tabs.map { _, title in
+          max(44, ceil((title as NSString).size(withAttributes: [
+            .font: UIFont.boldSystemFont(ofSize: 20)
+          ]).width) + 4)
         }
-        let extra = max(0, geometry.size.width - naturalWidths.reduce(0, +)) / CGFloat(max(1, tabs.count))
-        let widths = naturalWidths.map { $0 + extra }
         let selected = tabs.firstIndex { $0.0 == selection } ?? 0
         let center = widths.prefix(selected).reduce(0, +) + (widths.indices.contains(selected) ? widths[selected] / 2 : 0)
         let offset = min(0, max(geometry.size.width - widths.reduce(0, +), geometry.size.width / 2 - center))

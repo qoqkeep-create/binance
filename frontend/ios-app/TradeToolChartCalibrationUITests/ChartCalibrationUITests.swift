@@ -3433,6 +3433,40 @@ final class WebParityUITests: XCTestCase {
     capture("launch-96pt-rounded")
   }
 
+  func testPositionTabButtonsKeepTheirCentersWhileSwitching() {
+    launch("positions")
+    let keys = ["positions", "limits", "history"]
+    let tabs = keys.map { app.buttons["positions.tabs." + $0] }
+    XCTAssertTrue(tabs[0].waitForExistence(timeout: 5))
+    let frames = tabs.map { $0.frame }
+    for next in [1, 2, 0, 1, 0] {
+      tabs[next].tap()
+      XCTAssertTrue(tabs[next].isSelected)
+      for index in tabs.indices {
+        XCTAssertEqual(tabs[index].frame.midX, frames[index].midX, accuracy: 0.5,
+          "Tab hit areas must stay fixed when only selection changes")
+        XCTAssertEqual(tabs[index].frame.width, frames[index].width, accuracy: 0.5)
+      }
+    }
+    XCTAssertLessThan(frames[2].maxX - frames[0].minX, 225, "Keep the tab strip compact")
+    capture("positions-compact-stable-tabs")
+  }
+
+  func testConfirmedEmptyMarginHidesReadFailureAndShowsBothCards() {
+    launch("positions", ["--fixture-empty", "--fixture-margin-failure"])
+    let badge = app.buttons["positions.margin"]
+    XCTAssertTrue(badge.waitForExistence(timeout: 5))
+    let zero = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0%"), object: badge)
+    XCTAssertEqual(XCTWaiter.wait(for: [zero], timeout: 5), .completed)
+    badge.tap()
+    XCTAssertTrue(app.staticTexts["本地计算明细"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["币安实时保证金率"].exists)
+    XCTAssertTrue(app.staticTexts["未开仓"].firstMatch.exists)
+    XCTAssertFalse(app.staticTexts["保证金率更新失败，请重试"].exists)
+    XCTAssertFalse(app.staticTexts["合计初始保证金占用"].exists)
+    capture("positions-empty-margin-two-cards")
+  }
+
   func testPositionPagesSwipeAndMarginDetailsStayReadOnly() {
     launch("positions", ["--fixture-margin-danger"])
     let position = app.buttons["positions.tabs.positions"]
@@ -3454,10 +3488,18 @@ final class WebParityUITests: XCTestCase {
     pullToRefresh(app.scrollViews["positions.list"], distance: 30)
     XCTAssertTrue(position.isSelected, "Vertical pull must not change pages")
     badge.tap()
-    XCTAssertTrue(app.staticTexts["币安保证金率"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["85%"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["保证金详情"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["本地计算明细"].exists)
     XCTAssertTrue(app.staticTexts["合计初始保证金占用"].exists)
+    let details = app.scrollViews.containing(.staticText, identifier: "本地计算明细").firstMatch
+    let realtime = details.staticTexts["85%"]
+    XCTAssertEqual(realtime.label, "85%")
+    XCTAssertTrue(realtime.isHittable)
     capture("positions-margin-danger-details")
+    for _ in 0..<4 where !app.staticTexts["TESTUSDT"].isHittable { details.swipeUp() }
+    XCTAssertTrue(app.staticTexts["TESTUSDT"].isHittable)
+    XCTAssertTrue(app.staticTexts["43.75%"].exists)
+    capture("positions-local-margin-details")
     app.swipeLeft()
     app.buttons["关闭"].firstMatch.tap()
     XCTAssertTrue(position.isSelected, "A modal drag must not switch the page underneath")

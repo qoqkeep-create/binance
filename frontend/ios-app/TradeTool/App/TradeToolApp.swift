@@ -272,6 +272,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
       if request.path == "/v1/position/margin" {
+        if ProcessInfo.processInfo.arguments.contains("--fixture-margin-failure") {
+          throw APIError.business(code: "VISUAL_FIXTURE", message: "保证金读取替身失败")
+        }
         let danger = ProcessInfo.processInfo.arguments.contains("--fixture-margin-danger")
         let caution = ProcessInfo.processInfo.arguments.contains("--fixture-margin-caution")
         value = .object(["supported": .bool(true), "observed_at": .number(Date().timeIntervalSince1970 * 1000),
@@ -288,6 +291,11 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
               "maintenance_margin": .string(danger ? "680" : caution ? "440" : "200"),
               "unrealized_profit": .string("-200"), "usage_percent": .string("43.75"),
               "open_order_initial_margin": .string("50")])])])
+        if Self.empty {
+          value = .object(["supported": .bool(true), "observed_at": .number(Date().timeIntervalSince1970 * 1000),
+            "max_age_seconds": .number(20), "currency": .string("USDT"), "positions": .array([]),
+            "margin_ratio_percent": .null, "liquidation_reached": .bool(false)])
+        }
       }
       if ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay") {
         if request.path == "/api/market/tickers" {

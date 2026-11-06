@@ -731,9 +731,9 @@ struct USDTPositionsView: View {
           tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment, compact: true)
           .frame(maxWidth: 248).frame(height: 44)
         Spacer(minLength: 0)
-        PositionMarginBadge(model: margin, scope: store.scope) {
+        PositionMarginBadge(model: margin, scope: store.scope, exposure: margin.exposure(in: store)) {
           marginDetails = true
-          Task { await margin.refresh(store) }
+          Task { await margin.refresh(store, afterChange: true) }
         }
         Button { liveActivity.toggle(store: store, container: container) } label: {
           VStack(spacing: 1) {
@@ -760,8 +760,9 @@ struct USDTPositionsView: View {
           Rectangle().fill(WebTheme.border).frame(height: 1)
         }.accessibilityElement(children: .contain).accessibilityIdentifier("positions.header")
       GeometryReader { geometry in
+      ScrollViewReader { scroll in
       WebRefreshScrollView(isActive: isVisible && scenePhase == .active) {
-        VStack(spacing: 10) {
+        LazyVStack(spacing: 10) {
           if segment == "history" && store.isBound {
             HStack(spacing: 8) {
               ForEach(
@@ -822,9 +823,13 @@ struct USDTPositionsView: View {
                 .disabled(loading || refreshing)
             }
           }
-        }.frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
+        }.id("positions.page.top").frame(minHeight: !store.isBound ? max(0, geometry.size.height - 32) : nil)
           .padding(16).frame(maxWidth: 448).frame(maxWidth: .infinity)
-      }.id(segment).scrollIndicators(.hidden).scrollBounceBehavior(.always)
+      }.scrollIndicators(.hidden).scrollBounceBehavior(.always)
+        .onChange(of: segment) { _, _ in
+          var transaction = Transaction(); transaction.disablesAnimations = true
+          withTransaction(transaction) { scroll.scrollTo("positions.page.top", anchor: .top) }
+        }
         .accessibilityIdentifier("positions.list")
         .webRefreshable {
           let scope = store.scope
@@ -836,11 +841,12 @@ struct USDTPositionsView: View {
             await store.refresh()
             guard scope == store.scope, refreshSegment == segment, refreshFilter == filter else { return }
             model.page = 1
-            async let marginRefresh: Void = margin.refresh(store)
+            async let marginRefresh: Void = margin.refresh(store, afterChange: true)
             await reload()
             await marginRefresh
           }.value
         }
+      }
       }
     }.background {
       PositionPageSwipeGesture(enabled: isVisible && scenePhase == .active && !chart
@@ -902,9 +908,17 @@ struct USDTPositionsView: View {
           await reload(reuseIfLoaded: true)
         }.value
       }
+      .onChange(of: store.positionDataRevision) { _, _ in
+        if isVisible, scenePhase == .active, !chart {
+          Task {
+            async let marginRefresh: Void = margin.refresh(store, afterChange: true)
+            await store.refreshPositions()
+            await marginRefresh
+          }
+        }
+      }
       .onChange(of: store.liveRevision) { _, _ in
-        if isVisible, scenePhase == .active, !chart { Task { await margin.refresh(store) } }
-        if isVisible, scenePhase == .active, !chart, segment != "history" {
+        if isVisible, scenePhase == .active, !chart, segment == "limits" {
           model.page = 1
           Task { await reload() }
         }
@@ -1037,6 +1051,8 @@ struct USDTPositionsView: View {
       return
     }
     if segment == "positions" {
+      if reuseIfLoaded, snapshots.scope == store.scope, snapshots.hasLoaded, !snapshots.failed,
+        let date = snapshots.updatedAt, Date().timeIntervalSince(date) < 3 { return }
       await store.refreshPositions()
       return
     }
@@ -1166,7 +1182,11 @@ struct USDTPositionsView: View {
   private func completePositionOperation(_ message: String) {
     notice = message
     operation = nil
-    Task { await reload() }
+    Task {
+      async let marginRefresh: Void = margin.refresh(store, afterChange: true)
+      await reload()
+      await marginRefresh
+    }
   }
   private func historyCard(_ row: JSONValue) -> some View {
     let external = row.value("position_origin") == "exchange_external"

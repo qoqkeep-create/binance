@@ -128,8 +128,31 @@ class MarginEndpointTests(SimpleTestCase):
         self.context = TradingAccountContext(7, 1, "fixture-key", "fixture", datetime(2026, 1, 1, tzinfo=timezone.utc),
                                             BinanceCredentials(api_key="fixture", secret_key="fixture"))
 
-    def get(self, mode="ordinary"):
-        return self.api.get("/v1/position/margin", HTTP_X_TRADING_MODE=mode)
+    def get(self, mode="ordinary", *, fresh=False):
+        return self.api.get("/v1/position/margin", {"fresh": "1"} if fresh else {}, HTTP_X_TRADING_MODE=mode)
+
+    @patch("positions.margin.get_user_binding_generation")
+    @patch("positions.margin.get_user_trading_account")
+    @patch("api_bindings.context.BinanceFuturesClient")
+    def test_event_read_bypasses_pretrade_cache_and_replaces_it(self, client, account, generation):
+        account.return_value = self.context
+        generation.return_value = self.context.generation
+        client.return_value.get_margin_account_snapshot.return_value = ({"multiAssetsMargin": False}, snapshot())
+        with patch("positions.margin.cache.set", wraps=cache.set) as write:
+            self.assertEqual(self.get().status_code, 200)
+            self.assertEqual(write.call_args.kwargs["timeout"], 1)
+        self.assertEqual(self.get().status_code, 200)
+        self.assertEqual(client.call_count, 1)
+        empty = snapshot()
+        empty["positions"] = []
+        empty["assets"][0].update(walletBalance="0", unrealizedProfit="0", marginBalance="0", maintMargin="0",
+                                  initialMargin="0", positionInitialMargin="0", openOrderInitialMargin="0")
+        client.return_value.get_margin_account_snapshot.return_value = ({"multiAssetsMargin": False}, empty)
+        response = self.get(fresh=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["positions"], [])
+        self.assertEqual(self.get().data["data"]["positions"], [])
+        self.assertEqual(client.call_count, 2)
 
     def test_authentication_required(self):
         self.api = APIClient()

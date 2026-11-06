@@ -2,6 +2,23 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
+## 持仓紧凑切页与保证金双卡片（2026-11-06）
+
+原空账户回归在旧实现中复现 `00% != 0%`，日志 `.integration-runtime/position-margin-tabs-baseline.log`。本轮保留滚动宿主、惰性构建列表、固定紧凑页签槽宽，并区分确认空仓／有仓／未知；现行显示及金额口径见 [页面](ios-web-parity.md#保证金徽标与手势切页2026-11-05本地)和[资金](capital-and-transfers.md#持仓页保证金率2026-11-05本地实现)。
+
+实际 Store、保证金模型、分页和实际 Header 的 host **19 项通过，包含 72 组宽度／主题／选中状态布局**。覆盖空仓 0%、失败不伪造零、严格数字解析、非正权益、过期／账户切换、委托占用不虚构持仓、交易所真实有仓不被 App 空列表隐藏、重叠读取合并、读取中交易事件的绕缓存追读、挂起丢弃追读、分页保留，以及事件在资料／策略请求完成前发布。命令：
+
+```bash
+python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/PositionMarginTabsNov6/Host
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py positions.test_margin common.tests.BinanceRequestBudgetTests
+```
+
+当前完整源码定向后端 **33 项通过**。线上实际 API 不含保证金接口；限定包从运行归档叠加路由、只读适配器、模式读取允许路径、两个 GET 的完整请求权重、保证金实现及测试，共 6 路径（321 个文件中 315 个保持原样），不替换交易／资金／保护实现。限定包额外运行 `api_bindings.test_modes trading.test_lead_mode`，共 **63 项通过、0 跳过**；均使用隔离 SQLite 和替身，禁止外网、dotenv、账户流及 scheduler。证据在 `.integration-runtime/PositionMarginTabsNov6/` 的 `api-prepared.json`、`api-package-tests.log`；未使用真实账户或交易操作测试。
+
+首轮系统 UI 因模拟器 test runner 启动失败而中止，不计为通过；重启 CoreSimulator 并创建独立测试设备后恢复。最终 **6 项不同系统 UI 回归均通过**：合集中的空列表三页刷新、空仓双卡片、页头／卡片／空白横滑、稳定紧凑页签、释放刷新锚点五项通过；详情用例修正查询范围（避免匹配蒙层后的同名徽标）后独立重跑通过，确认 85% 实时比例、50% 本地占用、43.75% 逐笔占用、滚动明细及弹窗手势隔离。日志为 `.integration-runtime/position-margin-tabs-ui-final.log` 与 `.integration-runtime/position-margin-details-ui-final.log`，对应 `PositionUI-Final.xcresult`／`PositionDetails-Final.xcresult`；已查看导出的空仓、紧凑页头、实时卡片和明细截图。
+
+主 App／Widget generic iOS 无签名 **Release 构建通过**，日志 `.integration-runtime/position-margin-tabs-release.log`，派生数据 `.integration-runtime/PositionMarginTabsNov6/Release`。本轮不把模拟器布局验证解释为实机卡顿或网络延迟定量改善；新包 TestFlight 分发／安装及真实绑定时效仍待验。
+
 ## 历史缓存生命周期与统计隔离（2026-11-06）
 
 先补可复现测试：原实现七个定向用例出现 4 个失败、1 个错误，复现后台统计完整读历史、旧窗口占位及旧构建迟到回填；日志 `.integration-runtime/history-lifecycle-baseline.log`。实现与正确性边界见 [行情](market-data.md#后台统计与历史缓存生命周期2026-11-06)。新增九项覆盖六类统计共享上下文、缺失上下文重试、新请求桶覆盖旧任务、提交／回滚、最新窗与分页回收、迟到构建、其他热流不被挤出、满 LRU 下统计不改变成员／分数，以及 Redis 故障时本地 SQL 返回。

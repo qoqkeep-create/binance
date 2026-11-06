@@ -68,6 +68,7 @@ final class USDTStore: ObservableObject {
     @Published var notice = ""
     @Published var isLoading = false
     @Published var liveRevision = 0
+    @Published private(set) var positionDataRevision = 0
     @Published private(set) var hasUnreadSignals = false
     private var userID = ""
     private let signalReadDefaults: UserDefaults
@@ -180,6 +181,8 @@ final class USDTStore: ObservableObject {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
             guard let self, eventScope == self.scope else { return }
             self.eventRefresh = nil
+            // Position/risk reads must not wait for profile and strategy requests.
+            self.positionDataRevision += 1
             await self.refresh(includeAccount: false)
             guard eventScope == self.scope, !Task.isCancelled else { return }
             self.liveRevision += 1

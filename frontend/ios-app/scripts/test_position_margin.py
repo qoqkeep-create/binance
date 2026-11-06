@@ -27,7 +27,7 @@ def visual_sources(destination):
     view = (APP / "Features/USDT/USDTTradingViews.swift").read_text()
     start = view.index("      HStack(spacing: 4) {", view.index("struct USDTPositionsView:"))
     header = view[start:view.index("      GeometryReader", start)]
-    header = header.replace("marginDetails = true\n          Task { await margin.refresh(store) }", "")
+    header = header.replace("marginDetails = true\n          Task { await margin.refresh(store, afterChange: true) }", "")
     header = header.replace("liveActivity.toggle(store: store, container: container)", "")
     header = header.replace("floatingPositions.toggle()", "")
     harness = '''@MainActor struct PositionHeaderHarness: View {

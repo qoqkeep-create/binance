@@ -41,6 +41,123 @@ final class PositionMarginTests: XCTestCase {
     XCTAssertEqual(critical.level, .danger)
     XCTAssertEqual(critical.percentText, "100%")
   }
+  func testConfirmedEmptyExchangeSnapshotDisplaysZeroEvenWithoutEquity() {
+    let empty: JSONValue = .object(["supported": .bool(true), "positions": .array([]),
+      "margin_ratio_percent": .null, "liquidation_reached": .bool(false)])
+    XCTAssertEqual(PositionMarginPresentation(snapshot: empty, isCurrent: true).badgePercentText, "0%")
+    XCTAssertEqual(PositionMarginPresentation(snapshot: empty, isCurrent: false).badgePercentText, "--%")
+  }
+  func testInvalidNumbersCannotBecomeZeroAndNonpositiveEquityCannotDivide() {
+    for invalid in [JSONValue.null, .bool(false), .string("--"), .string("12x"), .string("NaN"), .number(.infinity)] {
+      XCTAssertNil(PositionMarginNumber.decimal(invalid))
+    }
+    XCTAssertEqual(PositionMarginNumber.usage(.string("35"), equity: .string("80")), Decimal(string: "43.75"))
+    XCTAssertNil(PositionMarginNumber.usage(.string("35"), equity: .string("0")))
+    XCTAssertNil(PositionMarginNumber.usage(.string("35"), equity: .string("-80")))
+    let critical: JSONValue = .object(["supported": .bool(true), "liquidation_reached": .bool(true),
+      "margin_ratio_percent": .null])
+    XCTAssertEqual(PositionMarginPresentation(snapshot: critical, isCurrent: true).badgePercentText, "100%")
+  }
+  func testOnlySuccessfulRecentPositionReadCanOverrideMarginFailureWithEmpty() async {
+    let api = MarginFixtureAPI(), model = PositionMarginModel()
+    let store = bound(api)
+    XCTAssertEqual(model.exposure(in: store), .unknown)
+    let positions = Task { await store.refreshPositions() }
+    await wait(api, count: 1); await api.finish(0, value: .array([])); await positions.value
+    let margin = Task { await model.refresh(store) }
+    await wait(api, count: 2); await api.fail(1); await margin.value
+    XCTAssertEqual(model.exposure(in: store), .empty)
+    XCTAssertEqual(PositionMarginPresentation(snapshot: model.snapshot, isCurrent: false,
+      exposure: model.exposure(in: store)).badgePercentText, "0%")
+    XCTAssertEqual(model.exposure(in: store, now: .now.addingTimeInterval(21)), .unknown)
+    let failed = Task { await store.refreshPositions() }
+    await wait(api, count: 3); await api.fail(2); await failed.value
+    XCTAssertEqual(model.exposure(in: store), .unknown, "Read failure must not confirm empty")
+    store.revision += 1
+    XCTAssertEqual(model.exposure(in: store), .unknown)
+  }
+  func testNewerAccountSnapshotWinsAndOrderOnlyRowsAreEmpty() async {
+    let api = MarginFixtureAPI(), model = PositionMarginModel()
+    let store = bound(api)
+    let positions = Task { await store.refreshPositions() }
+    await wait(api, count: 1)
+    await api.finish(0, value: .array([.object(["id": .string("open")])]))
+    await positions.value
+    func account(_ quantity: String, at date: Date) -> JSONValue {
+      .object(["supported": .bool(true), "observed_at": .number(date.timeIntervalSince1970 * 1000),
+        "max_age_seconds": .number(20), "margin_ratio_percent": .string("25"),
+        "positions": .array([.object(["quantity": .string(quantity), "open_order_initial_margin": .string("50")])])])
+    }
+    let monitor = Task { await model.monitor(store) }
+    await wait(api, count: 2); await api.finish(1, value: account("0", at: .now.addingTimeInterval(-10)))
+    for _ in 0..<20 { await Task.yield() }
+    XCTAssertEqual(model.exposure(in: store), .open, "Older empty account snapshot cannot hide a newer position")
+    let open = Task { await model.refresh(store, afterChange: true) }
+    await wait(api, count: 3); await api.finish(2, value: account("10", at: .now.addingTimeInterval(1))); await open.value
+    XCTAssertEqual(model.exposure(in: store), .open)
+    let close = Task { await model.refresh(store, afterChange: true) }
+    await wait(api, count: 4); await api.finish(3, value: account("0", at: .now.addingTimeInterval(1))); await close.value
+    XCTAssertEqual(model.exposure(in: store), .empty)
+    monitor.cancel(); await monitor.value
+  }
+  func testExchangePositionCannotBeHiddenByNewerEmptyAppList() async {
+    let api = MarginFixtureAPI(), model = PositionMarginModel()
+    let store = bound(api)
+    let monitor = Task { await model.monitor(store) }
+    await wait(api, count: 1)
+    await api.finish(0, value: .object(["supported": .bool(true),
+      "observed_at": .number(Date.now.addingTimeInterval(-1).timeIntervalSince1970 * 1000),
+      "max_age_seconds": .number(20), "positions": .array([.object(["quantity": .string("10")])])]))
+    for _ in 0..<20 { await Task.yield() }
+    let positions = Task { await store.refreshPositions() }
+    await wait(api, count: 2); await api.finish(1, value: .array([])); await positions.value
+    XCTAssertEqual(model.exposure(in: store), .open)
+    monitor.cancel(); await monitor.value
+  }
+  func testEventsDuringReadCoalesceIntoFreshFollowup() async {
+    let api = MarginFixtureAPI(), model = PositionMarginModel()
+    let store = bound(api)
+    let first = Task { await model.refresh(store) }
+    await wait(api, count: 1)
+    await model.refresh(store, afterChange: true)
+    await model.refresh(store, afterChange: true)
+    await api.finish(0, value: data("5"))
+    await wait(api, count: 2)
+    let request = await api.requests[1]
+    XCTAssertEqual(request.queryItems.first(where: { $0.name == "fresh" })?.value, "1")
+    await api.finish(1, value: data("85")); await first.value
+    XCTAssertEqual(model.snapshot.value("margin_ratio_percent"), "85")
+    let count = await api.requests.count
+    XCTAssertEqual(count, 2)
+  }
+  func testSuspensionDropsQueuedEventRead() async {
+    let api = MarginFixtureAPI(), model = PositionMarginModel()
+    let store = bound(api)
+    let first = Task { await model.refresh(store) }
+    await wait(api, count: 1); await model.refresh(store, afterChange: true)
+    model.suspend()
+    await api.finish(0, value: data("5")); await first.value
+    XCTAssertEqual(model.snapshot, .null)
+    let count = await api.requests.count
+    XCTAssertEqual(count, 1)
+  }
+  func testPositionEventPublishesBeforeUnrelatedMetadataReadsFinish() async {
+    let api = MarginFixtureAPI(), store = bound(api)
+    let event = RealtimeServerMessage(version: 1, type: "event", requestId: nil, channel: "trading.position",
+      event: "changed", key: nil, sequence: nil, timestamp: 0, data: nil, error: nil)
+    store.receive(event); store.receive(event)
+    for _ in 0..<200 {
+      if await api.requests.count >= 1 { break }
+      try? await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertEqual(store.positionDataRevision, 1, "Coalesced event must invalidate position/risk before metadata returns")
+    XCTAssertEqual(store.liveRevision, 0)
+    await api.finish(0, value: store.binding)
+    await wait(api, count: 3)
+    await api.finish(1, value: .array([])); await api.finish(2, value: .array([]))
+    for _ in 0..<100 where store.liveRevision == 0 { await Task.yield() }
+    XCTAssertEqual(store.liveRevision, 1)
+  }
   func testHorizontalSwipeOnlyAndEdgesDoNotWrap() {
     XCTAssertEqual(PositionPageSwipe.destination(from: "positions", horizontal: -100, vertical: 10), "limits")
     XCTAssertEqual(PositionPageSwipe.destination(from: "limits", horizontal: -100, vertical: 0), "history")

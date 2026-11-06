@@ -117,14 +117,15 @@ class PositionMarginView(APIView):
                     f"{account.api_key_fingerprint}:{account.binding_created_at}")
         key = "position:margin:v1:" + hashlib.sha256(identity.encode()).hexdigest()
         try:
-            result = cache.get(key)
+            # Trades and explicit refreshes must not reuse a pre-change snapshot.
+            result = None if request.query_params.get("fresh") == "1" else cache.get(key)
             if not isinstance(result, dict):
                 started = time.time()
                 config, snapshot = account.create_futures_client().get_margin_account_snapshot()
                 result = present_margin(config, snapshot, observed_at=int(started * 1000))
                 if time.time() - started > 20:
                     raise BinanceApiError("保证金快照读取超时，请稍后重试")
-                cache.set(key, result, timeout=3)
+                cache.set(key, result, timeout=1)
             if get_user_binding_generation(request.user, trading_mode=mode) != account.generation:
                 return fail("API 绑定已变更，请刷新", code=409, status=409)
             return ok(data=result)
