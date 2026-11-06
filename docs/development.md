@@ -2,9 +2,9 @@
 
 当前工程入口见 [README](../README.md)，配置见 [配置字典](configuration.md)。以下命令在本整合目录执行。
 
-## 首屏同步补齐与传输调整（2026-11-06，本地）
+## 首屏同步补齐与传输调整（2026-11-06）
 
-按 [行情](market-data.md#首屏同步补齐与传输调整2026-11-06-本地) 实施三项服务端改动：`load_history` 对最新窗 stale／缺口做一次有界同步补线（`service.sync_backfill` → `repair.fetch_page`，一页 ≤1500 根、4 秒超时、30 秒冷却键合并、normal 预算、上游冷却跳过，失败回落持久任务）；`history_cache.MAX_WINDOWS` 64→192 并同步扩大 Compose Redis 配额（256mb／320m）；`KlinesView` 移除 `@gzip_page`，压缩移交 `deploy/integrated/nginx-location.conf` 的 gzip（level 5）。WSS 认证／ack 审查后不改，理由见行情文档。
+按 [行情](market-data.md#首屏同步补齐与传输调整2026-11-06) 实施三项服务端改动：`load_history` 对最新窗 stale／缺口做一次有界同步补线（`service.sync_backfill` → `repair.fetch_page`，一页 ≤1500 根、4 秒超时、30 秒冷却键合并、normal 预算、上游冷却跳过，失败回落持久任务）；`history_cache.MAX_WINDOWS` 64→192 并同步扩大 Compose Redis 配额（256mb／320m）；`KlinesView` 移除 `@gzip_page`，压缩移交 `deploy/integrated/nginx-location.conf` 的 gzip（level 5）。WSS 认证／ack 审查后不改，理由见行情文档。
 
 测试按新契约改写：stale 尾部在首个请求内治愈且冷却期内不二次外呼（`test_stale_tail_is_healed_within_the_first_request`）、空读一次外呼失败后由冷却合并到后台（`test_empty_read_falls_back_to_the_worker_and_coalesces`）、API 降级仍返回 pending（`test_api_degrades_to_pending_history_and_reports_timing`）、压缩断言移交代理（`test_history_response_leaves_wire_compression_to_the_proxy`）、5m 部分桶测试显式替身外呼。隔离回归（禁外网运行器）**`market_stream` 114 项通过（6.803 秒，0 跳过）、`common`＋`trading` 574 项通过（193.618 秒，0 跳过）**；日志在 `.integration-runtime/SyncBackfillNov6/`：
 
@@ -13,7 +13,9 @@ server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolat
 server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py common trading
 ```
 
-仅本地实现与验证，未推送、未部署 47.80.22.243（首尔服务器）；无数据库迁移、无新 env、无客户端／协议字段变更。部署时须重建 redis 容器（内存配额）并同步宿主 nginx snippet（gzip），否则分别回退为 64 窗竞争风险和未压缩响应；真机首屏收益待部署后用 `ChartLoadReport` 阶段数据验证。
+本轮对 `bb5e53b` 当前 HEAD 再运行 `market_stream common trading.test_public_market_klines trading.test_snapshot_prewarm`，**299 项通过、0 跳过**；API／market 按各自实际来源仅叠加允许的 8 条路径，保留旧周期与其他交易实现，同一范围的两个实际发布包分别 **277 项通过、0 跳过**。运行器为 `FirstScreenDeployNov6/run_package_tests.py`，证据在该忽略目录的 `backend-head.log`、`api-package-tests.log`、`market-package-tests.log` 和两个 manifest；测试隔离 SQLite／回环 Redis，禁外网、dotenv、账户流和真实 scheduler。
+
+2026-11-06 16:44:27（北京时间）已部署到 **47.80.22.243（首尔服务器）**；Redis 保留 AOF 卷重建、nginx 同步 reload、API／market 配套更新，六服务与全部运行哈希通过。16:45:12 公网健康、1500／2 根、原始 gzip／identity 字节、统计和鉴权 WSS ready／ack／心跳／实时 K 线／ticker 冒烟通过；没有真实交易、资金、保护单或通知测试。`migrate --check` 通过但没有应用迁移，环境文件不变。证据为 `deploy-remote.log`、`deployment-result.json`、`smoke-result.json`；操作边界与回退见 [运维](operations.md#首屏补齐redis-扩容与-nginx-压缩发布2026-11-06)。本轮推送交给现有客户端自动构建，未手动构建／上传新客户端；手机首屏收益待真实 `ChartLoadReport`，不能把本地回归或 HTTP 冒烟写成实机通过。
 
 ## 账户入口与保证金通知（2026-11-06，本地）
 
@@ -29,7 +31,7 @@ python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/Ac
 
 通知实际 manager／导航模型 host **12 项通过**：结构化币种和模式、非法币种回退、旧外部来源拒绝、冷启动保留／消费、退出及关闭清空。保证金 Store／模型／实际 Header host **19 项通过，含 72 组 320／393／440 pt、双主题和页签状态布局**；已打开查看渲染。系统 UI 使用 DEBUG 静态 API 和独立内存认证会话，不使用生产 Keychain；Release 不包含这些替身。主 App／Widget generic iOS 无签名 **Release 构建通过**，日志 `release.log`。
 
-首轮 UI 中账号头像／短 Key 用例通过；另两项因 Switch 被按 Button 查询、独立 trade fixture 未提供底栏而失败，已修正测试入口与控件查询，不将首轮记为全通过。最终 **4 项系统 UI 全部通过**（`ui-final.log` / `AccountUIFinal.xcresult`）：绑定／未绑定头像一致、短 Key 与按钮排布、仅指定账号展示注册控件、持仓页签右移及切换固定槽位，另回归共用止损面板和未绑定头部。已查看导出的账号、注册设置及持仓截图。本轮仅本地提交，未推送／部署／上传 TestFlight；真实设备的后台通知点击和 Echo 自动提醒待后续发布验收。
+首轮 UI 中账号头像／短 Key 用例通过；另两项因 Switch 被按 Button 查询、独立 trade fixture 未提供底栏而失败，已修正测试入口与控件查询，不将首轮记为全通过。最终 **4 项系统 UI 全部通过**（`ui-final.log` / `AccountUIFinal.xcresult`）：绑定／未绑定头像一致、短 Key 与按钮排布、仅指定账号展示注册控件、持仓页签右移及切换固定槽位，另回归共用止损面板和未绑定头部。已查看导出的账号、注册设置及持仓截图。本任务当时仅本地提交；后续随本轮首屏发布交付 GitHub，账号／通知后端仍未部署，Cloud／TestFlight 与真实设备的通知点击、Echo 自动提醒待验。
 
 ## 持仓紧凑切页与保证金双卡片（2026-11-06）
 

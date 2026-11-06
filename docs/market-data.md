@@ -2,16 +2,22 @@
 
 整合环境使用 Python 采集和推送，SwiftUI / Metal 显示。接口和当前性能样本见 [整合说明](INTEGRATION.md)。
 
-## 首屏同步补齐与传输调整（2026-11-06 本地）
+## 首屏同步补齐与传输调整（2026-11-06）
 
 用户在链路对比后授权按 USDC 模式实施第一批提速改造，全部为服务端改动，不需要新客户端：
 
 - **首屏缺口请求内有界同步补齐**：`load_history` 仅在最新窗（`before=None`）出现 stale 或窗口内缺口时，经 `service.sync_backfill` → `repair.fetch_page` 同步拉取一页（≤1500 根、normal 优先级预算、4 秒超时、`market:syncfill:{symbol}:{interval}` 30 秒冷却键合并并发读）并落库后立即重读快照，一次响应给出补齐后的尾部；上游全局限速冷却期间跳过，失败或冷却期内回落到原持久任务＋`market.history` 通知路径，`historyPending` 语义保留。深段缺口仍归后台 worker，不在请求内循环补线。原“HTTP 绝不外呼交易所”的契约由用户决策替换为 USDC 的“一次有界外呼＋失败降级”。
-- **热窗缓存扩容**：`history_cache.MAX_WINDOWS` 64→192（单窗压缩 256 KiB、TTL 300 秒不变，最坏 48 MiB），`compose.integrated.yaml` Redis `maxmemory` 80mb→256mb、`mem_limit` 128m→320m，仍为 `noeviction`＋AOF。部署需重建 redis 容器；扩容只针对冷 symbol 首屏必 miss 的 LRU 竞争，revision 正确性约束不变。
-- **K 线响应压缩移交 nginx**：`KlinesView` 移除 `@gzip_page`（原 zlib level 9 压缩约 400 KiB JSON 占用所有同步视图共享的单工作线程），`deploy/integrated/nginx-location.conf` 增加 `gzip on / gzip_proxied any / gzip_comp_level 5 / gzip_types application/json / gzip_vary on`。部署时必须同步更新宿主 nginx snippet，否则响应暂为未压缩（功能不受影响，仅体积回升）。
+- **热窗缓存扩容**：`history_cache.MAX_WINDOWS` 64→192（单窗压缩 256 KiB、TTL 300 秒不变，窗口载荷合计上限 48 MiB，不含 Redis 开销及其他命名空间），`compose.integrated.yaml` Redis `maxmemory` 80mb→256mb、`mem_limit` 128m→320m，仍为 `noeviction`＋AOF。部署需重建 redis 容器；扩容减轻不同 symbol／interval 争用 LRU，真正冷读仍会 miss，revision 正确性约束不变。
+- **K 线响应压缩移交 nginx**：`KlinesView` 移除 `@gzip_page`，将约 400 KiB JSON 的压缩 CPU 工作移出 Python 请求处理线程；`deploy/integrated/nginx-location.conf` 增加 `gzip on / gzip_proxied any / gzip_comp_level 5 / gzip_types application/json / gzip_vary on`。实际 Django 5.2.17 的旧 gzip 为 **level 6**，ASGI 为每请求建立 `ThreadSensitiveContext`，并非全部同步视图共享一个线程；不能按“level 9／全局单线程”估算收益。部署时必须同步更新宿主 nginx snippet，否则响应暂为未压缩（功能不受影响，仅体积回升）。
 - **WSS 认证／订阅 ack 审查后不改**：JWT＋MySQL 用户检查是私有交易频道的安全边界且每连接仅一次、运行在工作线程；ack 先于 Redis 路由安装会破坏“ack 后读一次即可恢复”的协议不变量，丢事件将触发客户端 1500 根全量重拉，净负收益；socket 在 App 启动时已预连接，握手不在图表首屏关键路径。
 
-本地隔离回归（`.integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py`，禁外网）：`market_stream` 114 项、`common`、`trading`（含 `test_public_market_klines`／`test_snapshot_prewarm`）全部通过；相关测试已改写到新契约（stale 尾部首个请求内治愈、空读一次外呼后冷却合并、压缩断言移交代理）。状态：已提交，未推送、未部署 47.80.22.243（首尔服务器）；部署注意事项见上文 nginx 与 Redis 两条。真机首屏收益待部署后用既有 `ChartLoadReport` 阶段数据验证。
+本地隔离回归（`.integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py`，禁外网）：`market_stream` 114 项、`common`、`trading`（含 `test_public_market_klines`／`test_snapshot_prewarm`）全部通过；相关测试已改写到新契约（stale 尾部首个请求内治愈、空读一次外呼后冷却合并、压缩断言移交代理）。交付状态：源码 `bb5e53b` 随本轮推送；2026-11-06 16:44:27（北京时间）已配套部署到 **47.80.22.243（首尔服务器）**，Redis 已保留 AOF 卷重建，宿主 snippet 已同步并 reload，两个实际限定包各 277 项隔离回归通过。当前发布仅叠加三项行情改动，保留原运行周期和两套来源；源码中尚未上线的 16h 等新增周期、共享分发与账号通知不在本次范围。版本、备份和回滚见 [运维](operations.md#首屏补齐redis-扩容与-nginx-压缩发布2026-11-06)。
+
+公网原始字节检查：发布前 gzip 66372 bytes／JSON 423035 bytes，发布后 nginx level 5 gzip **69910 bytes**／JSON **423036 bytes**，identity 无压缩头；1500 根、统计与鉴权 WSS 冒烟通过。两次当前桶可能变化，字节略有差异正常；这证明压缩交接有效，不能以这组不同时间的 HTTP 样本量化 CPU 或手机收益。
+
+发布前 16:21 的最近 50 份真实报告中，49 份 displayed，首帧中位 1119.17 ms、history 130.32 ms、TTFB 291.10 ms、transfer 218.68 ms、frame ready 后呈现 115.25 ms；各段中位数不能相加，币种／周期及缓存状态混合，非受控 A/B。发布后本轮只读复查新增 **0 份**诊断；尚无发布后真实样本，首帧收益待用户实际打开图表后再测，不复用旧报告当作新结果。
+
+4 秒是传给单次 REST 的超时，预算等待、持久化与重读另计，不是整个 HTTP 的截止时间。已部署的原生周期只拉一页；源码 16h 的分页来源可能调用两次 8h REST，各自超时，不能写成所有未来周期总耗时最多 4 秒。同步补线可能让真正冷／缺口的单次 HTTP 更慢，目标是减少 pending 后的二次完整拉取；真实首屏须结合请求次数和整段呈现时间评估。
 
 ## 与 USDC 再次对照与后续方向（2026-11-06）
 
@@ -47,7 +53,7 @@ USDC 的剩余实时路径优势仍可借鉴，但当前已经近乎无等待，
 
 HTTP 缺失统计时，在调度前保存一个 300 秒的最小上下文（symbol、interval、末根 openTime／closeTime），六类统计任务共用。worker 不再调用 `load_history`，因此不读取／构造／晋升前台历史窗口。上下文缺失走既有持久任务退避，等待后续 HTTP 请求提供新上下文，不回退完整历史，也不发虚假 ready；统计接口、缓存键、映射与通知协议保持原样。
 
-闭合线 SQL 提交后，使用 Django cache 所在 Redis 的 Lua 原子更新 revision，并从最多 64 窗的 LRU 中移除该 symbol／interval 的旧版本（含分页）。构建写入同时比较期望 revision，拒绝版本轮转后迟到的旧构建回填；在途请求仍可能返回其原有快照，下一次读取走新版本。事务回滚不触发失效，其他币种／周期与私有、预算键不受影响。保留 64 窗、单窗压缩 256 KiB、TTL 300 秒、预热让位、冷读合并与 SQL 降级；没有靠扩容掩盖占位。（同日晚间窗口上限已调整为 192 窗并同步扩大 Redis 配额，见[首屏同步补齐与传输调整](#首屏同步补齐与传输调整2026-11-06-本地)；revision 与淘汰机制不变。）
+闭合线 SQL 提交后，使用 Django cache 所在 Redis 的 Lua 原子更新 revision，并从最多 64 窗的 LRU 中移除该 symbol／interval 的旧版本（含分页）。构建写入同时比较期望 revision，拒绝版本轮转后迟到的旧构建回填；在途请求仍可能返回其原有快照，下一次读取走新版本。事务回滚不触发失效，其他币种／周期与私有、预算键不受影响。保留 64 窗、单窗压缩 256 KiB、TTL 300 秒、预热让位、冷读合并与 SQL 降级；没有靠扩容掩盖占位。（同日后续窗口上限已调整为 192 窗并同步扩大 Redis 配额，见[首屏同步补齐与传输调整](#首屏同步补齐与传输调整2026-11-06)；revision 与淘汰机制不变。）
 
 本地完整行情 114 项通过；按 47.80.22.243（首尔服务器）实际 API／market 两个旧基线分别叠加的限定发布包各 92 项通过。验证范围见 [开发](development.md#历史缓存生命周期与统计隔离2026-11-06)，发布状态见 [运维](operations.md#历史缓存与统计限定发布2026-11-06)。本轮无客户端／协议／配置／数据库迁移，手机耗时收益待同条件实测；通知 kind 筛选、增量校对与执行池隔离仍未实现。
 

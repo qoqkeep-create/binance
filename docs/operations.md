@@ -2,9 +2,27 @@
 
 唯一目标为 **47.80.22.243（首尔服务器）**。原 USDT 生产环境及本地来源目录不属于本轮操作范围。用户已授权整合版部署与旧 USDC Java 环境退役；普通验收禁止真实开平仓、划转或撤保护单。各日期段落描述当时状态，当前运行版本以上方最新实际发布为准。
 
+## 首屏补齐、Redis 扩容与 nginx 压缩发布（2026-11-06）
+
+2026-11-06 16:44:27（北京时间）已将 Qoder 提交 `bb5e53b483ecc4f6367f7ce6e56ab52d1ab2c330` 的限定行情改动部署至 **47.80.22.243（首尔服务器）**。`current`／API 为 `integrated-20261106-firstscreen-api-bb5e53b`，market 为 `integrated-20261106-firstscreen-market-bb5e53b`；分别以上一版保证金 API 与历史缓存 market 的实际来源为基线，`scope=limited-first-screen-redis-gzip`。每包只变更 4 个运行 Python 文件、2 个测试文件与 Compose／nginx 共 8 条路径；API 的 307、market 的 296 个运行 Python／requirements 哈希全部匹配 manifest。没有整包覆盖 HEAD，也没有纳入共享分发、新增周期或账号／保证金通知后端。
+
+发布前完成 299 项 HEAD 定向回归、两个实际限定包各 277 项回归。重新核对运行基线、环境文件和配置差异，构建两镜像，执行 `migrate --check` 后生成数据库一致性备份（gzip **370360137 bytes**，完整解压验证）。切换前 RUNNING 命令计数为 0。没有应用 schema／数据迁移，没有真实交易、资金划转、保护单或策略操作。
+
+先备份并同步 `/etc/nginx/snippets/tradetools-integrated.conf`，`nginx -t` 通过后 reload，再移除旧 API 的 Django gzip，避免交接出现未压缩响应。宿主 snippet 与发布模板哈希一致，最终为 `fefffe62213ab892f9411d46ebf68a354ea9b321ff073cb6b5105c62ed0c397f`。Redis 正常停机（exit 0、非 OOM），离线备份原 `/data` 卷为 `redis-data.tar`（**25405440 bytes**，读取及 SHA-256 校验通过），随后强制重建 Redis。原 `tradetools-integrated_integrated-redis` 卷、Redis 二进制镜像哈希、AOF／everysec／noeviction 保留；新容器实际 `maxmemory=268435456`（256 MiB）、cgroup memory **335544320**（320 MiB），AOF 加载完成、写状态正常且数据库有数据。停机发起至 Compose 健康确认约 **11.14 秒**，含健康检查等待，不能等同于全部时间都不可用。未删除卷、清缓存或恢复旧键。
+
+随后配套替换 API／market，六服务 healthy；worker、scheduler、MySQL 容器 ID 和镜像哈希原样，环境文件 inode／大小／mtime／权限原样。备份、前后容器／Redis 状态、来源 manifest、部署日志与结果保存在 `/opt/trade-tools-integrated/backups/integrated-20261106-firstscreen-api-bb5e53b/`（0700）；本机证据在忽略的 `.integration-runtime/FirstScreenDeployNov6/`。
+
+后续 Compose 必须带齐新 API release 下的 `compose.integrated.yaml`、`compose.signal-leverage.yaml`、`compose.entry-ema.yaml`、`compose.history-cache.yaml`、`compose.margin.yaml`、`compose.firstscreen.yaml`，并设置 `INTEGRATED_RELEASE=integrated-20261106-firstscreen-api-bb5e53b`。最后一份固定两目标镜像／构建目录及其他实际镜像，Redis 固定原镜像 ID，禁止无意拉新版本。旧长运行容器的 Compose 标签可能指向已清理的十月归档；操作以这里现行完整文件链为准。
+
+回滚执行上述备份的 `rollback.sh`：恢复原 API／market、旧 nginx snippet 和 `current`，**保留 Redis 扩容与原 AOF 卷**，不还原数据库、不反迁移、不重置队列。扩容后不自动缩回 80 MiB，以免新缓存已超过旧上限；若需独立重建 Redis，应使用备份中的 `compose.rollback.yaml` 与原完整配置链，不删除卷。
+
+16:45:12（北京时间）公网验收通过：HTTPS 200、既有 QA 鉴权、BTCUSDT 1h 的 1500 根与尾部 2 根、六类统计、鉴权 WSS ready／订阅 ACK／ping-pong 及真实 K 线／ticker。原始 wire 检查 gzip **69910 bytes**、解压 JSON **423036 bytes**，identity 响应 **423036 bytes**，`Vary: Accept-Encoding` 正常；六服务和 192 窗上限再次核验。手机首帧收益及发布前后 `ChartLoadReport` 边界见 [行情](market-data.md#首屏同步补齐与传输调整2026-11-06)，不能由接口冒烟推导手机提速。
+
+本轮按授权推送 GitHub `codex/integrated-ios`，包括此前仅本地提交的 `261cf59` 客户端及 Qoder 的 `bb5e53b`；交给现有前端自动构建流程。推送不代表 Cloud／TestFlight 已成功或手机已安装；没有手动上传。`261cf59` 的注册权限、短 Key 字段和保证金 Echobell 后端／迁移仍未部署，详见 [已知事项](known-issues.md)。
+
 ## 保证金只读接口限定发布（2026-11-06）
 
-2026-11-06 15:36:55（北京时间）已将 `ba4b9e0` 中的保证金读取范围部署至 **47.80.22.243（首尔服务器）**。`current`／API 为 `integrated-20261106-margin-api-ba4b9e0`，以上一版 `integrated-20261106-history-cache-api-a91850b` 的实际归档为基线；market 继续为 `integrated-20261106-history-cache-market-a91850b`，worker／scheduler／MySQL／Redis 保留原镜像，六服务 healthy。下方历史记录保留各时点，当前 API 以本节为准。
+2026-11-06 15:36:55（北京时间）已将 `ba4b9e0` 中的保证金读取范围部署至 **47.80.22.243（首尔服务器）**。`current`／API 为 `integrated-20261106-margin-api-ba4b9e0`，以上一版 `integrated-20261106-history-cache-api-a91850b` 的实际归档为基线；market 继续为 `integrated-20261106-history-cache-market-a91850b`，worker／scheduler／MySQL／Redis 保留原镜像，六服务 healthy。本节保留当时状态，当前 API 以上方最新实际发布为准。
 
 此前运行包缺少 `GET /v1/position/margin`，本次只叠加该接口、路由、只读账户适配器、带单读取允许路径及两个 GET 的权重声明，附对应测试；共 6 个允许路径，321 个来源文件中 315 个原样。适配器只 GET `accountConfig`／`fapi/v2/account`，使用 BACKGROUND 预算且各权重 5，不执行交易对账或订单／资金／保护操作。缓存 1 秒，事件／详情／手动请求 `fresh=1` 可绕缓存；无需 schema／数据迁移。限定包 63 项隔离回归通过，见 [开发](development.md#持仓紧凑切页与保证金双卡片2026-11-06)。没有整包替换为 HEAD，未带入共享行情分发或其他交易修改。
 
@@ -377,7 +395,7 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 ## 更新与回滚
 
-更新使用新 release、受限配置和同一个 Compose 项目。限定发布须带齐当次 Compose override、固定非目标镜像，并用 `--no-deps` 只替换授权服务；当前文件清单见 [历史缓存限定发布](#历史缓存与统计限定发布2026-11-06)。不要推送父 Gitee 仓库 main 触发来源系统自动部署。
+更新使用新 release、受限配置和同一个 Compose 项目。限定发布须带齐当次 Compose override、固定非目标镜像，并用 `--no-deps` 只替换授权服务；当前文件清单见 [首屏限定发布](#首屏补齐redis-扩容与-nginx-压缩发布2026-11-06)。不要推送父 Gitee 仓库 main 触发来源系统自动部署。
 
 回滚先核对 migration 与目标镜像兼容，保存数据库备份；代码回滚不会还原数据库。兼容时选择保留的 release / 镜像，指定对应 `INTEGRATED_RELEASE` 执行 `docker compose ... up -d --no-build`，更新 `current` 后复验健康、认证和 WSS。不得通过撤单或重发 UNKNOWN 命令实现回滚。
 
