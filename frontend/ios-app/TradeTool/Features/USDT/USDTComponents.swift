@@ -167,8 +167,8 @@ struct WebSwitchStyle: ToggleStyle {
   }
 }
 
-/// UIKit owns selection gestures and accessibility; only the selected fill is
-/// painted separately so all three options can use the same small corner radius.
+/// UIKit owns selection gestures and accessibility; SwiftUI paints the themed
+/// track and selection with the same 12 pt corners as the capital action button.
 struct TradingSegmentedControl: View {
   let titles: [String]
   @Binding var selection: Int
@@ -179,13 +179,14 @@ struct TradingSegmentedControl: View {
         GeometryReader { geometry in
           if titles.indices.contains(selection) {
             let width = geometry.size.width / CGFloat(titles.count)
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: 12)
               .fill(WebTheme.brand.opacity(enabled ? 1 : 0.5))
               .frame(width: max(0, width - 4), height: geometry.size.height)
               .offset(x: CGFloat(selection) * width + 2)
           }
         }.allowsHitTesting(false).accessibilityHidden(true)
       }
+      .background(WebTheme.border, in: RoundedRectangle(cornerRadius: 12))
   }
 }
 
