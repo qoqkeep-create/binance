@@ -3053,7 +3053,7 @@ final class WebParityUITests: XCTestCase {
       app.buttons["关闭"].firstMatch.tap()
       auto.tap()
       XCTAssertEqual(auto.value as? String, "0")
-      app.segmentedControls["chart-ticket.order-type"].buttons["限价"].tap()
+      app.descendants(matching: .any)["chart-ticket.order-type"].firstMatch.buttons["限价"].tap()
       let stop = app.descendants(matching: .any)["chart-order-line.stopLoss"].firstMatch
       XCTAssertTrue(stop.waitForExistence(timeout: 5))
       let chart = app.descendants(matching: .any)["market-chart-plot"].firstMatch
@@ -3227,7 +3227,7 @@ final class WebParityUITests: XCTestCase {
     app.buttons["pairs.select.BTCUSDT"].tap()
     let ticket = app.buttons["chart-ticket.submit"]
     XCTAssertTrue(ticket.waitForExistence(timeout: 10))
-    let modes = app.segmentedControls["chart-ticket.order-type"]
+    let modes = app.descendants(matching: .any)["chart-ticket.order-type"].firstMatch
     modes.buttons["市价"].tap()
     let chart = app.descendants(matching: .any)["market-chart-plot"]
     let side = chart.frame.width - 62
@@ -3872,9 +3872,9 @@ final class WebParityUITests: XCTestCase {
     profileLink("止损额设置")
     XCTAssertTrue(app.buttons["关闭"].firstMatch.waitForExistence(timeout: 5))
     let close = app.buttons["关闭"].firstMatch
-    let grabber = app.buttons.matching(NSPredicate(format: "label IN %@", ["表单控制柄", "Sheet Grabber"])).firstMatch
-    XCTAssertTrue(grabber.waitForExistence(timeout: 5))
-    grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    let header = close.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .withOffset(CGVector(dx: -100, dy: 0))
+    header
       .press(forDuration: 0.1,
         thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)),
         withVelocity: .fast, thenHoldForDuration: 0)
@@ -4252,7 +4252,7 @@ extension WebParityUITests {
       XCTAssertEqual(XCTWaiter.wait(for: [totalVisible], timeout: 3), .completed,
         "The fixed footer total must remain visible above the confirm button")
       capture(options.isEmpty ? "capital-wallet-light" : "capital-wallet-dark")
-      app.buttons["capital.tab.transfer"].tap()
+      app.segmentedControls["capital.tabs"].buttons["转账"].tap()
       XCTAssertTrue(app.staticTexts["现货账户"].waitForExistence(timeout: 5))
       XCTAssertTrue(app.staticTexts["本次转出金额"].exists)
       XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "本次转出金额")).count, 1)
@@ -4262,14 +4262,14 @@ extension WebParityUITests {
       XCTAssertTrue(app.staticTexts["0x1234••••••BEEF"].exists)
       XCTAssertFalse(app.staticTexts["0x123456789012345678901234567890123456BEEF"].exists)
       capture(options.isEmpty ? "capital-transfer-light" : "capital-transfer-dark")
-      app.buttons["capital.tab.records"].tap()
+      app.segmentedControls["capital.tabs"].buttons["记录"].tap()
       XCTAssertTrue(app.buttons["collection.refresh"].waitForExistence(timeout: 5))
       XCTAssertTrue(app.staticTexts["历史记录"].exists)
       XCTAssertFalse(app.buttons["capital.submit"].exists)
       XCTAssertFalse(app.buttons["collection.addAccount"].exists)
       XCTAssertFalse(app.descendants(matching: .any)["collection.account"].exists)
       capture(options.isEmpty ? "capital-records-light" : "capital-records-dark")
-      app.buttons["capital.tab.move"].tap()
+      app.segmentedControls["capital.tabs"].buttons["划转"].tap()
       XCTAssertTrue(app.buttons["capital.submit"].waitForExistence(timeout: 5))
       app.buttons["capital.close"].tap()
       XCTAssertTrue(open.waitForExistence(timeout: 5))
@@ -4305,8 +4305,8 @@ extension WebParityUITests {
     XCTAssertFalse(app.descendants(matching: .any)["collection.account"].exists)
     capture("collection-history-without-account")
     launch("capital", ["--fixture-collection-configured"])
-    XCTAssertTrue(app.buttons["capital.tab.transfer"].waitForExistence(timeout: 10))
-    app.buttons["capital.tab.transfer"].tap()
+    XCTAssertTrue(app.segmentedControls["capital.tabs"].buttons["转账"].waitForExistence(timeout: 10))
+    app.segmentedControls["capital.tabs"].buttons["转账"].tap()
     let manageAccount = app.buttons["collection.manageAccount"]
     XCTAssertTrue(manageAccount.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["0x1234••••••BEEF"].exists)
@@ -4314,8 +4314,8 @@ extension WebParityUITests {
     XCTAssertTrue(app.staticTexts["资金归集账号"].waitForExistence(timeout: 5))
     capture("collection-existing-account-editor")
     launch("capital", ["--fixture-collection-unconfigured"])
-    XCTAssertTrue(app.buttons["capital.tab.transfer"].waitForExistence(timeout: 10))
-    app.buttons["capital.tab.transfer"].tap()
+    XCTAssertTrue(app.segmentedControls["capital.tabs"].buttons["转账"].waitForExistence(timeout: 10))
+    app.segmentedControls["capital.tabs"].buttons["转账"].tap()
     let addAccount = app.buttons["collection.addAccount"]
     XCTAssertTrue(addAccount.waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["collection.manageAccount"].exists)
@@ -4328,7 +4328,7 @@ extension WebParityUITests {
     XCTAssertTrue(app.buttons["归集余额"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["资金归集"].exists)
     app.buttons["归集余额"].tap()
-    app.buttons["capital.tab.records"].tap()
+    app.segmentedControls["capital.tabs"].buttons["记录"].tap()
     XCTAssertTrue(app.buttons["collection.refresh"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["capital.submit"].exists)
   }
@@ -4350,5 +4350,102 @@ extension WebParityUITests {
     legacy.tap()
     XCTAssertTrue(app.staticTexts["调整账户资金"].waitForExistence(timeout: 5))
     capture("capital-legacy-recovery")
+  }
+}
+
+
+extension WebParityUITests {
+  func testNativeSheetHonorsSubmitLockForCloseAndInteractiveDismissal() {
+    launch("native-sheet")
+    app.buttons["打开测试面板"].tap()
+    let close = app.buttons["关闭测试面板"]
+    let lock = app.switches["nativeSheet.lock"]
+    XCTAssertTrue(lock.waitForExistence(timeout: 5))
+    XCTAssertEqual(lock.value as? String, "1")
+    capture("native-sheet-locked")
+    close.tap()
+    XCTAssertTrue(close.isHittable, "Shared dismiss must respect the submit lock")
+    func dragHeader() {
+      app.staticTexts["nativeSheet.header"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        .press(forDuration: 0.1,
+          thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)),
+          withVelocity: .fast, thenHoldForDuration: 0)
+    }
+    dragHeader()
+    XCTAssertTrue(close.isHittable, "System swipe must respect the submit lock")
+    // A labeled native Toggle exposes the whole row; touch the actual trailing switch.
+    lock.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+    let unlocked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: lock)
+    XCTAssertEqual(XCTWaiter.wait(for: [unlocked], timeout: 3), .completed)
+    capture("native-sheet-unlocked")
+    dragHeader()
+    XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(app.staticTexts["nativeSheet.dismissals"].label, "关闭次数：1")
+    app.buttons["打开测试面板"].tap()
+    XCTAssertEqual(lock.value as? String, "1", "Reopening must create fresh content")
+    // A labeled native Toggle exposes the whole row; touch the actual trailing switch.
+    lock.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+    close.tap()
+    XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(app.staticTexts["nativeSheet.dismissals"].label, "关闭次数：2")
+  }
+
+  func testNativeProfileAndSettingsSwitchesKeepStateAndLabels() {
+    for options in [[], ["--fixture-dark"]] {
+      launch("profile", options)
+      let appearance = app.switches["profile.appearance"]
+      if !appearance.isHittable { app.swipeUp() }
+      XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+      let previous = appearance.value as? String
+      XCTAssertEqual(appearance.label, "切换颜色模式")
+      appearance.tap()
+      XCTAssertNotEqual(appearance.value as? String, previous)
+      capture(options.isEmpty ? "native-profile-switch-light" : "native-profile-switch-dark")
+      appearance.tap()
+      XCTAssertEqual(appearance.value as? String, previous)
+    }
+    launch("settings", ["--fixture-registration-operator"])
+    XCTAssertTrue(app.switches["settings.notifications"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.switches["settings.registration"].exists)
+    XCTAssertEqual(app.switches["settings.registration"].value as? String, "0")
+    let explanation = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "开启后其他用户")).firstMatch
+    XCTAssertLessThanOrEqual(explanation.frame.maxX, app.switches["settings.registration"].frame.minX + 1,
+      "Registration explanation must not overlap the system switch")
+    capture("native-settings-switches")
+  }
+
+  func testNativeCapitalSegmentsStayLockedForPendingOperation() {
+    launch("capital", ["--fixture-capital-pending"])
+    let tabs = app.segmentedControls["capital.tabs"]
+    XCTAssertTrue(tabs.waitForExistence(timeout: 5))
+    XCTAssertFalse(tabs.isEnabled)
+    XCTAssertTrue(tabs.buttons["划转"].isSelected)
+    XCTAssertTrue(app.buttons["capital.direction"].exists)
+    XCTAssertFalse(app.buttons["capital.direction"].isEnabled)
+    capture("native-capital-pending-lock")
+  }
+
+  func testNativePositionStrategySheetKeepsConfirmationAndNestedManagement() {
+    for options in [[], ["--fixture-dark"]] {
+      launch("positions", options + ["--fixture-strategy-idle"])
+      let open = app.buttons["添加自动止盈"]
+      XCTAssertTrue(open.waitForExistence(timeout: 5))
+      open.tap()
+      let row = app.buttons["position.strategy.row.1"]
+      XCTAssertTrue(row.waitForExistence(timeout: 5))
+      capture(options.isEmpty ? "native-position-strategy-light" : "native-position-strategy-dark")
+      row.tap()
+      XCTAssertTrue(app.buttons["position.strategy.cancel"].waitForExistence(timeout: 5))
+      capture("native-strategy-confirmation")
+      app.buttons["position.strategy.cancel"].tap()
+      XCTAssertTrue(row.waitForExistence(timeout: 5))
+      app.buttons["添加/编辑策略"].tap()
+      XCTAssertTrue(app.staticTexts["我的策略"].waitForExistence(timeout: 5))
+      capture("native-strategy-nested-management")
+      app.buttons["返回"].firstMatch.tap()
+      XCTAssertTrue(row.waitForExistence(timeout: 5), "Close nested management must return to picker")
+      app.buttons["关闭"].firstMatch.tap()
+      XCTAssertTrue(open.waitForExistence(timeout: 5))
+    }
   }
 }

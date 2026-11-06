@@ -1,8 +1,28 @@
 # 开发与验证
 
+## 系统大面板、开关与资金分段迁移（2026-11-06，本地）
+
+按用户要求，先把此前完整工作区以 `ba5cca2` 提交推送 GitHub `codex/integrated-ios`，再实施本节本地迁移。`nativeTradingSheet` 直接使用系统 `.sheet` 的 96%／80%／60% detent，保留主题与内容，将原锁定偏好同时接入交互关闭与共用关闭动作；恢复当前层 dismiss 环境，避免继承外层自绘关闭动作。颜色／通知／注册／表单开关使用标准 switch，资金页签使用 UIKit UISegmentedControl，仍经原 `selectTab` 和同一读取、资金锁控制。详细当前规范与系统外观差异见 [页面](ios-web-parity.md#大面板开关与资金分段迁移2026-11-06本地)、[认证](ios-authentication.md)、[资金](capital-and-transfers.md#原生划转与转账2026-11-02)。小型 fade 弹窗和 70 pt 下拉刷新继续沿用。
+
+实际生产方法 host 回归 **27 项通过、0 跳过**：资金读取／晚到隔离／待确认与未知结果锁 8 项，策略确认／取消／失败／幂等／完成回调 17 项，fade 合成及不同内容高度 2 项。策略测试的旧宿主漏掉此前新增的保证金刷新依赖，现注入只读刷新探针，保留生产完成方法原样并验证只刷新一次；不调用网络。新增持仓展示分流及 fade 的模拟器单测 **3 项通过**（`UnitFinal.xcresult`），验证仅未运行自动策略选择走系统 sheet，其余操作仍为 fade。
+
+```bash
+python3 frontend/ios-app/scripts/test_capital_tab_loading.py .integration-runtime/NativeComponentsNov6/Capital
+python3 frontend/ios-app/scripts/test_position_strategy_picker.py .integration-runtime/NativeComponentsNov6/Strategy
+python3 frontend/ios-app/scripts/test_modal_fade.py .integration-runtime/NativeComponentsNov6/Modal
+```
+
+UI 使用 Xcode 27.2／iOS 27.2 专用模拟器和本地无网络 DEBUG 替身。首轮 6 项通过（`FirstUI.xcresult`）：认证输入／校验／密码重开与头部下拉、深色失败表单、协议嵌套返回、资金三页／方向、交易对搜索焦点与选币回调、止损固定底栏及嵌套确认。第二轮新增交互中，资金嵌套编辑、待确认锁、原生开关状态及原持仓操作通过；策略管理测试误查“关闭”而实际沿用“返回”，带标签系统开关的 AX 范围覆盖整行，测试中心点落空。校正为实际按钮和右侧开关触点后，锁定时按钮／下拉不关闭、解锁下拉关闭、onDismiss 一次、重新打开状态重置及策略嵌套返回均通过（`VerifiedUI.xcresult`，4 项，195.445 秒，含资金复验）。
+
+截图复核发现自定义分段背景默认平铺产生边缘纹理，以及新系统开关比旧固定 48 pt 占位更宽而挤占注册说明；分别改为 stretch 和系统实际固有宽度。周期／杠杆补查中的杠杆流程通过；周期流程走通后遇到旧测试将自绘订单类型组误查为 segmented control，查询改为该组实际类型。最终 `VisualFinalUI.xcresult` 的 3 项全部通过（115.989 秒），包含资金浅深色全流程、周期／auto／限价线浅深色，以及开关状态和注册说明与开关不重叠的几何断言；复查最终截图，背景边缘平铺纹理已消除。四轮合计 **14 个不同 UI 用例均有通过记录**，复验不重复累计；失败包保留用于定位，未把首次失败计为通过。
+
+证据位于忽略目录 `.integration-runtime/NativeComponentsNov6/` 与 `.integration-runtime/native-{capital,strategy,modal}-host.log`、`native-components-*.log`。已查看资金深浅色、交易对、策略及开关截图。最终外观微调后，主 App／Widget generic iOS 无签名 **Release 构建通过**（`native-components-release-verified.log`）；唯一提示是无 AppIntents.framework 依赖而跳过 metadata。所有测试不执行真实交易、划转、API 绑定写入或取消保护单。此批按用户后续授权完整提交推送，范围见 [交付](changes.md#2026-11-06系统组件与透明小圆角分段源码交付)；未部署后端、手动上传 TestFlight 或验证手机／最低系统 iOS 17，系统容器不作为网络或帧率收益证据。
+
+后续按截图反馈，资金分段选中项统一为 **4 pt 四角**，公开接口清除系统轨道／分隔线，非交互底层绘制黄底；移除外层背景及描边，保持系统选择与原资金锁。最终源码重新通过资金 host **8 项**、fade host **2 项**及资金三页浅深色／方向与待确认锁 **2 项 UI**（`CapitalSegmentsNov6/UI.xcresult`，59.020 秒），已逐一查看三种选中位置的浅深色六张截图，小圆角和无后方背景均符合要求。主 App／Widget 无签名 **Release 构建再次通过**；证据在 `.integration-runtime/CapitalSegmentsNov6/`、`capital-segments-{host,modal,ui,release}.log`。本轮新增验证不重复累计到前述 14 个不同 UI 用例。
+
 ## 持仓原生分页与系统组件盘点（2026-11-06，本地）
 
-用户确认采用原生分页后，新增 `PositionNativePager`，以 UIKit UIScrollView 和三个保留的 SwiftUI 页面宿主替换共享列表／窗口级即时切页手势。页头同属滚动宿主并固定，页面身份、读取、分页和刷新独立；scope／绑定状态变化重新建立宿主。实现及未改动组件的优先级盘点见 [页面规范](ios-web-parity.md#持仓原生分页实现与边界2026-11-06本地)和[原生／系统组件清单](ios-web-parity.md#原生实现与系统组件盘点2026-11-06源码核对)。没有 WebKit／WKWebView 业务页面，不把自定义 SwiftUI 外观误称为网页。
+用户确认采用原生分页后，新增 `PositionNativePager`，以 UIKit UIScrollView 和三个保留的 SwiftUI 页面宿主替换共享列表／窗口级即时切页手势。页头同属滚动宿主并固定，页面身份、读取、分页和刷新独立；scope／绑定状态变化重新建立宿主。实现及系统组件的优先级盘点见 [页面规范](ios-web-parity.md#持仓原生分页实现与边界2026-11-06本地)和[原生／系统组件清单](ios-web-parity.md#原生实现与系统组件盘点2026-11-06源码核对)。没有 WebKit／WKWebView 业务页面，不把自定义 SwiftUI 外观误称为网页。
 
 首次原生系统 UI 的全区域长滑通过，52 pt 同侧短滑失败；临时坐标探针记录实际 52 pt 拖动仅剩 `translation=-42`、滚动偏移约 35.67 pt，而原生建议落点已是下一页，说明不能用识别后的剩余位移套用 44 pt 门槛。现以立即失败的被动触摸观察器记录真实起点，继续由系统 pan 和减速负责移动；所有临时打印／文件探针已移除。最终同侧短滑有仓／空仓及双向连续换页通过，释放才提交页码，小拖或回拉不切页。
 
@@ -17,7 +37,7 @@ python3 frontend/ios-app/scripts/test_position_margin.py .integration-runtime/Po
 xcodebuild test -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool -destination 'platform=iOS Simulator,id=CB5F80F1-AA79-4603-819D-162EB6D966A8' -derivedDataPath .integration-runtime/FrontendBuildNov6/Tests -only-testing:TradeToolTests/PositionPagerTests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
 ```
 
-本轮保留此前空仓灰态和盾牌缩小的未提交改动，没有后端／交易逻辑／轮询频率变更，没有真实交易或资金操作。上述为本地开发验证；用户随后授权先将当前全部改动提交推送 GitHub，见 [交付记录](changes.md#2026-11-06持仓原生分页与空仓灰态源码交付)。未手动上传 TestFlight 或验收新包手机手感；本批系统组件清单中的大面板、开关和资金页签仍只给建议，后续改造另记。
+本轮保留此前空仓灰态和盾牌缩小的未提交改动，没有后端／交易逻辑／轮询频率变更，没有真实交易或资金操作。上述为本地开发验证；用户随后授权先将当前全部改动提交推送 GitHub，见 [交付记录](changes.md#2026-11-06持仓原生分页与空仓灰态源码交付)。未手动上传 TestFlight 或验收新包手机手感；本批交付时系统组件清单中的大面板、开关和资金页签仅为建议；随后本地迁移及验证见上节。
 
 ## 空仓灰色徽标与盾牌缩小（2026-11-06，本地）
 

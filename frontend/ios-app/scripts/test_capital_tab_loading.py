@@ -50,7 +50,9 @@ def generate(destination):
         methods += "\n" + block(view, "private func selectTab(").replace("private func", "func")
     tabs = view.split("  private var tabs: some View {", 1)[1].split("  private var walletContent:", 1)[0]
     disabled = re.findall(r"\.disabled\(([^\n]+)\)", tabs)[-1]
-    tap = re.search(r"Button \{ ([^}]+) \} label:", tabs).group(1)
+    # Run the actual native control binding setter; UIKit sends an index rather than a button's Tab.
+    setter = block(tabs, "set: { index in").split("set: { index in", 1)[1].rsplit("}", 1)[0]
+    tap = "let index = Tab.allCases.firstIndex(of: item)!; " + setter
     methods += f"\n  var tabsDisabled: Bool {{ {disabled} }}\n  func tap(_ item: Tab) {{ guard !tabsDisabled else {{ return }}; {tap} }}\n"
     (sources / "Capital.swift").write_text("import Foundation\n@MainActor\nfinal class CapitalHarness {\n" + properties + methods + "\n}\n")
     realtime_path = APP / "Core/Networking/RealtimeClient.swift"

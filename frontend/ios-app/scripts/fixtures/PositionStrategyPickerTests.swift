@@ -48,6 +48,9 @@ final class PositionStrategyPickerTests: XCTestCase {
     XCTAssertEqual(picker.store.activeStrategy?.value("id"), "3", "Binding must not change future entry defaults")
     XCTAssertEqual(events.closes, 1)
     XCTAssertEqual(events.completions, ["操作成功"])
+    for _ in 0..<100 where events.presentation.margin.afterChanges.isEmpty { await Task.yield() }
+    XCTAssertEqual(events.presentation.margin.afterChanges, [true])
+    XCTAssertEqual(events.presentation.reloads, 1)
     XCTAssertFalse(api.paths.contains("/v1/strategy/set-active"))
   }
 
@@ -176,7 +179,7 @@ final class PositionStrategyPickerTests: XCTestCase {
     let store = USDTStore(api: api)
     store.prepareSession(userID: UUID().uuidString)
     store.strategies = [first, second]
-    let events = PositionPickerEvents()
+    let events = PositionPickerEvents(store: store)
     let controls = PositionStrategyControlsHarness(store: store) {
       events.completions.append($0)
       events.presentation.completePositionOperation($0)
@@ -197,7 +200,8 @@ final class PositionStrategyPickerTests: XCTestCase {
 @MainActor
 private final class PositionPickerEvents {
   var completions: [String] = []
-  let presentation = PositionOperationPresentationHarness()
+  let presentation: PositionOperationPresentationHarness
+  init(store: USDTStore) { presentation = PositionOperationPresentationHarness(store: store) }
   var closes: Int { presentation.operation == nil ? 1 : 0 }
 }
 

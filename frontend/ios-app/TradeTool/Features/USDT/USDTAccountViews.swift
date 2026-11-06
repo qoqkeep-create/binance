@@ -540,18 +540,9 @@ struct USDTStopLossView: View {
 struct USDTCapitalView: View {
   enum Tab: String, CaseIterable {
     case move = "划转", transfer = "转账", records = "记录"
-    var identifier: String {
-      switch self {
-      case .move: "capital.tab.move"
-      case .transfer: "capital.tab.transfer"
-      case .records: "capital.tab.records"
-      }
-    }
   }
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @EnvironmentObject private var store: USDTStore
-  @Namespace private var tabSelection
   @State private var tab: Tab
   @State private var direction = "to_spot"
   @State private var preview: JSONValue = .null
@@ -613,30 +604,15 @@ struct USDTCapitalView: View {
       .onChange(of: legacy) { _, shown in if !shown { Task { await load() } } }
   }
   private var tabs: some View {
-    HStack(spacing: 4) {
-      ForEach(Tab.allCases, id: \.self) { item in
-        Button { selectTab(item) } label: {
-          Text(item.rawValue).font(.system(size: 15, weight: tab == item ? .semibold : .medium))
-            .foregroundStyle(tab == item ? Color.black : WebTheme.secondary)
-            .transaction { $0.animation = nil }
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background {
-              ZStack {
-                if tab == item {
-                  RoundedRectangle(cornerRadius: 8).fill(WebTheme.brand)
-                    .matchedGeometryEffect(id: "capital.selectedTab", in: tabSelection)
-                }
-              }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: tab)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain).accessibilityIdentifier(item.identifier)
-          .accessibilityAddTraits(tab == item ? .isSelected : [])
-      }
-    }.padding(4).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-      .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
+    TradingSegmentedControl(titles: Tab.allCases.map(\.rawValue), selection: Binding(
+      get: { Tab.allCases.firstIndex(of: tab) ?? 0 },
+      set: { index in
+        guard Tab.allCases.indices.contains(index) else { return }
+        selectTab(Tab.allCases[index])
+      }))
+      .frame(height: 44).padding(4)
       .padding(.horizontal, 20).padding(.vertical, 12)
       .disabled(tabsLocked)
-      .accessibilityElement(children: .contain).accessibilityIdentifier("capital.tabs")
   }
   private var walletContent: some View {
     ScrollView {
@@ -1153,7 +1129,7 @@ struct USDTSettingsView: View {
                 WebTheme.muted)
             }
             Toggle("开启注册", isOn: Binding(get: { enabled }, set: { value in save(value) }))
-              .labelsHidden().toggleStyle(WebSwitchStyle()).frame(width: 48).disabled(saving)
+              .labelsHidden().toggleStyle(WebSwitchStyle()).fixedSize().disabled(saving)
               .accessibilityIdentifier("settings.registration")
           }
         }
@@ -1184,17 +1160,9 @@ struct USDTSettingsView: View {
 
 private struct AccountSwitchStyle: ToggleStyle {
   let label: String
-  @Environment(\.colorScheme) private var scheme
   func makeBody(configuration: Configuration) -> some View {
-    Button { configuration.isOn.toggle() } label: {
-      Capsule().fill(configuration.isOn ? WebTheme.brand : (scheme == .dark
-        ? Color(red: 88 / 255, green: 101 / 255, blue: 119 / 255) : Color(red: 209 / 255, green: 213 / 255, blue: 219 / 255)))
-        .frame(width: 48, height: 28)
-        .overlay(alignment: configuration.isOn ? .trailing : .leading) {
-          Circle().fill(.white).frame(width: 20, height: 20).padding(4)
-        }.frame(width: 48, height: 44).contentShape(Rectangle())
-    }.buttonStyle(.plain).accessibilityLabel(label)
-      .accessibilityValue(configuration.isOn ? "已开启" : "已关闭")
+    Toggle(configuration).toggleStyle(.switch).tint(WebTheme.brand)
+      .accessibilityLabel(label).frame(minHeight: 44)
   }
 }
 

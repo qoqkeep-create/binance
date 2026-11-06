@@ -158,23 +158,83 @@ struct WebButtonStyle: ButtonStyle {
   }
 }
 
+/// Keep the existing label/theme while the system owns switch gestures and accessibility.
 struct WebSwitchStyle: ToggleStyle {
   func makeBody(configuration: Configuration) -> some View {
-    HStack(spacing: 8) {
-      configuration.label.font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-      Spacer(minLength: 0)
-      Button {
-        configuration.isOn.toggle()
-      } label: {
-        Capsule().fill(configuration.isOn ? WebTheme.brand : WebTheme.secondaryButton).frame(
-          width: 48, height: 28
-        )
-        .overlay(alignment: configuration.isOn ? .trailing : .leading) {
-          Circle().fill(.white).frame(width: 24, height: 24).padding(2).shadow(
-            color: .black.opacity(0.12), radius: 2, y: 1)
-        }
-      }.buttonStyle(.plain).accessibilityLabel(Text(configuration.isOn ? "已开启" : "已关闭"))
-        .accessibilityAddTraits(.isButton)
+    Toggle(configuration).toggleStyle(.switch).tint(WebTheme.brand)
+      .font(.system(size: 14)).foregroundStyle(WebTheme.muted).frame(minHeight: 44)
+  }
+}
+
+/// UIKit owns selection gestures and accessibility; only the selected fill is
+/// painted separately so all three options can use the same small corner radius.
+struct TradingSegmentedControl: View {
+  let titles: [String]
+  @Binding var selection: Int
+  @Environment(\.isEnabled) private var enabled
+  var body: some View {
+    NativeTradingSegments(titles: titles, selection: $selection)
+      .background {
+        GeometryReader { geometry in
+          if titles.indices.contains(selection) {
+            let width = geometry.size.width / CGFloat(titles.count)
+            RoundedRectangle(cornerRadius: 4)
+              .fill(WebTheme.brand.opacity(enabled ? 1 : 0.5))
+              .frame(width: max(0, width - 4), height: geometry.size.height)
+              .offset(x: CGFloat(selection) * width + 2)
+          }
+        }.allowsHitTesting(false).accessibilityHidden(true)
+      }
+  }
+}
+
+private struct NativeTradingSegments: UIViewRepresentable {
+  let titles: [String]
+  @Binding var selection: Int
+  @Environment(\.isEnabled) private var enabled
+  func makeUIView(context: Context) -> UISegmentedControl {
+    let control = UISegmentedControl(items: titles)
+    control.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .valueChanged)
+    control.accessibilityIdentifier = "capital.tabs"
+    control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    // Public appearance APIs remove the system track and thumb backgrounds.
+    // The SwiftUI fill behind the control never receives touches.
+    let clearImage = Self.clearImage
+    let states: [UIControl.State] = [.normal, .selected, .highlighted,
+      [.selected, .highlighted], .disabled, [.selected, .disabled]]
+    for state in states {
+      control.setBackgroundImage(clearImage, for: state, barMetrics: .default)
+    }
+    for left in states {
+      for right in states {
+        control.setDividerImage(clearImage, forLeftSegmentState: left, rightSegmentState: right,
+          barMetrics: .default)
+      }
+    }
+    return control
+  }
+  func updateUIView(_ control: UISegmentedControl, context: Context) {
+    context.coordinator.selection = $selection
+    control.selectedSegmentIndex = selection
+    control.isEnabled = enabled
+    control.backgroundColor = .clear
+    control.selectedSegmentTintColor = .clear
+    control.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 15, weight: .medium),
+      .foregroundColor: UIColor(WebTheme.secondary)], for: .normal)
+    control.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 15, weight: .semibold),
+      .foregroundColor: UIColor.black], for: .selected)
+  }
+  private static let clearImage = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 44))
+    .image { _ in }.resizableImage(withCapInsets: .zero, resizingMode: .stretch)
+  func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
+  final class Coordinator: NSObject {
+    var selection: Binding<Int>
+    init(selection: Binding<Int>) { self.selection = selection }
+    @objc func changed(_ control: UISegmentedControl) {
+      guard control.isEnabled, control.selectedSegmentIndex != UISegmentedControl.noSegment else { return }
+      selection.wrappedValue = control.selectedSegmentIndex
+      // A business lock may reject the change while UIKit is processing the event.
+      control.selectedSegmentIndex = selection.wrappedValue
     }
   }
 }
@@ -1108,13 +1168,6 @@ struct WebModalBackdrop: View {
 }
 enum WebModalMotion: Equatable {
   case fade, slide
-  static func positionOperation(action: String?, strategyRunning: Bool) -> Self {
-    switch action {
-    case "strategyLog", "breakEven": .fade
-    case "strategy": strategyRunning ? .fade : .slide
-    default: .fade
-    }
-  }
   static func resolve(cardHeight: CGFloat, containerHeight: CGFloat, reduceMotion: Bool,
     preferred: Self? = nil) -> Self {
     if reduceMotion { return .fade }
@@ -1290,46 +1343,58 @@ private struct WebModalStage<Modal: View>: View {
   }
 }
 
-/// Large navigation/form panels use the shared fast presentation and header drag dismissal.
-struct WebSheet<Content: View>: View {
-  var heightFraction: CGFloat = 0.96
-  var protectsBottomSafeArea = false
-  var panelBackground: Color = BinanceTheme.background
-  var showsDragIndicator = true
+/// System sheet owns presentation, keyboard avoidance and interactive dismissal.
+/// The content still uses the shared dismiss action and submit-lock preference.
+private struct NativeTradingSheet<Content: View>: View {
+  let heightFraction: CGFloat
+  let background: Color
+  let showsDragIndicator: Bool
   @ViewBuilder var content: Content
-  private var containerBottomInset: CGFloat {
-    UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-      .flatMap(\.windows).first(where: \.isKeyWindow)?.safeAreaInsets.bottom ?? 0
-  }
+  @Environment(\.dismiss) private var dismiss
+  @State private var blocked = false
   var body: some View {
-    GeometryReader { geometry in
-      ZStack(alignment: .bottom) {
-        WebModalBackdrop(opacity: 0.45)
-        VStack(spacing: 0) {
-          if showsDragIndicator {
-            Capsule().fill(WebTheme.muted.opacity(0.5)).frame(width: 36, height: 5)
-              .padding(.vertical, 10).accessibilityHidden(!protectsBottomSafeArea)
-              .accessibilityLabel("表单控制柄").accessibilityAddTraits(.isButton)
-          }
-          content.frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Geometry's bottom inset also includes the keyboard; reserve only
-            // the window's home-indicator inset so a focused list can still scroll.
-            .padding(.bottom, protectsBottomSafeArea ? containerBottomInset : 0)
-        }.frame(maxWidth: 720).frame(height: geometry.size.height * heightFraction)
-          .background(panelBackground)
-          .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24))
-          .webModalCard()
-      }
-    }.ignoresSafeArea(.container, edges: .bottom)
+    content
+      .padding(.top, showsDragIndicator ? 25 : 0)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .environment(\.webModalCloseAction, { if !blocked { dismiss() } })
+      .environment(\.webModalPhase, 1)
+      .environment(\.webModalOffset, 0)
+      .environment(\.webModalOpacity, 1)
+      .environment(\.webModalDrag, nil)
+      .environment(\.webModalBase, 0)
+      .environment(\.webModalUnderlying, 0)
+      .onPreferenceChange(WebModalBlockedKey.self) { blocked = $0 }
+      .interactiveDismissDisabled(blocked)
+      .presentationDetents([.fraction(heightFraction)])
+      .presentationDragIndicator(showsDragIndicator ? .visible : .hidden)
+      .presentationCornerRadius(24)
+      .presentationBackground(background)
+      .presentationCompactAdaptation(.sheet)
   }
 }
 
 extension View {
+  func nativeTradingSheet<Content: View>(isPresented: Binding<Bool>, heightFraction: CGFloat = 0.96,
+    background: Color = BinanceTheme.background, showsDragIndicator: Bool = true,
+    onDismiss: (() -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) -> some View {
+    sheet(isPresented: isPresented, onDismiss: onDismiss) {
+      NativeTradingSheet(heightFraction: heightFraction, background: background,
+        showsDragIndicator: showsDragIndicator, content: content)
+    }
+  }
+  func nativeTradingSheet<Item: Identifiable, Content: View>(item: Binding<Item?>,
+    heightFraction: CGFloat = 0.96, background: Color = BinanceTheme.background,
+    showsDragIndicator: Bool = true, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
+    sheet(item: item) { selected in
+      NativeTradingSheet(heightFraction: heightFraction, background: background,
+        showsDragIndicator: showsDragIndicator) { content(selected) }
+    }
+  }
   func webSheet<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
-    webModal(isPresented: isPresented, motion: .slide) { WebSheet(content: content) }
+    nativeTradingSheet(isPresented: isPresented, content: content)
   }
   func webSheet<Item: Identifiable, Content: View>(item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
-    webModal(item: item, motion: .slide) { selected in WebSheet { content(selected) } }
+    nativeTradingSheet(item: item, content: content)
   }
 }
 

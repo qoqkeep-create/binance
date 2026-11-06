@@ -8,25 +8,14 @@ import XCTest
 
 @MainActor
 final class WebModalRenderingTests: XCTestCase {
-  func testPositionActionsChooseFadeExceptTheStrategyPicker() {
-    XCTAssertEqual(WebModalMotion.positionOperation(action: "strategy", strategyRunning: true), .fade)
-    XCTAssertEqual(WebModalMotion.positionOperation(action: "breakEven", strategyRunning: false), .fade)
-    XCTAssertEqual(WebModalMotion.positionOperation(action: "strategy", strategyRunning: false), .slide)
-  }
-
-  func testStrategyAndExecutionLogFadesForActiveAndHistoricalPositionsAtAnyHeight() {
-    for running in [true, false] {
-      for action in running ? ["strategy", "strategyLog"] : ["strategyLog"] {
-        let preferred = WebModalMotion.positionOperation(action: action, strategyRunning: running)
-        for height: CGFloat in [200, 650] {
-          let motion = WebModalMotion.resolve(cardHeight: height, containerHeight: 800,
-            reduceMotion: false, preferred: preferred)
-          XCTAssertEqual(motion, .fade, "Loading execution records must not turn a tall dialog into a slide")
-          let transition = WebModalTransitionState(motion: motion, progress: 0.5, drag: 0, containerHeight: 800)
-          XCTAssertEqual(transition.cardOffset, 0)
-          XCTAssertEqual(transition.cardOpacity, 0.5)
-        }
-      }
+  func testTallFadeDialogsKeepTheirMotion() {
+    for height: CGFloat in [200, 650] {
+      let motion = WebModalMotion.resolve(cardHeight: height, containerHeight: 800,
+        reduceMotion: false, preferred: .fade)
+      XCTAssertEqual(motion, .fade, "Loading execution records must not turn a tall dialog into a slide")
+      let transition = WebModalTransitionState(motion: motion, progress: 0.5, drag: 0, containerHeight: 800)
+      XCTAssertEqual(transition.cardOffset, 0)
+      XCTAssertEqual(transition.cardOpacity, 0.5)
     }
   }
 
@@ -57,6 +46,16 @@ final class WebModalRenderingTests: XCTestCase {
 }
 
 final class AppearanceTests: XCTestCase {
+    @MainActor
+    func testOnlyIdlePositionStrategyPickerUsesNativeSheet() {
+      for status in ["0", "1", "2"] {
+        for action in ["strategy", "strategyLog", "breakEven", "takeProfit", "close"] {
+          let operation = WebPositionOperation(position: .object(["strategy_status": .string(status)]), action: action)
+          XCTAssertEqual(operation.usesNativeSheet, action == "strategy" && status != "1")
+        }
+      }
+    }
+
     @MainActor
     func testPositionAndSelectedTradeTickersSurviveFavoritesAndSearchSubscriptionChanges() async throws {
         let ready = expectation(description: "Loopback ready")

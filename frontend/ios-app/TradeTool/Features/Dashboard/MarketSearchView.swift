@@ -124,20 +124,16 @@ struct MarketSearchView: View {
     }
 }
 
-/// Trading panels share the existing attached presenter at 80% height.
+/// Trading panels keep their 80% detent, theme and close callbacks in a system sheet.
 extension View {
     func largeTradingSheet<Panel: View>(isPresented: Binding<Bool>, background: Color = BinanceTheme.background,
         showsDragIndicator: Bool = true, onDismiss: (() -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Panel) -> some View {
-        webModal(isPresented: isPresented, motion: .slide, onDismiss: onDismiss) {
-            WebSheet(heightFraction: 0.8, protectsBottomSafeArea: true, panelBackground: background,
-                showsDragIndicator: showsDragIndicator, content: content)
-        }
+        nativeTradingSheet(isPresented: isPresented, heightFraction: 0.8, background: background,
+            showsDragIndicator: showsDragIndicator, onDismiss: onDismiss, content: content)
     }
     func largeTradingSheet<Item: Identifiable, Panel: View>(item: Binding<Item?>,
         @ViewBuilder content: @escaping (Item) -> Panel) -> some View {
-        webModal(item: item, motion: .slide) { selected in
-            WebSheet(heightFraction: 0.8, protectsBottomSafeArea: true) { content(selected) }
-        }
+        nativeTradingSheet(item: item, heightFraction: 0.8, content: content)
     }
 }

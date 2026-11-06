@@ -815,13 +815,16 @@ struct USDTPositionsView: View {
           }
         }
       }
-      .webModal(item: $operation,
-        motion: .positionOperation(action: operation?.action,
-          strategyRunning: operation?.position.value("strategy_status") == "1")
-      ) { operation in
+      .webModal(item: positionOperation(nativeSheet: false), motion: .fade) { operation in
         USDTPositionControls(position: operation.position, action: operation.action) {
           completePositionOperation($0)
-        }.presentationBackground(.clear)
+        }
+      }
+      .nativeTradingSheet(item: positionOperation(nativeSheet: true), heightFraction: 0.6,
+        background: WebTheme.page) { operation in
+        USDTPositionControls(position: operation.position, action: operation.action) {
+          completePositionOperation($0)
+        }
       }
       .onChange(of: store.scope) { _, _ in
         operation = nil; marginDetails = false
@@ -1181,6 +1184,14 @@ struct USDTPositionsView: View {
   private func show(_ name: String, _ row: JSONValue) {
     operation = WebPositionOperation(position: row, action: name)
   }
+  private func positionOperation(nativeSheet: Bool) -> Binding<WebPositionOperation?> {
+    Binding(get: {
+      guard let operation else { return nil }
+      return operation.usesNativeSheet == nativeSheet ? operation : nil
+    }, set: { next in
+      if next == nil, operation?.usesNativeSheet == nativeSheet { operation = nil }
+    })
+  }
   private func completePositionOperation(_ message: String) {
     notice = message
     operation = nil
@@ -1323,10 +1334,11 @@ private struct PositionCandlestickIcon: View {
   }
 }
 
-private struct WebPositionOperation: Identifiable {
+struct WebPositionOperation: Identifiable {
   let id = UUID()
   let position: JSONValue
   let action: String
+  var usesNativeSheet: Bool { action == "strategy" && position.value("strategy_status") != "1" }
 }
 
 struct USDTCommandButton: View {

@@ -343,6 +343,12 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           fields["message"] = .string("存在之前的归集，请先核对原流水")
           value = .object(fields)
         }
+        if ProcessInfo.processInfo.arguments.contains("--fixture-capital-pending") {
+          var fields = value.fields
+          fields["status"] = .string("collection_pending")
+          fields["collection_id"] = .number(1)
+          value = .object(fields)
+        }
         if ProcessInfo.processInfo.arguments.contains("--fixture-capital-blocked") {
           var fields = value.fields
           fields["status"] = .string("blocked")
@@ -428,6 +434,14 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         && ProcessInfo.processInfo.arguments.contains("--fixture-unbound")
       {
         value = .null
+      }
+      if request.path == "/v1/position/list",
+        ProcessInfo.processInfo.arguments.contains("--fixture-strategy-idle") {
+        value = .array(value.rows.map { row in
+          var fields = row.fields
+          fields["strategy_status"] = .number(0)
+          return .object(fields)
+        })
       }
       if request.path == "/v1/position/list",
         ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
@@ -821,6 +835,33 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     func logout() async {}
   }
 
+  /// Deterministic component probe: no account, exchange or transport writes.
+  private struct NativeSheetLockFixture: View {
+    @State private var shown = false
+    @State private var dismissals = 0
+    var body: some View {
+      VStack {
+        Text("关闭次数：\(dismissals)").accessibilityIdentifier("nativeSheet.dismissals")
+        Button("打开测试面板") { shown = true }
+      }.nativeTradingSheet(isPresented: $shown, heightFraction: 0.8,
+        onDismiss: { dismissals += 1 }) { NativeSheetLockContent() }
+    }
+  }
+  private struct NativeSheetLockContent: View {
+    @Environment(\.webDismiss) private var dismiss
+    @State private var locked = true
+    var body: some View {
+      VStack {
+        Text("提交锁定测试").frame(maxWidth: .infinity, minHeight: 44)
+          .accessibilityIdentifier("nativeSheet.header")
+        Toggle("模拟提交中", isOn: $locked).toggleStyle(WebSwitchStyle())
+          .accessibilityIdentifier("nativeSheet.lock")
+        Button("关闭测试面板") { dismiss() }
+        Spacer()
+      }.padding(.horizontal, 20).webModalDismissDisabled(locked)
+    }
+  }
+
   private struct WebParityFixtureView: View {
     @StateObject private var container = AppContainer(
       baseURL: URL(string: "http://127.0.0.1:1/")!, bundleIdentifier: "com.riskon.visual-fixture")
@@ -894,6 +935,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     }
     @ViewBuilder private var content: some View {
       switch page {
+      case "native-sheet": NativeSheetLockFixture()
       case "launch": AppLaunchView()
       case "login": LoginView()
       case "strategies": USDTStrategiesView()

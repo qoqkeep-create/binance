@@ -63,7 +63,15 @@ def generate(destination):
         "  private func completePositionOperation", 1)[1].split("  private func historyCard", 1)[0]
     (destination / "Sources/PositionPresentation.swift").write_text("""import Foundation
 @MainActor
+final class PositionMarginRefreshProbe {
+  var afterChanges: [Bool] = []
+  func refresh(_ store: USDTStore, afterChange: Bool) async { afterChanges.append(afterChange) }
+}
+@MainActor
 final class PositionOperationPresentationHarness {
+  let store: USDTStore
+  let margin = PositionMarginRefreshProbe()
+  init(store: USDTStore) { self.store = store }
   var operation: String? = "operation-1"
   var notice = ""
   var reloads = 0
