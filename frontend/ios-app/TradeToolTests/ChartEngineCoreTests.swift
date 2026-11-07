@@ -8132,6 +8132,51 @@ final class ChartEngineCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testRecoveryFailurePausesLoadingAndRetryReusesTheHostInBothThemes() async throws {
+        let model = ChartHostedReuseFixtureModel(frame: nil)
+        model.recoveryFailure = "网络未连接，请检查连接后重试"
+        let hosting = UIHostingController(rootView: ChartHostedReuseFixture(model: model))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
+        window.rootViewController = hosting
+        window.makeKeyAndVisible()
+        hosting.view.frame = window.bounds
+        hosting.view.layoutIfNeeded()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        func findHost(_ view: UIView) -> KlineChartHostView? {
+            if let host = view as? KlineChartHostView { return host }
+            return view.subviews.lazy.compactMap(findHost).first
+        }
+        for _ in 0..<100 where findHost(hosting.view) == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let host = try XCTUnwrap(findHost(hosting.view))
+        let renderer = host.diagnosticRendererIdentity
+        for scheme in [ColorScheme.light, .dark] {
+            model.colorScheme = scheme
+            hosting.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(host.diagnosticIsLoadingCovered)
+            XCTAssertFalse(host.diagnosticIsLoadingIndicatorVisible,
+                "The failure and retry must replace the waveform")
+            let snapshot = UIGraphicsImageRenderer(bounds: hosting.view.bounds).image { _ in
+                hosting.view.drawHierarchy(in: hosting.view.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: snapshot)
+            attachment.name = "chart-recovery-failure-\(scheme)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        model.recoveryFailure = nil
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(host.diagnosticIsLoadingIndicatorVisible,
+            "Retry resumes the existing loading cover")
+        XCTAssertTrue(findHost(hosting.view) === host)
+        XCTAssertEqual(host.diagnosticRendererIdentity, renderer)
+    }
+
+    @MainActor
     func testLoadingCoverKeepsRendererFailureVisibleBeforeTheFirstFrame() {
         let host = KlineChartHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
         defer { host.dispose() }
@@ -9078,6 +9123,8 @@ final class ChartPositionEntryMarkerTests: XCTestCase {
 @MainActor
 private final class ChartHostedReuseFixtureModel: ObservableObject {
     @Published var frame: ChartDataFrame?
+    @Published var recoveryFailure: String?
+    @Published var colorScheme = ColorScheme.light
     var presentations: [(KlineStreamEpoch, TimeInterval)] = []
     init(frame: ChartDataFrame?) { self.frame = frame }
 }
@@ -9086,8 +9133,9 @@ private final class ChartHostedReuseFixtureModel: ObservableObject {
 private struct ChartHostedReuseFixture: View {
     @ObservedObject var model: ChartHostedReuseFixtureModel
     var body: some View {
-        KlineChartSceneView(frame: model.frame, onFirstFramePresented: { epoch, time in
+        KlineChartSceneView(frame: model.frame, recoveryFailure: model.recoveryFailure, onFirstFramePresented: { epoch, time in
             model.presentations.append((epoch, time))
         }).frame(width: 390, height: 396)
+            .environment(\.colorScheme, model.colorScheme)
     }
 }

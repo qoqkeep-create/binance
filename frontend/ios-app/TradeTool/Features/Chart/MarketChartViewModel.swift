@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 #if DEBUG
 import os
 #endif
@@ -37,6 +38,27 @@ private struct MarketChartPriceUpdate {
     let eventTime: Int64
 }
 
+enum MarketChartRecoveryState: Equatable {
+    case idle, restoring, disconnected
+    case failed(String)
+
+    var message: String? {
+        switch self {
+        case .idle: nil
+        case .restoring: "正在恢复行情"
+        case .disconnected: "连接已断开，正在重连"
+        case .failed(let message): message
+        }
+    }
+
+    var failureMessage: String? {
+        switch self {
+        case .disconnected, .failed: message
+        case .idle, .restoring: nil
+        }
+    }
+}
+
 @MainActor
 final class MarketChartViewModel: ObservableObject {
     @Published private(set) var candles: [MarketCandle] = []
@@ -44,6 +66,7 @@ final class MarketChartViewModel: ObservableObject {
     @Published private(set) var isLoadingOlderHistory = false
     @Published private(set) var hasMoreHistory = true
     @Published private(set) var lastError: String?
+    @Published private(set) var recoveryState = MarketChartRecoveryState.idle
     @Published private(set) var ticker: MarketTickerPayload?
     @Published private(set) var realtimePrice: Double?
     @Published private(set) var chartDataFrame: ChartDataFrame?
@@ -85,6 +108,16 @@ final class MarketChartViewModel: ObservableObject {
     private var chartRecoveryNeeded = false
     private var hasRealtimeConnection = false
     private var isSuspendedForBackground = false
+    private var connectionObservation: AnyCancellable?
+    private var unavailableSince: Date?
+    private var isRealtimeDisconnected = false
+    private var staleChartTask: Task<Void, Never>?
+    private var recoveryDeadlineTask: Task<Void, Never>?
+    private var recoveryDeadlineID: UUID?
+    private var awaitsRecoveryPresentation = false
+    private var recoveryRequiresRetry = false
+    private let recoveryWait: (Duration) async throws -> Void
+    private static let staleChartInterval: TimeInterval = 30 * 60
     private var chartIndicatorConfigurationRevision: UInt64 = 0
     private struct CachedInterval {
         let pipeline: ChartDataPipeline
@@ -148,13 +181,15 @@ final class MarketChartViewModel: ObservableObject {
         chartIndicatorSelectionStore: ChartIndicatorSelectionStore = .init(),
         chartIndicatorParametersStore: ChartIndicatorParametersStore = .init(),
         diagnosticUpload: ((Data) -> Void)? = nil,
-        cacheTimeProvider: @escaping () -> Date = Date.init
+        cacheTimeProvider: @escaping () -> Date = Date.init,
+        recoveryWait: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.market = market
         self.apiClient = apiClient
         self.realtimeClient = realtimeClient
         self.diagnosticUpload = diagnosticUpload
         self.cacheTimeProvider = cacheTimeProvider
+        self.recoveryWait = recoveryWait
         _interval = Published(initialValue: initialInterval)
         self.chartIndicatorSelectionStore = chartIndicatorSelectionStore
         self.chartIndicatorParametersStore = chartIndicatorParametersStore
@@ -184,6 +219,10 @@ final class MarketChartViewModel: ObservableObject {
             }
         }
 
+        connectionObservation = realtimeClient.$state.dropFirst().sink { [weak self] state in
+            self?.realtimeConnectionChanged(state)
+        }
+
         subscribe()
         reload()
         historyRefreshTask = Task { [weak self] in
@@ -203,6 +242,14 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     func stop() {
+        cancelRecoveryDeadline()
+        connectionObservation = nil
+        staleChartTask?.cancel()
+        staleChartTask = nil
+        unavailableSince = nil
+        isRealtimeDisconnected = false
+        recoveryRequiresRetry = false
+        recoveryState = .idle
         invalidateIntervalCache()
         cacheRestoreTask?.cancel()
         cacheRestoreTask = nil
@@ -247,6 +294,10 @@ final class MarketChartViewModel: ObservableObject {
     func suspendForBackground() {
         guard realtimeTask != nil, !isSuspendedForBackground else { return }
         isSuspendedForBackground = true
+        if unavailableSince == nil { unavailableSince = cacheTimeProvider() }
+        cancelRecoveryDeadline()
+        staleChartTask?.cancel()
+        staleChartTask = nil
         invalidateIntervalCache()
         cacheRestoreTask?.cancel()
         cacheRestoreTask = nil
@@ -269,6 +320,80 @@ final class MarketChartViewModel: ObservableObject {
         // The socket may survive backgrounding. Always repair before publishing
         // its queued events, even if it sends no new ready handshake.
         await beginRealtimeEpoch()
+    }
+
+    func realtimeConnectionChanged(_ state: RealtimeConnectionState) {
+        guard realtimeTask != nil, hasRealtimeConnection, state != .connected else { return }
+        invalidateIntervalCache()
+        isRealtimeDisconnected = true
+        if unavailableSince == nil { unavailableSince = cacheTimeProvider() }
+        guard !isSuspendedForBackground else { return }
+        recoveryState = .disconnected
+        scheduleStaleChartCover()
+    }
+
+    func retryLoading() async {
+        guard realtimeTask != nil, !isSuspendedForBackground, recoveryState != .restoring else { return }
+        if realtimeClient.state == .disconnected { realtimeClient.connect() }
+        await beginRealtimeEpoch()
+    }
+
+    private func scheduleStaleChartCover() {
+        staleChartTask?.cancel()
+        staleChartTask = nil
+        guard let since = unavailableSince, !isSuspendedForBackground else { return }
+        let remaining = Self.staleChartInterval - cacheTimeProvider().timeIntervalSince(since)
+        if remaining <= 0 {
+            chartDataFrame = nil
+            return
+        }
+        staleChartTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+            guard let self, !Task.isCancelled, self.realtimeTask != nil,
+                  !self.isSuspendedForBackground, self.unavailableSince == since else { return }
+            self.chartDataFrame = nil
+            self.staleChartTask = nil
+        }
+    }
+
+    private func beginRecoveryPresentation() {
+        recoveryRequiresRetry = false
+        recoveryState = .restoring
+        awaitsRecoveryPresentation = true
+        scheduleStaleChartCover()
+        // Repeated reconnects share a deadline; they cannot extend loading forever.
+        guard recoveryDeadlineTask == nil else { return }
+        let id = UUID()
+        recoveryDeadlineID = id
+        let wait = recoveryWait
+        recoveryDeadlineTask = Task { [weak self] in
+            do { try await wait(.seconds(20)) } catch { return }
+            guard let self, !Task.isCancelled, self.recoveryDeadlineID == id,
+                  self.realtimeTask != nil, !self.isSuspendedForBackground,
+                  self.awaitsRecoveryPresentation else { return }
+            self.intervalTask?.cancel()
+            self.intervalTask = nil
+            self.historyRequestID = UUID()
+            self.historyRefreshPending = false
+            self.activeHistoryLimit = nil
+            self.waitingForHistory = false
+            self.failRecovery(self.isRealtimeDisconnected
+                ? "连接已断开，请检查网络后重试" : "K线加载超时，请重试", requiresRetry: true)
+        }
+    }
+
+    private func cancelRecoveryDeadline() {
+        recoveryDeadlineTask?.cancel()
+        recoveryDeadlineTask = nil
+        recoveryDeadlineID = nil
+        awaitsRecoveryPresentation = false
+    }
+
+    private func failRecovery(_ message: String, requiresRetry: Bool = false) {
+        cancelRecoveryDeadline()
+        recoveryRequiresRetry = requiresRetry
+        recoveryState = .failed(message)
+        lastError = message
     }
 
     func selectInterval(_ interval: MarketKlineInterval) {
@@ -342,7 +467,14 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func reloadHistory(limit: Int) {
-        guard !isSuspendedForBackground else { return }
+        guard !isSuspendedForBackground, !recoveryRequiresRetry else { return }
+        if case .failed = recoveryState {
+            if chartDataFrame == nil || chartDataFrame?.epoch != chartPipelineEpoch {
+                beginRecoveryPresentation()
+            } else {
+                recoveryState = .restoring
+            }
+        }
         if chartPipeline == nil {
             configureChartPipeline(for: interval)
         }
@@ -381,6 +513,11 @@ final class MarketChartViewModel: ObservableObject {
                 guard !Task.isCancelled, self.historyRequestID == requestID,
                       self.chartPipelineSessionID == sessionID,
                       self.chartPipelineEpoch == epoch else { return }
+                if self.recoveryRequiresRetry {
+                    self.intervalTask = nil
+                    self.activeHistoryLimit = nil
+                    return
+                }
                 let health = await pipeline?.health()
                 guard !Task.isCancelled, self.historyRequestID == requestID,
                       self.chartPipelineSessionID == sessionID,
@@ -423,7 +560,7 @@ final class MarketChartViewModel: ObservableObject {
     // Ready notices and reconciliation must not restart a downloading snapshot.
     // Present that response first, then recover all overlapping notices in one read.
     private func refreshHistoryWhenIdle() {
-        guard !isSuspendedForBackground else { return }
+        guard !isSuspendedForBackground, !recoveryRequiresRetry else { return }
         if intervalTask != nil {
             historyRefreshPending = true
         } else {
@@ -647,6 +784,9 @@ final class MarketChartViewModel: ObservableObject {
                 if limit == 1_500 { candles = Array(sorted.suffix(500)) }
                 armHistoryPresentationGate()
                 chartDataFrame = frame
+                if !awaitsRecoveryPresentation {
+                    recoveryState = isRealtimeDisconnected ? .disconnected : .idle
+                }
                 loadDiagnostics?.record("frame_ready")
                 upsertLiveTail(from: frame)
                 if limit == 1_500 {
@@ -691,7 +831,16 @@ final class MarketChartViewModel: ObservableObject {
             snapshotVerifiedAt = nil
             snapshotVerifiedBucket = nil
             isUsingVerifiedIntervalCache = false
-            lastError = "K线加载失败"
+            switch APIError.map(error) {
+            case .networkUnavailable:
+                failRecovery("网络未连接，请检查连接后重试")
+            case .connectionFailed:
+                failRecovery("连接失败，请检查网络后重试")
+            case .timeout:
+                failRecovery("K线加载超时，请重试")
+            default:
+                failRecovery("K线加载失败，请重试")
+            }
         }
     }
 
@@ -762,6 +911,7 @@ final class MarketChartViewModel: ObservableObject {
         }
         if message.type == "ready" {
             loadDiagnostics?.record("socket_ready")
+            isRealtimeDisconnected = false
             guard !isSuspendedForBackground else { hasRealtimeConnection = true; return }
             if hasRealtimeConnection {
                 await beginRealtimeEpoch()
@@ -769,10 +919,11 @@ final class MarketChartViewModel: ObservableObject {
                 // HTTP and the first handshake start together. That response
                 // already belongs to this connection; do not cancel its download.
                 hasRealtimeConnection = true
+                if recoveryState.failureMessage != nil { await beginRealtimeEpoch() }
             }
             return
         }
-        guard !isSuspendedForBackground else { return }
+        guard !isSuspendedForBackground, !recoveryRequiresRetry else { return }
         if message.type == "ack", let ack = message.decodeData(as: RealtimeSubscriptionAcknowledgement.self),
            ack.subscriptions.contains(where: { $0.channel == "market.history"
                && ($0.filters["symbols"]?.contains(market.symbol) ?? false)
@@ -872,7 +1023,7 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     private func refreshForHistorySignalsIfReady() {
-        guard !isSuspendedForBackground, !pendingHistorySignals.isEmpty,
+        guard !isSuspendedForBackground, !recoveryRequiresRetry, !pendingHistorySignals.isEmpty,
               intervalTask == nil, cacheRestoreTask == nil, firstFrameGateToken == nil else { return }
         reload()
     }
@@ -981,6 +1132,7 @@ final class MarketChartViewModel: ObservableObject {
         for interval: MarketKlineInterval,
         restoring cached: CachedInterval? = nil
     ) {
+        cancelRecoveryDeadline()
         resetHistoryPresentationGate()
         cacheRestoreTask?.cancel()
         cacheRestoreTask = nil
@@ -1014,6 +1166,7 @@ final class MarketChartViewModel: ObservableObject {
         let epoch = KlineStreamEpoch(
             generation: chartPipelineGeneration
         )
+        beginRecoveryPresentation()
         if let cached {
             chartPipeline = cached.pipeline
             chartPipelineEpoch = epoch
@@ -1157,10 +1310,11 @@ final class MarketChartViewModel: ObservableObject {
             generation: chartPipelineGeneration
         )
         chartPipelineEpoch = epoch
+        beginRecoveryPresentation()
         let sessionID = chartPipelineSessionID
         _ = await pipeline.beginEpoch(epoch)
         guard chartPipelineSessionID == sessionID,
-              chartPipelineEpoch == epoch, !isSuspendedForBackground else {
+              chartPipelineEpoch == epoch, !isSuspendedForBackground, !recoveryRequiresRetry else {
             return
         }
         reload()
@@ -1280,7 +1434,16 @@ final class MarketChartViewModel: ObservableObject {
     }
 
     func chartFirstFramePresented(epoch: KlineStreamEpoch, at time: TimeInterval) {
-        guard chartPipelineEpoch == epoch, chartDataFrame?.epoch == epoch else { return }
+        guard realtimeTask != nil, !isSuspendedForBackground,
+              chartPipelineEpoch == epoch, chartDataFrame?.epoch == epoch else { return }
+        cancelRecoveryDeadline()
+        recoveryRequiresRetry = false
+        lastError = nil
+        staleChartTask?.cancel()
+        staleChartTask = nil
+        unavailableSince = isRealtimeDisconnected ? cacheTimeProvider() : nil
+        recoveryState = isRealtimeDisconnected ? .disconnected : .idle
+        if isRealtimeDisconnected { scheduleStaleChartCover() }
         releaseHistoryPresentationGate()
         finishLoadDiagnostics(outcome: "displayed", presentedAt: time)
     }

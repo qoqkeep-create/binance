@@ -13,6 +13,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
     var candleMarkerExclusions: [CGRect] = []
     var axisPriceLabels: [ChartAxisPriceLabel] = []
     var presentationID: ChartPresentationID? = nil
+    var suppressesLoadingIndicator = false
     var onFirstFramePresented: (ChartPresentationID, TimeInterval) -> Void = { _, _ in }
     var onCrosshairSelection: (ChartCrosshairSelection) -> Void = { _ in }
     var onCrosshairDismiss: () -> Void = {}
@@ -28,6 +29,7 @@ struct KlineChartRepresentable: UIViewRepresentable {
         context: Context
     ) {
         view.setAppearance(colorScheme == .light ? .light : .dark)
+        view.setLoadingIndicatorSuppressed(suppressesLoadingIndicator)
         view.observeFirstPresentation(for: presentationID, onFirstFramePresented)
         guard let renderState else {
             view.setLoadingPresentation(true)

@@ -15,6 +15,7 @@ final class KlineChartHostView: UIView {
         let isAnimating: Bool
     }
     private var loadingIndicatorState: LoadingIndicatorState?
+    private var isLoadingIndicatorSuppressed = false
     private var candleMarkers: [ChartCandleMarker] = []
     private var candleMarkerExclusions: [CGRect] = []
     private var candleMarkerLabels: [String: UILabel] = [:]
@@ -143,8 +144,14 @@ final class KlineChartHostView: UIView {
         reconcileRenderingActivity()
     }
 
+    func setLoadingIndicatorSuppressed(_ suppressed: Bool) {
+        guard isLoadingIndicatorSuppressed != suppressed else { return }
+        isLoadingIndicatorSuppressed = suppressed
+        updateLoadingIndicator()
+    }
+
     private func updateLoadingIndicator() {
-        guard !isDisposed, !loadingCover.isHidden else {
+        guard !isDisposed, !loadingCover.isHidden, !isLoadingIndicatorSuppressed else {
             loadingIndicator?.removeFromSuperview()
             loadingIndicator = nil
             loadingIndicatorState = nil

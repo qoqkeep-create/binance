@@ -1363,6 +1363,261 @@ final class MarketFastPathTests: XCTestCase {
         }
     }
 
+    func testBackgroundRecoveryCoversOldChartOnlyAtThirtyMinutes() async throws {
+        for elapsed in [1_799.0, 1_800.0, 7_200.0] {
+            var clock = Date()
+            let api = GatedChartHistoryAPI()
+            await api.openGate()
+            let model = makeChart(api, cacheTimeProvider: { clock })
+            model.start()
+            await model.receive(ready())
+            try await waitUntil { model.chartDataFrame != nil }
+            let previous = try XCTUnwrap(model.chartDataFrame)
+            let oldCandles = model.candles
+            await api.closeGate()
+            model.suspendForBackground()
+            clock.addTimeInterval(elapsed)
+            await model.resumeFromBackground()
+            try await waitForReads(2, api)
+            XCTAssertEqual(model.recoveryState, .restoring)
+            if elapsed >= 1_800 {
+                XCTAssertNil(model.chartDataFrame, "An old chart must enter loading after 30 minutes away")
+            } else {
+                XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch)
+            }
+            XCTAssertTrue(model.candles == oldCandles, "Keep reusable history while replacing the displayed frame")
+            model.chartFirstFramePresented(epoch: previous.epoch, at: ProcessInfo.processInfo.systemUptime)
+            if elapsed >= 1_800 { XCTAssertNil(model.chartDataFrame) }
+            await api.openGate()
+            try await waitUntil { model.chartDataFrame?.epoch != nil && model.chartDataFrame?.epoch != previous.epoch }
+            XCTAssertEqual(model.recoveryState, .restoring, "HTTP and scene readiness cannot end loading")
+            model.chartFirstFramePresented(epoch: previous.epoch, at: ProcessInfo.processInfo.systemUptime)
+            XCTAssertEqual(model.recoveryState, .restoring)
+            model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+                at: ProcessInfo.processInfo.systemUptime)
+            XCTAssertEqual(model.recoveryState, .idle)
+            model.stop()
+        }
+    }
+
+    func testRepeatedBackgroundNotificationsKeepTheOriginalOfflineStart() async throws {
+        var clock = Date()
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api, cacheTimeProvider: { clock })
+        model.start()
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await api.closeGate()
+        model.suspendForBackground()
+        model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+            at: ProcessInfo.processInfo.systemUptime)
+        clock.addTimeInterval(1_799)
+        model.suspendForBackground()
+        clock.addTimeInterval(1)
+        await model.resumeFromBackground()
+        XCTAssertNil(model.chartDataFrame)
+        await api.openGate()
+        model.stop()
+    }
+
+    func testForegroundDisconnectKeepsItsStartAcrossReconnectAttemptsAndBackground() async throws {
+        var clock = Date()
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api, cacheTimeProvider: { clock })
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        let previous = try XCTUnwrap(model.chartDataFrame)
+        model.chartFirstFramePresented(epoch: previous.epoch, at: ProcessInfo.processInfo.systemUptime)
+        model.realtimeConnectionChanged(.disconnected)
+        XCTAssertEqual(model.recoveryState, .disconnected)
+        XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch)
+        clock.addTimeInterval(1_799)
+        model.realtimeConnectionChanged(.connecting)
+        XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch)
+        model.suspendForBackground()
+        clock.addTimeInterval(1)
+        await api.closeGate()
+        await model.resumeFromBackground()
+        XCTAssertNil(model.chartDataFrame, "Backgrounding must not reset an earlier disconnect")
+        try await waitForReads(2, api)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame?.epoch != nil && model.chartDataFrame?.epoch != previous.epoch }
+    }
+
+    func testForegroundDisconnectCoversTheChartAtThirtyMinutesWithoutBackgrounding() async throws {
+        var clock = Date()
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api, cacheTimeProvider: { clock })
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        model.realtimeConnectionChanged(.disconnected)
+        clock.addTimeInterval(1_800)
+        model.realtimeConnectionChanged(.connecting)
+        XCTAssertNil(model.chartDataFrame)
+        XCTAssertNotNil(model.recoveryState.failureMessage, "Show disconnected status rather than an endless waveform")
+        await api.closeGate()
+        await model.receive(ready())
+        XCTAssertEqual(model.recoveryState, .restoring)
+        try await waitForReads(2, api)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame != nil }
+        model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+            at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(model.recoveryState, .idle)
+    }
+
+    func testOfflineAndTimeoutFailuresOfferRetryUntilTheNewFrameIsPresented() async throws {
+        for error in [APIError.networkUnavailable, .connectionFailed, .timeout, .invalidResponse] {
+            let api = GatedChartHistoryAPI()
+            let model = makeChart(api)
+            model.start()
+            try await waitForReads(1, api)
+            await api.finishRead(1, error: error)
+            try await waitUntil { model.recoveryState.failureMessage != nil }
+            XCTAssertNil(model.chartDataFrame)
+            XCTAssertNotNil(model.lastError)
+            await model.retryLoading()
+            XCTAssertEqual(model.recoveryState, .restoring)
+            try await waitForReads(2, api)
+            await api.openGate()
+            try await waitUntil { model.chartDataFrame != nil }
+            XCTAssertEqual(model.recoveryState, .restoring)
+            model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+                at: ProcessInfo.processInfo.systemUptime)
+            XCTAssertEqual(model.recoveryState, .idle)
+            XCTAssertNil(model.lastError)
+            model.stop()
+        }
+    }
+
+    func testReadinessRetryAfterPresentedFrameClearsRecoveryWithoutANewEpoch() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        let epoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.chartFirstFramePresented(epoch: epoch, at: ProcessInfo.processInfo.systemUptime)
+        await api.closeGate()
+        model.reload()
+        try await waitForReads(2, api)
+        await api.finishRead(2, error: APIError.invalidResponse)
+        try await waitUntil { model.recoveryState.failureMessage != nil }
+        await model.receive(notice(symbol: "BTCUSDT"))
+        try await waitForReads(3, api)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 103 }
+        XCTAssertEqual(model.recoveryState, .idle,
+            "An already presented epoch cannot wait for a second first-presentation callback")
+    }
+
+    func testRecoveryDeadlineRejectsLateHTTPAndDoesNotRestartOnHistoryNotices() async throws {
+        let deadline = GatedChartRecoveryWait()
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        let model = makeChart(api, recoveryWait: { try await deadline.wait($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        await deadline.waitForCount(1)
+        await deadline.fire(1)
+        try await waitUntil { model.recoveryState.failureMessage != nil }
+        XCTAssertEqual(model.lastError, "K线加载超时，请重试")
+        await model.receive(notice(symbol: "BTCUSDT"))
+        try await Task.sleep(for: .milliseconds(40))
+        let readsBeforeRetry = await api.reads
+        XCTAssertEqual(readsBeforeRetry, 1)
+        await model.retryLoading()
+        try await waitForReads(2, api)
+        await api.finishRead(1)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertNil(model.chartDataFrame, "A timed-out response cannot fill the retry's chart")
+        XCTAssertEqual(model.recoveryState, .restoring)
+        await api.finishRead(2)
+        try await waitUntil { model.chartDataFrame != nil }
+        model.chartFirstFramePresented(epoch: KlineStreamEpoch(generation: 1), at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(model.recoveryState, .restoring)
+        model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+            at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(model.recoveryState, .idle)
+        await deadline.fireAll()
+    }
+
+    func testFirstReadyAfterAnInitialTimeoutStartsANewRecovery() async throws {
+        let deadline = GatedChartRecoveryWait()
+        let api = GatedChartHistoryAPI()
+        let model = makeChart(api, recoveryWait: { try await deadline.wait($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        await deadline.waitForCount(1)
+        await deadline.fire(1)
+        try await waitUntil { model.recoveryState.failureMessage != nil }
+        await model.receive(ready())
+        try await waitForReads(2, api)
+        XCTAssertEqual(model.recoveryState, .restoring)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame != nil }
+        model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+            at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(model.recoveryState, .idle)
+        await deadline.fireAll()
+    }
+
+    func testRecoveryDeadlineIncludesRenderingAndIsNotExtendedByReconnects() async throws {
+        let deadline = GatedChartRecoveryWait()
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api, recoveryWait: { try await deadline.wait($0) })
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await model.receive(ready())
+        try await waitForReads(2, api)
+        let durations = await deadline.durations
+        XCTAssertEqual(durations, [.seconds(20)], "A reconnect must share the outstanding presentation deadline")
+        await deadline.fire(1)
+        try await waitUntil { model.lastError != nil }
+        XCTAssertNotNil(model.chartDataFrame, "Timeout can occur after data arrived but before GPU presentation")
+        model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
+            at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(model.recoveryState, .idle)
+    }
+
+    func testCancelledRecoveryDeadlineCannotFailANewForegroundOrInterval() async throws {
+        let deadline = GatedChartRecoveryWait()
+        let api = GatedChartHistoryAPI()
+        let model = makeChart(api, recoveryWait: { try await deadline.wait($0) })
+        model.start()
+        try await waitForReads(1, api)
+        await deadline.waitForCount(1)
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        await deadline.fire(1)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.recoveryState, .restoring)
+        model.selectInterval(.fiveMinutes)
+        try await waitForReads(3, api)
+        await deadline.fire(2)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.recoveryState, .restoring)
+        model.stop()
+        await deadline.fireAll()
+        await api.openGate()
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.recoveryState, .idle)
+        XCTAssertNil(model.chartDataFrame)
+    }
+
     func testForegroundWithoutSocketReconnectWaitsForACompleteSnapshot() async throws {
         for interval in [MarketKlineInterval.oneMinute, .oneHour] {
             let api = GatedChartHistoryAPI()
@@ -1851,7 +2106,8 @@ final class MarketFastPathTests: XCTestCase {
     }
 
     private func makeChart(_ api: any APIClient, initialInterval: MarketKlineInterval = .oneHour,
-                           cacheTimeProvider: @escaping () -> Date = Date.init) -> MarketChartViewModel {
+                           cacheTimeProvider: @escaping () -> Date = Date.init,
+                           recoveryWait: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) -> MarketChartViewModel {
         let market = MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 100,
             changePercent24h: 0, updatedAt: .now)
         return MarketChartViewModel(market: market, apiClient: api,
@@ -1859,7 +2115,7 @@ final class MarketFastPathTests: XCTestCase {
             initialInterval: initialInterval,
             chartIndicatorSelectionStore: .init(key: "chart-test-selection-\(UUID())"),
             chartIndicatorParametersStore: .init(key: "chart-test-parameters-\(UUID())"),
-            cacheTimeProvider: cacheTimeProvider)
+            cacheTimeProvider: cacheTimeProvider, recoveryWait: recoveryWait)
     }
 
     private func liveKline(interval: MarketKlineInterval = .oneHour, sequence: Int64 = 1,
@@ -1919,6 +2175,33 @@ final class MarketFastPathTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertTrue(predicate())
+    }
+}
+
+private actor GatedChartRecoveryWait {
+    private(set) var durations: [Duration] = []
+    private var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    // Intentionally ignore cancellation to verify obsolete timer completions.
+    func wait(_ duration: Duration) async throws {
+        durations.append(duration)
+        let id = durations.count
+        await withCheckedContinuation { waiting[id] = $0 }
+    }
+
+    func waitForCount(_ count: Int) async {
+        for _ in 0..<1_000 {
+            if durations.count >= count { return }
+            await Task.yield()
+        }
+        XCTAssertGreaterThanOrEqual(durations.count, count)
+    }
+
+    func fire(_ id: Int) { waiting.removeValue(forKey: id)?.resume() }
+    func fireAll() {
+        let continuations = waiting.values
+        waiting.removeAll()
+        for continuation in continuations { continuation.resume() }
     }
 }
 

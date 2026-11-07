@@ -374,6 +374,9 @@ final class KlineChartSceneController: ObservableObject {
 
 struct KlineChartSceneView: View {
   let frame: ChartDataFrame?
+  var recoveryMessage: String? = nil
+  var recoveryFailure: String? = nil
+  var onRetryLoading: () -> Void = {}
   var automaticallyFitsPrice = true
   var candleMarkers: [ChartCandleMarker] = []
   var candleMarkerExclusions: [CGRect] = []
@@ -443,6 +446,7 @@ struct KlineChartSceneView: View {
           candleMarkerExclusions: candleMarkerExclusions,
           axisPriceLabels: axisPriceLabels,
           presentationID: presentationID,
+          suppressesLoadingIndicator: recoveryFailure != nil,
           onFirstFramePresented: { id, time in
             presentedID = id
             onFirstFramePresented(id.epoch, time)
@@ -451,6 +455,43 @@ struct KlineChartSceneView: View {
           onCrosshairDismiss: onCrosshairDismiss
         )
         .allowsHitTesting(isPresented)
+
+        if let recoveryFailure, !isPresented {
+          VStack(spacing: 12) {
+            Text(recoveryFailure)
+              .font(.system(size: 13))
+              .foregroundStyle(BinanceTheme.secondaryText)
+              .multilineTextAlignment(.center)
+            Button("重试", action: onRetryLoading)
+              .font(.system(size: 14, weight: .medium))
+              .foregroundStyle(BinanceTheme.accent)
+              .frame(minWidth: 72, minHeight: 44)
+              .accessibilityIdentifier("market-chart-loading-retry")
+          }
+          .padding(24)
+          .accessibilityIdentifier("market-chart-loading-failure")
+        }
+      }
+      .overlay(alignment: .top) {
+        if isPresented, let recoveryMessage {
+          HStack(spacing: 10) {
+            Text(recoveryMessage)
+              .font(.system(size: 12))
+              .foregroundStyle(BinanceTheme.secondaryText)
+            if recoveryFailure != nil {
+              Button("重试", action: onRetryLoading)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(BinanceTheme.accent)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityIdentifier("market-chart-recovery-retry")
+            }
+          }
+          .padding(.horizontal, 12)
+          .frame(minHeight: 36)
+          .background(BinanceTheme.background.opacity(0.96), in: RoundedRectangle(cornerRadius: 8))
+          .padding(.top, 8)
+          .accessibilityIdentifier("market-chart-recovery-status")
+        }
       }
       .background(BinanceTheme.background)
       .task(id: key) {

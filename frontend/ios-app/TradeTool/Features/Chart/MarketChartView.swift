@@ -348,6 +348,9 @@ private struct MarketChartDetailView: View {
         ZStack {
             KlineChartSceneView(
                 frame: viewModel.chartDataFrame,
+                recoveryMessage: viewModel.recoveryState.message,
+                recoveryFailure: viewModel.recoveryState.failureMessage,
+                onRetryLoading: { Task { await viewModel.retryLoading() } },
                 automaticallyFitsPrice: automaticallyFitsPrice,
                 candleMarkers: ChartPositionEntryMarkers.markers(in: heldPositions, symbol: viewModel.market.symbol),
                 candleMarkerExclusions: positionMarkerExclusions,
@@ -374,12 +377,12 @@ private struct MarketChartDetailView: View {
                 onCrosshairDismiss: { selectedStopPrice = nil }
             )
 
-            if let projection = chartPriceProjection, !heldPositions.isEmpty {
+            if viewModel.chartDataFrame != nil, let projection = chartPriceProjection, !heldPositions.isEmpty {
                 ChartPositionLinesOverlay(lines: ChartPositionLine.lines(in: heldPositions,
                     symbol: viewModel.market.symbol, currentPrice: Decimal(string: priceString(viewModel.currentPrice))), projection: projection)
             }
 
-            if let projection = chartPriceProjection, heldPositions.isEmpty,
+            if viewModel.chartDataFrame != nil, let projection = chartPriceProjection, heldPositions.isEmpty,
                nativeOrderType == "limit", let drawing = orderDrawing {
                 ChartOrderDrawingOverlay(
                     drawing: Binding(
