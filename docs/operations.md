@@ -469,6 +469,12 @@ Xcode Cloud 必须单独获得指定 GitHub 仓库的访问授权；本机 Deplo
 
 ## 图表加载诊断
 
+2026-11-07 **21:50～21:58（北京时间）**，针对用户“放后台后返回 K 线等待 5～8 秒”，只读核对 **47.80.22.243（首尔服务器）**。API 容器通过只读数据库会话查询最近 50 份报告，再用只读 ORM 汇总当日及三天内慢记录；另提取 API 24 小时日志中固定 chart timing 字段、Nginx 当日 K 线状态／字节数、即时容器资源和默认拥塞算法。运行版本仍为 `integrated-20261106-full-7e29236`，宿主默认 `bbr`；没有部署、重启、缓存变更、真实交易／资金／保护单操作。不保存完整访问日志、客户地址或鉴权内容。
+
+本机证据为忽略且受限的 `.integration-runtime/ChartLatencyNov7/`：`reports-50.ndjson`／`reports-summary.json`、`extended.ndjson`、`runtime.json`、`access.json`；访问记录时间已归一 UTC。现有 access log 无 request／upstream duration，也无 trace，200 与发送字节数不证明手机已收到。`TraceHost` 单条回放确认“初次＋后台恢复读取两次、诊断仅一份”，为预期失败的缺口复现，不是整套回归通过；模型、管线与诊断源码已核对。带 trace 的 122 条 history 不能代表所有恢复请求。样本与限制统一见 [行情排查](market-data.md#background-chart-latency-20261107)，该只读阶段未实施建议埋点，也未重启旧 USDC 服务。
+
+用户随后确认补齐恢复计时；本地实现通过现有 `load_started.value` 区分五种来源，继续使用同一追踪头、字段、事件和结果枚举，原严格 serializer 兼容，无需更新 **47.80.22.243（首尔服务器）**、迁移或改变限流。独立恢复、截止与旧回调隔离见 [行情](market-data.md#chart-recovery-diagnostics-20261107)，81 项 host／9 项契约／Release 的本地范围见 [开发](development.md#chart-recovery-diagnostics-20261107)。手机安装新包后应优先筛 `load_started.value=2` 的后台返回记录，并分开看 `3` 重连、`4` 手动重试；无来源值的旧记录不能冒充新恢复样本。源码交付不等于新包已上报，本次没有新生产部署。
+
 2026-11-05 本次通过既有 SSH 认证在 **47.80.22.243（首尔服务器）** 的 API 容器只读执行 `python manage.py chart_load_reports --limit 12`。返回既有 iPhone Build 44 记录（北京时间 19:55:14–20:01:42），本机受限原始输出位于忽略目录 `.integration-runtime/ChartResumeNov5/recent-reports.ndjson`。仅汇总公共计时字段；没有修改应用／系统／网络配置、数据库、缓存或凭证，没有部署与重启。样本、已修复的本地竞态和剩余线上波动统一见 [行情](market-data.md#首次握手与后台恢复2026-11-05本地)，本次没有复查宿主 BBR 或进行新的 TCP 采样。
 
 2026-11-01 按用户实际点击，47.80.22.243（首尔服务器）临时启用仅针对 K 线的 Nginx 阶段日志，采到 build 14 响应头约 72 ms、完整传送 4.62 秒。临时配置已撤销，站点文件与原备份 SHA-256 相同，`nginx -t`／reload 通过。配置备份和脱敏计时位于 `/opt/trade-tools-integrated/backups/kline-diagnostic-20261101/`，目录／日志保持受限；没有清空缓存、修改交易或发布新应用。结论和 upstream 背压解释见 [行情](market-data.md#手机实际请求与响应体传送)。

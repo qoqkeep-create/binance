@@ -355,7 +355,7 @@ private struct MarketChartDetailView: View {
                 candleMarkers: ChartPositionEntryMarkers.markers(in: heldPositions, symbol: viewModel.market.symbol),
                 candleMarkerExclusions: positionMarkerExclusions,
                 axisPriceLabels: axisPriceLabels,
-                diagnostics: viewModel.loadDiagnostics,
+                diagnostics: viewModel.frameLoadDiagnostics,
                 onFirstFramePresented: { epoch, time in
                     viewModel.chartFirstFramePresented(epoch: epoch, at: time)
                 },

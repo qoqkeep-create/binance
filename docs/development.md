@@ -1,5 +1,21 @@
 # 开发与验证
 
+<a id="chart-recovery-diagnostics-20261107"></a>
+
+## 后台恢复独立计时（2026-11-07，本地）
+
+针对上轮已复现的后台恢复漏记，在实际 `MarketFastPathTests` 增加 7 条回归，复用真实模型、管线、诊断及隔离 HTTP／截止门闩，检查新 trace 绑定到实际读取、保留旧图不提前完成、首次握手不取消下载、重复 ready 合并、后台中断／旧 HTTP 隔离、失败证据、20 秒截止立即上报、重试／切周期／停止结束一次。原版定向共 **8 项／21 处断言失败**（含原有一条通过），日志 `baseline.log`；修复后同 8 项 **0 失败**（`focused.log`）。这锁定的是诊断缺口，不是手机 5～8 秒根因的性能复现。
+
+最终完整 host **81 项／26.641 秒／0 失败**（`host.log`），涵盖原有缓存、分页、恢复、快照和指标一致性。原严格后端诊断契约 **9 项／2.060 秒／0 失败**（`backend-contract.log`），使用 SQLite 内存库、禁外网隔离运行器；另以已保存手机报告对五种 `load_started.value` 逐一通过原 `ReportSerializer`，没有新增服务器字段／事件／枚举／迁移（`compatibility.log`）。
+
+```bash
+python3 frontend/ios-app/scripts/test_chart_recovery.py .integration-runtime/ChartRecoveryDiagnosticsNov7/Host
+server/.venv/bin/python .integration-runtime/ChartIntervalLatencyNov5/run_isolated_backend.py market_stream.test_diagnostics
+xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Release' -configuration Release -destination 'generic/platform=iOS' -derivedDataPath .integration-runtime/ChartOfflineRecoveryNov7/Release CODE_SIGNING_ALLOWED=NO build
+```
+
+App／Widget generic iOS 无签名 **Release 构建通过**（`release.log`），仅有既有 AppIntents metadata 跳过提示。证据位于忽略目录 `.integration-runtime/ChartRecoveryDiagnosticsNov7/`，host 的 `production-inputs.json` 记录源文件哈希。本轮未启动模拟器、未重复此前 436 项 iOS 单测；SwiftUI 接入改为仅把对应 epoch 的 trace 交给场景。没有后端部署、真实交易或资金操作。新包上报成功、后台返回分段耗时及手机网络长稳仍待验，规则见 [行情](market-data.md#chart-recovery-diagnostics-20261107)。
+
 ## 30 分钟离线恢复（2026-11-07，本地）
 
 按用户最终确认实现 **30 分钟／1800 秒** 的后台和断线阈值；短时旧图有恢复提示，长时复用波形遮挡、新快照和实际首帧交接。恢复总等待上限 **20 秒**，覆盖 HTTP 至呈现；断线／失败／超时有重试入口，旧请求、旧等待及后台的迟到首帧不会结束新恢复。普通失败保留既有就绪通知补读；真正超时后停止自动重启该次等待，重试／新连接／切周期可恢复。现行规则见 [行情](market-data.md#30-分钟离线恢复2026-11-07本地)。

@@ -1700,6 +1700,250 @@ final class MarketFastPathTests: XCTestCase {
         XCTAssertNotEqual(model.chartDataFrame?.epoch, previous.epoch)
     }
 
+    func testDiagnosticBackgroundRecoveryGetsItsOwnTraceAndRejectsOldPresentations() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        var reports: [Data] = []
+        let model = makeChart(api, diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        let old = try presentChart(model)
+        let initialID = try XCTUnwrap(model.loadDiagnostics?.id)
+        XCTAssertEqual(reports.count, 1)
+
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        let recoveryID = try XCTUnwrap(model.loadDiagnostics?.id)
+        XCTAssertNotEqual(recoveryID, initialID)
+        let requests = await api.requestDiagnostics
+        XCTAssertEqual(requests.count, 2, "Repeated foreground callbacks must not add reads")
+        XCTAssertEqual(requests[1]?.traceID, recoveryID)
+        model.chartFirstFramePresented(epoch: old, at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(reports.count, 1, "Retained content cannot complete the new recovery")
+
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame?.epoch != old }
+        let current = try presentChart(model)
+        model.chartFirstFramePresented(epoch: current, at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(reports.count, 2)
+        let payload = try diagnosticPayload(reports.last!)
+        XCTAssertEqual(payload["traceId"] as? String, recoveryID.uuidString)
+        XCTAssertEqual(try diagnosticTrigger(payload), 2)
+        XCTAssertEqual(payload["outcome"] as? String, "displayed")
+        let stages = try XCTUnwrap(payload["events"] as? [[String: Any]]).compactMap { $0["stage"] as? String }
+        XCTAssertTrue(stages.contains("epoch_changed"))
+        XCTAssertTrue(stages.contains("snapshot_installed"))
+        XCTAssertTrue(stages.contains("frame_ready"))
+        XCTAssertEqual(stages.last, "first_frame")
+    }
+
+    func testDiagnosticReconnectIncludesSocketWaitAndCoalescesRepeatedReady() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        var reports: [Data] = []
+        let model = makeChart(api, diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        let old = try presentChart(model)
+        let initialID = try XCTUnwrap(model.loadDiagnostics?.id)
+        await api.closeGate()
+        model.realtimeConnectionChanged(.disconnected)
+        let recoveryID = try XCTUnwrap(model.loadDiagnostics?.id)
+        XCTAssertNotEqual(recoveryID, initialID, "Measure connection recovery before socket ready")
+        model.chartFirstFramePresented(epoch: old, at: ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(reports.count, 1, "Old presentation while offline cannot finish recovery")
+        await model.receive(ready())
+        try await waitForReads(2, api)
+        await model.receive(ready())
+        try await waitForReads(3, api)
+        XCTAssertEqual(model.loadDiagnostics?.id, recoveryID)
+        let requests = await api.requestDiagnostics
+        XCTAssertEqual(requests[1]?.traceID, recoveryID)
+        XCTAssertEqual(requests[2]?.traceID, recoveryID)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame?.epoch != old }
+        _ = try presentChart(model)
+        XCTAssertEqual(reports.count, 2, "One recovery burst must produce one report")
+        let payload = try diagnosticPayload(reports.last!)
+        XCTAssertEqual(try diagnosticTrigger(payload), 3)
+        let stages = try XCTUnwrap(payload["events"] as? [[String: Any]]).compactMap { $0["stage"] as? String }
+        XCTAssertTrue(stages.contains("socket_ready"))
+    }
+
+    func testDiagnosticFirstHandshakePreservesTheInitialTraceAndDownload() async throws {
+        let api = GatedChartHistoryAPI()
+        var reports: [Data] = []
+        let model = makeChart(api, diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        let trace = model.loadDiagnostics?.id
+        await model.receive(ready())
+        XCTAssertEqual(model.loadDiagnostics?.id, trace)
+        let reads = await api.reads
+        XCTAssertEqual(reads, 1)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame != nil }
+        _ = try presentChart(model)
+        XCTAssertEqual(reports.count, 1)
+        XCTAssertEqual(try diagnosticTrigger(diagnosticPayload(reports[0])), 0)
+    }
+
+    func testDiagnosticBackgroundSuspensionClosesTheTraceAndRejectsLateHTTP() async throws {
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        var reports: [Data] = []
+        let model = makeChart(api, diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitForReads(1, api)
+        model.suspendForBackground()
+        model.suspendForBackground()
+        XCTAssertEqual(reports.count, 1, "End timing at background entry, excluding suspended time")
+        if let cancelled = reports.first {
+            XCTAssertEqual(try diagnosticPayload(cancelled)["outcome"] as? String, "cancelled")
+        }
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        let oldRequest = (await api.requestDiagnostics)[0]
+        oldRequest?.mark("decode_finished")
+        await api.finishRead(1)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertNil(model.chartDataFrame)
+        await api.finishRead(2)
+        try await waitUntil { model.chartDataFrame != nil }
+        _ = try presentChart(model)
+        XCTAssertEqual(reports.count, 2)
+        let payload = try diagnosticPayload(reports.last!)
+        let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+        XCTAssertFalse(events.contains { $0["requestId"] as? String == oldRequest?.requestID.uuidString })
+        XCTAssertEqual(try diagnosticTrigger(payload), 2)
+    }
+
+    func testDiagnosticRecoveryDeadlineReportsImmediatelyAndRetryStartsFresh() async throws {
+        let deadline = GatedChartRecoveryWait()
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        await api.openGate()
+        var reports: [Data] = []
+        let model = makeChart(api, recoveryWait: { try await deadline.wait($0) },
+            diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        let old = try presentChart(model)
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        await deadline.waitForCount(2)
+        await deadline.fire(2)
+        try await waitUntil { model.lastError != nil }
+        XCTAssertEqual(reports.count, 2, "Do not wait for exit or the 40-second diagnostic timer")
+        if let timeout = reports.last, reports.count == 2 {
+            XCTAssertEqual(try diagnosticPayload(timeout)["outcome"] as? String, "timeout")
+        }
+        let timedOutID = model.loadDiagnostics?.id
+        await model.retryLoading()
+        try await waitForReads(3, api)
+        XCTAssertNotEqual(model.loadDiagnostics?.id, timedOutID)
+        await api.finishRead(2)
+        await deadline.fire(1)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(model.chartDataFrame?.epoch, old)
+        await api.finishRead(3)
+        try await waitUntil { model.chartDataFrame?.epoch != old }
+        _ = try presentChart(model)
+        XCTAssertEqual(reports.count, 3)
+        let payload = try diagnosticPayload(reports.last!)
+        XCTAssertEqual(payload["outcome"] as? String, "displayed")
+        XCTAssertEqual(try diagnosticTrigger(payload), 4)
+        model.stop()
+        await deadline.fireAll()
+    }
+
+    func testDiagnosticRecoveryRetainsFailureEvidenceAndSeparatesManualRetry() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        var reports: [Data] = []
+        let model = makeChart(api, diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        let old = try presentChart(model)
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        let recordedRequests = await api.requestDiagnostics
+        let failedRequest = try XCTUnwrap(recordedRequests[1])
+        // The transport normally records this before returning its error to the model.
+        failedRequest.finished(error: APIError.connectionFailed)
+        await api.finishRead(2, error: APIError.connectionFailed)
+        try await waitUntil { model.lastError != nil }
+        await model.retryLoading()
+        try await waitForReads(3, api)
+        XCTAssertEqual(reports.count, 2)
+        if reports.count == 2 {
+            let failed = try diagnosticPayload(reports[1])
+            XCTAssertEqual(failed["outcome"] as? String, "superseded")
+            let requests = try XCTUnwrap(failed["requests"] as? [[String: Any]])
+            XCTAssertEqual(requests.first?["result"] as? String, "error")
+            XCTAssertNotNil(requests.first?["errorCode"])
+        }
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame?.epoch != old }
+        _ = try presentChart(model)
+        XCTAssertEqual(reports.count, 3)
+        XCTAssertEqual(try diagnosticTrigger(diagnosticPayload(reports.last!)), 4)
+    }
+
+    func testDiagnosticRecoverySupersededByIntervalAndStopIsReportedOnce() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        var reports: [Data] = []
+        let model = makeChart(api, diagnosticUpload: { reports.append($0) })
+        model.start()
+        defer { model.stop() }
+        try await waitUntil { model.chartDataFrame != nil }
+        _ = try presentChart(model)
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        model.selectInterval(.fiveMinutes)
+        try await waitForReads(3, api)
+        model.stop()
+        model.stop()
+        XCTAssertEqual(reports.count, 3)
+        if reports.count == 3 {
+            XCTAssertEqual(try diagnosticPayload(reports[1])["outcome"] as? String, "superseded")
+            let stopped = try diagnosticPayload(reports[2])
+            XCTAssertEqual(stopped["outcome"] as? String, "cancelled")
+            XCTAssertEqual(stopped["interval"] as? String, "5m")
+            XCTAssertEqual(try diagnosticTrigger(stopped), 1)
+        }
+    }
+
+    private func presentChart(_ model: MarketChartViewModel) throws -> KlineStreamEpoch {
+        let epoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.chartFirstFramePresented(epoch: epoch, at: ProcessInfo.processInfo.systemUptime)
+        return epoch
+    }
+
+    private func diagnosticPayload(_ report: Data) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: report) as? [String: Any])
+    }
+
+    private func diagnosticTrigger(_ payload: [String: Any]) throws -> Int? {
+        let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+        return events.first { $0["stage"] as? String == "load_started" }?["value"] as? Int
+    }
+
     func testDiagnosticFirstFrameIgnoresOldEpochAndFinishesEachLoadOnce() async throws {
         let api = GatedChartHistoryAPI()
         await api.openGate()
@@ -2107,7 +2351,8 @@ final class MarketFastPathTests: XCTestCase {
 
     private func makeChart(_ api: any APIClient, initialInterval: MarketKlineInterval = .oneHour,
                            cacheTimeProvider: @escaping () -> Date = Date.init,
-                           recoveryWait: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) -> MarketChartViewModel {
+                           recoveryWait: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+                           diagnosticUpload: ((Data) -> Void)? = nil) -> MarketChartViewModel {
         let market = MarketSnapshot(symbol: "BTCUSDT", quoteAsset: "USDT", price: 100,
             changePercent24h: 0, updatedAt: .now)
         return MarketChartViewModel(market: market, apiClient: api,
@@ -2115,7 +2360,7 @@ final class MarketFastPathTests: XCTestCase {
             initialInterval: initialInterval,
             chartIndicatorSelectionStore: .init(key: "chart-test-selection-\(UUID())"),
             chartIndicatorParametersStore: .init(key: "chart-test-parameters-\(UUID())"),
-            cacheTimeProvider: cacheTimeProvider, recoveryWait: recoveryWait)
+            diagnosticUpload: diagnosticUpload, cacheTimeProvider: cacheTimeProvider, recoveryWait: recoveryWait)
     }
 
     private func liveKline(interval: MarketKlineInterval = .oneHour, sequence: Int64 = 1,
@@ -2236,6 +2481,7 @@ private actor EmptyPendingChartAPI: APIClient {
 private actor GatedChartHistoryAPI: APIClient {
     private(set) var reads = 0
     private(set) var limits: [Int] = []
+    private(set) var requestDiagnostics: [RequestDiagnostics?] = []
     private var closedPrices: [String: Double] = [:]
     private var isOpen = false
     private var waiting: [Int: CheckedContinuation<Void, Error>] = [:]
@@ -2260,6 +2506,7 @@ private actor GatedChartHistoryAPI: APIClient {
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
         guard request.path == "/api/market/klines" else { throw APIError.invalidResponse }
         reads += 1
+        requestDiagnostics.append(request.diagnostics)
         let read = reads
         let limit = request.queryItems.first { $0.name == "limit" }?.value.flatMap(Int.init) ?? 1500
         limits.append(limit)

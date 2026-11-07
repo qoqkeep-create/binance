@@ -2,6 +2,11 @@ import Foundation
 
 /// One small report per load; recording is synchronous memory work, upload is independent.
 final class ChartLoadDiagnostics: @unchecked Sendable {
+    // Fixed values in the existing load_started event keep older servers compatible.
+    enum Trigger: Int {
+        case initial = 0, intervalChange = 1, backgroundResume = 2, reconnect = 3, retry = 4
+    }
+
     let id = UUID()
     let symbol: String
     let interval: String
@@ -13,9 +18,14 @@ final class ChartLoadDiagnostics: @unchecked Sendable {
     private var finished = false
     private var truncated = false
 
-    init(symbol: String, interval: String) {
+    var isFinished: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return finished
+    }
+
+    init(symbol: String, interval: String, trigger: Trigger = .initial) {
         self.symbol = symbol; self.interval = interval
-        record("load_started")
+        record("load_started", value: trigger.rawValue)
     }
 
     func record(_ stage: String, requestID: UUID? = nil, value: Int? = nil) {
