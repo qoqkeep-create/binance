@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-09：Maker 开仓链路部署到云能服务器
+
+按用户明确要求，已将 GitHub `qoqkeep-create/binance` 的 `codex/integrated-ios` 提交 `f1f8254` 部署到 **47.80.22.243（首尔服务器）**。`current` 已切换到 `integrated-20261109-maker-f1f8254`，四个 Python 应用服务使用同一新镜像，MySQL／Redis 使用原有镜像和持久化卷。
+
+部署前只读确认活动持仓 1、未完成命令 0、待成交限价 0；迁移检查、应用健康检查和公网 `/integrated/v1/health`（200）通过，部署后活动持仓仍为 1、未完成命令仍为 0。没有执行真实 Binance 开仓、撤单、资金划转或撤保护单。首次发布脚本因 release 环境链接缺失中止，修复后以不触碰基础容器的方式完成应用切换。详细发布与回滚边界见 [运维](operations.md#maker-开仓链路发布2026-11-09)。
+
 ## 2026-11-09：Maker 开仓真实执行链路（本地实现）
 
 - 后端扩展 `execution_mode=maker`：按盘口和 tick 计算价格，以 Binance Futures `GTX` 提交 post-only 限价单；新增 Maker 状态查询、撤单后剩余数量市价补单命令。未知撤单不会继续发市价，成交确认后才接管本地持仓和止损。

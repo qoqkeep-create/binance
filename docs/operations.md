@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+## Maker 开仓链路发布（2026-11-09）
+
+2026-11-09（北京时间）按用户“推送 GitHub 并部署到云能服务器”的授权，将 GitHub `qoqkeep-create/binance` 的 `codex/integrated-ios` 提交 **`f1f8254`** 部署至 **47.80.22.243（首尔服务器）**。发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261109-maker-f1f8254`，`current` 已切换到该目录；API、market、worker、scheduler 四个应用容器均使用镜像 `tradetools-integrated:integrated-20261109-maker-f1f8254`。
+
+首次远程发布在补齐 release 的 `server.env` 符号链接前停止，未切换应用容器。重试阶段 Compose 重新核对了 MySQL 容器，但继续使用既有命名卷 `tradetools-integrated_integrated-mysql`；Redis 及其 AOF 卷未重建。最终应用切换使用 `--no-deps`，没有再次操作 MySQL／Redis。发布前备份位于 `/opt/trade-tools-integrated/backups/integrated-20261109-maker-f1f8254/`，包含数据库 gzip、受限环境副本、前版路径和发布前计数。
+
+切换前只读计数为活动持仓 1、PENDING／RUNNING／UNKNOWN 命令 0、待成交限价 0；没有真实开仓、撤单、资金划转或撤保护单。`migrate --check` 通过，`bootstrap_mobile` 报告已有用户且未改账号或密码。切换后六个容器均 healthy，公网 `https://47.80.22.243/integrated/v1/health` 返回 **200**，数据库／迁移／scheduler 检查均通过；应用数据库复核活动持仓仍为 1、未完成交易命令为 0。日志尾部未发现应用错误。
+
+本次线上验收只覆盖服务切换、健康检查和只读数据保护；真实 Binance Maker 成交、拒单重试、持续状态弹窗及 iOS 新包仍需在受控账户和客户端构建中分别验收。回滚应恢复备份记录的前版 `integrated-20261106-full-7e29236` 与 `current`，不恢复数据库、不反迁移、不重放交易命令。
+
 ## 完整同源发布（2026-11-06）
 
 2026-11-06 **17:43:52（北京时间）**，按用户“全部提交推送部署，不绕过其他更改”的要求，将完整源码 `7e29236` 部署至 **47.80.22.243（首尔服务器）**。`current` 为 `integrated-20261106-full-7e29236`，API／market／worker／scheduler 均使用同一完整镜像 `tradetools-integrated:integrated-20261106-full-7e29236`，不再组合不同限定源码；331 个归档文件与 Git 存档逐项相符，四个进程各 **317 个运行 Python／requirements** 哈希完全匹配。包含此前已推送但未上线的 API 共享行情分发、私有事件批量投递／余额事实分流、账户流连接守卫、调度预热去重、全部 13 种行情周期、注册权限／短 Key、浮盈与 >75% 保证金独立 Echobell 任务，以及已有首屏同步补线／缓存／gzip 改动。
