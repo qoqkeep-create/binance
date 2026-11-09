@@ -18,6 +18,10 @@ from mobile.models import AccountOutbox, AccountWorkerState, TradingCommand
 # Only these authenticated user operations may be queued. No arbitrary URL or callable.
 ACTIONS = {
     "open": ("/v1/trade/open", "trading.views.TradeOpenView"),
+    # Maker status/fallback are separate commands so the worker never blocks
+    # while a post-only order waits on the book.
+    "maker-status": ("/v1/trade/maker/status", "trading.views.MakerOpenStatusView"),
+    "maker-fallback": ("/v1/trade/maker/fallback", "trading.views.MakerOpenFallbackView"),
     "limit-create": ("/v1/trade/limit-order/create", "trading.views.LimitOrderCreateView"),
     "limit-cancel": ("/v1/trade/limit-order/cancel", "trading.views.LimitOrderCancelView"),
     "limit-chase": ("/v1/trade/limit-order/chase", "trading.views.LimitOrderChaseView"),
@@ -59,7 +63,7 @@ def submit(user, mode, action, payload, key):
         binding = binding_for(user, mode)
         if binding is None:
             raise ValueError("请先绑定当前模式的交易所 API")
-        if action in {"open", "limit-create", "limit-chase"} and TradingCommand.objects.filter(
+        if action in {"open", "maker-status", "maker-fallback", "limit-create", "limit-chase"} and TradingCommand.objects.filter(
                 user=user, trading_mode=mode, binding_id_snapshot=binding.pk, status="UNKNOWN").exists():
             raise ValueError("当前账户有结果未知的交易命令，请先核对订单，暂停新增风险")
         command_id = uuid4()
@@ -181,7 +185,9 @@ def execute_account(binding_id):
                     return
                 pending = TradingCommand.objects.filter(binding_id_snapshot=binding_id, status="PENDING")
                 if TradingCommand.objects.filter(binding_id_snapshot=binding_id, status="UNKNOWN").exists():
-                    pending = pending.exclude(action__in=["open", "limit-create", "limit-chase"])
+                    pending = pending.exclude(action__in=[
+                        "open", "maker-status", "maker-fallback", "limit-create", "limit-chase"
+                    ])
                 command = pending.select_related("user").order_by("created_at").first()
                 if command is None:
                     return
@@ -201,7 +207,9 @@ def execute_account(binding_id):
                     response = invoke(command)
                     result = json.loads(json.dumps(response.data, default=str))
                     status = "SUCCEEDED" if response.status_code < 400 and result.get("code") == 200 else "FAILED"
-                    if status == "FAILED" and command.action in {"open", "limit-create", "limit-chase"}:
+                    if status == "FAILED" and command.action in {
+                        "open", "maker-fallback", "limit-create", "limit-chase"
+                    }:
                         from trading.models import TradeOpenRequest
                         unresolved = TradeOpenRequest.objects.filter(user=command.user,
                             trading_mode=command.trading_mode, client_request_id=str(command.pk),

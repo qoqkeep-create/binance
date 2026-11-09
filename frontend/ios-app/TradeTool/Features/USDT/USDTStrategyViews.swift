@@ -408,9 +408,127 @@ struct USDTStrategyEditor: View {
   }
 }
 
+enum ChartOrderExecutionPreferences {
+  static let marketEntryMaker = "integrated.chart.order-settings.market-entry-maker"
+  static let limitEntryMaker = "integrated.chart.order-settings.limit-entry-maker"
+  static let takeProfitMaker = "integrated.chart.order-settings.take-profit-maker"
+}
+
 struct USDTChartOrderSettingsView: View {
+  @AppStorage(ChartOrderExecutionPreferences.marketEntryMaker) private var marketEntryMaker = false
+  @AppStorage(ChartOrderExecutionPreferences.limitEntryMaker) private var limitEntryMaker = true
+  @AppStorage(ChartOrderExecutionPreferences.takeProfitMaker) private var takeProfitMaker = false
+
   var body: some View {
-    WebTheme.page.ignoresSafeArea().usdtPage("设置")
+    ScrollView {
+      VStack(alignment: .leading, spacing: 18) {
+        sectionTitle("开仓方式")
+        makerSettingCard(
+          title: "市价开仓",
+          isOn: $marketEntryMaker,
+          enabledTitle: "只做 Maker",
+          disabledTitle: "市价",
+          note: "可做 Maker，可能暂不成交；未成交时可在确认框中改用市价。"
+        )
+        makerSettingCard(
+          title: "限价开仓",
+          isOn: $limitEntryMaker,
+          enabledTitle: "只做 Maker",
+          disabledTitle: "普通限价",
+          note: "建议 Maker，无法挂成时不会自动吃单。"
+        )
+
+        sectionTitle("止盈止损")
+        makerSettingCard(
+          title: "预挂止盈",
+          isOn: $takeProfitMaker,
+          enabledTitle: "只做 Maker",
+          disabledTitle: "触发后市价",
+          note: "可做 Maker，但触发后仍可能不成交，不能替代可靠退出。"
+        )
+        fixedSettingCard(
+          title: "止损",
+          value: "触发后市价",
+          note: "不建议 Maker，止损优先保证及时成交。"
+        )
+
+        Text("当前仅保存界面偏好并展示后续流程，尚未接入真实 Maker 下单、盘口报价或订单撤改单。")
+          .font(.system(size: 12))
+          .foregroundStyle(WebTheme.muted)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.top, 2)
+      }
+      .padding(16)
+      .frame(maxWidth: 448)
+      .frame(maxWidth: .infinity, alignment: .top)
+    }
+    .scrollIndicators(.hidden)
+    .background(WebTheme.page.ignoresSafeArea())
+    .usdtPage("设置")
+  }
+
+  private func sectionTitle(_ title: String) -> some View {
+    Text(title)
+      .font(.system(size: 14, weight: .semibold))
+      .foregroundStyle(WebTheme.muted)
+      .padding(.horizontal, 2)
+  }
+
+  private func makerSettingCard(
+    title: String,
+    isOn: Binding<Bool>,
+    enabledTitle: String,
+    disabledTitle: String,
+    note: String
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .center, spacing: 12) {
+        Text(title)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundStyle(WebTheme.text)
+        Spacer(minLength: 8)
+        Text(isOn.wrappedValue ? enabledTitle : disabledTitle)
+          .font(.system(size: 13, weight: .medium))
+          .foregroundStyle(isOn.wrappedValue ? WebTheme.brand : WebTheme.secondary)
+          .lineLimit(1)
+        Toggle("", isOn: isOn)
+          .labelsHidden()
+          .toggleStyle(WebSwitchStyle())
+          .fixedSize()
+      }
+      Text(note)
+        .font(.system(size: 12))
+        .foregroundStyle(WebTheme.muted)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(16)
+    .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+    .overlay {
+      RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1)
+    }
+  }
+
+  private func fixedSettingCard(title: String, value: String, note: String) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Text(title)
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundStyle(WebTheme.text)
+        Spacer(minLength: 8)
+        Text(value)
+          .font(.system(size: 13, weight: .medium))
+          .foregroundStyle(WebTheme.secondary)
+      }
+      Text(note)
+        .font(.system(size: 12))
+        .foregroundStyle(WebTheme.muted)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(16)
+    .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+    .overlay {
+      RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1)
+    }
   }
 }
 

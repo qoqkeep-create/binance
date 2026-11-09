@@ -2757,6 +2757,16 @@ class BinanceFuturesClient:
         payload = _public_json_request("/fapi/v1/ticker/24hr", {"symbol": symbol})
         return _ok([_normalize_public_ticker(payload)])
 
+    def get_book_ticker(self, inst_id: str) -> dict[str, Any]:
+        """Return the current best bid/ask used to price post-only entries."""
+        symbol = _exchange_symbol(inst_id)
+        payload = _public_json_request("/fapi/v1/ticker/bookTicker", {"symbol": symbol})
+        return _ok([{
+            "instId": inst_id,
+            "bidPx": str(payload.get("bidPrice") or "0"),
+            "askPx": str(payload.get("askPrice") or "0"),
+        }])
+
     def get_last_prices(self, inst_ids: Optional[set[str]] = None) -> dict[str, Any]:
         # Price-only endpoint; keep timeout short so list API remains responsive.
         payload = _public_json_request("/fapi/v2/ticker/price", timeout_seconds=1.5)
@@ -2920,6 +2930,7 @@ class BinanceFuturesClient:
         price: str,
         pos_side: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
+        time_in_force: str = "GTC",
     ) -> dict[str, Any]:
         from trading.adapters import trading_adapter
         trading_adapter(self.credentials.trading_mode).validate_entry(self, inst_id)
@@ -2930,7 +2941,9 @@ class BinanceFuturesClient:
             "symbol": symbol,
             "side": str(side or "").upper(),
             "type": "LIMIT",
-            "timeInForce": "GTC",
+            # GTX is Binance Futures' post-only time-in-force.  Keep GTC as
+            # the default so existing limit orders retain their behavior.
+            "timeInForce": str(time_in_force or "GTC").upper(),
             "quantity": normalized_size,
             "price": normalized_price,
         }

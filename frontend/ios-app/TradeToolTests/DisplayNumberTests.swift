@@ -221,4 +221,41 @@ final class PositionCardPresentationTests: XCTestCase {
     XCTAssertEqual(cardProfit(nil), "--")
     XCTAssertEqual(cardProfit(.nan), "--")
   }
+
+  func testMarketTakeProfitShowsProjectedProfitOrLossAfterTheTriggerPrice() {
+    let marketProfit = row([
+      "manual_take_profit_set": .bool(true),
+      "manual_take_profit_price": .string("120.00000000"),
+      "manual_take_profit_order_type": .string("market"),
+      "manual_take_profit_pnl": .string("20.00000000"),
+    ])
+    XCTAssertEqual(PositionCardPresentation.takeProfitText(marketProfit), "120.00（+20 U）")
+
+    let marketLoss = row([
+      "manual_take_profit_set": .bool(true),
+      "manual_take_profit_price": .string("90"),
+      "manual_take_profit_order_type": .string("market"),
+      "manual_take_profit_pnl": .string("-10.125"),
+    ])
+    XCTAssertEqual(PositionCardPresentation.takeProfitText(marketLoss), "90.000（-10.13 U）")
+
+    let limit = row([
+      "manual_take_profit_set": .bool(true),
+      "manual_take_profit_price": .string("120.00000000"),
+      "manual_take_profit_order_type": .string("limit"),
+      "manual_take_profit_pnl": .string("20.00000000"),
+    ])
+    XCTAssertEqual(PositionCardPresentation.takeProfitText(limit), "120.00")
+  }
+
+  func testMarketTakeProfitCanCalculateWhenTheServerFieldIsMissing() {
+    let position = row([
+      "side": .string("1"),
+      "manual_take_profit_set": .bool(true),
+      "manual_take_profit_price": .string("90"),
+      "manual_take_profit_order_type": .string("market"),
+      "exchange_size": .string("2"),
+    ])
+    XCTAssertEqual(PositionCardPresentation.takeProfitText(position), "90.000（+20 U）")
+  }
 }

@@ -42,6 +42,7 @@ from common.binance import (
     is_binance_auth_or_permission_error,
     is_binance_rate_limit_error,
     normalize_stop_trigger_price,
+    normalize_limit_price,
     should_verify_cancel_result,
     standardize_open_order_request,
     to_inst_id,
@@ -63,7 +64,7 @@ from positions.notifications import (
 )
 from trading.models import Strategy, TradeOpenRequest, TradingViewMessage
 from trading.account_cache import invalidate_position_caches
-from trading.execution import PARTIALLY_FILLED, confirm_entry_execution
+from trading.execution import PARTIALLY_FILLED, confirm_entry_execution, parse_entry_execution
 from trading.entry_guard import entry_submission_guard
 from trading.locks import serialized_exchange_mutation
 from trading.market_snapshots import SnapshotBusy, fresh_snapshot
@@ -910,6 +911,11 @@ class TradeOpenSerializer(serializers.Serializer):
     strategy_name = serializers.CharField(required=False, allow_blank=False, max_length=100)
     strategy_config = serializers.JSONField(required=False)
     client_request_id = serializers.UUIDField(required=False)
+    # `maker` is deliberately opt-in; the legacy market path remains the
+    # default until the caller explicitly selects post-only execution.
+    execution_mode = serializers.ChoiceField(
+        choices=["market", "maker"], required=False, default="market"
+    )
 
     def validate_ema_check_id(self, value):
         # Preserve former CharField normalization for already persisted retries.
@@ -1093,6 +1099,40 @@ def _extract_ticker(inst_id: str) -> dict:
     return rows[0]
 
 
+def _extract_book_ticker(client: BinanceFuturesClient, inst_id: str) -> dict:
+    """Read the public best bid/ask immediately before a Maker submission."""
+    payload = client.get_book_ticker(inst_id)
+    rows = payload.get("data") or []
+    if not rows:
+        raise BinanceApiError("未获取到交易对盘口")
+    return rows[0]
+
+
+def _maker_entry_price(client, inst_id: str, instrument: dict, side: str) -> tuple[Decimal, Decimal]:
+    """Return (post-only price, reference market price) from the live book.
+
+    GTX rejects an order that would immediately take liquidity.  Moving one
+    tick away from the best quote keeps the order on the maker side; a GTX
+    rejection is still surfaced to the caller and is never silently retried.
+    """
+    book = _extract_book_ticker(client, inst_id)
+    tick = _to_decimal(str(instrument.get("tickSz") or instrument.get("tickSize") or "0"), "价格精度")
+    if tick <= 0:
+        raise BinanceApiError("未获取到交易所价格精度")
+    bid = _to_decimal(str(book.get("bidPx") or "0"), "盘口买价")
+    ask = _to_decimal(str(book.get("askPx") or "0"), "盘口卖价")
+    if bid <= 0 or ask <= 0:
+        raise BinanceApiError("盘口价格暂不可用")
+    if side == "buy":
+        reference, raw = ask, bid - tick
+    else:
+        reference, raw = bid, ask + tick
+    price = normalize_limit_price(raw, instrument, side)
+    if price <= 0:
+        raise BinanceApiError("Maker价格暂不可用")
+    return price, reference
+
+
 def _resolve_pos_side(
     client: BinanceFuturesClient,
     side_code: int,
@@ -1135,6 +1175,7 @@ def _safe_request_payload_for_open(data: dict, *, client_order_id: str) -> dict:
         "strategy_name": str(data.get("strategy_name") or ""),
         "strategy_config": data.get("strategy_config"),
         "client_order_id": client_order_id,
+        "execution_mode": str(data.get("execution_mode") or "market"),
     }
 
 
@@ -1532,6 +1573,9 @@ class TradeOpenView(APIView):
         entry_price = None
         open_side = None
         size = None
+        execution_mode = "market"
+        maker_price = None
+        maker_market_price = None
         open_request = None
         account = get_user_trading_account(request.user, active_only=True, trading_mode=request_trading_mode(request))
         if not account:
@@ -1548,6 +1592,7 @@ class TradeOpenView(APIView):
             return fail("请求参数错误")
 
         data = serializer.validated_data
+        execution_mode = str(data.get("execution_mode") or "market")
         try:
             inst_id = to_inst_id(data["symbol"])
             normalized_symbol = to_symbol(inst_id)
@@ -1581,6 +1626,7 @@ class TradeOpenView(APIView):
                         client_request_id=raw_client_request_id,
                         client_order_id=client_order_id,
                         request_payload=expected_request_payload,
+                        api_key_fingerprint=api_key_fingerprint,
                     )
                 except OpenRequestPayloadConflict as exc:
                     return fail(safe_error_summary(exc, include_type=False), code=409, status=409)
@@ -1706,6 +1752,15 @@ class TradeOpenView(APIView):
                     side_code = standardized_open["side_code"]
                     size = standardized_open["size"]
 
+                    if execution_mode == "maker":
+                        # Price Maker from the live best quote, then move one
+                        # tick away so GTX remains post-only.  The reference
+                        # quote is displayed to the user but never used as a
+                        # substitute for an exchange-confirmed fill.
+                        maker_price, maker_market_price = _maker_entry_price(
+                            client, inst_id, instrument, open_side
+                        )
+
                     if data["include_fee"]:
                         effective_ratio = abs(entry_price - stop_loss_price) / entry_price + Decimal("0.001")
                         size = calc_contract_size(
@@ -1741,26 +1796,54 @@ class TradeOpenView(APIView):
                         {
                             "entry_price": format(entry_price, "f"),
                             "stop_loss_price": format(stop_loss_price, "f"),
+                            "stop_loss_amount": format(stop_loss_amount, "f"),
                             "open_side": open_side,
                             "side_code": side_code,
                             "size": str(size),
                             "leverage": max_leverage,
                             "pos_side": use_pos_side or "",
+                            "execution_mode": execution_mode,
+                            "maker_price": format(maker_price, "f") if maker_price is not None else "",
+                            "maker_market_price": format(maker_market_price, "f") if maker_market_price is not None else "",
+                            # Freeze the strategy snapshot so later status or
+                            # fallback calls cannot silently change risk rules.
+                            "strategy_id": str(strategy_payload["strategy_id"] if strategy_payload else ""),
+                            "strategy_name": str(strategy_payload["strategy_name"] if strategy_payload else ""),
+                            "strategy_config": strategy_payload["strategy_config"] if strategy_payload else None,
                         },
                     )
 
+                is_maker = execution_mode == "maker" or get_open_request_execution_intent(open_request).get("execution_mode") == "maker"
+                persisted_intent = get_open_request_execution_intent(open_request)
+                if is_maker and maker_price is None:
+                    maker_price = _to_decimal(persisted_intent.get("maker_price"), "Maker价格")
+                    maker_market_price = _to_decimal(persisted_intent.get("maker_market_price"), "市价")
                 submission = submit_or_recover_exchange_order(
                     client=client,
                     open_request=open_request,
                     inst_id=inst_id,
                     client_order_id=client_order_id,
                     recovered_row=recovered_open_row,
-                    submit=lambda: client.place_market_order(
+                    submit=(
+                        lambda: client.place_limit_order(
+                            inst_id=inst_id,
+                            side=open_side,
+                            size=size,
+                            price=str(maker_price),
+                            pos_side=use_pos_side,
+                            new_client_order_id=client_order_id,
+                            # GTX means post-only.  A -5022 rejection is
+                            # explicit failure; do not convert it to market.
+                            time_in_force="GTX",
+                        )
+                        if is_maker
+                        else lambda: client.place_market_order(
                             inst_id=inst_id,
                             side=open_side,
                             size=size,
                             pos_side=use_pos_side,
                             new_client_order_id=client_order_id,
+                        )
                     ),
                 )
                 if not submission.confirmed:
@@ -1795,8 +1878,27 @@ class TradeOpenView(APIView):
                     order_id=binance_order_id,
                     requested_size=requested_size,
                     initial_row=open_row,
+                    retry_delays=() if is_maker else (0, 1, 1, 2, 2, 2),
                 )
                 if not execution.has_fill:
+                    if is_maker and execution.state == "pending":
+                        # NEW/LIVE is a valid Maker waiting state, not a
+                        # failed open.  The mobile client polls maker-status.
+                        record_open_request_uncertain(
+                            open_request,
+                            f"maker_pending:{execution.raw_state}",
+                        )
+                        return ok(
+                            message="Maker订单等待成交",
+                            data={
+                                "state": "PENDING_MAKER",
+                                "maker_order_id": binance_order_id,
+                                "maker_price": format(maker_price or 0, "f"),
+                                "market_price": format(maker_market_price or entry_price, "f"),
+                                "symbol": normalized_symbol,
+                                "client_request_id": str(open_request.client_request_id),
+                            },
+                        )
                     record_open_request_uncertain(
                         open_request,
                         f"exchange_execution_{execution.state}:{execution.raw_state}",
@@ -1903,6 +2005,212 @@ class TradeOpenView(APIView):
                     status=409,
                 )
             return fail("开仓失败，请稍后重试")
+
+
+def _maker_request_for_user(request, client_request_id):
+    """Resolve a Maker request inside the authenticated account scope."""
+    mode = request_trading_mode(request)
+    row = TradeOpenRequest.objects.filter(
+        user=request.user,
+        trading_mode=mode,
+        client_request_id=str(client_request_id or ""),
+    ).first()
+    if row is None:
+        raise BinanceApiError("Maker订单不存在")
+    account = get_user_trading_account(request.user, active_only=True, trading_mode=mode)
+    if not account or row.api_key_fingerprint != account.api_key_fingerprint:
+        raise BinanceApiError("API绑定已变化，拒绝操作原Maker订单")
+    intent = get_open_request_execution_intent(row)
+    if intent.get("execution_mode") != "maker":
+        raise BinanceApiError("该开仓请求不是Maker订单")
+    return account, row, intent
+
+
+def _adopt_maker_fill(request, account, open_request, intent, client, execution, *, instrument=None):
+    """Adopt confirmed Maker fills and install the same stop protection path."""
+    if not execution.has_fill:
+        return None
+    mode = request_trading_mode(request)
+    symbol = to_symbol(open_request.symbol)
+    inst_id = to_inst_id(symbol)
+    instrument = instrument or _extract_instrument(inst_id)
+    side_code = int(intent["side_code"])
+    stop_loss_price = _to_decimal(intent["stop_loss_price"], "止损价")
+    stop_loss_amount = _to_decimal(intent["stop_loss_amount"], "止损金额")
+    strategy_id = str(intent.get("strategy_id") or "")
+    strategy_name = str(intent.get("strategy_name") or "")
+    strategy_config = intent.get("strategy_config")
+    adoption = adopt_entry_execution(
+        user=request.user,
+        trading_mode=mode,
+        client=client,
+        binance_order_id=execution.order_id or open_request.binance_order_id,
+        symbol=symbol,
+        side=side_code,
+        fill_size=execution.filled_size,
+        average_price=execution.average_price,
+        stop_loss_price=stop_loss_price,
+        stop_loss_amount=stop_loss_amount,
+        leverage=int(intent["leverage"]),
+        api_key_fingerprint=account.api_key_fingerprint,
+        strategy_id=strategy_id,
+        strategy_name=strategy_name,
+        strategy_config=strategy_config,
+        estimated_total_fee=_estimate_total_fee(execution.average_price, execution.filled_size, instrument.get("ctVal")),
+        pos_mode="long_short_mode" if intent.get("pos_side") else "net_mode",
+        source_label="Maker开仓",
+    )
+    order = adoption.order
+    attach_open_request_order(open_request, order.id)
+    stop_market_order_id = order.binance_stop_market_order_id
+    if not stop_market_order_id:
+        _, protection_error = _resolve_entry_stop_protection(
+            order=order,
+            client=client,
+            inst_id=inst_id,
+            side_code=side_code,
+            stop_loss_price=stop_loss_price,
+            stop_loss_error=adoption.stop_loss_error,
+            action_label="Maker开仓",
+            pending_message="Maker已成交，止损保护正在后台重试；恢复前不可继续开仓",
+        )
+        if protection_error:
+            raise BinanceApiError(protection_error)
+    _invalidate_position_list_cache(request.user, account.api_key_fingerprint, trading_mode=mode)
+    return order
+
+
+class MakerOpenStatusView(APIView):
+    """Poll one persisted GTX order; this endpoint never submits a new order."""
+
+    def post(self, request):
+        try:
+            account, open_request, intent = _maker_request_for_user(
+                request, request.data.get("client_request_id")
+            )
+            existing_order = _find_existing_order_by_open_request(open_request)
+            if existing_order:
+                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": existing_order.id})
+            client = BinanceFuturesClient(account.credentials)
+            inst_id = to_inst_id(open_request.symbol)
+            row = client.get_order(inst_id=inst_id, order_id=open_request.binance_order_id).get("data", [])
+            exchange_row = row[0] if row else {}
+            execution = confirm_entry_execution(
+                client,
+                inst_id=inst_id,
+                order_id=open_request.binance_order_id,
+                requested_size=_to_decimal(intent["size"], "开仓数量"),
+                initial_row=exchange_row,
+                retry_delays=(),
+            )
+            if execution.has_fill and execution.state == "filled":
+                order = _adopt_maker_fill(request, account, open_request, intent, client, execution)
+                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
+            if execution.state == "pending" or execution.filled_size > 0:
+                return ok(message="Maker订单等待成交", data={
+                    "state": "PENDING_MAKER",
+                    "maker_order_id": open_request.binance_order_id,
+                    "maker_price": intent.get("maker_price", ""),
+                    "market_price": intent.get("maker_market_price", ""),
+                    "filled_size": format(execution.filled_size, "f"),
+                    "symbol": open_request.symbol,
+                })
+            return fail("Maker订单已结束，请重新开仓")
+        except BinanceApiError as exc:
+            if getattr(exc, "outcome_unknown", False):
+                # Let the durable command worker mark this UNKNOWN.  A retry
+                # must first reconcile the exchange order; it must not be
+                # converted to a normal FAILED response.
+                raise
+            return fail(_translate_exchange_message(str(exc)), code=409, status=409)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("maker status failed")
+            return fail("Maker订单状态暂时无法确认，请稍后重试", code=409, status=409)
+
+
+class MakerOpenFallbackView(APIView):
+    """Cancel the live GTX order, then market-fill only the confirmed remainder."""
+
+    def post(self, request):
+        try:
+            account, open_request, intent = _maker_request_for_user(
+                request, request.data.get("client_request_id")
+            )
+            client = BinanceFuturesClient(account.credentials)
+            inst_id = to_inst_id(open_request.symbol)
+            requested_size = _to_decimal(intent["size"], "开仓数量")
+            current_payload = client.get_order(inst_id=inst_id, order_id=open_request.binance_order_id)
+            current_row = (current_payload.get("data") or [{}])[0]
+            current = parse_entry_execution(current_row, requested_size=requested_size)
+            if current.state == "filled":
+                order = _adopt_maker_fill(request, account, open_request, intent, client, current)
+                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
+
+            # Cancel first and confirm the exchange response.  An unknown
+            # cancellation must stop here; sending market after it could
+            # double the position if the GTX order was accepted in flight.
+            cancel_payload = client.cancel_order(inst_id=inst_id, order_id=open_request.binance_order_id)
+            cancel_row = (cancel_payload.get("data") or [{}])[0]
+            canceled = parse_entry_execution(cancel_row, requested_size=requested_size)
+            raw_state = str(cancel_row.get("state") or "").lower()
+            if raw_state not in {"canceled", "cancelled", "expired", "rejected"}:
+                raise BinanceApiError("Maker撤单结果未确认，已停止市价切换", outcome_unknown=True)
+
+            filled = canceled.filled_size
+            if filled > 0:
+                # Persist any partial fill before adding the remainder.  The
+                # market fallback below uses a separate client order id.
+                _adopt_maker_fill(request, account, open_request, intent, client, canceled)
+            if request.data.get("cancel_only"):
+                return ok(message="Maker订单已取消", data={
+                    "state": "CANCELLED",
+                    "filled_size": format(filled, "f"),
+                })
+            remaining = requested_size - filled
+            if remaining <= 0:
+                order = _find_existing_order_by_open_request(open_request)
+                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id if order else None})
+
+            fallback_id = str(intent.get("fallback_client_order_id") or "")
+            if not fallback_id:
+                fallback_id = _idempotent_client_order_id("mf", account.identity, to_symbol(inst_id), open_request.client_request_id + ":fallback")
+                intent["fallback_client_order_id"] = fallback_id
+                intent["maker_filled_size"] = format(filled, "f")
+                record_open_request_execution_intent(open_request, intent)
+            submission = submit_or_recover_exchange_order(
+                client=client,
+                open_request=open_request,
+                inst_id=inst_id,
+                client_order_id=fallback_id,
+                submit=lambda: client.place_market_order(
+                    inst_id=inst_id,
+                    side=str(intent["open_side"]),
+                    size=format(remaining, "f"),
+                    pos_side=str(intent.get("pos_side") or "") or None,
+                    new_client_order_id=fallback_id,
+                ),
+            )
+            if not submission.confirmed:
+                return fail("市价切换提交结果未确认，请保留页面并重试", code=409, status=409)
+            fallback_row = require_exchange_order_row(submission.payload, action_label="市价开仓")
+            fallback_execution = confirm_entry_execution(
+                client,
+                inst_id=inst_id,
+                order_id=str(fallback_row["ordId"]),
+                requested_size=remaining,
+                initial_row=fallback_row,
+            )
+            if not fallback_execution.has_fill:
+                raise BinanceApiError("市价切换尚未确认成交", outcome_unknown=True)
+            order = _adopt_maker_fill(request, account, open_request, intent, client, fallback_execution)
+            return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
+        except BinanceApiError as exc:
+            if getattr(exc, "outcome_unknown", False):
+                raise
+            return fail(_translate_exchange_message(str(exc)), code=409, status=409)
+        except Exception:  # noqa: BLE001
+            logger.exception("maker fallback failed")
+            return fail("市价切换失败，请核对订单状态后重试", code=409, status=409)
 
 
 # ============ T023-T026: 限价委托相关接口 ============

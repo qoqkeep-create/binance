@@ -10,6 +10,8 @@ from trading.views import (
     PublicMarketKlinesView,
     MarketPricesView,
     TradeOpenView,
+    MakerOpenStatusView,
+    MakerOpenFallbackView,
     CapitalPrecheckView,
     CapitalNormalizeView,
     CapitalReminderView,
@@ -37,6 +39,8 @@ urlpatterns = [
     path("capital/remind", CapitalReminderView.as_view()),
     path("open", TradeOpenView.as_view()),
     path("open-position", TradeOpenView.as_view()),
+    path("maker/status", MakerOpenStatusView.as_view()),
+    path("maker/fallback", MakerOpenFallbackView.as_view()),
     # 限价委托相关
     path("limit-order/create", LimitOrderCreateView.as_view()),
     path("limit-order/list", LimitOrderListView.as_view()),

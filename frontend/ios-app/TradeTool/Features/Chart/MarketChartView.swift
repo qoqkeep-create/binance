@@ -313,6 +313,8 @@ private struct MarketChartDetailView: View {
                     }.accessibilityIdentifier("market-chart-indicator-settings-shortcut")
                     tradeTool("gauge.with.dots.needle.67percent", title: usdt.displayedLeverage(for: viewModel.market.symbol).map { "杠杆 × \($0)" } ?? "杠杆 · 读取中", width: 62, action: { showsLeverage = true })
                         .accessibilityIdentifier("market-chart-leverage")
+                    tradeTool("gearshape", title: "设置", action: { isOrderSettingsPresented = true })
+                        .accessibilityIdentifier("market-chart-order-settings")
                 }
 
                 tradeTool(title: "自选", action: {

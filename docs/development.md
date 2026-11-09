@@ -6,6 +6,10 @@
 
 持仓的自动止盈策略选择、保本损和立即平仓共用当前页面的 overlay 弹窗宿主，移除 `fullScreenCover` 的系统垂直呈现；策略选择器改为带蒙层的居中卡片，嵌套确认仍走 fade。`python3 frontend/ios-app/scripts/test_modal_fade.py` 的 2 项渲染回归通过，检查卡片与蒙层同步透明度以及 fade 期间卡片不位移；主 App／测试目标 `xcodebuild ... -scheme TradeTool -destination 'generic/platform=iOS Simulator' build-for-testing CODE_SIGNING_ALLOWED=NO` 通过。按当前简单 UI 调整偏好未启动模拟器或做 iPhone 动态验收，未执行真实交易；新包中的三种入口手感、拖拽关闭和嵌套策略管理仍待验收。
 
+## 市价止盈的预计盈亏展示（2026-11-09，本地）
+
+持仓卡片的市价止盈在触发价后显示预计盈亏，使用 `manual_take_profit_pnl` 的多空方向和仓位口径，正数带 `+`、负数保留 `-`，金额最多两位小数并以 `U` 为单位；限价止盈维持只显示价格。为兼容旧响应，客户端在字段缺失时按开仓均价、触发价和剩余仓位计算。`test_position_fee_presentation.py` 定向回归 **16 项／0 失败**，覆盖正负值、限价不追加和旧响应兜底；主 App／测试目标 generic iOS Simulator `build-for-testing` 通过。未启动模拟器或真机，未提交、推送或执行真实交易。
+
 <a id="chart-recovery-diagnostics-20261107"></a>
 
 ## 后台恢复独立计时（2026-11-07，本地）
