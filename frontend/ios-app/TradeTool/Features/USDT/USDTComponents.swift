@@ -1290,27 +1290,30 @@ private struct WebModalPresenter<Modal: View>: ViewModifier {
   let preferredMotion: WebModalMotion?
   let modal: Modal
   var onDismiss: (() -> Void)?
-  @State private var cover = false
+  @State private var host = false
   func body(content: Content) -> some View {
-    content.background {
-      // Isolate system-cover suppression from the source page's buttons and
-      // navigation destinations. The card/backdrop animate their own progress.
-      Color.clear.frame(width: 0, height: 0)
-        .fullScreenCover(isPresented: $cover, onDismiss: onDismiss) {
-          WebModalStage(isPresented: $isPresented, preferredMotion: preferredMotion, modal: modal) {
-            var transaction = Transaction(); transaction.disablesAnimations = true
-            withTransaction(transaction) { cover = false }
-          }.presentationBackground(.clear)
-        }.transaction(value: cover) { transaction in
-          transaction.disablesAnimations = true
+    content.overlay {
+      if host {
+        // Keep the presenter in the source view's hierarchy. A system
+        // fullScreenCover owns a vertical presentation transition even when
+        // the modal's own card is configured to fade.
+        WebModalStage(isPresented: $isPresented, preferredMotion: preferredMotion, modal: modal) {
+          var transaction = Transaction(); transaction.disablesAnimations = true
+          withTransaction(transaction) {
+            host = false
+            onDismiss?()
+          }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+      }
     }.onChange(of: isPresented, initial: true) { _, shown in
       if shown {
         var transaction = Transaction(); transaction.disablesAnimations = true
-        withTransaction(transaction) { cover = true }
+        withTransaction(transaction) { host = true }
       }
-    }.onChange(of: cover) { _, shown in
-      if !shown { isPresented = false }
+    }.onChange(of: host) { _, shown in
+      if !shown, isPresented { isPresented = false }
     }
   }
 }

@@ -1,5 +1,11 @@
 # 开发与验证
 
+<a id="持仓操作弹窗宿主2026-11-09本地"></a>
+
+## 持仓操作弹窗宿主（2026-11-09，本地）
+
+持仓的自动止盈策略选择、保本损和立即平仓共用当前页面的 overlay 弹窗宿主，移除 `fullScreenCover` 的系统垂直呈现；策略选择器改为带蒙层的居中卡片，嵌套确认仍走 fade。`python3 frontend/ios-app/scripts/test_modal_fade.py` 的 2 项渲染回归通过，检查卡片与蒙层同步透明度以及 fade 期间卡片不位移；主 App／测试目标 `xcodebuild ... -scheme TradeTool -destination 'generic/platform=iOS Simulator' build-for-testing CODE_SIGNING_ALLOWED=NO` 通过。按当前简单 UI 调整偏好未启动模拟器或做 iPhone 动态验收，未执行真实交易；新包中的三种入口手感、拖拽关闭和嵌套策略管理仍待验收。
+
 <a id="chart-recovery-diagnostics-20261107"></a>
 
 ## 后台恢复独立计时（2026-11-07，本地）

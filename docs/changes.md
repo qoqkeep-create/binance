@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-09：持仓弹窗原位淡入与 Maker 能力核对
+
+持仓“添加自动止盈”“设置保本损”“立即平仓”统一使用当前页面的 overlay 弹窗宿主，移除 `fullScreenCover` 带来的系统上下移动画；自动止盈策略选择器改为带蒙层的居中卡片，选择确认继续使用嵌套 fade，策略管理保留系统 sheet。`test_modal_fade.py` 两项渲染回归和 App／测试目标 generic iOS `build-for-testing` 通过，未启动模拟器或进行真实交易，手机动态手感待新包验收。
+
+只读核对确认当前 USDⓈ-M Futures 普通限价单可用 `timeInForce=GTX` 实现 Post Only，无法作为 Maker 时返回 `-5022 GTX_ORDER_REJECT`；当前代码仍使用 GTC／市价路径，Maker 选项未实现、未部署，待用户决定拒单重试和价格策略后再设计。
+
 ## 2026-11-07：后台恢复独立计时源码交付
 
 用户同意补齐后台返回／重连的完整计时。新 trace 覆盖恢复入口至实际首帧，来源复用原 `load_started.value`；重复 ready 合并，后台结束未完成记录，手动重试／切周期隔离，20 秒恢复截止立即上报，保留失败请求证据。旧图、迟到 HTTP／场景／呈现及旧定时器不能结束或污染新 trace。当前规则见 [行情](market-data.md#chart-recovery-diagnostics-20261107)。

@@ -47,11 +47,12 @@ final class WebModalRenderingTests: XCTestCase {
 
 final class AppearanceTests: XCTestCase {
     @MainActor
-    func testOnlyIdlePositionStrategyPickerUsesNativeSheet() {
+    func testPositionOperationsUseTheSharedFadePresenter() {
       for status in ["0", "1", "2"] {
         for action in ["strategy", "strategyLog", "breakEven", "takeProfit", "close"] {
           let operation = WebPositionOperation(position: .object(["strategy_status": .string(status)]), action: action)
-          XCTAssertEqual(operation.usesNativeSheet, action == "strategy" && status != "1")
+            XCTAssertFalse(operation.usesNativeSheet,
+              "All position operations must use the shared in-place fade presenter")
         }
       }
     }

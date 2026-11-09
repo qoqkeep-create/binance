@@ -14,6 +14,14 @@
 
 [market_analysis](../server/market_analysis/trend.py) 继续承担闭合 K 线的内部趋势扫描，输出供信号页使用。其行情扫描与交易信号链路独立于已移除的研究功能。
 
+## Binance Maker / Post Only 能力核对（2026-11-09）
+
+本轮只读核对 Binance 官方接口和当前整合版下单路径，未改交易逻辑。项目当前使用 USDⓈ-M Futures：`BinanceFuturesClient.place_limit_order` 发送 `LIMIT` + `timeInForce=GTC`，市价开仓和立即平仓发送 `MARKET`，手动／策略止盈通过条件单 `TAKE_PROFIT` 或 `TAKE_PROFIT_MARKET`；对应代码见 [币安客户端](../server/common/binance.py) 与 [持仓接口](../server/positions/views.py)。
+
+USDⓈ-M 的普通限价单支持 `timeInForce=GTX`（Good Till Crossing / Post Only）：只有能作为 Maker 留在订单簿时才接受；若会立即吃单，接口拒绝并返回 `-5022 GTX_ORDER_REJECT`，不会自动改价重挂。开仓限价和需要触发后挂限价的 `TAKE_PROFIT` 理论上可采用 GTX；`MARKET`、`STOP_MARKET`、`TAKE_PROFIT_MARKET`、强平和 ADL 没有 Maker 保证。GTX 可能长时间不成交，且盘口变化会导致拒单，因此业务必须单独定义拒单提示、是否重试和价格重算，不能把 GTX 当成“尽量 Maker”。官方枚举与语义见 [USDⓈ-M 公开 API 参数](https://developers.binance.com/zh-CN/docs/products/derivatives-trading-usds-futures/common-definition)，拒单码见 [Binance 错误代码](https://developers.binance.com/en/docs/products/derivatives-trading-portfolio-margin/error-code)。
+
+现货产品使用不同的专用类型 `LIMIT_MAKER`，含义同样是只能作为 Maker、不能立即撮合；本项目当前交易适配器不是 Spot 路径。官方定义见 [Spot API Glossary](https://developers.binance.com/en/docs/products/spot/faqs/spot_glossary)。Maker 功能暂列为待决策项，不在本轮实现或部署。
+
 ## 信号研究已从运行代码移除
 
 按用户要求，iOS 已删除“信号研究”菜单、页面、Swift Charts 研究图表、DEBUG 数据及专属 UI 场景。后端已移除研究应用注册、`/v1/signal-research/` 路由、模型、管理后台、AI 请求、采集、规则、草稿、发布、回测与专属测试。旧接口不再解析，返回 404；`AI_*` 配置已停止读取。

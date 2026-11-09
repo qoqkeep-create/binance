@@ -559,57 +559,66 @@ struct WebStrategyPicker: View {
     automaticStrategies.first { $0.value("id") == pendingSelection }?.value("name") ?? ""
   }
   var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Text("自动止盈策略").font(.system(size: 18, weight: .semibold))
-        Spacer()
-        Button { dismiss() } label: {
-          WebIcon("x", size: 20).frame(width: 44, height: 44).contentShape(Rectangle())
-        }.buttonStyle(.plain).disabled(busy).accessibilityLabel("关闭")
-      }.padding(.leading, 16).padding(.trailing, 6)
-      Rectangle().fill(WebTheme.border).frame(height: 1)
-      ScrollView {
-        VStack(spacing: 12) {
-          if automaticStrategies.isEmpty {
-            Text(loading ? "加载中…" : "暂无自动止盈策略")
-              .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
-              .frame(maxWidth: .infinity).padding(.vertical, 24)
+    GeometryReader { geometry in
+      ZStack {
+        WebModalBackdrop()
+        VStack(spacing: 0) {
+          HStack {
+            Text("自动止盈策略").font(.system(size: 18, weight: .semibold))
+            Spacer()
+            Button { dismiss() } label: {
+              WebIcon("x", size: 20).frame(width: 44, height: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(busy).accessibilityLabel("关闭")
+          }.padding(.leading, 16).padding(.trailing, 6)
+          Rectangle().fill(WebTheme.border).frame(height: 1)
+          ScrollView {
+            VStack(spacing: 12) {
+              if automaticStrategies.isEmpty {
+                Text(loading ? "加载中…" : "暂无自动止盈策略")
+                  .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
+                  .frame(maxWidth: .infinity).padding(.vertical, 24)
+              }
+              ForEach(Array(automaticStrategies.enumerated()), id: \.offset) { _, strategy in
+                Button { chooseStrategy(strategy) } label: {
+                  VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                      Text(strategy.value("name")).font(.system(size: 16, weight: .medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                      if selection == strategy.value("id") {
+                        Image(systemName: "checkmark").foregroundStyle(BinanceTheme.accent)
+                      }
+                    }
+                    ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) { index, level in
+                      Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
+                        .foregroundStyle(WebTheme.secondary)
+                    }
+                  }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay {
+                      RoundedRectangle(cornerRadius: 14).stroke(
+                        selection == strategy.value("id") ? BinanceTheme.accent : WebTheme.border,
+                        lineWidth: selection == strategy.value("id") ? 2 : 1)
+                    }
+                }.buttonStyle(.plain).disabled(busy || pending)
+                  .accessibilityIdentifier("position.strategy.row." + strategy.value("id"))
+              }
+              Button("添加/编辑策略") { manage = true }.font(.system(size: 14))
+                .foregroundStyle(WebTheme.brand).frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(busy || pending)
+              USDTNotice(text: notice.isEmpty ? loadNotice : notice)
+            }.padding(16)
+          }.scrollIndicators(.hidden)
+          if busy || pending {
+            Button(busy ? "处理中…" : "查询设置结果") { queryPendingSelection() }
+              .buttonStyle(WebButtonStyle(height: 48, radius: 14)).disabled(busy)
+              .padding(16).accessibilityIdentifier("position.strategy.query")
           }
-          ForEach(Array(automaticStrategies.enumerated()), id: \.offset) { _, strategy in
-            Button { chooseStrategy(strategy) } label: {
-              VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                  Text(strategy.value("name")).font(.system(size: 16, weight: .medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                  if selection == strategy.value("id") {
-                    Image(systemName: "checkmark").foregroundStyle(BinanceTheme.accent)
-                  }
-                }
-                ForEach(Array((strategy["levels"]?.rows ?? []).enumerated()), id: \.offset) { index, level in
-                  Text(WebStrategyText.level(level, index: index)).font(.system(size: 14))
-                    .foregroundStyle(WebTheme.secondary)
-                }
-              }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-                .overlay {
-                  RoundedRectangle(cornerRadius: 14).stroke(
-                    selection == strategy.value("id") ? BinanceTheme.accent : WebTheme.border,
-                    lineWidth: selection == strategy.value("id") ? 2 : 1)
-                }
-            }.buttonStyle(.plain).disabled(busy || pending)
-              .accessibilityIdentifier("position.strategy.row." + strategy.value("id"))
-          }
-          Button("添加/编辑策略") { manage = true }.font(.system(size: 14))
-            .foregroundStyle(WebTheme.brand).frame(maxWidth: .infinity, minHeight: 44)
-            .disabled(busy || pending)
-          USDTNotice(text: notice.isEmpty ? loadNotice : notice)
-        }.padding(16)
-      }.scrollIndicators(.hidden)
-      if busy || pending {
-        Button(busy ? "处理中…" : "查询设置结果") { queryPendingSelection() }
-          .buttonStyle(WebButtonStyle(height: 48, radius: 14)).disabled(busy)
-          .padding(16).accessibilityIdentifier("position.strategy.query")
-      }
+        }
+        .frame(maxWidth: 448, maxHeight: geometry.size.height * 0.85)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 16).padding(.vertical, 16)
+        .webModalCard()
+      }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }.foregroundStyle(WebTheme.text).webModalDismissDisabled(busy)
       .accessibilityIdentifier("position.strategy.sheet")
       .task(id: store.scope) { await reload() }
