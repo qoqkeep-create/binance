@@ -14,7 +14,9 @@ iOS 委托卡片 host 8 项、实际订单绘图 host 1 项、保证金／分页
 
 发布镜像在 **47.80.22.243（首尔服务器）** 的一次性内网 MySQL／Redis 上首轮运行 52 项、失败 3 处；生产没有切换。两处失败来自只读 SQL 守卫未识别 MySQL 的 `(SELECT ...) UNION ALL ...` 分组括号，另一处来自测试假设两表自增 ID 相同，实际业务已按时间倒序、ID 倒序、来源升序正确排序。修正测试为去除前导分组括号后仍严格只接受 SELECT，并显式构造同 ID 和不同 ID 的混合分页；保留禁网络及写 SQL 拒绝约束，不改业务查询或跳过失败。修正后本地 `trading.test_order_list` **25 项／4.672 秒／0 失败／0 跳过**，退出码 0。
 
-日志与源码哈希保存在忽略目录 `.integration-runtime/FullDeliveryNov11/`。跨数据库复验和实际发布结果后续补记，线上状态以 [运维](operations.md) 最新日期为准。
+重新以完整提交 `14e1182` 构建镜像后，原 `integration_tests trading.test_order_list mobile.test_event_delivery` 在一次性 MySQL／Redis 上 **52 项／29.668 秒／0 失败／0 跳过**，退出码 0。测试容器不挂生产配置或数据卷，Docker 内网阻断外网；完成后删除临时容器、网络、数据和随机凭据。发布门槛同时核对通过结果的镜像与源码提交，避免采用旧包结果。日志与源码哈希保存在忽略目录 `.integration-runtime/FullDeliveryNov11/`。
+
+北京时间 01:54:57 已完整部署到 **47.80.22.243（首尔服务器）**，六服务健康，四应用各 319 个运行文件匹配。两个有效绑定的统一列表只读 GET、公网 HTTPS／K 线／统计和 WSS 验收通过；未应用迁移、修改生产配置、重建 MySQL／Redis 或重放原 UNKNOWN 命令，备份与回滚见 [运维](operations.md#完整同源发布20261111)。01:56 GitHub 检查确认客户端 Cloud Test／Archive 均成功；本轮未直接核对 TestFlight／手机，见 [客户端交付](testflight.md#统一委托源码自动构建20261111)。
 
 <a id="统一委托回归20261110"></a>
 

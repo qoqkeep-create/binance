@@ -1,5 +1,23 @@
 # 整合环境部署与运维
 
+<a id="完整同源发布20261111"></a>
+
+## 完整同源发布（2026-11-11）
+
+按用户“把未提交的全部提交部署”授权，整合工作区全部 25 个待交付文件以 `4fc9e9b` 提交推送，包含独立目录整理、统一委托 API／iOS 卡片、限价图表冻结与挂单导航，以及发布核验定位的市价提交回调修复。隔离 MySQL 验证发现两处测试可移植性假设后，以 `14e1182` 补齐测试和验证文档；没有略过失败，也没有实现此前仅讨论的逐仓保证金规划。
+
+北京时间 **01:54:57**，将完整同源后端 `14e1182dc45960cc19c0ff60621a4bc0f4cec439` 部署至 **47.80.22.243（首尔服务器）**。`current` 为 `/opt/trade-tools-integrated/releases/integrated-20261111-full-14e1182`，API／market／worker／scheduler 统一使用 `tradetools-integrated:integrated-20261111-full-14e1182`。归档 **333 个文件**逐项匹配 Git；四个应用容器各 **319 个 Python／requirements 文件**全部匹配 manifest，不采用选择性覆盖。归档 SHA-256 为 `242fd91379b9ad976a4748084b986a3f518e486003326110fdfc349eb81c60a5`。
+
+完整后端隔离回归 **1166 项、0 失败、6 项 opt-in 跳过**；最终包在没有生产配置／数据卷、没有外网的一次性 MySQL／Redis 上 **52 项／29.668 秒／0 失败／0 跳过**。首轮测试假设修正与 iOS 的 34 项 host、Release／build-for-testing 编译边界见 [开发](development.md#完整交付验证20261111)。
+
+一致性数据库备份 **396362800 bytes**，完整 gzip 解压及 SHA-256 校验通过。受限备份目录 `/opt/trade-tools-integrated/backups/integrated-20261111-full-14e1182/` 包含旧容器与来源、环境／nginx 副本、结果及 `rollback.sh`。仅执行 `migrate --check`，没有应用 schema／数据迁移、初始化账号或重置队列。先停止旧 worker／scheduler，再以 `--no-deps --no-build --pull never --wait` 切换同源四服务；MySQL／Redis 容器 ID、镜像及卷保持原样，环境文件 inode／大小／mtime／权限和 nginx 哈希不变，`nginx -t` 通过。
+
+切换前后数据库计数相同：活动持仓 0、待成交限价 0、PENDING／RUNNING 0、**UNKNOWN 1**。原未知命令保持待核对，没有手工重放或强改状态；没有执行真实开平仓、划转、撤保护单或发送测试通知。这些本地订单计数不代替交易所完整对账。
+
+**01:55** 只读验收：六服务 healthy；公网 HTTPS 健康 200，统一委托匿名 401，两个现有有效绑定分别以不持久化的短期 access JWT 读取 `GET /v1/trade/order/list` 均返回 HTTP／业务 200，未解密 API Key 或请求交易所。QA 鉴权、BTC1h 1500 根与尾部 2 根、六类统计后台收敛、2h 周期、WSS ready／订阅 ACK／ping-pong／K 线／ticker 通过。三连接同时收行情，Redis 实际仅一条 Pub/Sub 连接；gzip **69918 bytes**、解压 JSON **423012 bytes**，identity 兼容。13 周期与 192 窗口保持，注册及通知开关不变。
+
+后续 Compose 必须使用该 release 的 `compose.integrated.yaml` 加 `compose.runtime.yaml`，设置 `INTEGRATED_RELEASE=integrated-20261111-full-14e1182`；后者固定当前 MySQL／Redis 镜像。回滚执行上述备份中的 `rollback.sh`，恢复旧四应用镜像和 `current`，保留数据库、基础设施与实际订单／通知事实，不恢复数据库、不反迁移、不重放未知命令。完整证据保存在忽略目录 `.integration-runtime/FullDeliveryNov11/`。iOS 由现有 Xcode Cloud 自动构建，后端部署不代表手机更新，见 [TestFlight](testflight.md#统一委托源码自动构建20261111)。
+
 ## 确认弹窗修复发布核验（2026-11-10）
 
 用户授权全部提交部署，客户端修复 **`bc6f49b`** 已推送 GitHub `codex/integrated-ios`。2026-11-10 **17:28～17:30（北京时间）** SSH 只读核验 **47.80.22.243（首尔服务器）**：`current` 仍为 `integrated-20261109-maker-f1f8254`；其 329 个受追踪后端／部署文件与交付源码一致，api／market／worker／scheduler 运行容器的各 317 个 Python／requirements 文件也逐项匹配，全部零差异。六容器 healthy，公网 HTTPS 健康 200，database／migrations／scheduler 检查通过。

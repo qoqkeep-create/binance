@@ -1,5 +1,13 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
+<a id="统一委托源码自动构建20261111"></a>
+
+## 统一委托源码自动构建（2026-11-11）
+
+用户授权全部提交部署，整合工作区源码以 `4fc9e9b` 推送 GitHub `codex/integrated-ios`，自动触发 [Xcode Cloud 运行 `060f5982-41ef-45fd-9721-b17b3fa7ebe5`](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/060f5982-41ef-45fd-9721-b17b3fa7ebe5)。北京时间 **01:56** 的最终 GitHub 只读核验中，[Test 成功](https://github.com/qoqkeep-create/binance/runs/130012695798)、[Archive 成功](https://github.com/qoqkeep-create/binance/runs/130013624309)，combined status 为 **success**。本轮只核验 Cloud 检查，尚未直接核对 TestFlight 处理、内部组分发、构建号及手机安装。
+
+后续 `14e1182` 仅修正后端 MySQL 测试可移植性及开发文档，生产 Swift 与 `4fc9e9b` 完全一致；该后续提交截至 01:46 没有独立 Check Runs，不声称又触发一轮构建。没有修改工作流或手动上传。本地为 34 项 host 检查、generic device Release 及 generic Simulator build-for-testing 编译通过，本轮未启动模拟器或执行 XCTest／UI，验证边界见 [开发](development.md#完整交付验证20261111)。证据在忽略目录 `.integration-runtime/FullDeliveryNov11/cloud-checks*.json`。
+
 <a id="确认弹窗修复自动构建2026-11-10"></a>
 
 ## 确认弹窗修复自动构建（2026-11-10）

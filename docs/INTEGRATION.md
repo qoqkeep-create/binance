@@ -35,7 +35,7 @@ Python 保留原交易业务、Decimal 精度、账户模式、绑定代际、�
 | `/api/market/watchlist/defaults` | 默认自选；用户编辑由原客户端保存 |
 | `/api/push/devices/register`、`/unregister` | 当前登录用户安装的 APNs token 注册／停用 |
 | `/api/commands`、`/api/commands/<UUID>` | 带幂等键提交、当前用户/模式查询 |
-| `GET /v1/trade/order/list` | 普通限价与 Maker 的统一只读委托列表，保留终态；`page`／`page_size`（默认 20、最大 100），返回 `items` 与 `pagination`；本地实现，需配套发布 |
+| `GET /v1/trade/order/list` | 普通限价与 Maker 的统一只读委托列表，保留终态；`page`／`page_size`（默认 20、最大 100），返回 `items` 与 `pagination`；2026-11-11 已部署到 47.80.22.243（首尔服务器），客户端需新包 |
 | `/v1/*` | 原 USDT 业务接口；原生页面使用既有字段与规则 |
 | `/ws/v1` | Bearer JWT 与 `X-Trading-Mode`；ready / ack / ping / pong / event |
 
