@@ -1,5 +1,11 @@
 # 整合环境部署与运维
 
+## 确认弹窗修复发布核验（2026-11-10）
+
+用户授权全部提交部署，客户端修复 **`bc6f49b`** 已推送 GitHub `codex/integrated-ios`。2026-11-10 **17:28～17:30（北京时间）** SSH 只读核验 **47.80.22.243（首尔服务器）**：`current` 仍为 `integrated-20261109-maker-f1f8254`；其 329 个受追踪后端／部署文件与交付源码一致，api／market／worker／scheduler 运行容器的各 317 个 Python／requirements 文件也逐项匹配，全部零差异。六容器 healthy，公网 HTTPS 健康 200，database／migrations／scheduler 检查通过。
+
+本轮及该运行版本之后的全部提交只改客户端、测试或文档，没有尚未上线的配套后端，所以保留相同运行版本，不为相同源码重建镜像、重启容器或切换 `current`。未执行迁移、初始化、真实交易、划转、撤保护单或修改既有持仓。客户端发布需等待本次 Xcode Cloud 构建与分发，不能把后端同源核验写成手机已经生效；见 [交付记录](changes.md#2026-11-10确认弹窗修复完整源码交付与发布核验)及 [TestFlight](testflight.md#确认弹窗修复自动构建2026-11-10)。本地只读证据位于忽略目录 `.integration-runtime/ModalDeliveryNov10/`。
+
 ## Maker 开仓链路发布（2026-11-09）
 
 2026-11-09（北京时间）按用户“推送 GitHub 并部署到云能服务器”的授权，将 GitHub `qoqkeep-create/binance` 的 `codex/integrated-ios` 提交 **`f1f8254`** 部署至 **47.80.22.243（首尔服务器）**。发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261109-maker-f1f8254`，`current` 已切换到该目录；API、market、worker、scheduler 四个应用容器均使用镜像 `tradetools-integrated:integrated-20261109-maker-f1f8254`。

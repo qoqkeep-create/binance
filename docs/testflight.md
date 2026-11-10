@@ -1,5 +1,13 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
+<a id="确认弹窗修复自动构建2026-11-10"></a>
+
+## 确认弹窗修复自动构建（2026-11-10）
+
+按用户“全部提交 部署”授权，提交 **`bc6f49b`** 已推送 GitHub `codex/integrated-ios`，包含全部确认弹窗修复、回归和文档。2026-11-10 **17:30（北京时间）** GitHub check 确认自动启动 Cloud 运行 `998edbdc-2572-4a58-aab9-bd14e4f6bfcb`：[Test](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/998edbdc-2572-4a58-aab9-bd14e4f6bfcb/action/cd57c7ad-5e64-40c8-a9c6-a5812338f940) 与 [Archive](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/998edbdc-2572-4a58-aab9-bd14e4f6bfcb/action/32e6dc00-c16d-48a8-9169-b8b1df4d0a85) 均为 **in_progress，尚无最终结论**。未改变工作流、签名或分发设置；Build Number、TestFlight 处理／组内分发与手机安装尚未核实。
+
+本地验证为 10 项定向单测、2 项 fade host 和 4 个不同实际 UI 用例通过，范围见 [开发](development.md#确认弹窗屏幕宿主20261110)。配套后端已与 **47.80.22.243（首尔服务器）** 的运行源码逐项一致，本次无需后端重建；这不代替 iOS 新包安装。公开 check 证据在忽略目录 `.integration-runtime/ModalDeliveryNov10/cloud-checks.json`。
+
 ## 通知测试修复后的自动构建触发（2026-11-06）
 
 用户明确要求修改少量文件并推送，以触发新一轮自动构建。本批从修复提交 `ab37c98` 继续，在主 App 入口 `TradeToolApp.swift` 补充 APNs 注册事件与通知解析／导航责任的说明注释，连同全部待提交的 Build 49／50 核对文档一起交付 GitHub `codex/integrated-ios`。App 行为、版本号、签名配置与工作流保持原样；通知修复沿用已通过的 402 项 Xcode 单测、15 项 host 和 App／Widget Release 结果，注释修改不重复运行这些测试。新提交须通过公开 check 或 Xcode Cloud 概览确认自动启动及源码提交号，构建结果、TestFlight 分发与手机安装分别核验。
