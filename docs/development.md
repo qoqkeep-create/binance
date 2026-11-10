@@ -1,5 +1,15 @@
 # 开发与验证
 
+<a id="确认弹窗屏幕宿主20261110"></a>
+
+## 确认弹窗屏幕宿主（2026-11-10，本地）
+
+用户报告 K 线开仓二次确认在屏幕底部只显示一半。回归定位到 `4d4ccc6` 的共用 presenter 变更：为消除系统垂直转场，把屏幕级呈现改为源组件 `.overlay`，却没有保留屏幕级布局契约。真实 `WebModal` 从 180 pt 底部 inset 呈现时，在 402×874 pt 窗口中内容底边达到 **1028 pt**。缩短内容到 80 pt 后依然越界，整页挂载对照正常；原有两项 fade 像素测试也通过，证明此前测试没有覆盖 presenter 与调用者的坐标边界。不是本次 K 线数据恢复的渲染问题。
+
+现在 `WebModalWindowHost` 用无系统动画的透明 UIKit `overFullScreen` 提供窗口尺寸，保留 `WebModalStage` 的淡入淡出和提交锁，传递源 SwiftUI 环境。相邻弹窗串行等待实际关闭，嵌套弹窗沿当前层呈现；排队后取消也处理初始 false，避免留下透明遮挡层。新逻辑保留宿主职责和取消边界注释；没有修改订单计算、交易请求或持仓保护。
+
+失败证据：`ModalHostNov10/Baseline.xcresult` 的单项布局回归有 3 处断言失败；最小对照 `Minimized3.xcresult` 的底部长／短内容两项共 6 处失败，整页与两项 fade 对照通过。中间宿主挂载及测试夹具调整的失败结果保留，不算通过。最终定向模拟器单测 **10 项／0 失败**（`UnitVerified.xcresult`），包括 6 项真实宿主布局／生命周期、2 项像素渲染和 2 项既有分流／fade 回归。实际 UI 共 **4 个不同用例**通过：iPhone 18 Pro 的开仓确认、持仓操作及浅深色嵌套策略，375×812 pt iPhone 13 mini 的市价／限价浅深色确认及持仓操作；最终 `UIFinal.xcresult` 又复验深色开仓和浅深色嵌套策略，**2 项／0 失败**，不重复累计。已查看市价、限价、深色及立即平仓截图，标题和完整操作行均在屏幕内；构建和 UI 均为 iOS 27.2 模拟器。独立 fade host **2 项通过**。证据均保存在忽略目录 `.integration-runtime/ModalHostNov10/`。实际入口测试只打开确认并取消，使用 DEBUG 隔离数据，不真实开平仓、撤单或划转。模拟器结果不替代最低 iOS 17 或新包真机验收。
+
 <a id="k-线返回无闪烁恢复20261110"></a>
 
 ## K 线返回无闪烁恢复（2026-11-10，本地）
@@ -14,7 +24,7 @@
 
 ## 持仓操作弹窗宿主（2026-11-09，本地）
 
-持仓的自动止盈策略选择、保本损和立即平仓共用当前页面的 overlay 弹窗宿主，移除 `fullScreenCover` 的系统垂直呈现；策略选择器改为带蒙层的居中卡片，嵌套确认仍走 fade。`python3 frontend/ios-app/scripts/test_modal_fade.py` 的 2 项渲染回归通过，检查卡片与蒙层同步透明度以及 fade 期间卡片不位移；主 App／测试目标 `xcodebuild ... -scheme TradeTool -destination 'generic/platform=iOS Simulator' build-for-testing CODE_SIGNING_ALLOWED=NO` 通过。按当前简单 UI 调整偏好未启动模拟器或做 iPhone 动态验收，未执行真实交易；新包中的三种入口手感、拖拽关闭和嵌套策略管理仍待验收。
+该轮曾将持仓的自动止盈策略选择、保本损和立即平仓改为当前页面的 overlay 弹窗宿主（已被[屏幕宿主修复](#确认弹窗屏幕宿主20261110)取代），移除 `fullScreenCover` 的系统垂直呈现；策略选择器改为带蒙层的居中卡片，嵌套确认仍走 fade。`python3 frontend/ios-app/scripts/test_modal_fade.py` 的 2 项渲染回归通过，检查卡片与蒙层同步透明度以及 fade 期间卡片不位移；主 App／测试目标 `xcodebuild ... -scheme TradeTool -destination 'generic/platform=iOS Simulator' build-for-testing CODE_SIGNING_ALLOWED=NO` 通过。按当前简单 UI 调整偏好未启动模拟器或做 iPhone 动态验收，未执行真实交易；新包中的三种入口手感、拖拽关闭和嵌套策略管理仍待验收。
 
 ## 市价止盈的预计盈亏展示（2026-11-09，本地）
 

@@ -3221,8 +3221,31 @@ final class WebParityUITests: XCTestCase {
     capture("chart-held-data-dark")
   }
 
+  private func assertEntryConfirmationFitsWindow(file: StaticString = #filePath, line: UInt = #line) {
+    // Existence alone missed the bottom-ticket overlay regression: assert the
+    // entire action row and header are visible before ever touching an action.
+    let title = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["开仓确认", "委托确认"])).firstMatch
+    let cancel = app.buttons["取消"]
+    let confirm = app.buttons["确定"]
+    for element in [title, cancel, confirm] {
+      XCTAssertTrue(element.isHittable, file: file, line: line)
+      XCTAssertTrue(app.frame.contains(element.frame), "Offscreen confirmation: \(element.frame)", file: file, line: line)
+    }
+    XCTAssertLessThan(cancel.frame.maxY, app.frame.maxY - 34, file: file, line: line)
+    XCTAssertLessThan(title.frame.minY, app.frame.midY, file: file, line: line)
+    capture("entry-confirmation-window-bounds")
+  }
+
   func testChartCrosshairLimitLinesAndSharedEntryConfirmation() {
-    launch("market", ["--fixture-entry-ready"])
+    assertChartEntryConfirmation(options: [])
+  }
+
+  func testChartEntryConfirmationFitsInDarkAppearance() {
+    assertChartEntryConfirmation(options: ["--fixture-dark"])
+  }
+
+  private func assertChartEntryConfirmation(options: [String]) {
+    launch("market", options + ["--fixture-entry-ready"])
     app.buttons["搜索币种、币对或合约"].tap()
     app.buttons["pairs.select.BTCUSDT"].tap()
     let ticket = app.buttons["chart-ticket.submit"]
@@ -3261,6 +3284,7 @@ final class WebParityUITests: XCTestCase {
     capture("chart-limit-short-lines")
     ticket.tap()
     XCTAssertTrue(app.staticTexts["委托确认"].waitForExistence(timeout: 5))
+    assertEntryConfirmationFitsWindow()
     app.buttons["取消"].tap()
     XCTAssertTrue(ticket.exists)
     modes.buttons["市价"].tap()
@@ -3269,6 +3293,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["开仓确认"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.staticTexts["方向初筛"].exists)
     capture("chart-shared-market-confirmation")
+    assertEntryConfirmationFitsWindow()
     app.buttons["取消"].tap()
   }
 
@@ -4088,6 +4113,13 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["当前浮盈"].waitForExistence(timeout: 5))
     capture("break-even")
     app.buttons["关闭"].firstMatch.tap()
+    close.tap()
+    let cancelClose = app.buttons["取消"]
+    XCTAssertTrue(cancelClose.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.frame.contains(cancelClose.frame))
+    XCTAssertTrue(app.frame.contains(app.buttons["确认"].frame))
+    capture("close-position-confirmation")
+    cancelClose.tap()
     app.buttons["设置"].firstMatch.tap()
     XCTAssertTrue(app.buttons["确认设置"].waitForExistence(timeout: 5))
     capture("take-profit")

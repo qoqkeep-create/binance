@@ -591,3 +591,192 @@ final class WebParityFormattingTests: XCTestCase {
     XCTAssertNil(WebFormat.date("--"))
   }
 }
+
+/// Exercise the real presenter from a bottom inset, not just the card's fade pixels.
+@MainActor
+final class WebModalHostTests: XCTestCase {
+  private final class Frames {
+    var stage = CGRect.zero
+    var content = CGRect.zero
+  }
+
+  private final class DialogState: ObservableObject {
+    @Published var first = false
+    @Published var second = false
+    @Published var nested = false
+    @Published var locked = true
+    @Published var sheet = false
+    var appearances: [String: Int] = [:]
+    var dismissals: [String: Int] = [:]
+    var close: [String: () -> Void] = [:]
+    var schemes: [String: ColorScheme] = [:]
+  }
+
+  private struct DialogProbe: View {
+    let tag: String
+    @EnvironmentObject private var state: DialogState
+    @Environment(\.webDismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+      Color.clear.frame(height: 100).onAppear {
+        state.appearances[tag, default: 0] += 1
+        state.close[tag] = { dismiss() }
+        state.schemes[tag] = scheme
+      }
+    }
+  }
+
+  private struct DialogSource: View {
+    @ObservedObject var state: DialogState
+    var body: some View {
+      Color.gray.frame(height: 180)
+        .webModal(isPresented: $state.first, onDismiss: { state.dismissals["first", default: 0] += 1 }) {
+          WebModal(title: "开仓确认") {
+            DialogProbe(tag: "first").webModalDismissDisabled(state.locked)
+              .webModal(isPresented: $state.nested) {
+                WebModal(title: "嵌套确认") { DialogProbe(tag: "nested") }
+              }
+          }
+        }
+        .webModal(isPresented: $state.second, onDismiss: { state.dismissals["second", default: 0] += 1 }) {
+          WebModal(title: "开仓成功") { DialogProbe(tag: "second") }
+        }
+    }
+  }
+
+  private struct SheetSource: View {
+    @ObservedObject var state: DialogState
+    var body: some View {
+      Color.white.sheet(isPresented: $state.sheet) {
+        Color.white.safeAreaInset(edge: .bottom) { DialogSource(state: state) }
+      }
+    }
+  }
+
+  private func makeWindow<Content: View>(_ content: Content) -> UIWindow {
+    let window = UIWindow(frame: UIScreen.main.bounds)
+    window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+    window.rootViewController = UIHostingController(rootView: content)
+    window.makeKeyAndVisible()
+    return window
+  }
+
+  func testSequentialDialogsAndReopeningDismissExactlyOnce() async throws {
+    let state = DialogState()
+    let root = Color.white.safeAreaInset(edge: .bottom) { DialogSource(state: state) }
+      .environmentObject(state)
+    let window = makeWindow(root)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    state.first = true
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertEqual(state.appearances["first"], 1)
+    state.first = false
+    state.second = true
+    try await Task.sleep(for: .milliseconds(600))
+    XCTAssertEqual(state.dismissals["first"], 1)
+    XCTAssertEqual(state.appearances["second"], 1, "Success must not be lost while confirmation fades out")
+    try XCTUnwrap(state.close["second"])()
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertFalse(state.second)
+    XCTAssertEqual(state.dismissals["second"], 1)
+    XCTAssertNil(window.rootViewController?.presentedViewController)
+    state.first = true
+    state.locked = false
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertEqual(state.appearances["first"], 2)
+    try XCTUnwrap(state.close["first"])()
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertEqual(state.dismissals["first"], 2)
+    XCTAssertNil(window.rootViewController?.presentedViewController)
+  }
+
+  func testCancelledQueuedDialogCannotLeaveAnInvisibleCover() async throws {
+    let state = DialogState()
+    let root = Color.white.safeAreaInset(edge: .bottom) { DialogSource(state: state) }
+      .environmentObject(state)
+    let window = makeWindow(root)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    state.first = true
+    try await Task.sleep(for: .milliseconds(500))
+    state.first = false
+    state.second = true
+    try await Task.sleep(for: .milliseconds(30))
+    state.second = false
+    try await Task.sleep(for: .milliseconds(700))
+    XCTAssertEqual(state.dismissals["first"], 1)
+    XCTAssertNil(window.rootViewController?.presentedViewController,
+      "A success/preview cancelled while confirmation closes must release its cover")
+  }
+
+  func testNestedConfirmationFromSheetPreservesEnvironmentAndSubmitLock() async throws {
+    let state = DialogState()
+    let root = SheetSource(state: state).environmentObject(state).environment(\.colorScheme, .dark)
+    let window = makeWindow(root)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    state.sheet = true
+    try await Task.sleep(for: .milliseconds(600))
+    state.first = true
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertEqual(state.schemes["first"], .dark)
+    try XCTUnwrap(state.close["first"])()
+    XCTAssertTrue(state.first, "Submit lock must block the shared close action")
+    state.nested = true
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertEqual(state.appearances["nested"], 1)
+    XCTAssertEqual(state.schemes["nested"], .dark)
+    try XCTUnwrap(state.close["nested"])()
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertFalse(state.nested)
+    XCTAssertTrue(state.first, "Closing a nested confirmation must preserve its parent")
+    state.locked = false
+    try await Task.sleep(for: .milliseconds(100))
+    try XCTUnwrap(state.close["first"])()
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertFalse(state.first)
+    XCTAssertEqual(state.dismissals["first"], 1)
+    XCTAssertNotNil(window.rootViewController?.presentedViewController, "The original sheet stays open")
+    XCTAssertNil(window.rootViewController?.presentedViewController?.presentedViewController)
+    state.sheet = false
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertNil(window.rootViewController?.presentedViewController)
+  }
+
+  func testBottomTicketPresentsConfirmationAcrossTheWindow() async throws {
+    try await checkPresentation(bottomTicket: true, contentHeight: 250)
+  }
+
+  func testShortConfirmationStillUsesTheWindow() async throws {
+    try await checkPresentation(bottomTicket: true, contentHeight: 80)
+  }
+
+  func testFullPageConfirmationUsesTheWindow() async throws {
+    try await checkPresentation(bottomTicket: false, contentHeight: 250)
+  }
+
+  private func checkPresentation(bottomTicket: Bool, contentHeight: CGFloat) async throws {
+    let frames = Frames()
+    let source = Color.gray.frame(maxHeight: bottomTicket ? 180 : .infinity)
+      .webModal(isPresented: .constant(true)) {
+        WebModal(title: "开仓确认") {
+          Color.clear.frame(height: contentHeight).background(GeometryReader { geometry in
+            Color.clear.onAppear { frames.content = geometry.frame(in: .global) }
+              .onChange(of: geometry.frame(in: .global)) { _, frame in frames.content = frame }
+          })
+        }.background(GeometryReader { geometry in
+          Color.clear.onAppear { frames.stage = geometry.frame(in: .global) }
+            .onChange(of: geometry.frame(in: .global)) { _, frame in frames.stage = frame }
+        })
+      }
+    let root = Color.white.safeAreaInset(edge: .bottom, spacing: 0) { source }
+    let window = makeWindow(root)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    try await Task.sleep(for: .milliseconds(600))
+    XCTAssertGreaterThan(frames.stage.height, window.bounds.height * 0.8,
+      "A ticket's local bounds must never become the modal's presentation bounds: \(frames.stage)")
+    XCTAssertGreaterThan(frames.content.height, 0)
+    XCTAssertLessThan(frames.content.maxY, window.bounds.maxY - 40,
+      "Confirmation actions must remain above the bottom of the screen: \(frames.content)")
+    XCTAssertEqual(frames.stage.midY, window.bounds.midY, accuracy: 2,
+      "Confirmation must be centered in the window, independently of the ticket")
+  }
+}

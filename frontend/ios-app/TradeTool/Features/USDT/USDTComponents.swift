@@ -1292,28 +1292,112 @@ private struct WebModalPresenter<Modal: View>: ViewModifier {
   var onDismiss: (() -> Void)?
   @State private var host = false
   func body(content: Content) -> some View {
-    content.overlay {
-      if host {
-        // Keep the presenter in the source view's hierarchy. A system
-        // fullScreenCover owns a vertical presentation transition even when
-        // the modal's own card is configured to fade.
+    content.background {
+      // The caller may be a 180 pt chart ticket or a row inside a sheet.
+      // A local overlay (even with ignoresSafeArea) inherits those bounds and
+      // clips confirmations offscreen. Only this host owns screen presentation;
+      // WebModalStage remains the sole owner of card/backdrop animation.
+      WebModalWindowHost(isPresented: host, onDismiss: {
+        if isPresented { isPresented = false }
+        onDismiss?()
+      }) {
         WebModalStage(isPresented: $isPresented, preferredMotion: preferredMotion, modal: modal) {
-          var transaction = Transaction(); transaction.disablesAnimations = true
-          withTransaction(transaction) {
-            host = false
-            onDismiss?()
-          }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
-      }
+          host = false
+        }.ignoresSafeArea()
+      }.frame(width: 1, height: 1).allowsHitTesting(false)
     }.onChange(of: isPresented, initial: true) { _, shown in
       if shown {
         var transaction = Transaction(); transaction.disablesAnimations = true
         withTransaction(transaction) { host = true }
       }
-    }.onChange(of: host) { _, shown in
-      if !shown, isPresented { isPresented = false }
+    }
+  }
+}
+
+private let webModalHostDidDismiss = Notification.Name("WebModalHostDidDismiss")
+
+/// A transparent, nonanimated UIKit cover supplies window bounds without the
+/// system sheet/cover's vertical transition or transactions on source navigation.
+private struct WebModalWindowHost<Modal: View>: UIViewControllerRepresentable {
+  let isPresented: Bool
+  let onDismiss: () -> Void
+  @ViewBuilder var modal: Modal
+
+  func makeUIViewController(context: Context) -> Controller { Controller() }
+  func updateUIViewController(_ controller: Controller, context: Context) {
+    controller.update(shown: isPresented,
+      modal: AnyView(modal.environment(\.self, context.environment)), onDismiss: onDismiss)
+  }
+  static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+    controller.removeHost()
+  }
+
+  final class Controller: UIViewController {
+    private var cover: UIHostingController<AnyView>?
+    private var modal = AnyView(EmptyView())
+    private var wantsPresentation = false
+    private var dismissing = false
+    private var onDismiss: (() -> Void)?
+
+    override func viewDidLoad() {
+      super.viewDidLoad()
+      view.backgroundColor = .clear
+      NotificationCenter.default.addObserver(self, selector: #selector(presentationSlotChanged),
+        name: webModalHostDidDismiss, object: nil)
+    }
+    deinit { NotificationCenter.default.removeObserver(self) }
+    override func viewDidAppear(_ animated: Bool) {
+      super.viewDidAppear(animated)
+      reconcile()
+    }
+    override func viewDidLayoutSubviews() {
+      super.viewDidLayoutSubviews()
+      reconcile()
+    }
+    func update(shown: Bool, modal: AnyView, onDismiss: @escaping () -> Void) {
+      wantsPresentation = shown
+      self.modal = modal
+      self.onDismiss = onDismiss
+      cover?.rootView = modal
+      reconcile()
+    }
+    @objc private func presentationSlotChanged() { reconcile() }
+    private func reconcile() {
+      guard !dismissing, viewIfLoaded?.window != nil else { return }
+      if wantsPresentation, cover == nil {
+        var presenter: UIViewController = self
+        while let parent = presenter.parent { presenter = parent }
+        // Sibling confirmations may close and open in the same state update.
+        // Wait for that cover to finish; nested confirmations have their own
+        // presenting controller and can still open above the outer modal.
+        guard presenter.presentedViewController == nil else { return }
+        let next = UIHostingController(rootView: modal)
+        next.modalPresentationStyle = .overFullScreen
+        next.view.backgroundColor = .clear
+        next.isModalInPresentation = true
+        cover = next
+        presenter.present(next, animated: false)
+      } else if !wantsPresentation, let cover {
+        dismissing = true
+        cover.dismiss(animated: false) { [weak self] in
+          guard let self else { return }
+          self.cover = nil
+          self.dismissing = false
+          self.onDismiss?()
+          NotificationCenter.default.post(name: webModalHostDidDismiss, object: nil)
+          self.reconcile()
+        }
+      }
+    }
+    func removeHost() {
+      wantsPresentation = false
+      onDismiss = nil
+      guard let cover, !dismissing else { return }
+      dismissing = true
+      cover.dismiss(animated: false) {
+        NotificationCenter.default.post(name: webModalHostDidDismiss, object: nil)
+      }
+      self.cover = nil
     }
   }
 }
@@ -1357,7 +1441,9 @@ private struct WebModalStage<Modal: View>: View {
             containerHeight: geometry.size.height, reduceMotion: reduceMotion, preferred: preferredMotion)
           beginPresentation(selected)
         }
-        .onChange(of: isPresented) { _, shown in
+        // A queued dialog can be cancelled before UIKit mounts its stage.
+        // Handle that initial false value too, or an invisible cover stays up.
+        .onChange(of: isPresented, initial: true) { _, shown in
           guard !shown, !closing else { return }
           closing = true
           withAnimation(.easeOut(duration: motion?.openingDuration ?? 0.16), completionCriteria: .logicallyComplete) {
