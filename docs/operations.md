@@ -439,6 +439,8 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 ## GitHub 源码交付
 
+2026-11-10 用户授权提交推送当前全部未提交改动；提交 `d34be47` 已推送至 GitHub `qoqkeep-create/binance` 的 `codex/integrated-ios`。本批仅包含 iOS 图表恢复、测试和主题文档，没有 `server/` 或 `deploy/integrated/` 文件，因此不触发 47.80.22.243（首尔服务器）部署；本地 81 项 host 回归和主 App Debug 模拟器构建已通过。
+
 2026-11-05 用户授权先提交推送当前全部未提交改动，以 `2c491c2` 为基线沿用独立 Git 元数据交付 `codex/integrated-ios`。范围及已有验证见 [本批记录](changes.md#2026-11-05当前全部改动源码交付)；原 USDT／USDC 来源目录、父 Gitee、凭证、运行证据和 `.build/` 不参与。本次不追加 47.80.22.243（首尔服务器）部署或手动 TestFlight 上传，GitHub 源码与实际运行版本分开验收。
 
 2026-11-03 本次用户明确授权提交推送整合工作区全部未提交内容，以 `df77ba2` 为基线交付周期／auto、六种周期后端及 Super 双主题、MACD 边框、账户与策略界面等源码到 `codex/integrated-ios`；范围和已有验证见 [整批交付记录](changes.md#2026-11-03周期主题与账户策略整批源码交付)。沿用独立 Git 元数据，父 Gitee 及忽略的凭证／构建不参与。本次不追加部署、迁移或手动 TestFlight 上传；47.80.22.243（首尔服务器）的实际版本仍以上方运行记录为准，新增周期后端和手机新包待配套交付。
