@@ -93,27 +93,34 @@ final class KlineChartHostView: UIView {
     private var appearance: ChartAppearance = .dark
     private var presentationID: ChartPresentationID?
     private var isLoadingPresentation = false
+    private var preservesPresentedPresentation = false
     private var firstPresentationDelivered = false
     private var onFirstFramePresented: ((ChartPresentationID, TimeInterval) -> Void)?
 
     func observeFirstPresentation(for id: ChartPresentationID?,
+        preservesPresentedPresentation: Bool = false,
         _ callback: @escaping (ChartPresentationID, TimeInterval) -> Void) {
         guard !isDisposed else { return }
         onFirstFramePresented = callback
         guard presentationID != id else { return }
-        setLoadingPresentation(true)
+        self.preservesPresentedPresentation = preservesPresentedPresentation
+        if !preservesPresentedPresentation {
+            setLoadingPresentation(true)
+        }
         // A cached switch can replace the epoch without an intermediate nil frame.
         // Clear every gesture baseline before configuring the new interval.
-        cancelActiveInteraction(publishViewport: false)
-        resetCrosshairWithoutSubmitting()
-        timelineViewport = nil
-        interactionBaseline = nil
-        gestureViewportBaseline = nil
-        interactionBaseStaticRevision = nil
-        pendingGuardBandRebase = nil
-        pendingContinuousViewport = nil
-        committedViewportAwaitingRender = nil
-        baseRenderState = nil
+        if !preservesPresentedPresentation {
+            cancelActiveInteraction(publishViewport: false)
+            resetCrosshairWithoutSubmitting()
+            timelineViewport = nil
+            interactionBaseline = nil
+            gestureViewportBaseline = nil
+            interactionBaseStaticRevision = nil
+            pendingGuardBandRebase = nil
+            pendingContinuousViewport = nil
+            committedViewportAwaitingRender = nil
+            baseRenderState = nil
+        }
         presentationID = id
         firstPresentationDelivered = false
         rendererHealth.observeFirstPresentation(for: id) { [weak self] submittedID, time in
@@ -121,6 +128,7 @@ final class KlineChartHostView: UIView {
                 guard let self, !self.isDisposed, !self.firstPresentationDelivered,
                       self.presentationID == submittedID else { return }
                 self.firstPresentationDelivered = true
+                self.preservesPresentedPresentation = false
                 self.isUserInteractionEnabled = !self.isLoadingPresentation
                 if !self.isLoadingPresentation { self.loadingCover.isHidden = true }
                 self.updateLoadingIndicator()
@@ -132,8 +140,8 @@ final class KlineChartHostView: UIView {
     func setLoadingPresentation(_ loading: Bool) {
         guard !isDisposed, isLoadingPresentation != loading else { return }
         isLoadingPresentation = loading
-        loadingCover.isHidden = !loading && (presentationID == nil || firstPresentationDelivered)
-        isUserInteractionEnabled = !loading && (presentationID == nil || firstPresentationDelivered)
+        loadingCover.isHidden = !loading && (presentationID == nil || firstPresentationDelivered || preservesPresentedPresentation)
+        isUserInteractionEnabled = !loading && (presentationID == nil || firstPresentationDelivered || preservesPresentedPresentation)
         if loading {
             frameCoordinator?.suspend()
             cancelActiveInteraction(publishViewport: false)

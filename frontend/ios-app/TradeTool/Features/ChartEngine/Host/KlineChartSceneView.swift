@@ -275,8 +275,12 @@ final class KlineChartSceneController: ObservableObject {
   }
 
   func renderState(
-    matching frame: ChartDataFrame?
+    matching frame: ChartDataFrame?,
+    allowingStale: Bool = false
   ) -> RenderState? {
+    if allowingStale, frame != nil, let renderState {
+      return renderState
+    }
     guard let frame,
       renderedOwner == ViewportOwner(
         stream: frame.stream,
@@ -376,6 +380,8 @@ struct KlineChartSceneView: View {
   let frame: ChartDataFrame?
   var recoveryMessage: String? = nil
   var recoveryFailure: String? = nil
+  var recoveryLoading = false
+  var preservesPresentedChart = false
   var onRetryLoading: () -> Void = {}
   var automaticallyFitsPrice = true
   var candleMarkers: [ChartCandleMarker] = []
@@ -412,9 +418,22 @@ struct KlineChartSceneView: View {
         priceViewport: priceViewport
       )
 
-      let renderState = controller.renderState(matching: frame)
-      let presentationID = frame.map { ChartPresentationID(stream: $0.stream, epoch: $0.epoch) }
-      let isPresented = renderState != nil && presentationID != nil && presentedID == presentationID
+      let freshRenderState = controller.renderState(matching: frame)
+      let renderState = freshRenderState ?? controller.renderState(
+        matching: frame,
+        allowingStale: preservesPresentedChart
+      )
+      // While the replacement scene is still building, keep the old
+      // presentation identity. Otherwise the host would submit the old
+      // mailbox under the new epoch and report a false first frame.
+      let presentationID: ChartPresentationID? = if preservesPresentedChart,
+        freshRenderState == nil {
+        presentedID
+      } else {
+        frame.map { ChartPresentationID(stream: $0.stream, epoch: $0.epoch) }
+      }
+      let isPresented = renderState != nil && presentationID != nil
+        && (presentedID == presentationID || preservesPresentedChart)
       ZStack {
         KlineChartRepresentable(
           renderState: renderState,
@@ -446,6 +465,7 @@ struct KlineChartSceneView: View {
           candleMarkerExclusions: candleMarkerExclusions,
           axisPriceLabels: axisPriceLabels,
           presentationID: presentationID,
+          preservesPresentedPresentation: preservesPresentedChart,
           suppressesLoadingIndicator: recoveryFailure != nil,
           onFirstFramePresented: { id, time in
             presentedID = id
@@ -473,6 +493,13 @@ struct KlineChartSceneView: View {
         }
       }
       .overlay(alignment: .top) {
+        if isPresented, recoveryLoading {
+          BinanceKlineLoadingIndicator(isAnimating: true)
+            .frame(width: 48, height: 26)
+            .background(BinanceTheme.background.opacity(0.96), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityIdentifier("market-chart-recovery-loading-indicator")
+            .padding(.top, 8)
+        }
         if isPresented, let recoveryMessage {
           HStack(spacing: 10) {
             Text(recoveryMessage)

@@ -1,5 +1,15 @@
 # 开发与验证
 
+<a id="k-线返回无闪烁恢复20261110"></a>
+
+## K 线返回无闪烁恢复（2026-11-10，本地）
+
+修复 K 线每次返回都闪烁、30 分钟恢复清空旧图和首次握手重复切 epoch 的交接问题。短时间返回使用保留的 Metal frame 直接请求并在后方提交新快照，不显示加载动画或额外状态文字；达到 1800 秒时保留旧 frame，在图表顶部显示原有小动画，直到新 epoch 的真实首帧呈现后才替换并滚动到最新。Host 以旧 `ChartPresentationID` 暂时承载旧 mailbox，避免把旧 render state 误报为新 epoch 的首帧。
+
+调整了 `MarketChartViewModel` 的恢复状态门闩、首次 ready 判定、30 分钟定时恢复和旧 frame 保留；`KlineChartSceneView`／`KlineChartHostView` 保留旧场景与视口，同时让新 epoch 完成真正构建后再切换 presentation identity。`restoring`／`disconnected` 不再显示“正在恢复行情”等普通文字。
+
+验证：`python3 frontend/ios-app/scripts/test_chart_recovery.py .integration-runtime/ChartFinal/Host` 的真实模型／管线 host **81 项／0 失败**；`xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO` **BUILD SUCCEEDED**。仅使用隔离 HTTP／虚拟时钟和本地模拟器编译，未执行真实交易、资金操作或生产部署。
+
 <a id="持仓操作弹窗宿主2026-11-09本地"></a>
 
 ## 持仓操作弹窗宿主（2026-11-09，本地）
@@ -26,9 +36,11 @@ xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme 'TradeTool Rele
 
 App／Widget generic iOS 无签名 **Release 构建通过**（`release.log`），仅有既有 AppIntents metadata 跳过提示。证据位于忽略目录 `.integration-runtime/ChartRecoveryDiagnosticsNov7/`，host 的 `production-inputs.json` 记录源文件哈希。本轮未启动模拟器、未重复此前 436 项 iOS 单测；SwiftUI 接入改为仅把对应 epoch 的 trace 交给场景。没有后端部署、真实交易或资金操作。新包上报成功、后台返回分段耗时及手机网络长稳仍待验，规则见 [行情](market-data.md#chart-recovery-diagnostics-20261107)。
 
-## 30 分钟离线恢复（2026-11-07，本地）
+<a id="30-分钟离线恢复2026-11-07本地"></a>
 
-按用户最终确认实现 **30 分钟／1800 秒** 的后台和断线阈值；短时旧图有恢复提示，长时复用波形遮挡、新快照和实际首帧交接。恢复总等待上限 **20 秒**，覆盖 HTTP 至呈现；断线／失败／超时有重试入口，旧请求、旧等待及后台的迟到首帧不会结束新恢复。普通失败保留既有就绪通知补读；真正超时后停止自动重启该次等待，重试／新连接／切周期可恢复。现行规则见 [行情](market-data.md#30-分钟离线恢复2026-11-07本地)。
+## 30 分钟离线恢复（历史记录；现行规则见 [K 线返回无闪烁恢复](#k-线返回无闪烁恢复20261110)）
+
+本节保留 2026-11-07 版本的诊断过程和证据。短返提示、长返清空旧图的行为已由 2026-11-10 的交接规则替换；恢复总等待上限、旧请求隔离、失败重试和真实首帧门闩仍然适用。现行行为见 [行情](market-data.md#k-线返回无闪烁恢复20261110)。
 
 先运行实际模型 host 的两个阈值回归，**2 项／5 处断言失败**，确认旧逻辑在 1800／7200 秒仍显示旧帧。实现后完整 host 首轮 **72 项／3 处断言失败**，暴露普通请求失败后原有数据就绪补读被过度阻断；保留该自动恢复后 72 项通过。再添加已呈现 epoch 补读的回归，明确复现 `restoring` 未结束，修正为不等待不会再次触发的首次呈现回调，并补上初始超时后的第一次 ready 自动恢复。
 

@@ -1379,20 +1379,22 @@ final class MarketFastPathTests: XCTestCase {
             clock.addTimeInterval(elapsed)
             await model.resumeFromBackground()
             try await waitForReads(2, api)
-            XCTAssertEqual(model.recoveryState, .restoring)
+            XCTAssertEqual(model.recoveryState, elapsed >= 1_800 ? .restoring : .idle)
+            XCTAssertTrue(model.preservesPresentedChart)
             if elapsed >= 1_800 {
-                XCTAssertNil(model.chartDataFrame, "An old chart must enter loading after 30 minutes away")
+                XCTAssertNotNil(model.chartDataFrame, "A stale chart remains visible behind the recovery animation")
             } else {
                 XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch)
             }
             XCTAssertTrue(model.candles == oldCandles, "Keep reusable history while replacing the displayed frame")
             model.chartFirstFramePresented(epoch: previous.epoch, at: ProcessInfo.processInfo.systemUptime)
-            if elapsed >= 1_800 { XCTAssertNil(model.chartDataFrame) }
+            XCTAssertTrue(model.preservesPresentedChart, "The old presentation cannot release a new recovery")
             await api.openGate()
             try await waitUntil { model.chartDataFrame?.epoch != nil && model.chartDataFrame?.epoch != previous.epoch }
-            XCTAssertEqual(model.recoveryState, .restoring, "HTTP and scene readiness cannot end loading")
+            XCTAssertEqual(model.recoveryState, elapsed >= 1_800 ? .restoring : .idle,
+                "HTTP and scene readiness cannot end loading")
             model.chartFirstFramePresented(epoch: previous.epoch, at: ProcessInfo.processInfo.systemUptime)
-            XCTAssertEqual(model.recoveryState, .restoring)
+            XCTAssertEqual(model.recoveryState, elapsed >= 1_800 ? .restoring : .idle)
             model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
                 at: ProcessInfo.processInfo.systemUptime)
             XCTAssertEqual(model.recoveryState, .idle)
@@ -1416,7 +1418,8 @@ final class MarketFastPathTests: XCTestCase {
         model.suspendForBackground()
         clock.addTimeInterval(1)
         await model.resumeFromBackground()
-        XCTAssertNil(model.chartDataFrame)
+        XCTAssertNotNil(model.chartDataFrame, "Keep the last chart visible during stale recovery")
+        XCTAssertEqual(model.recoveryState, .restoring)
         await api.openGate()
         model.stop()
     }
@@ -1442,7 +1445,7 @@ final class MarketFastPathTests: XCTestCase {
         clock.addTimeInterval(1)
         await api.closeGate()
         await model.resumeFromBackground()
-        XCTAssertNil(model.chartDataFrame, "Backgrounding must not reset an earlier disconnect")
+        XCTAssertNotNil(model.chartDataFrame, "Backgrounding must not reset an earlier disconnect")
         try await waitForReads(2, api)
         await api.openGate()
         try await waitUntil { model.chartDataFrame?.epoch != nil && model.chartDataFrame?.epoch != previous.epoch }
@@ -1457,17 +1460,18 @@ final class MarketFastPathTests: XCTestCase {
         defer { model.stop() }
         await model.receive(ready())
         try await waitUntil { model.chartDataFrame != nil }
+        let previous = try XCTUnwrap(model.chartDataFrame)
         model.realtimeConnectionChanged(.disconnected)
         clock.addTimeInterval(1_800)
         model.realtimeConnectionChanged(.connecting)
-        XCTAssertNil(model.chartDataFrame)
-        XCTAssertNotNil(model.recoveryState.failureMessage, "Show disconnected status rather than an endless waveform")
+        XCTAssertNotNil(model.chartDataFrame, "Keep the last chart visible while reconnecting")
+        XCTAssertEqual(model.recoveryState, .disconnected)
         await api.closeGate()
         await model.receive(ready())
         XCTAssertEqual(model.recoveryState, .restoring)
         try await waitForReads(2, api)
         await api.openGate()
-        try await waitUntil { model.chartDataFrame != nil }
+        try await waitUntil { model.chartDataFrame?.epoch != nil && model.chartDataFrame?.epoch != previous.epoch }
         model.chartFirstFramePresented(epoch: try XCTUnwrap(model.chartDataFrame?.epoch),
             at: ProcessInfo.processInfo.systemUptime)
         XCTAssertEqual(model.recoveryState, .idle)
@@ -1604,10 +1608,9 @@ final class MarketFastPathTests: XCTestCase {
         try await waitForReads(2, api)
         await deadline.fire(1)
         try await Task.sleep(for: .milliseconds(20))
-        XCTAssertEqual(model.recoveryState, .restoring)
+        XCTAssertEqual(model.recoveryState, .idle)
         model.selectInterval(.fiveMinutes)
         try await waitForReads(3, api)
-        await deadline.fire(2)
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertEqual(model.recoveryState, .restoring)
         model.stop()
@@ -1830,7 +1833,8 @@ final class MarketFastPathTests: XCTestCase {
         let api = GatedChartHistoryAPI(ignoresCancellation: true)
         await api.openGate()
         var reports: [Data] = []
-        let model = makeChart(api, recoveryWait: { try await deadline.wait($0) },
+        var clock = Date()
+        let model = makeChart(api, cacheTimeProvider: { clock }, recoveryWait: { try await deadline.wait($0) },
             diagnosticUpload: { reports.append($0) })
         model.start()
         defer { model.stop() }
@@ -1838,6 +1842,7 @@ final class MarketFastPathTests: XCTestCase {
         let old = try presentChart(model)
         await api.closeGate()
         model.suspendForBackground()
+        clock.addTimeInterval(1_800)
         await model.resumeFromBackground()
         try await waitForReads(2, api)
         await deadline.waitForCount(2)
