@@ -1,20 +1,27 @@
-# TradeTools 原生 iOS 整合版
+# TradeTools-Binance-iOS
 
-Python / Django 负责交易、资金、行情采集和订单维护，SwiftUI / Metal 提供原生 iPhone 客户端。导航依次为行情、持仓、开仓、信号、我的；带单模式隐藏信号。
+独立维护的 Python / Django 后端与 SwiftUI / Metal 原生 iOS 工程，另含共用后端的鸿蒙客户端。iOS 显示名称为 **Binance Tools**，导航为行情、持仓、信号、我的；带单模式隐藏信号。品牌与认证见 [说明](docs/ios-authentication.md)。
 
-手机显示名称为 **Binance Tools**，使用橙红渐变图标；登录与注册采用 USDC 原生布局及底部弹窗，详情见 [品牌与认证](docs/ios-authentication.md)。
+本机项目根目录为 `/Users/apple/work/TradeTools-Binance-iOS`，与原 USDT 项目 `TradeTools-Binance`、原 USDC 项目 `tradetools-usdc` 并列。源码、构建和部署配置均在本工程内，原项目只用于历史查询。
 
-| 路径 | 当前用途 |
-| --- | --- |
-| `server/` | HTTP / ASGI WSS、行情采集、账户命令和调度维护 |
-| `frontend/ios-app/` | 原生客户端、图表、XCTest 与 Xcode 工程 |
-| `frontend/harmony-app/` | 鸿蒙原生客户端，已编译生成未签名 HAP，调试签名与 Mate 80 安装待验 |
-| `deploy/integrated/` | 独立环境的镜像、配置模板、初始化和发布 |
-| `compose.integrated.yaml` | `pro` profile 的六个运行服务，含独立 MySQL / Redis |
-| `docs/` | 当前架构、业务规则、开发、运维和验收 |
+```text
+TradeTools-Binance-iOS/
+├── .git/                         # 独立 Git 历史与本机配置
+├── AGENTS.md                     # 项目协作规则
+├── README.md                     # 项目入口
+├── server/                       # Django HTTP / WSS、交易、资金、行情与调度
+├── frontend/
+│   ├── ios-app/                  # SwiftUI / Metal、Widget、Xcode 工程与测试
+│   └── harmony-app/              # ArkTS / ArkUI 鸿蒙客户端与测试
+├── deploy/integrated/            # 镜像、配置模板、初始化与发布
+├── compose.integrated.yaml       # 独立 MySQL / Redis 与应用运行服务
+└── docs/                         # 架构、业务规则、开发、运维与验收
+```
+
+`.integration-runtime/`、`.build/`、虚拟环境、客户端本地构建和 IDE 用户状态属于忽略的本地材料；凭证与签名不进入 Git。
 
 打开 `frontend/ios-app/TradeTool.xcodeproj`，日常运行选择 `TradeTool`，归档选择 `TradeTool Release`。独立 Bundle ID 为 `com.waibao2025.trade.integrated`，默认连接 47.80.22.243（首尔服务器），API 为 `https://47.80.22.243/integrated/`。
 
-[鸿蒙客户端](docs/harmony-client.md) · [文档目录](docs/README.md) · [整合说明](docs/INTEGRATION.md) · [开发验证](docs/development.md) · [运维](docs/operations.md) · [TestFlight](docs/testflight.md) · [原项目来源](docs/sources.md)。
+在本项目根目录直接使用普通 `git status`、`git diff` 等命令；沿用现有 GitHub 仓库与 `codex/integrated-ios` 分支，交付流程见 [运维](docs/operations.md#github-源码交付)。2026-11-10 已从旧嵌套目录搬迁，历史路径及 Git 参数见 [迁移索引](docs/sources.md#本地目录独立2026-11-10)。Codex、Xcode、DevEco 应打开新根目录下的工程。
 
-当前目录仅保留整合实现；原 USDT / USDC 代码与历史文档在来源索引指定的本地目录查询。实际部署与测试结果见 [变更记录](docs/changes.md)。
+[文档目录](docs/README.md) · [整合说明](docs/INTEGRATION.md) · [开发验证](docs/development.md) · [TestFlight](docs/testflight.md) · [鸿蒙客户端](docs/harmony-client.md) · [原项目来源](docs/sources.md)。实际部署与测试结果见 [变更记录](docs/changes.md)。

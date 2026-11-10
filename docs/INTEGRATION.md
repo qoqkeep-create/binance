@@ -35,6 +35,7 @@ Python 保留原交易业务、Decimal 精度、账户模式、绑定代际、�
 | `/api/market/watchlist/defaults` | 默认自选；用户编辑由原客户端保存 |
 | `/api/push/devices/register`、`/unregister` | 当前登录用户安装的 APNs token 注册／停用 |
 | `/api/commands`、`/api/commands/<UUID>` | 带幂等键提交、当前用户/模式查询 |
+| `GET /v1/trade/order/list` | 普通限价与 Maker 的统一只读委托列表，保留终态；`page`／`page_size`（默认 20、最大 100），返回 `items` 与 `pagination`；本地实现，需配套发布 |
 | `/v1/*` | 原 USDT 业务接口；原生页面使用既有字段与规则 |
 | `/ws/v1` | Bearer JWT 与 `X-Trading-Mode`；ready / ack / ping / pong / event |
 
@@ -57,7 +58,7 @@ WSS 分发行情及 `trading.account/position/order/fill`，按用户和交易�
 | 原 USDT Web | 原生入口 / 实现 |
 | --- | --- |
 | 原 USDC 行情列表与 K 线 | 首个行情 Tab；原 Dashboard / 搜索 / 自选 / Metal 图表和指标布局 |
-| 持仓、限价、历史 | 持仓 Tab；按原 snake_case 数据显示数量、盈亏、价格、保护、结算状态和日志 |
+| 持仓、委托、历史 | 持仓 Tab；委托合并普通限价／Maker 并保留成交记录，数量与金额分列；其他页面沿用原数量、盈亏、价格、保护、结算状态和日志 |
 | 市价 / 限价建仓 | K 线下单区复用 `USDTTradeView`；资金预检、止损金额、止盈方式和提交确认；EMA 周期初筛已移除；独立开仓 Tab 已于 2026-11-02 移除 |
 | 图表划线下单 | 复用原生 USDT 表单，直接执行资金预检／冻结确认／持久命令 |
 | 外部、自有、TV 信号 | 信号 Tab；普通模式展示，可进入同一 K 线 |

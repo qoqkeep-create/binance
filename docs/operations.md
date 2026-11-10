@@ -425,7 +425,7 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 ## 更新与回滚
 
-更新使用新 release、受限配置和同一个 Compose 项目，完整交付范围遵守[协作规则](../AGENTS.md#发布与验证)。从确定 Git 提交生成全部后端／部署源码存档，核对四个 Python 服务的完整来源和配套迁移后统一发布；当前配置链见[完整同源发布](#完整同源发布2026-11-06)。用户明确要求限定发布时，才保留完整 override 并固定非目标镜像。不要推送父 Gitee 仓库 main 触发来源系统自动部署。
+更新使用新 release、受限配置和同一个 Compose 项目，完整交付范围遵守[协作规则](../AGENTS.md#发布与验证)。从确定 Git 提交生成全部后端／部署源码存档，核对四个 Python 服务的完整来源和配套迁移后统一发布；当前配置链见[完整同源发布](#完整同源发布2026-11-06)。用户明确要求限定发布时，才保留完整 override 并固定非目标镜像。不要向来源 USDT Gitee 仓库的 main 推送整合版改动，避免触发来源系统自动部署。
 
 回滚先核对 migration 与目标镜像兼容，保存数据库备份；代码回滚不会还原数据库。兼容时选择保留的 release / 镜像，指定对应 `INTEGRATED_RELEASE` 执行 `docker compose ... up -d --no-build`，更新 `current` 后复验健康、认证和 WSS。不得通过撤单或重发 UNKNOWN 命令实现回滚。
 
@@ -465,19 +465,25 @@ API 检查数据库、迁移和 scheduler heartbeat；market 检查 flush 心跳
 
 2026-11-04 后续用户授权将自适应高度浮窗与上轮未提交的图表标签／费用／持仓细调一起提交推送；本批基线为 `9a8e545`，继续沿用同一独立 Git 元数据与 `codex/integrated-ios`。只交付 iOS 源码、回归及主题文档，原有 `.build/` 产物不纳入；不追加 47.80.22.243（首尔服务器）部署或手动 TestFlight 上传。范围与验证见 [本批记录](changes.md#2026-11-04浮窗自适应高度与图表细调源码交付)。
 
-整合版仓库为 `https://github.com/qoqkeep-create/binance.git`，分支 `codex/integrated-ios`。有两种本地工作副本，操作前先核对 Git 元数据和 origin，不能仅凭相同目录名判断：
-
-- 正常独立 clone：根目录有 `.git`，使用普通 `git` 命令，以 `git rev-parse --show-toplevel` / `git remote -v` 核对范围与仓库。Apple / Cloud 准备任务使用过这种副本。
-- 原始嵌套交付目录：本目录位于父 Gitee 仓库内，没有本目录 `.git`，但已有 `.integration-runtime/github-publish.git`。本轮退役任务使用这种副本，显式指定独立 Git 元数据；不要对父仓库直接提交或重建不存在的元数据。
+整合版仓库为 `https://github.com/qoqkeep-create/binance.git`，分支 `codex/integrated-ios`。自 2026-11-10 起，本机根目录为 `/Users/apple/work/TradeTools-Binance-iOS`，与原 USDT／USDC 来源项目并列，根目录 `.git` 为本项目的独立元数据。迁移沿用原有历史、分支和索引，未重新初始化或复制来源仓库历史。
 
 ```bash
-git --git-dir=.integration-runtime/github-publish.git --work-tree=. status
-git --git-dir=.integration-runtime/github-publish.git --work-tree=. diff --check
+cd /Users/apple/work/TradeTools-Binance-iOS
+git rev-parse --show-toplevel
+git remote -v
+git status
+git diff --check
 ```
+
+2026-11-10 搬迁后只读核对：GitHub `refs/heads/codex/integrated-ios` 仍为 `268a529fc16154bd5af27b25b5484927a48a9ea1`，与本地及原跟踪引用一致。最早导入提交 `1118eaa`（2026-10-31）已经直接以 `server/`、`frontend/`、`deploy/`、`docs/` 等为仓库根内容；最早与当前的 iOS 工程路径都是 `frontend/ios-app/TradeTool.xcodeproj`，没有来源父目录或本机项目目录名前缀。首次交付范围即整合工程，Mac 本地搬迁不改变仓库内路径；本轮未推送或修改 Apple 工作流，因此无需仅因本地搬迁调整 Cloud 工程路径。当前云端运行／分发结果不属于这次核对范围。
+
+操作前确认根目录和 origin 属于整合版。普通 clone 同样使用根目录 `.git` 与上述命令。此前嵌套工作副本使用的 `.integration-runtime/github-publish.git` 已移至 `.git`，现行命令不再带 `--git-dir` / `--work-tree`；旧交付记录中的这些参数仅代表当时状态，路径映射见 [迁移索引](sources.md#本地目录独立2026-11-10)。
+
+迁移前的 Git 元数据和工作区差异备份位于本机 `/Users/apple/work/.repo-backups/ios-standalone-20261110-193230/`，权限受限，不纳入交付。原 USDT 仓库会显示旧嵌套路径删除；来源索引、远程和历史保持原样，删除不混入来源发布。本轮仅本地迁移，不提交、推送、部署或触发客户端分发。
 
 Xcode Cloud 必须单独获得指定 GitHub 仓库的访问授权；本机 Deploy key 可推送不代表 Cloud 已获授权。
 
-整合工作区的交付范围以[协作规则](../AGENTS.md#发布与验证)为准；来源目录、父仓库改动与历史不混入。环境文件、私钥、备份、日志、构建和 IDE 用户状态保持忽略。GitHub Deploy key 与目标机 SSH 密钥是不同认证，均不随代码交付。本机 SSH 443 / 代理设置只存于忽略的独立 Git 配置，其他机器正常 clone 即可。
+整合工作区的交付范围以[协作规则](../AGENTS.md#发布与验证)为准；来源目录、父仓库改动与历史不混入。环境文件、私钥、备份、日志、构建和 IDE 用户状态保持忽略。GitHub Deploy key 与目标机 SSH 密钥是不同认证，均不随代码交付。本机 SSH 443 / 代理设置只存于根目录 `.git/config`，凭证路径已随本地搬迁更新；其他机器正常 clone 即可。
 
 推送授权以 [项目协作规则](../AGENTS.md#发布与验证) 为准。2026-11-01 用户明确授权本次 K 线诊断在需要发布客户端时完成后直接推送，并说明由其既有 Jenkins 调用 Apple 打包服务；这是本次任务授权，后续任务仍默认经用户批准再推送。本轮不修改 Jenkins 或 Apple 工作流；推送成功不代表打包、分发或手机安装成功。2026-11-01 的名称 / 图标 / 认证 / 白底启动页及开启注册整批获单次推送授权；验收见 [变更记录](changes.md)。推送可能触发 Xcode Cloud，源码推送与开启注册的授权范围不包含真实交易。
 

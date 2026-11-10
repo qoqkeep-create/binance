@@ -1825,7 +1825,7 @@ class TradeOpenView(APIView):
                     client_order_id=client_order_id,
                     recovered_row=recovered_open_row,
                     submit=(
-                        lambda: client.place_limit_order(
+                        (lambda: client.place_limit_order(
                             inst_id=inst_id,
                             side=open_side,
                             size=size,
@@ -1835,15 +1835,15 @@ class TradeOpenView(APIView):
                             # GTX means post-only.  A -5022 rejection is
                             # explicit failure; do not convert it to market.
                             time_in_force="GTX",
-                        )
+                        ))
                         if is_maker
-                        else lambda: client.place_market_order(
+                        else (lambda: client.place_market_order(
                             inst_id=inst_id,
                             side=open_side,
                             size=size,
                             pos_side=use_pos_side,
                             new_client_order_id=client_order_id,
-                        )
+                        ))
                     ),
                 )
                 if not submission.confirmed:

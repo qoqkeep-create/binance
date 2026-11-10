@@ -43,6 +43,7 @@ struct ChartOrderDrawingState: Equatable {
     var entryPrice: Double?
     var stopLossPrice: Double
     var allowsSideChange = false
+    var isEditable = true
 
     var inferredSide: ChartOrderSide {
         allowsSideChange ? (stopLossPrice < effectiveEntryPrice ? .long : .short) : side
@@ -119,7 +120,7 @@ struct ChartOrderDrawingState: Equatable {
         within range: ClosedRange<Double>,
         allowsOffscreenStopLoss: Bool = false
     ) {
-        guard proposedPrice.isFinite,
+        guard isEditable, proposedPrice.isFinite,
               range.lowerBound.isFinite,
               range.upperBound.isFinite,
               range.upperBound > range.lowerBound else {
@@ -510,9 +511,9 @@ struct ChartOrderDrawingOverlay: View {
         canvasRight: Double
     ) -> some View {
         let plotWidth = max(projection.plotRight, canvasRight) - projection.plotLeft
-        let label = ChartPriceLineLabelLayout(projection: projection, texts: [], draggable: true, fixedWidth: 72)
+        let label = ChartPriceLineLabelLayout(projection: projection, texts: [], draggable: drawing.isEditable, fixedWidth: 72)
         let y = projectedY(price) ?? projection.plotTop
-        let labelY = allowsOffscreenStopLoss ? y
+        let labelY = allowsOffscreenStopLoss || !drawing.isEditable ? y
             : min(projection.plotBottom - 10, max(projection.plotTop + 10, y))
         return ZStack {
             Path { path in
@@ -528,7 +529,7 @@ struct ChartOrderDrawingOverlay: View {
             )
 
             ChartPriceLineLabel(title: title, price: "", color: color,
-                width: label.width, draggable: true, filled: true, compact: true)
+                width: label.width, draggable: drawing.isEditable, filled: true, compact: true)
                 .position(x: label.centerX - projection.plotLeft, y: 18 + labelY - y)
         }
         .frame(width: plotWidth, height: 36)
@@ -561,7 +562,8 @@ struct ChartOrderDrawingOverlay: View {
         .accessibilityIdentifier(kind == .entry ? "chart-order-line.entry" : "chart-order-line.stopLoss")
         .accessibilityLabel("\(title)价格线")
         .accessibilityValue(formatPrice(price))
-        .accessibilityHint("上下拖动调整价格")
+        .accessibilityHint(drawing.isEditable ? "上下拖动调整价格" : "")
+        .allowsHitTesting(drawing.isEditable)
     }
 
     private var sideColor: Color {
@@ -574,6 +576,8 @@ struct ChartOrderDrawingOverlay: View {
         guard let y = projection.screenY(for: price) else {
             return nil
         }
-        return allowsOffscreenStopLoss ? y : min(projection.plotBottom, max(projection.plotTop, y))
+        // Submitted prices stay at their price coordinate and clip out of view;
+        // they must not become draggable handles pinned to the plot edge.
+        return allowsOffscreenStopLoss || !drawing.isEditable ? y : min(projection.plotBottom, max(projection.plotTop, y))
     }
 }

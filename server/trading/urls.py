@@ -2,6 +2,7 @@ from django.urls import path
 
 from trading.capital_wallet_views import CapitalWalletView
 from trading.leverage_views import LeverageBracketsView
+from trading.order_views import OrderListView
 
 from trading.views import (
     SymbolInfoView,
@@ -41,6 +42,7 @@ urlpatterns = [
     path("open-position", TradeOpenView.as_view()),
     path("maker/status", MakerOpenStatusView.as_view()),
     path("maker/fallback", MakerOpenFallbackView.as_view()),
+    path("order/list", OrderListView.as_view()),
     # 限价委托相关
     path("limit-order/create", LimitOrderCreateView.as_view()),
     path("limit-order/list", LimitOrderListView.as_view()),

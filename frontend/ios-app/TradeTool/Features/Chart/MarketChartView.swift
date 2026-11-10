@@ -43,7 +43,7 @@ struct MarketChartView: View {
     private let realtimeClient: RealtimeClient
     private let onClose: (() -> Void)?
     private let onStop: (() -> Void)?
-    private let onShowPositions: (() -> Void)?
+    private let onShowPositions: ((PositionPage) -> Void)?
 
     init(
         market: MarketSnapshot,
@@ -53,7 +53,7 @@ struct MarketChartView: View {
         initialInterval: MarketKlineInterval = .oneHour,
         onClose: (() -> Void)? = nil,
         onStop: (() -> Void)? = nil,
-        onShowPositions: (() -> Void)? = nil
+        onShowPositions: ((PositionPage) -> Void)? = nil
     ) {
         _selectedMarket = State(initialValue: market)
         _selectedInterval = State(initialValue: initialInterval)
@@ -139,12 +139,13 @@ private struct MarketChartDetailView: View {
     let onShowSymbols: () -> Void
     let onClose: (() -> Void)?
     let onStop: (() -> Void)?
-    let onShowPositions: (() -> Void)?
+    let onShowPositions: ((PositionPage) -> Void)?
     @EnvironmentObject private var dashboard: DashboardViewModel
     private var isFavorite: Bool { dashboard.containsInWatchlist(viewModel.market.symbol) }
     @State private var isIndicatorSettingsPresented = false
     @State private var isOrderSettingsPresented = false
     @State private var orderDrawing: ChartOrderDrawingState?
+    @State private var submittedLimitDraft: USDTEntryDraft?
     @State private var chartPriceProjection: ChartPriceProjection?
     @State private var wheelPreview: ChartWheelPreviewState?
 
@@ -162,7 +163,7 @@ private struct MarketChartDetailView: View {
         onShowSymbols: @escaping () -> Void,
         onClose: (() -> Void)?,
         onStop: (() -> Void)?,
-        onShowPositions: (() -> Void)?
+        onShowPositions: ((PositionPage) -> Void)?
     ) {
         self.availableMarkets = availableMarkets
         self.onSelectMarket = onSelectMarket
@@ -202,13 +203,14 @@ private struct MarketChartDetailView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 USDTTradeView(chartInput: ChartTradeInput(symbol: viewModel.market.symbol,
                     orderType: nativeOrderType,
-                    stopLossPrice: priceString(nativeOrderType == "limit" ? orderDrawing?.stopLossPrice : selectedStopPrice),
-                    limitPrice: priceString(orderDrawing?.entryPrice),
+                    stopLossPrice: priceString(nativeOrderType == "limit" ? displayedLimitDrawing?.stopLossPrice : selectedStopPrice),
+                    limitPrice: priceString(displayedLimitDrawing?.entryPrice),
                     currentPrice: priceString(viewModel.currentPrice)),
                     onChartOrderTypeChange: { type in
                         nativeOrderType = type
                         initializeLimitDrawing()
-                    }, chartHasPosition: !heldPositions.isEmpty,
+                    }, onChartLimitSubmission: { submittedLimitDraft = $0 },
+                    chartHasPosition: !heldPositions.isEmpty,
                     chartPositionsReady: positions.isReady(scope: usdt.scope),
                     chartPositionsError: positions.error,
                     chartPositionRows: heldPositions,
@@ -271,6 +273,13 @@ private struct MarketChartDetailView: View {
         }
         .onChange(of: viewModel.currentPrice, initial: true) { _, _ in initializeLimitDrawing() }
         .onChange(of: nativeOrderType) { _, _ in initializeLimitDrawing() }
+        .onChange(of: usdt.scope) { _, _ in
+            // The ticket is recreated per scope; its parent owns this snapshot
+            // and must discard it independently when the account changes.
+            submittedLimitDraft = nil
+            orderDrawing = nil
+            initializeLimitDrawing()
+        }
     }
 
     private var fixedHeader: some View {
@@ -387,11 +396,11 @@ private struct MarketChartDetailView: View {
             }
 
             if viewModel.chartDataFrame != nil, let projection = chartPriceProjection, heldPositions.isEmpty,
-               nativeOrderType == "limit", let drawing = orderDrawing {
+               nativeOrderType == "limit", let drawing = displayedLimitDrawing {
                 ChartOrderDrawingOverlay(
                     drawing: Binding(
-                        get: { orderDrawing ?? drawing },
-                        set: { orderDrawing = $0 }
+                        get: { displayedLimitDrawing ?? drawing },
+                        set: { if submittedLimitDraft == nil { orderDrawing = $0 } }
                     ),
                     projection: projection,
                     formatPrice: formatPrice,
@@ -421,7 +430,7 @@ private struct MarketChartDetailView: View {
                         text: DisplayNumber.text(line.price), color: line.color(neutral: neutral))
                 }
         }
-        guard nativeOrderType == "limit", let drawing = orderDrawing else { return [] }
+        guard nativeOrderType == "limit", let drawing = displayedLimitDrawing else { return [] }
         var labels: [ChartAxisPriceLabel] = []
         if let price = drawing.entryPrice {
             labels.append(ChartAxisPriceLabel(id: "draft.entry", price: price, text: formatPrice(price),
@@ -489,6 +498,15 @@ private struct MarketChartDetailView: View {
     private func priceString(_ value: Double?) -> String {
         guard let value, value.isFinite, value > 0 else { return "" }
         return NSDecimalNumber(string: String(format: "%.12g", locale: Locale(identifier: "en_US_POSIX"), value)).stringValue
+    }
+
+    private var displayedLimitDrawing: ChartOrderDrawingState? {
+        guard let draft = submittedLimitDraft else { return orderDrawing }
+        // The immutable request owns both displayed prices after submission.
+        // Tickers, crosshairs and chart pans can change projection, not the order.
+        guard let entry = Double(draft.limitPrice), let stop = Double(draft.stopLossPrice) else { return nil }
+        return ChartOrderDrawingState(side: draft.isLong ? .long : .short, entryOrderType: .limit,
+            referencePrice: entry, riskAmount: 0, entryPrice: entry, stopLossPrice: stop, isEditable: false)
     }
 
     private func initializeLimitDrawing() {

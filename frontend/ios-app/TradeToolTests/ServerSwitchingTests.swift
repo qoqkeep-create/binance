@@ -2938,6 +2938,23 @@ final class ChartOrderTicketTests: XCTestCase {
         drawing.move(.entry, to: 94, within: 90...110)
         XCTAssertEqual(drawing.inferredSide, .short)
     }
+    func testSubmittedLimitCannotMoveEitherPriceWithAnyDragMode() throws {
+        for offscreen in [false, true] {
+            for side in [ChartOrderSide.long, .short] {
+                var drawing = try XCTUnwrap(ChartOrderDrawingState.make(side: side,
+                    entryOrderType: .limit, referencePrice: 100))
+                drawing.allowsSideChange = true
+                drawing.isEditable = false
+                let submitted = drawing
+                for line in [ChartOrderLineKind.entry, .stopLoss] {
+                    for price in [50.0, 95, 105, 150] {
+                        drawing.move(line, to: price, within: 90...110, allowsOffscreenStopLoss: offscreen)
+                        XCTAssertEqual(drawing, submitted, "A submitted price must not become a local draft edit")
+                    }
+                }
+            }
+        }
+    }
     func testSquarePlotAndCompactPanelsAtAllScales() throws {
         for width in [320.0, 390, 440, 820] {
             for count in [0, 1, 2, 5] {
@@ -3351,5 +3368,95 @@ private actor ProfileRefreshFixtureAPI: APIClient {
         default: value = .object([:])
         }
         return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
+    }
+}
+
+@MainActor
+final class OrderCardPresentationTests: XCTestCase {
+    private func row(kind: String = "maker", status: JSONValue? = .number(0),
+                     source: JSONValue? = .number(42), request: String = "maker-original-request",
+                     filled: JSONValue = .string("0"), amount: JSONValue = .string("0"),
+                     average: JSONValue = .null) -> JSONValue {
+        var fields: [String: JSONValue] = ["id": .string("\(kind):42"), "record_key": .string("\(kind):42"),
+            "order_kind": .string(kind), "client_request_id": .string(request), "symbol": .string("SOLUSDT"),
+            "can_cancel": .bool(true), "can_chase": .bool(true), "limit_price": .string("100"),
+            "size": .string("1"), "filled_size": filled, "filled_amount": amount,
+            "average_price": average, "position_amount": .string("100")]
+        fields["status"] = status; fields["source_id"] = source
+        return .object(fields)
+    }
+    func testMakerUsesOriginalRequestIdentityForCancelOnly() {
+        let value = OrderCardPresentation(row: row())
+        XCTAssertEqual(value.recordKey, "maker:42")
+        XCTAssertEqual(value.kindText, "Maker")
+        XCTAssertTrue(value.canCancel)
+        XCTAssertFalse(value.canChase)
+        XCTAssertEqual(value.cancelAction, "maker-fallback")
+        XCTAssertEqual(value.cancelPayload?["client_request_id"], .string("maker-original-request"))
+        XCTAssertEqual(value.cancelPayload?["cancel_only"], .bool(true))
+        XCTAssertNil(value.cancelPayload?["limit_order_id"])
+    }
+    func testLimitActionsUseSourceNumberInsteadOfNamespacedRecordID() {
+        let value = OrderCardPresentation(row: row(kind: "limit"))
+        XCTAssertTrue(value.canCancel); XCTAssertTrue(value.canChase)
+        XCTAssertEqual(value.kindText, "限价")
+        XCTAssertEqual(value.cancelAction, "limit-cancel")
+        XCTAssertEqual(value.cancelPayload?["limit_order_id"], .number(42))
+        XCTAssertEqual(value.chasePayload?["limit_order_id"], .number(42))
+    }
+    func testFilledCancelledExpiredUnknownAndMissingStatesCannotMutateEvenWithFlags() {
+        for kind in ["maker", "limit"] {
+            for state: JSONValue? in [.number(1), .number(2), .number(3), .number(4), .number(99), .null, nil] {
+                let value = OrderCardPresentation(row: row(kind: kind, status: state))
+                XCTAssertFalse(value.canCancel, "\(kind) \(String(describing: state))")
+                XCTAssertFalse(value.canChase)
+                XCTAssertNil(value.cancelPayload)
+                XCTAssertNil(value.chasePayload)
+            }
+        }
+    }
+    func testPartialQuantityHasBaseAssetUnitsAndMoneyHasQuoteUnits() {
+        let value = OrderCardPresentation(row: row(filled: .string("0.5"), amount: .string("50"), average: .string("100")))
+        XCTAssertEqual(value.filledQuantityText, "0.5 / 1 SOL")
+        XCTAssertEqual(value.filledAmountText, "50U")
+        XCTAssertEqual(value.averagePriceText, "100.00")
+    }
+    func testMissingFillPriceAndAmountRemainUnknownDespiteKnownQuantity() {
+        let value = OrderCardPresentation(row: row(status: .number(1), filled: .string("1"), amount: .null))
+        XCTAssertEqual(value.filledQuantityText, "1 / 1 SOL")
+        XCTAssertEqual(value.filledAmountText, "--")
+        XCTAssertEqual(value.averagePriceText, "--")
+        XCTAssertFalse(value.canCancel)
+    }
+    func testZeroUnfilledAmountDoesNotClaimAZeroAveragePrice() {
+        let value = OrderCardPresentation(row: row(average: .string("0")))
+        XCTAssertEqual(value.filledAmountText, "0U")
+        XCTAssertEqual(value.averagePriceText, "--")
+    }
+    func testUnknownKindOrMissingOperationIdentityCannotMutate() {
+        for value in [OrderCardPresentation(row: row(kind: "other")),
+                      OrderCardPresentation(row: row(request: "")),
+                      OrderCardPresentation(row: row(request: "   ")),
+                      OrderCardPresentation(row: row(kind: "limit", source: nil)),
+                      OrderCardPresentation(row: row(kind: "limit", source: .string("limit:42"))),
+                      OrderCardPresentation(row: row(kind: "limit", source: .number(0))),
+                      OrderCardPresentation(row: row(kind: "limit", source: .number(42.5)))] {
+            XCTAssertFalse(value.canCancel); XCTAssertFalse(value.canChase)
+        }
+        for identity: JSONValue? in [.null, .number(42), nil] {
+            var fields = row().fields
+            fields["client_request_id"] = identity
+            let value = OrderCardPresentation(row: .object(fields))
+            XCTAssertFalse(value.canCancel); XCTAssertFalse(value.canChase)
+        }
+    }
+    func testExplicitBaseAssetAndInvalidMoneyNeverUseQuantityAsNotional() {
+        var fields = row(filled: .string("0.5"), amount: .string("NaN")).fields
+        fields["base_asset"] = .string("1000PEPE"); fields["symbol"] = .string("1000PEPEUSDT")
+        fields["position_amount"] = .null
+        let value = OrderCardPresentation(row: .object(fields))
+        XCTAssertEqual(value.filledQuantityText, "0.5 / 1 1000PEPE")
+        XCTAssertEqual(value.filledAmountText, "--")
+        XCTAssertEqual(value.orderAmountText, "--")
     }
 }

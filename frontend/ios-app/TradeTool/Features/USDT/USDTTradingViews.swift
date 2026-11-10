@@ -118,6 +118,77 @@ enum PositionCardPresentation {
   }
 }
 
+/// List reads never reconcile or mutate an order. Actions retain the source identity.
+struct OrderCardPresentation {
+  let row: JSONValue
+
+  var recordKey: String { row.value("record_key", fallback: row.value("id")) }
+  var kindText: String {
+    switch row.value("order_kind") {
+    case "maker": return "Maker"
+    case "limit": return "限价"
+    default: return "委托"
+    }
+  }
+  var canCancel: Bool { row["can_cancel"]?.flag == true && operationIdentity != nil }
+  var canChase: Bool {
+    row.value("order_kind") == "limit" && row["can_chase"]?.flag == true && operationIdentity != nil
+  }
+  var cancelAction: String { row.value("order_kind") == "maker" ? "maker-fallback" : "limit-cancel" }
+  var cancelPayload: [String: JSONValue]? { canCancel ? operationIdentity : nil }
+  var chasePayload: [String: JSONValue]? { canChase ? operationIdentity : nil }
+  var orderAmountText: String { money(row["position_amount"]) }
+  var filledAmountText: String { money(row["filled_amount"]) }
+  var filledQuantityText: String {
+    let filled = quantity(row["filled_size"])
+    let total = quantity(row["size"])
+    let explicit = row.value("base_asset", fallback: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let symbol = row.value("symbol", fallback: "")
+    let suffix = ["USDT", "USDC"].first(where: { symbol.hasSuffix($0) })
+    let asset = explicit.isEmpty ? suffix.map { String(symbol.dropLast($0.count)) } ?? "" : explicit
+    return filled + " / " + total + (asset.isEmpty ? "" : " " + asset)
+  }
+  var averagePriceText: String {
+    guard let filled = nonnegative(row["filled_size"]), filled > 0,
+      let price = nonnegative(row["average_price"]), price > 0 else { return "--" }
+    return DisplayNumber.text(price)
+  }
+
+  private var operationIdentity: [String: JSONValue]? {
+    // Unknown, terminal, and incomplete states remain visible without mutation controls.
+    guard nonnegative(row["status"]) == 0 else { return nil }
+    switch row.value("order_kind") {
+    case "maker":
+      guard case let .string(requestID) = row["client_request_id"],
+        !requestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+      return ["client_request_id": .string(requestID), "cancel_only": .bool(true)]
+    case "limit":
+      guard case let .number(sourceID) = row["source_id"], sourceID.isFinite,
+        sourceID > 0, sourceID.rounded() == sourceID, sourceID <= 9_007_199_254_740_991 else { return nil }
+      return ["limit_order_id": .number(sourceID)]
+    default: return nil
+    }
+  }
+  private func nonnegative(_ value: JSONValue?) -> Decimal? {
+    guard let number = PositionEntryFeePresentation.finiteDecimal(value), number >= 0 else { return nil }
+    return number
+  }
+  private func quantity(_ value: JSONValue?) -> String {
+    nonnegative(value).map { NSDecimalNumber(decimal: $0).stringValue } ?? "--"
+  }
+  private func money(_ value: JSONValue?) -> String {
+    nonnegative(value).map { DisplayNumber.amount($0, maximumFractionDigits: 2) + "U" } ?? "--"
+  }
+}
+
+enum PositionPage: String, Hashable { case positions, limits, history }
+
+/// A fresh identity also routes repeated requests to a retained page correctly.
+struct PositionPageRequest: Identifiable, Hashable {
+  let id = UUID()
+  let page: PositionPage
+}
+
 struct USDTTradeView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.scenePhase) private var scenePhase
@@ -132,18 +203,20 @@ struct USDTTradeView: View {
   @State private var confirm = false
   @State private var requestIdentity = UUID().uuidString
   @State private var submitted = false
+  @State private var confirmedLimitDraft: USDTEntryDraft?
   var initialStop: String = ""
   var initialLimit: String = ""
   var chartInput: ChartTradeInput? = nil
   var onChartOrderTypeChange: ((String) -> Void)? = nil
+  var onChartLimitSubmission: ((USDTEntryDraft?) -> Void)? = nil
   var chartHasPosition = false
   var chartPositionsReady = true
   var chartPositionsError = ""
   var chartPositionRows: [JSONValue] = []
   @State private var heldPositionID = ""
-  var onShowPositions: (() -> Void)? = nil
+  var onShowPositions: ((PositionPage) -> Void)? = nil
   @StateObject private var positions = USDTChartPositionsModel()
-  @State private var showsPositions = false
+  @State private var positionDestination: PositionPageRequest?
   @State private var confirmationDraft: USDTEntryDraft?
   @State private var confirmationScope = ""
   @AppStorage(ChartOrderExecutionPreferences.marketEntryMaker) private var marketEntryMaker = false
@@ -164,7 +237,8 @@ struct USDTTradeView: View {
     chartInput != nil ? chartPositionsReady : positions.isReady(scope: store.scope)
   }
   private var entryDisabled: Bool {
-    !hasPosition && (busy || submitted || !store.isBound || !inputValid || !strategyValid || !positionsReady)
+    !hasPosition && confirmedLimitDraft == nil
+      && (busy || submitted || !store.isBound || !inputValid || !strategyValid || !positionsReady)
   }
 
   @EnvironmentObject private var container: AppContainer
@@ -278,11 +352,17 @@ struct USDTTradeView: View {
         Task { await positions.refresh(store) }
       }
       .onChange(of: hasPosition) { _, holding in
-        if holding { confirm = false; makerPreview = false; confirmationDraft = nil; makerPollingTask?.cancel() }
+        if holding {
+          confirm = false; makerPreview = false; confirmationDraft = nil; makerPollingTask?.cancel()
+          confirmedLimitDraft = nil
+          onChartLimitSubmission?(nil)
+        }
       }
       .onChange(of: store.scope) { _, _ in
         makerPollingTask?.cancel()
         confirmationDraft = nil; confirm = false; makerPreview = false; openSuccess = false; submitted = false
+        confirmedLimitDraft = nil
+        onChartLimitSubmission?(nil)
         requestIdentity = UUID().uuidString
         strategyID = store.activeStrategy?.value("id") ?? ""
       }
@@ -327,7 +407,9 @@ struct USDTTradeView: View {
             initialInterval: .oneHour,
             onStop: { dashboard.restoreRealtimeSubscriptions() })
       }
-      .navigationDestination(isPresented: $showsPositions) { USDTPositionsView() }
+      .navigationDestination(item: $positionDestination) { destination in
+        USDTPositionsView(navigationRequest: destination)
+      }
       .largeTradingSheet(isPresented: $showSymbols) {
         MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: symbol) { symbol in
           store.selectedSymbol = symbol
@@ -427,7 +509,7 @@ struct USDTTradeView: View {
               .buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
             Button("查看持仓") {
               openSuccess = false
-              if let onShowPositions { onShowPositions() } else { showsPositions = true }
+              showPositionPage(.positions)
             }.buttonStyle(WebButtonStyle(radius: 14, weight: .bold))
           }
         }
@@ -458,6 +540,7 @@ struct USDTTradeView: View {
   }
   private var entryButtonText: String {
     if hasPosition { return "正在持仓中" }
+    if confirmedLimitDraft != nil { return "已挂单" }
     if store.isBound && !positionsReady { return "正在确认持仓…" }
     if submitted { return "已提交" }
     if busy { return "处理中…" }
@@ -496,9 +579,17 @@ struct USDTTradeView: View {
   private func resetDraft() {
     if !submitted { requestIdentity = UUID().uuidString }
   }
+  private func showPositionPage(_ page: PositionPage) {
+    if let onShowPositions { onShowPositions(page) }
+    else { positionDestination = PositionPageRequest(page: page) }
+  }
   private func advanceEntry() {
     if hasPosition {
-      if let onShowPositions { onShowPositions() } else { showsPositions = true }
+      showPositionPage(.positions)
+      return
+    }
+    if confirmedLimitDraft != nil {
+      showPositionPage(.limits)
       return
     }
     guard !busy, !submitted, store.isBound, inputValid, strategyValid, positionsReady else { return }
@@ -523,6 +614,9 @@ struct USDTTradeView: View {
     let payload = draft.payload()
     busy = true
     submitted = true
+    // Freeze the confirmed price intent before dispatch, including unknown
+    // outcomes. Chart dragging must never appear to amend a submitted order.
+    if draft.orderType == "limit" { onChartLimitSubmission?(draft) }
     Task {
       defer { busy = false }
       do {
@@ -530,6 +624,13 @@ struct USDTTradeView: View {
           draft.orderType == "limit" ? "limit-create" : "open", payload: payload, key: key)
         guard scope == store.scope else { return }
         let status = result.value("status")
+        if status == "SUCCEEDED" && draft.orderType == "limit" && !hasPosition {
+          // Only an acknowledged limit-create becomes a clickable pending order.
+          confirmedLimitDraft = draft
+        } else if status == "FAILED" && draft.orderType == "limit" {
+          submitted = false
+          onChartLimitSubmission?(nil)
+        }
         if status == "SUCCEEDED" && draft.orderType == "market" {
           // This dialog is shown only after the backend has confirmed the
           // exchange fill and adopted the position locally.
@@ -774,13 +875,6 @@ struct USDTTradeView: View {
         }.buttonStyle(ChartTicketActionStyle()).disabled(entryDisabled)
           .accessibilityIdentifier("chart-ticket.submit")
       }
-      if orderType == "market" && marketEntryMaker && !hasPosition {
-        Text("只做 Maker · 未成交时可切换市价")
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(WebTheme.brand)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityIdentifier("chart-ticket.maker-preview-hint")
-      }
     }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
       .frame(maxWidth: .infinity)
       .background(BinanceTheme.surface.ignoresSafeArea(edges: [.horizontal, .bottom]))
@@ -914,6 +1008,7 @@ struct PositionLiveButtonLabel: View {
 struct USDTPositionsView: View {
   var isVisible = true
   var onOpenChart: ((String, String) -> Void)? = nil
+  var navigationRequest: PositionPageRequest? = nil
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var dashboard: DashboardViewModel
   @EnvironmentObject private var liveActivity: PositionLiveActivityController
@@ -971,6 +1066,9 @@ struct USDTPositionsView: View {
           .background(WebTheme.surface.ignoresSafeArea(edges: .top))
       }
       .usdtPage("持仓")
+      .onChange(of: navigationRequest, initial: true) { _, request in
+        if let request { segment = request.page.rawValue }
+      }
       .task(id: "margin:\(store.scope):\(store.isBound):\(isVisible):\(scenePhase):\(chart)") {
         guard isVisible, scenePhase == .active, !chart, store.isBound else {
           margin.suspend()
@@ -1079,7 +1177,7 @@ struct USDTPositionsView: View {
   private var pageHeader: some View {
       HStack(spacing: 4) {
         WebTabs(
-          tabs: [("positions", "持仓"), ("limits", "限价委托"), ("history", "历史仓位")], selection: $segment, compact: true)
+          tabs: [("positions", "持仓"), ("limits", "委托"), ("history", "历史仓位")], selection: $segment, compact: true)
           .frame(maxWidth: 248).frame(height: 44)
           .padding(.leading, 8)
         Spacer(minLength: 0)
@@ -1152,7 +1250,7 @@ struct USDTPositionsView: View {
             }
             if !loading && !awaitingFirstRead && !refreshing && pageRows.isEmpty {
               USDTEmptyState(
-                title: page == "positions" ? "暂无持仓" : page == "limits" ? "暂无限价委托" : "暂无历史仓位记录",
+                title: page == "positions" ? "暂无持仓" : page == "limits" ? "暂无委托" : "暂无历史仓位记录",
                 error: loadError
               ) { Task { await reload(page: page) } }
             }
@@ -1160,7 +1258,7 @@ struct USDTPositionsView: View {
               if page == "positions" {
                 positionCard(row)
               } else if page == "limits" {
-                limitCard(row)
+                orderCard(row)
               } else {
                 historyCard(row)
               }
@@ -1289,7 +1387,7 @@ struct USDTPositionsView: View {
       await store.refreshPositions()
       return
     }
-    let path = page == "limits" ? "/v1/trade/limit-order/list" : "/v1/position/history"
+    let path = page == "limits" ? "/v1/trade/order/list" : "/v1/position/history"
     await model.load(
       store, path: path,
       query: [
@@ -1486,46 +1584,58 @@ struct USDTPositionsView: View {
       Text(value).font(.system(size: 16, weight: .medium)).foregroundStyle(color ?? WebTheme.text)
     }
   }
-  private func limitCard(_ row: JSONValue) -> some View {
-    USDTCard(radius: 14, padding: 14, spacing: 14) {
+  private func orderCard(_ row: JSONValue) -> some View {
+    let order = OrderCardPresentation(row: row)
+    return USDTCard(radius: 14, padding: 14, spacing: 14) {
       HStack(spacing: 8) {
         WebDirection(long: row.value("side") == "0")
         Text(row.value("symbol")).font(.system(size: 16, weight: .medium))
+        Spacer(minLength: 0)
+        WebBadge(text: row.value("status_text", fallback: "待核对"))
+      }
+      HStack(spacing: 8) {
+        WebBadge(text: order.kindText)
+        Text("x" + row.value("leverage")).font(.system(size: 13)).foregroundStyle(WebTheme.muted)
         WebBadge(text: "止损" + DisplayNumber.text(row.value("stop_loss_amount")) + "U")
-        Spacer()
-        WebBadge(text: row.value("status_text"))
+        Spacer(minLength: 0)
       }
       LazyVGrid(
         columns: [
           GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading),
         ], alignment: .leading, spacing: 12
       ) {
-        detail("限价", DisplayNumber.text(row.value("limit_price")))
+        detail("委托价", DisplayNumber.text(row.value("limit_price")))
         detail("止损价", DisplayNumber.text(row.value("stop_loss_price")))
-        detail("委托仓位", DisplayNumber.text(row.value("position_amount")) + "U")
-        detail(
-          "已成交",
-          DisplayNumber.text(row.value("filled_amount", fallback: row.value("filled_size"))) + "/"
-            + DisplayNumber.text(row.value("position_amount")) + "U")
+        detail("委托金额", order.orderAmountText)
+        detail("成交金额", order.filledAmountText)
+        detail("成交数量", order.filledQuantityText)
+        detail("成交均价", order.averagePriceText)
       }
-      Rectangle().fill(WebTheme.border).frame(height: 1)
-      HStack(spacing: 8) {
-        USDTCommandButton(
-          title: row["can_chase"]?.flag == true ? "追单" : "已部分成交", action: "limit-chase",
-          payload: ["limit_order_id": row["id"] ?? .null], preflight: "chase"
-        ) {
-          notice = $0
-          Task { await reload() }
-        }.disabled(row["can_chase"]?.flag != true)
-        USDTCommandButton(
-          title: "撤单", action: "limit-cancel", payload: ["limit_order_id": row["id"] ?? .null],
-          buttonKind: .primary
-        ) {
-          notice = $0
-          Task { await reload() }
+      VStack(alignment: .leading, spacing: 4) {
+        Text("委托时间  " + WebFormat.time(row.value("created_at"), format: "yyyy-MM-dd HH:mm:ss"))
+        if let filledAt = row["filled_at"], filledAt != .null, !filledAt.text.isEmpty {
+          Text("成交时间  " + WebFormat.time(filledAt.text, format: "yyyy-MM-dd HH:mm:ss"))
+        }
+      }.font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+      if order.canChase || order.canCancel {
+        Rectangle().fill(WebTheme.border).frame(height: 1)
+        HStack(spacing: 8) {
+          if let payload = order.chasePayload {
+            USDTCommandButton(title: "追单", action: "limit-chase", payload: payload, preflight: "chase") {
+              notice = $0
+              Task { await reload() }
+            }
+          }
+          if let payload = order.cancelPayload {
+            USDTCommandButton(title: "撤单", action: order.cancelAction, payload: payload, buttonKind: .primary) {
+              notice = $0
+              Task { await reload() }
+            }
+          }
         }
       }
-    }
+    }.accessibilityElement(children: .contain).accessibilityIdentifier("orders.card." + order.recordKey)
+      .id(store.scope + ":" + order.recordKey)
   }
 }
 
@@ -1574,6 +1684,7 @@ struct USDTCommandButton: View {
   @State private var busy = false
   @State private var confirm = false
   @State private var pending = false
+  private var makerCancel: Bool { action == "maker-fallback" && payload["cancel_only"]?.flag == true }
   var body: some View {
     Button(busy ? "处理中…" : pending ? "查询\(title)结果" : title) {
       if requiresConfirmation { confirm = true } else { execute() }
@@ -1585,11 +1696,12 @@ struct USDTCommandButton: View {
     ).disabled(busy)
     .webModal(isPresented: $confirm) {
       WebModal(
-        title: action == "limit-chase" ? "市价追单" : action == "limit-cancel" ? "撤销委托" : "确认" + title
+        title: action == "limit-chase" ? "市价追单" : action == "limit-cancel" || makerCancel ? "撤销委托" : "确认" + title
       ) {
         Text(
           action == "limit-chase"
-            ? "将按当前市价追单，确认继续？" : action == "limit-cancel" ? "确认撤销此限价委托？" : "确认\(title)？"
+            ? "将按当前市价追单，确认继续？" : makerCancel ? "确认撤销此 Maker 委托？"
+              : action == "limit-cancel" ? "确认撤销此限价委托？" : "确认\(title)？"
         ).font(.system(size: 16)).foregroundStyle(WebTheme.secondary)
         HStack(spacing: 12) {
           Button("取消") { confirm = false }.buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))

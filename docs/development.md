@@ -1,5 +1,68 @@
 # 开发与验证
 
+<a id="完整交付验证20261111"></a>
+
+## 完整交付验证（2026-11-11）
+
+按用户“把未提交的全部提交部署”要求，核验完整整合工作区，包括独立根目录整理、统一委托 API／卡片、图表限价提交冻结和挂单导航。未新增逐仓保证金规划功能。
+
+发布前查明下方历史记录中的 13 个市价开仓失败为真实代码错误：条件表达式位于外层 lambda 的函数体，市价路径返回函数而未下单；仅为两侧 lambda 加括号恢复既有回调语义，未改测试夹具。原 `test_trade_open_creates_order` 单项由失败转为通过，`trading.tests trading.test_lead_mode trading.test_incomplete_fills trading.test_entry_guard` **159 项／102.178 秒／0 失败／0 跳过**，覆盖幂等、未知回执、保护、带单隔离和不完整成交。新 API、命令、事实投递及绑定鉴权 `trading.test_order_list mobile.tests mobile.test_event_delivery api_bindings.tests` **80 项／29.028 秒／0 失败／0 跳过**。额外 Maker 真实 API 隔离探针 **2 项／0.767 秒**通过，同请求仅一次 GTX 提交，GTX 拒绝不转市价。独立后端审查无阻断。
+
+iOS 委托卡片 host 8 项、实际订单绘图 host 1 项、保证金／分页／页头 host 25 项，合计 **34 项／0 失败**；generic device 无签名 Release **BUILD SUCCEEDED**，generic Simulator Debug-Seoul **TEST BUILD SUCCEEDED**，包含 App、Widget、单测与 UI 目标。提交前再次核对 **94 个生产 Swift 文件哈希**完全等于已验证版本。本轮没有启动模拟器、执行 XCTest／UI、签名、上传 TestFlight 或手机验收，不能把编译成功当作这些结果。
+
+完整后端隔离回归最终 **1166 项／254.061 秒／0 失败／6 项 opt-in 跳过**，进程退出码 0；以运行器 `Ran 1166 tests` 为计数，不使用发现数 1183，定向结果与全套重叠、不合计。后端使用禁 dotenv、禁非回环 socket／DNS、关闭 scheduler／账户流／外部通知的隔离运行器和交易所替身；没有真实开平仓、资金划转或撤保护单。日志与源码哈希保存在忽略目录 `.integration-runtime/FullDeliveryNov11/`。隔离 MySQL／Redis和实际发布结果后续补记，线上状态以 [运维](operations.md) 最新日期为准。
+
+<a id="统一委托回归20261110"></a>
+
+## 统一委托回归（2026-11-10，本地）
+
+复现两个缺口：原限价列表不包含 Maker，且过滤掉已成交普通限价。先新增真实 API 回归，在旧代码上得到 404；iOS 旧版已成功编译运行，`BaselineUI.xcresult` 的亮色回归在 Maker 不可见断言处失败。随后新增数据库只读 `GET /v1/trade/order/list`，客户端改用“委托”卡片，原限价接口保持兼容。
+
+后端最终 `trading.test_order_list mobile.tests mobile.test_event_delivery` **49 项／0 失败／0 跳过，9.174 秒**，包含新增真实 API **25 项**与既有命令／鉴权／事实投递 **24 项**。覆盖混合来源及同时间稳定分页、完整终态、部分成交缺均价、原 Maker 与市价补差身份、命令先于开仓记录创建、迟到快照不能减少累计量或恢复终态、精确全量采用补充缺流成交历史、满量弱回执仍待核对、用户／模式／Key／绑定代际隔离及 SQL 仅 SELECT；即使旧绑定为空指纹也不触发凭证迁写。初始证据／采用／时间／能力边界分别有真实失败回归，最终结果见 `backend-final.log`。
+
+```bash
+RUN_SCHEDULER_IN_WEB=false ACCOUNT_STREAM_ENABLED=false server/.venv/bin/python \
+  .integration-runtime/RemoveEntryEMA/run_isolated.py \
+  trading.test_order_list mobile.tests mobile.test_event_delivery
+python3 frontend/ios-app/scripts/test_order_cards.py .integration-runtime/UnifiedOrdersNov10/IOS/Host
+```
+
+iOS 最终 `FinalUI.xcresult` **3 项／0 失败**：浅深色混合限价／Maker 卡片、部分成交、已成交、已撤销、待核对、终态无操作，以及原图表确认限价后导航到“委托”。Debug-Seoul 模拟器 App、`PositionLiveWidget` 和 UI 测试目标构建／运行通过。已导出并实际查看亮暗截图，成交 `0.5 / 1 SOL` 与 `50U` 分开，成交均价／金额未知显示 `--`。真实 `OrderCardPresentation` host **8 项／0 失败**，覆盖操作身份、缺失金额及终态禁用；既有分页／页头 host **25 项／0 失败**。未另跑 generic device Release、最低 iOS 17 或手机新包验收。
+
+扩大现有隔离回归的 `trading.tests`、`trading.test_lead_mode`、`trading.test_incomplete_fills`、`mobile.test_event_delivery` 共 **162 项，149 通过、13 失败**；在未修改的 HEAD `268a529` 服务端快照同样运行，13 个失败名称完全一致，均为既有市价开仓用例（日志含 `'function' object has no attribute 'get'`）。这不是本轮统一列表回归，也不能写为整套测试通过；本轮未改动这些交易实现或测试替身。
+
+所有证据位于忽略目录 `.integration-runtime/UnifiedOrdersNov10/`：`backend-red.log`、`backend-final.log`、`backend-regressions.log`／`backend-baseline-regressions.log`、`IOS/host.log`、`IOS/paging.log`、`IOS/final-ui.log`、`IOS/Screenshots/`。后端使用 SQLite 隔离库、LocMem 和禁外网运行器，iOS 使用 DEBUG 内存响应；未执行真实开平仓、撤单、划转或保护变更。原有 iOS 未提交编辑通过迁移前差异反向检查确认完整保留；独立只读安全审查无阻断发现，交付时差异检查与文档本地链接检查通过。临时计划已合入主题主文档并移除。本轮仅本地实现，未提交、推送、部署或上传 TestFlight。
+
+<a id="独立项目目录验证20261110"></a>
+
+## 独立项目目录验证（2026-11-10，本地）
+
+项目已搬到 `/Users/apple/work/TradeTools-Binance-iOS`，根目录 `.git` 沿用原 GitHub 历史。迁移索引见 [来源](sources.md#本地目录独立2026-11-10)，日常 Git 方法见 [运维](operations.md#github-源码交付)。迁移前后 **640 个受追踪文件的 SHA-256、HEAD、Git 索引及原有 11 个未提交文件的状态完全一致**；随后仅更新本轮目录／验证文档。原有 Swift 源码和测试编辑保持原字节，来源仓库索引、远程配置及旧嵌套目录以外的工作区状态保持一致。
+
+新根目录执行主 App＋`PositionLiveWidget` 的 generic iOS Simulator / Debug 无签名 `build`，**BUILD SUCCEEDED，31.414 秒**；日志没有旧嵌套路径或路径错误，仅有既有 AppIntents metadata 跳过提示。未启动模拟器、运行 XCTest、启动 App 或进行设备验收。
+
+```bash
+xcodebuild -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool \
+  -configuration Debug -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath .integration-runtime/StandaloneMigration/DerivedData \
+  build CODE_SIGNING_ALLOWED=NO
+```
+
+后端在 `server/` 使用禁用 dotenv、SQLite、LocMem 和关闭网页调度的 `manage.py check`，**0 问题**；搬迁后的 `.venv/bin/django-admin --version` 及 Django／ASGI 导入通过。15 个本地虚拟环境启动文件和 7 个历史验证工程符号链接的旧路径已修正，无需改变依赖或锁文件。鸿蒙 `node frontend/harmony-app/scripts/check-project.mjs` 通过 **14 份配置、148 个导入、55 项资源**检查；两份本地构建副本的可再生缓存移入本轮忽略备份，签名配置、证书与历史产物保留。后续 HAP 构建先运行既有 `prepare-local.mjs` 同步，不把结构检查作为 ArkTS 编译或手机验收。
+
+证据在忽略目录 `.integration-runtime/StandaloneMigration/`，迁移前恢复材料位置见运维文档。搬迁初次核对时，Codex 项目名称虽然未变，目录仍绑定旧嵌套根；2026-11-10 用户修改设置后，项目列表已确认同一项目绑定 `/Users/apple/work/TradeTools-Binance-iOS`，与磁盘及 Git 根一致。已有本聊天的默认执行目录仍缓存旧位置，未指定工作目录的命令因旧目录不存在而不能启动；显式使用新根的 Git 和文件检查均通过。[OpenAI 官方说明](https://learn.chatgpt.com/docs/projects#use-local-projects-for-folders-and-codebases)说明新聊天从主文件夹启动，不能将项目绑定更新等同于已有聊天默认目录也已切换。后续命令继续显式使用新根；未修改应用内部数据库。没有提交、推送、部署、上传 TestFlight 或真实交易／资金操作。
+
+<a id="限价下单栏稳定与挂单导航20261110"></a>
+
+## 限价下单栏稳定与挂单导航（2026-11-10，本地）
+
+原版真实 UI 对照 `LimitTicketNov10/Baseline.xcresult` 的两项用例共 **5 处断言失败**：Maker 市价额外说明让票据上移约 28.33 pt；成功按钮仍为禁用的“已提交”；拖线仍可修改两项价格。修复删除额外说明、将提交快照传给图表只读绘图，并把成功按钮导航到保留持仓页的限价页签。提交前仍允许拖线，未知结果仍锁定，确认失败才恢复编辑。
+
+最终 iPhone 13 mini／iOS 27.2 的 `FinalUI.xcresult` **7 项／0 失败**：浅深色重复切换位置稳定、浅深色成功挂单固定价格并进入限价委托、未知结果不冒充成功，以及既有挂单前拖线／市价限价确认和持仓上下文导航。已导出并实际查看浅深色挂单线、底部票据与限价委托目标页截图。`Unit.xcresult` 的 `ChartOrderTicketTests`、`PositionPageReuseTests`、`RetainedTradeRiskTests` **19 项通过**；`test_chart_order_overlay.py` 的实际绘图 host **1 项通过**。证据保存在忽略目录 `.integration-runtime/LimitTicketNov10/`。中间编译失败 `FixedUI.xcresult` 不算通过；修正导航请求的 Hashable 约束后，首次 `FixedUI2.xcresult` 两项通过，最终七项覆盖其行为，不重复累计。
+
+下单 UI 使用 DEBUG 显式启用的内存 `limit-create` 替身，其余交易写请求仍被拒绝，没有真实网络下单、撤单或资金操作。结果为本地模拟器与 host 验证，未替代真机、最低 iOS 17 或交易所验收；本轮没有服务端变更，保持本地未提交、未推送。
+
 <a id="确认弹窗屏幕宿主20261110"></a>
 
 ## 确认弹窗屏幕宿主（2026-11-10，本地）

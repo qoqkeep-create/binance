@@ -27,5 +27,5 @@
 | [入站信号接口](api/external-signals.md) | 合作方鉴权、字段和去重 |
 | [出站通知接口](api/trade-notifications.md) | 事件、渠道与投递协议 |
 | [已知事项](known-issues.md) | 当前待实现与待验证内容 |
-| [原项目来源](sources.md) | 本地 USDT / USDC 路径与清理前 Git 基线 |
+| [原项目来源](sources.md) | 独立项目根目录、USDT / USDC 来源与历史 Git 基线 |
 | [文档维护](maintenance.md) | 主题主文档及更新规则 |

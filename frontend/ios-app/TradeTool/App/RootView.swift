@@ -52,11 +52,12 @@ private struct MainAppView: View {
     @State private var isShowingMarketSettings = false
     @State private var selectedMarket: MarketSnapshot?
     @State private var selectedInterval: MarketKlineInterval = .oneHour
+    @State private var positionNavigation: PositionPageRequest?
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 RetainedTradingPages(selectedTab: selectedTab, isChartOpen: selectedMarket != nil,
-                    openChart: openChart) {
+                    openChart: openChart, positionNavigation: positionNavigation) {
                     switch selectedTab {
                     case .markets:
                         DashboardView(viewModel: container.dashboardViewModel,
@@ -79,7 +80,8 @@ private struct MainAppView: View {
                     apiClient: container.apiClient, realtimeClient: container.realtimeClient,
                     initialInterval: selectedInterval,
                     onStop: { container.dashboardViewModel.restoreRealtimeSubscriptions() },
-                    onShowPositions: {
+                    onShowPositions: { page in
+                        positionNavigation = PositionPageRequest(page: page)
                         selectedMarket = nil
                         selectedTab = .positions
                     })
@@ -165,6 +167,7 @@ struct RetainedTradingPages<Foreground: View>: View {
     let selectedTab: AppTab
     var isChartOpen = false
     let openChart: (String, String) -> Void
+    var positionNavigation: PositionPageRequest? = nil
     @ViewBuilder let foreground: () -> Foreground
     @State private var hasVisitedPositions = false
     @State private var hasVisitedSignals = false
@@ -174,7 +177,7 @@ struct RetainedTradingPages<Foreground: View>: View {
             foreground()
             if hasVisitedPositions || selectedTab == .positions {
                 USDTPositionsView(isVisible: selectedTab == .positions && !isChartOpen,
-                    onOpenChart: openChart)
+                    onOpenChart: openChart, navigationRequest: positionNavigation)
                     .rootPageVisibility(isVisible: selectedTab == .positions)
             }
             if hasVisitedSignals || selectedTab == .signals {

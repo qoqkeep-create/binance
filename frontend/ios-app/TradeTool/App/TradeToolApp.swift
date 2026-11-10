@@ -263,6 +263,18 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       let savesFixtureRegistration = request.method == .post && request.path == "/v1/auth/admin-settings"
         && ProcessInfo.processInfo.arguments.contains("--fixture-registration-operator")
+      // Explicit, transport-free UI fixture. Only limit-create can reach this
+      // branch; every other trading write remains rejected by the guard below.
+      if request.method == .post, request.path == "/api/commands",
+        ProcessInfo.processInfo.arguments.contains("--fixture-limit-submit") {
+        let body = try JSONDecoder().decode(JSONValue.self, from: request.body ?? Data())
+        if body.value("action") == "limit-create" {
+          let status = ProcessInfo.processInfo.arguments.contains("--fixture-limit-unknown") ? "UNKNOWN" : "SUCCEEDED"
+          let result: JSONValue = .object(["id": .string("fixture-limit-create"), "status": .string(status),
+            "result": .object(["data": .object(["limit_order_id": .number(201)])])])
+          return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+        }
+      }
       guard
         request.method == .get || savesFixtureRegistration
           || ["/v1/trade/capital/precheck", "/v1/trade/capital/wallet/precheck"].contains(request.path)
@@ -280,6 +292,38 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         all[
           request.path == "/v1/trade/capital/precheck"
             ? "/v1/trade/capital/normalize" : request.path] ?? .object([:])
+      if request.path == "/v1/trade/order/list" {
+        let sample = all["/v1/trade/limit-order/list"]?.rows.first ?? .object([:])
+        var ordinary = sample.fields
+        ordinary["id"] = .string("limit:101"); ordinary["record_key"] = .string("limit:101")
+        ordinary["source_id"] = .number(101); ordinary["order_kind"] = .string("limit")
+        ordinary["status"] = .number(0); ordinary["can_cancel"] = .bool(true)
+        ordinary["filled_amount"] = .string("0")
+        var records = [JSONValue.object(ordinary)]
+        if ProcessInfo.processInfo.arguments.contains("--fixture-unified-orders") {
+          let samples: [(String, Int, String, Int, String, String)] = [("limit", 201, "BTCUSDT", 0, "等待成交", "0"),
+                     ("maker", 202, "ETHUSDT", 0, "等待成交", "0"),
+                     ("maker", 203, "SOLUSDT", 0, "部分成交", "0.5"),
+                     ("maker", 204, "ADAUSDT", 1, "已成交", "1"),
+                     ("maker", 205, "XRPUSDT", 2, "已撤销", "0"),
+                     ("maker", 206, "DOGEUSDT", 4, "待核对", "0.5")]
+          records = samples.map { kind, id, symbol, status, text, filled -> JSONValue in
+            var row: [String: JSONValue] = ["id": .string("\(kind):\(id)"), "record_key": .string("\(kind):\(id)"),
+              "source_id": .number(Double(id)), "order_kind": .string(kind),
+              "client_request_id": .string("fixture-maker-\(id)"), "symbol": .string(symbol),
+              "side": .number(0), "status": .number(Double(status)), "status_text": .string(text),
+              "limit_price": .string("100"), "stop_loss_price": .string("90"),
+              "stop_loss_amount": .string("10"), "size": .string("1"), "filled_size": .string(filled),
+              "position_amount": .string("100"), "filled_amount": status == 1 ? .null : .string(filled == "0.5" ? "50" : "0"),
+              "average_price": status == 1 ? .null : .string("100"), "leverage": .number(10),
+              "can_cancel": .bool(status == 0), "can_chase": .bool(kind == "limit" && status == 0),
+              "created_at": .string("2026-11-10T10:00:00Z"), "updated_at": .string("2026-11-10T10:02:00Z")]
+            row["position_id"] = status == 1 ? .number(204) : .null
+            return .object(row)
+          }
+        }
+        value = .object(["items": .array(records), "pagination": .object(["total": .number(Double(records.count)), "has_next": .bool(false)])])
+      }
       if request.path == "/v1/position/margin" {
         if ProcessInfo.processInfo.arguments.contains("--fixture-margin-failure") {
           throw APIError.business(code: "VISUAL_FIXTURE", message: "保证金读取替身失败")
@@ -389,12 +433,12 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         }
       }
       if ProcessInfo.processInfo.arguments.contains("--fixture-refresh-lists"),
-        ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list"].contains(request.path),
+        ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list", "/v1/trade/order/list"].contains(request.path),
         await requests.next(request.path) == 1 {
         value = .array([])
       }
       if ProcessInfo.processInfo.arguments.contains("--fixture-position-pager"),
-        ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list"].contains(request.path),
+        ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list", "/v1/trade/order/list"].contains(request.path),
         let sample = value.rows.first ?? value["items"]?.rows.first {
         let page = Int(request.queryItems.first { $0.name == "page" }?.value ?? "1") ?? 1
         let prefix = request.path == "/v1/position/list" ? "POS" : request.path == "/v1/position/history" ? "HIS" : "LIM"
@@ -402,6 +446,11 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           let index = (page - 1) * 5 + offset
           var fields = sample.fields
           fields["id"] = .number(Double(index))
+          if request.path == "/v1/trade/order/list" {
+            fields["id"] = .string("limit:\(index)")
+            fields["record_key"] = .string("limit:\(index)")
+            fields["source_id"] = .number(Double(index))
+          }
           fields["symbol"] = .string(prefix + String(format: "%02d", index) + "USDT")
           return .object(fields)
         }
@@ -435,7 +484,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       if Self.empty
         && [
-          "/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list",
+          "/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list", "/v1/trade/order/list",
           "/v1/trade/tradingview/signals",
           "/v1/strategy/list",
         ].contains(request.path)
@@ -891,6 +940,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     @State private var fixtureMarketSearch = false
     @State private var fixtureMarketSettings = false
     @State private var fixtureSelectedMarket: MarketSnapshot?
+    @State private var fixturePositionNavigation: PositionPageRequest?
     private var page: String {
       let args = ProcessInfo.processInfo.arguments
       guard let index = args.firstIndex(of: "--web-parity-fixture"),
@@ -912,7 +962,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           MarketChartView(market: market, availableMarkets: dashboard.markets(onlyVisible: true),
             apiClient: ChartCalibrationFixtureAPIClient(), realtimeClient: container.realtimeClient,
             onStop: { dashboard.restoreRealtimeSubscriptions() },
-            onShowPositions: { fixtureSelectedMarket = nil; tab = .positions })
+            onShowPositions: { page in
+              fixturePositionNavigation = PositionPageRequest(page: page)
+              fixtureSelectedMarket = nil; tab = .positions
+            })
         }
       }
       .floatingPositionsOverlay()
@@ -924,6 +977,10 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       .environmentObject(container.strategySignalNotifications)
       .preferredColorScheme(dark ? .dark : .light)
       .task {
+        if ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
+          UserDefaults.standard.set(ProcessInfo.processInfo.arguments.contains("--fixture-maker-entry"),
+            forKey: ChartOrderExecutionPreferences.marketEntryMaker)
+        }
         if page != "login" { await fixtureAuth.restore() }
         FloatingPositionsPreferences.defaults.set(false, forKey: FloatingPositionsPreferences.enabledKey)
         FloatingPositionsPreferences.defaults.set(1.0, forKey: "integrated.floatingPositions.x")
@@ -970,7 +1027,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         RetainedTradingPages(selectedTab: tab, isChartOpen: fixtureSelectedMarket != nil,
           openChart: { symbol, _ in
             fixtureSelectedMarket = dashboard.marketSnapshot(forSymbol: symbol)
-          }) {
+          }, positionNavigation: fixturePositionNavigation) {
           switch tab {
           case .markets:
             DashboardView(viewModel: dashboard, apiClient: WebParityFixtureAPI(),

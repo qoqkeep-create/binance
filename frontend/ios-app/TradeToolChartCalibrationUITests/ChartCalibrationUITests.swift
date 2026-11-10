@@ -2771,7 +2771,7 @@ final class IntegratedNativeUITests: XCTestCase {
         XCTAssertFalse(submit.isEnabled, "Unbound account must not place an order")
         app.buttons["返回"].firstMatch.tap()
         app.buttons["持仓"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["限价委托"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["委托"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["开仓"].exists)
         app.buttons["信号"].firstMatch.tap()
         XCTAssertTrue(app.buttons["内部信号规则"].waitForExistence(timeout: 10))
@@ -3236,6 +3236,86 @@ final class WebParityUITests: XCTestCase {
     capture("entry-confirmation-window-bounds")
   }
 
+  func testChartOrderTypeSwitchKeepsTicketAndSelectionInPlace() {
+    assertChartOrderTypeSwitch(options: [])
+  }
+
+  func testChartOrderTypeSwitchKeepsTicketInDarkAppearance() {
+    assertChartOrderTypeSwitch(options: ["--fixture-dark"])
+  }
+
+  private func assertChartOrderTypeSwitch(options: [String]) {
+    launch("market", options + ["--fixture-entry-ready", "--fixture-maker-entry"])
+    app.buttons["搜索币种、币对或合约"].tap()
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    let ticket = app.descendants(matching: .any)["chart-ticket"].firstMatch
+    let modes = app.descendants(matching: .any)["chart-ticket.order-type"].firstMatch
+    XCTAssertTrue(modes.waitForExistence(timeout: 10))
+    modes.buttons["限价"].tap()
+    let limitFrame = ticket.frame
+    let selectorFrame = modes.frame
+    for _ in 0..<3 {
+      modes.buttons["市价"].tap()
+      XCTAssertEqual(ticket.frame.minY, limitFrame.minY, accuracy: 1)
+      XCTAssertEqual(modes.frame.minY, selectorFrame.minY, accuracy: 1)
+      XCTAssertFalse(app.staticTexts["chart-ticket.maker-preview-hint"].exists)
+      XCTAssertTrue(modes.buttons["市价"].isSelected)
+      modes.buttons["限价"].tap()
+      XCTAssertEqual(ticket.frame.minY, limitFrame.minY, accuracy: 1)
+      XCTAssertEqual(modes.frame.minY, selectorFrame.minY, accuracy: 1)
+      XCTAssertTrue(modes.buttons["限价"].isSelected)
+    }
+    capture("chart-ticket-fixed-order-selector")
+  }
+
+  func testConfirmedLimitLocksPricesAndOpensLimitOrders() {
+    assertSubmittedLimit(options: [], confirmed: true)
+  }
+
+  func testConfirmedLimitLocksPricesInDarkAppearance() {
+    assertSubmittedLimit(options: ["--fixture-dark"], confirmed: true)
+  }
+
+  func testUnknownLimitKeepsPricesLockedWithoutClaimingItIsPending() {
+    assertSubmittedLimit(options: ["--fixture-limit-unknown"], confirmed: false)
+  }
+
+  private func assertSubmittedLimit(options: [String], confirmed: Bool) {
+    launch("market", options + ["--fixture-entry-ready", "--fixture-limit-submit"])
+    app.buttons["搜索币种、币对或合约"].tap()
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    let modes = app.descendants(matching: .any)["chart-ticket.order-type"].firstMatch
+    XCTAssertTrue(modes.waitForExistence(timeout: 10))
+    modes.buttons["限价"].tap()
+    let ticket = app.buttons["chart-ticket.submit"]
+    let entry = app.descendants(matching: .any)["chart-order-line.entry"].firstMatch
+    let stop = app.descendants(matching: .any)["chart-order-line.stopLoss"].firstMatch
+    XCTAssertTrue(entry.waitForExistence(timeout: 5))
+    let entryPrice = entry.value as? String
+    let stopPrice = stop.value as? String
+    ticket.tap()
+    XCTAssertTrue(app.staticTexts["委托确认"].waitForExistence(timeout: 5))
+    app.buttons["确定"].tap() // Only the explicit in-memory limit fixture accepts this command.
+    let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label IN %@", ["已挂单", "已提交"]), object: ticket)
+    XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 5), .completed)
+    XCTAssertEqual(ticket.label, confirmed ? "已挂单" : "已提交")
+    XCTAssertEqual(ticket.isEnabled, confirmed)
+    let base = app.coordinate(withNormalizedOffset: .zero)
+    for line in [entry, stop] {
+      let start = line.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5))
+      start.press(forDuration: 0.1, thenDragTo: base.withOffset(CGVector(dx: line.frame.midX, dy: line.frame.midY + 55)))
+    }
+    XCTAssertEqual(entry.value as? String, entryPrice)
+    XCTAssertEqual(stop.value as? String, stopPrice)
+    capture("chart-pending-limit-fixed-prices")
+    guard confirmed else { return }
+    ticket.tap()
+    XCTAssertTrue(app.buttons["positions.tabs.limits"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["positions.tabs.limits"].isSelected)
+    XCTAssertTrue(app.buttons["追单"].waitForExistence(timeout: 5))
+    capture("chart-pending-limit-destination")
+  }
+
   func testChartCrosshairLimitLinesAndSharedEntryConfirmation() {
     assertChartEntryConfirmation(options: [])
   }
@@ -3374,9 +3454,45 @@ final class WebParityUITests: XCTestCase {
     capture("settings-registration-operator")
   }
 
+  func testUnifiedOrderCardsLight() { assertUnifiedOrderCards(options: [], appearance: "light") }
+  func testUnifiedOrderCardsDark() { assertUnifiedOrderCards(options: ["--fixture-dark"], appearance: "dark") }
+
+  private func assertUnifiedOrderCards(options: [String], appearance: String) {
+    launch("positions", options + ["--fixture-unified-orders"])
+    let tab = app.buttons["positions.tabs.limits"]
+    XCTAssertTrue(tab.waitForExistence(timeout: 5))
+    tab.tap()
+    waitForNativePositionPageToSettle()
+    let list = app.scrollViews["positions.list"]
+    let maker = app.staticTexts["ETHUSDT"]
+    XCTAssertTrue(maker.waitForExistence(timeout: 6), "Pending Maker must be visible in the unified order list")
+    XCTAssertEqual(tab.label, "委托")
+    for (key, symbol, state, canCancel, canChase) in [
+      ("limit:201", "BTCUSDT", "等待成交", true, true),
+      ("maker:202", "ETHUSDT", "等待成交", true, false),
+      ("maker:203", "SOLUSDT", "部分成交", true, false),
+      ("maker:204", "ADAUSDT", "已成交", false, false),
+      ("maker:205", "XRPUSDT", "已撤销", false, false),
+      ("maker:206", "DOGEUSDT", "待核对", false, false),
+    ] {
+      let card = app.otherElements["orders.card." + key]
+      for _ in 0..<10 where !app.staticTexts[symbol].isHittable { list.swipeUp() }
+      XCTAssertTrue(card.exists, key)
+      XCTAssertTrue(card.staticTexts[state].exists, key)
+      XCTAssertEqual(card.buttons["撤单"].exists, canCancel, key)
+      XCTAssertEqual(card.buttons["追单"].exists, canChase, key)
+      XCTAssertTrue(card.staticTexts[key.hasPrefix("maker:") ? "Maker" : "限价"].exists, key)
+      if key == "maker:204" {
+        XCTAssertTrue(card.staticTexts["成交均价"].exists)
+        XCTAssertFalse(card.staticTexts["0U"].exists, "Missing fill price must not fabricate zero notional")
+      }
+      capture("unified-orders-" + appearance + "-" + key.replacingOccurrences(of: ":", with: "-"))
+    }
+  }
+
   func testAllUnboundPositionTabsOnlyShowBindingPrompt() {
     launch("positions", ["--fixture-unbound"])
-    for tab in ["持仓", "限价委托", "历史仓位"] {
+    for tab in ["持仓", "委托", "历史仓位"] {
       if tab != "持仓" { app.buttons[tab].tap() }
       let bind = app.buttons["positions.bind"]
       XCTAssertTrue(bind.waitForExistence(timeout: 5))
@@ -3707,7 +3823,7 @@ final class WebParityUITests: XCTestCase {
     launch("positions", ["--fixture-refresh-lists"])
     for (tab, empty, content) in [
       ("持仓", "暂无持仓", "开仓额度："),
-      ("限价委托", "暂无限价委托", "追单"),
+      ("委托", "暂无委托", "追单"),
       ("历史仓位", "暂无历史仓位记录", "平仓盈亏"),
     ] {
       if tab != "持仓" { app.buttons[tab].tap() }
@@ -4124,7 +4240,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.buttons["确认设置"].waitForExistence(timeout: 5))
     capture("take-profit")
     app.buttons["关闭"].firstMatch.tap()
-    app.buttons["限价委托"].tap()
+    app.buttons["委托"].tap()
     XCTAssertTrue(app.buttons["追单"].waitForExistence(timeout: 5))
     capture("limit-orders")
     app.buttons["历史仓位"].tap()
