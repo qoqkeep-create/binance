@@ -338,8 +338,20 @@ class UnifiedOrderListTests(APITestCase):
 
     def test_get_only_selects_database_rows_and_never_reaches_exchange(self):
         def select_only(execute, sql, params, many, context):
-            self.assertEqual(sql.lstrip().split()[0].upper(), "SELECT", sql)
+            # MySQL groups each UNION operand as (SELECT ...). Ignore only
+            # leading whitespace/grouping brackets; writes remain forbidden.
+            self.assertEqual(sql.lstrip(" \t\r\n(").split()[0].upper(), "SELECT", sql)
             return execute(sql, params, many, context)
+
+        for sql in ["SELECT 1", " (SELECT 1) UNION ALL (SELECT 2)"]:
+            with self.subTest(read_sql=sql):
+                self.assertTrue(select_only(lambda *_args: True, sql, None, False, {}))
+        executed = []
+        for sql in ["UPDATE limit_order SET status = 1", " ( DELETE FROM limit_order)",
+                    "\n((INSERT INTO limit_order (id) VALUES (1)))"]:
+            with self.subTest(write_sql=sql), self.assertRaises(AssertionError):
+                select_only(lambda *_args: executed.append(sql), sql, None, False, {})
+        self.assertEqual(executed, [])
 
         for fingerprint in ["a" * 64, ""]:
             with self.subTest(fingerprint=fingerprint):
@@ -373,14 +385,19 @@ class UnifiedOrderListTests(APITestCase):
                 self.assertIsNone(row["filled_size"])
 
     def test_equal_creation_times_have_stable_order_across_mixed_pages(self):
-        limit = self.limit()
-        maker = self.maker()
-        self.dated(limit, -1)
-        self.dated(maker, -1)
-        first = self.client.get(self.url, {"page_size": 1}).data["data"]
-        second = self.client.get(self.url, {"page_size": 1, "page": 2}).data["data"]
-        self.assertEqual([first["items"][0]["id"], second["items"][0]["id"]],
-                         [f"limit:{limit.pk}", f"maker:{maker.pk}"])
+        # Separate tables need not share auto-increment sequences on MySQL.
+        # Exercise descending IDs before the kind tie-breaker explicitly.
+        limit = self.limit(pk=2)
+        maker = self.maker(pk=3)
+        tied_limit = self.limit(pk=1)
+        tied_maker = self.maker(pk=1)
+        for record in [limit, maker, tied_limit, tied_maker]:
+            self.dated(record, -1)
+        pages = [self.client.get(self.url, {"page_size": 1, "page": page}).data["data"]
+                 for page in range(1, 5)]
+        self.assertEqual([page["items"][0]["id"] for page in pages],
+                         [f"maker:{maker.pk}", f"limit:{limit.pk}",
+                          f"limit:{tied_limit.pk}", f"maker:{tied_maker.pk}"])
 
     def test_terminal_limits_remain_visible_and_cannot_be_modified(self):
         for status in [LimitOrder.STATUS_FILLED, LimitOrder.STATUS_CANCELLED, LimitOrder.STATUS_EXPIRED]:
