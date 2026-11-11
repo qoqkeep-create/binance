@@ -414,6 +414,29 @@ final class PositionPageReuseTests: XCTestCase {
         XCTAssertEqual(reads, 3)
     }
 
+    func testMakerOpenCommandInvalidatesCachedOrderList() async {
+        let api = TradingCommandRevisionFixtureAPI()
+        let store = USDTStore(api: api)
+        let model = USDTPageModel()
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        XCTAssertEqual(model.items.first?.value("status_text"), "旧快照")
+
+        do {
+            _ = try await store.command(
+                "open",
+                payload: ["execution_mode": .string("maker")],
+                key: "maker-command")
+        } catch {
+            XCTFail("Maker command should be acknowledged: \(error)")
+        }
+
+        await model.load(store, path: "/positions", query: query(), reuseIfLoaded: true)
+        let reads = await api.readCount("/positions")
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(model.items.first?.value("order_kind"), "maker")
+        XCTAssertEqual(model.items.first?.value("status_text"), "待成交")
+    }
+
     func testFailedRefreshKeepsVisibleRowsAndRetriesOnReturn() async {
         let api = PositionPageReuseFixtureAPI()
         let store = USDTStore(api: api)
@@ -494,6 +517,37 @@ private actor PositionPageReuseFixtureAPI: APIClient {
                     "read": .number(Double(counts[request.path, default: 0]))])]),
                 "pagination": .object(["has_next": .bool(page == "1")]),
             ])
+        }
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+    }
+}
+
+private actor TradingCommandRevisionFixtureAPI: APIClient {
+    private var reads: [String: Int] = [:]
+
+    func readCount(_ path: String) -> Int { reads[path, default: 0] }
+
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        reads[request.path, default: 0] += 1
+        let result: JSONValue
+        switch request.path {
+        case "/api/commands":
+            result = .object([
+                "id": .string("maker-command"),
+                "status": .string("SUCCEEDED"),
+                "result": .object(["data": .object(["state": .string("PENDING_MAKER")])]),
+            ])
+        case "/positions":
+            let current = reads[request.path, default: 0] > 1
+            result = .object([
+                "items": .array([.object([
+                    "order_kind": .string(current ? "maker" : "limit"),
+                    "status_text": .string(current ? "待成交" : "旧快照"),
+                ])]),
+                "pagination": .object(["has_next": .bool(false)]),
+            ])
+        default:
+            result = .null
         }
         return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
     }

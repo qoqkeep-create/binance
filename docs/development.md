@@ -1,5 +1,13 @@
 # 开发与验证
 
+<a id="maker-委托提交后立即刷新20261111"></a>
+
+## Maker 委托提交后立即刷新（2026-11-11，本地）
+
+修复 iOS 在 Maker 开仓返回 `PENDING_MAKER` 后继续复用旧“委托”列表快照的问题。`USDTStore.command` 在开仓、Maker fallback 和限价委托命令获得持久化响应后递增 `liveRevision`，让已加载的 `USDTPageModel` 重新读取统一委托接口；WSS 延迟或缺失时也能立即看到“待成交”记录。后端 Maker 投影和筛选逻辑未改动。
+
+新增 `PositionPageReuseTests.testMakerOpenCommandInvalidatesCachedOrderList`，用内存 API 先加载旧快照，再返回 `PENDING_MAKER` 开仓响应，确认缓存被重新读取且显示 Maker“待成交”。主 App、Widget 和单测目标 `build-for-testing` 通过；iPhone 17 模拟器定向 `PositionPageReuseTests` **7 项／0 失败**。验证没有真实开仓、撤单或资金操作，尚未部署或上传客户端。
+
 <a id="完整交付验证20261111"></a>
 
 ## 完整交付验证（2026-11-11）

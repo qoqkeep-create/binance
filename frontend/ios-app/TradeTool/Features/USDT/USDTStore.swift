@@ -280,6 +280,13 @@ final class USDTStore: ObservableObject {
             try await Task.sleep(for: .milliseconds(500))
             result = try await get("/api/commands/\(id)")
         }
+        // The command response is the first durable acknowledgement that an
+        // order may now exist in the local order projection. Do not depend on
+        // a websocket event to invalidate a previously loaded order snapshot;
+        // that event can arrive after the user switches tabs or be delayed.
+        if ["open", "maker-fallback", "limit-create", "limit-cancel", "limit-chase"].contains(action) {
+            liveRevision += 1
+        }
         return result
     }
 }
