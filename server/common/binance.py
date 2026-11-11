@@ -69,17 +69,27 @@ def should_recover_write_by_client_id(error: Exception) -> bool:
     )
 
 
-def should_verify_cancel_result(error: Exception) -> bool:
+def is_order_absent_error(error: Exception) -> bool:
+    """Whether Binance says a queried order is no longer available.
+
+    Binance's current conditional-order query deliberately returns
+    ``Order does not exist`` after an algo order has been triggered, canceled,
+    or expired.  That is a normal terminal state for a read, not an API outage.
+    """
     if not isinstance(error, BinanceApiError):
-        return isinstance(error, (ConnectionError, TimeoutError))
-    if error.outcome_unknown:
-        return True
+        return False
     code = str(error.code or "").strip()
     message = str(error).strip().lower()
     return code in CANCEL_ALREADY_ABSENT_CODES or any(
         hint in message
         for hint in ("unknown order", "order does not exist", "order not found", "订单不存在")
     )
+
+
+def should_verify_cancel_result(error: Exception) -> bool:
+    if not isinstance(error, BinanceApiError):
+        return isinstance(error, (ConnectionError, TimeoutError))
+    return error.outcome_unknown or is_order_absent_error(error)
 
 
 ACCOUNT_TYPE_MASTER = "master"
@@ -3159,13 +3169,21 @@ class BinanceFuturesClient:
         target_symbol = _exchange_symbol(inst_id) if inst_id else ""
         if algo_id:
             query: dict[str, Any] = {"algoId": algo_id}
-            payload = self._request(
-                "GET",
-                "/fapi/v1/algoOrder",
-                query,
-                signed=True,
-                budget_priority=budget_priority,
-            )
+            try:
+                payload = self._request(
+                    "GET",
+                    "/fapi/v1/algoOrder",
+                    query,
+                    signed=True,
+                    budget_priority=budget_priority,
+                )
+            except BinanceApiError as exc:
+                if not is_order_absent_error(exc):
+                    raise
+                # Binance reports terminal conditional orders as "order does
+                # not exist" on this endpoint. Treat that as an empty lookup
+                # so protection reconciliation can replace the old stop.
+                return _ok([])
             rows = payload if isinstance(payload, list) else [payload]
         else:
             query = {"algoType": "CONDITIONAL"}
@@ -3210,10 +3228,17 @@ class BinanceFuturesClient:
         """Recover one submission, including canceled/triggered terminal orders."""
         if not str(client_algo_id or "").strip():
             raise BinanceApiError("查询条件单失败：缺少 clientAlgoId")
-        payload = self._request(
-            "GET", "/fapi/v1/algoOrder", {"clientAlgoId": client_algo_id},
-            signed=True, budget_priority=budget_priority,
-        )
+        try:
+            payload = self._request(
+                "GET", "/fapi/v1/algoOrder", {"clientAlgoId": client_algo_id},
+                signed=True, budget_priority=budget_priority,
+            )
+        except BinanceApiError as exc:
+            if not is_order_absent_error(exc):
+                raise
+            # A terminal order is intentionally absent from Binance's current
+            # algo-order lookup. The caller can safely continue reconciliation.
+            return _ok([])
         if not isinstance(payload, dict):
             raise BinanceApiError("条件单查询返回格式异常")
         row = _parse_algo_order_row(payload)

@@ -336,6 +336,44 @@ class ExternalProtectionTests(TestCase):
             self.order.external_stop_request["client_id"], "tt-crash-before-post"
         )
 
+    def test_missing_terminal_live_stop_is_replaced_without_raw_api_error(self):
+        self.order.external_stop_request = {
+            "client_id": "tt-old-stop",
+            "algo_id": "old-stop",
+            "status": "live",
+            "floor_working_type": "CONTRACT_PRICE",
+        }
+        self.order.binance_stop_market_order_id = "old-stop"
+        self.order.current_stop_price = Decimal("900")
+        self.order.save(
+            update_fields=[
+                "external_stop_request",
+                "binance_stop_market_order_id",
+                "current_stop_price",
+            ]
+        )
+
+        def pending(**kwargs):
+            if kwargs.get("algo_id"):
+                raise BinanceApiError(
+                    "API error order does not exist", code="-2013"
+                )
+            return {"data": []}
+
+        self.client.get_pending_algo_orders.side_effect = pending
+        self.cycle()
+
+        self.assertEqual(
+            self.order.stop_protection_status,
+            "complete",
+            self.order.stop_protection_error,
+        )
+        self.assertEqual(self.order.stop_protection_error, "")
+        self.assertEqual(len(self.submits), 1)
+        self.assertNotEqual(
+            self.order.external_stop_request["client_id"], "tt-old-stop"
+        )
+
     def test_web_duplicate_check_does_not_close_external_lifecycle(self):
         from trading.views import _close_local_order_after_exchange_manual_close
 

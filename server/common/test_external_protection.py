@@ -76,6 +76,23 @@ class ExternalProtectionAdapterTests(SimpleTestCase):
                 with self.assertRaises(BinanceApiError):
                     self.client.get_algo_order_by_client_id("BTC-USDT-SWAP", "external-stop-123")
 
+    def test_terminal_algo_queries_normalize_order_does_not_exist_to_empty(self):
+        absent = BinanceApiError("API error order does not exist", code="-2013")
+        with patch.object(self.client, "_request", side_effect=absent):
+            self.assertEqual(
+                self.client.get_pending_algo_orders(
+                    inst_id="BTC-USDT-SWAP", algo_id="123"
+                )["data"],
+                [],
+            )
+        with patch.object(self.client, "_request", side_effect=absent):
+            self.assertEqual(
+                self.client.get_algo_order_by_client_id(
+                    "BTC-USDT-SWAP", "external-stop-123"
+                )["data"],
+                [],
+            )
+
     def test_position_raw_pnl_and_identity_survive_normalization(self):
         for pnl in (None, "bad", "NaN", "-101.25"):
             payload = {

@@ -25,6 +25,7 @@ from api_bindings.services import (
 from common.binance import (
     BinanceAlgoClient,
     BinanceApiError,
+    is_order_absent_error,
     should_recover_write_by_client_id,
     to_inst_id,
     to_symbol,
@@ -625,17 +626,38 @@ def _protect(order, client, pos_mode, position, *, closing=False):
         and tracked_id
         and not any(str(r["algoId"]) == tracked_id for r in candidates)
     ):
-        detail = _rows(
-            client.get_pending_algo_orders(
-                inst_id=to_inst_id(order.symbol),
-                algo_id=tracked_id,
-                budget_priority=RequestPriority.CRITICAL,
+        try:
+            detail = _rows(
+                client.get_pending_algo_orders(
+                    inst_id=to_inst_id(order.symbol),
+                    algo_id=tracked_id,
+                    budget_priority=RequestPriority.CRITICAL,
+                )
             )
-        )
+        except BinanceApiError as exc:
+            if not is_order_absent_error(exc):
+                raise
+            detail = []
         tracked = next((r for r in detail if str(r.get("algoId")) == tracked_id), None)
         if tracked is None:
-            raise ValueError("原止损状态未确认，继续核对，避免重复挂单")
-        if tracked.get("state") in ALGO_TERMINAL:
+            # Binance's single-algo lookup returns an empty result or
+            # "order does not exist" once the conditional order is terminal.
+            # The open-order snapshot was already checked above, so retire
+            # this known stop and let the normal replacement path create a
+            # fresh protection order.
+            journal["status"] = "terminal"
+            order.external_stop_request = journal
+            order.save(update_fields=["external_stop_request"])
+            terminal_stop = True
+            record_operation(
+                order,
+                action="external_stop_missing",
+                status="info",
+                message="检测到原手动仓止损已结束或被取消，系统将恢复止损保护",
+                event_key=f"external-stop:{tracked_id}:terminal",
+                dedupe=False,
+            )
+        elif tracked.get("state") in ALGO_TERMINAL:
             # Explicit cancellation allows immediate replacement, without an unknown-write retry.
             journal["status"] = "terminal"
             order.external_stop_request = journal
@@ -685,26 +707,35 @@ def _protect(order, client, pos_mode, position, *, closing=False):
             None,
         )
         if not recovered:
-            recovered_rows = _rows(
-                client.get_algo_order_by_client_id(
-                    to_inst_id(order.symbol), journal["client_id"]
+            try:
+                recovered_rows = _rows(
+                    client.get_algo_order_by_client_id(
+                        to_inst_id(order.symbol), journal["client_id"]
+                    )
                 )
-            )
+            except BinanceApiError as exc:
+                if not is_order_absent_error(exc):
+                    raise
+                recovered_rows = []
             recovered = recovered_rows[0] if recovered_rows else None
         if not recovered:
+            # The POST result is still not fully reconciled. Keep the
+            # idempotent request pending and never replay it merely because
+            # Binance's historical lookup says the order is absent.
             raise ValueError("止损提交结果待确认")
-        if recovered.get("state") in ALGO_TERMINAL:
-            journal["status"] = "terminal"
-            order.external_stop_request = journal
-            order.save(update_fields=["external_stop_request"])
-            # Reconcile fresh position after terminal protection, never reuse stale quantity.
-            return
-        if not _valid_stop(order, recovered, pos_mode):
-            raise ValueError("止损恢复身份不匹配")
-        if recovered not in candidates:
-            candidates.append(recovered)
-            if _full_stop(recovered, quantity):
-                full.append(recovered)
+        if recovered:
+            if recovered.get("state") in ALGO_TERMINAL:
+                journal["status"] = "terminal"
+                order.external_stop_request = journal
+                order.save(update_fields=["external_stop_request"])
+                # Reconcile fresh position after terminal protection, never reuse stale quantity.
+                return
+            if not _valid_stop(order, recovered, pos_mode):
+                raise ValueError("止损恢复身份不匹配")
+            if recovered not in candidates:
+                candidates.append(recovered)
+                if _full_stop(recovered, quantity):
+                    full.append(recovered)
     chosen = next(
         (
             row
