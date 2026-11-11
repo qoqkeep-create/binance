@@ -117,6 +117,45 @@ def find_existing_order_by_open_request(open_request: TradeOpenRequest) -> Optio
     return existing
 
 
+def find_external_projection_for_open_request(open_request: TradeOpenRequest) -> Optional[Order]:
+    """Find a read-time external projection created after this request.
+
+    A fresh position read may adopt the exchange position while a Maker request
+    is still unresolved.  Once the Maker fill is confirmed, that projection is
+    the same exposure and must be promoted in place instead of creating a
+    second local owner.  The request creation boundary prevents an older,
+    unrelated manual position from being claimed by a later request.
+    """
+    intent = get_open_request_execution_intent(open_request)
+    try:
+        side = int(intent.get("side_code"))
+    except (TypeError, ValueError):
+        return None
+    if side not in (0, 1):
+        return None
+    symbol = to_symbol(to_inst_id(open_request.symbol))
+    fingerprint = open_request.api_key_fingerprint or get_user_api_key_fingerprint(
+        open_request.user, trading_mode=open_request.trading_mode
+    )
+    account_scope = Q(api_key_fingerprint=fingerprint) if fingerprint else (
+        Q(api_key_fingerprint__isnull=True) | Q(api_key_fingerprint="")
+    )
+    return (
+        Order.objects.filter(
+            account_scope,
+            user=open_request.user,
+            trading_mode=open_request.trading_mode,
+            position_origin=Order.ORIGIN_EXTERNAL,
+            status=0,
+            symbol=symbol,
+            side=side,
+            created_at__gte=open_request.created_at,
+        )
+        .order_by("created_at", "id")
+        .first()
+    )
+
+
 def mark_open_request_recovered(open_request: TradeOpenRequest, exchange_order_id: str) -> None:
     open_request.status = TradeOpenRequest.STATUS_RECOVERED
     open_request.binance_order_id = str(exchange_order_id or "")

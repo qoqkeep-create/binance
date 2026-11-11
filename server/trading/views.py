@@ -17,6 +17,7 @@ from urllib import request
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.permissions import AllowAny
@@ -79,6 +80,7 @@ from trading.open_requests import (
     attach_open_request_order,
     build_client_order_id as _idempotent_client_order_id,
     find_existing_order_by_open_request as _find_existing_order_by_open_request,
+    find_external_projection_for_open_request as _find_external_projection_for_open_request,
     get_open_request_execution_intent,
     mark_open_request_recovered,
     mark_open_request_failed,
@@ -2041,6 +2043,40 @@ def _adopt_maker_fill(request, account, open_request, intent, client, execution,
     strategy_id = str(intent.get("strategy_id") or "")
     strategy_name = str(intent.get("strategy_name") or "")
     strategy_config = intent.get("strategy_config")
+    projected_order = _find_external_projection_for_open_request(open_request)
+    if projected_order is not None:
+        exchange_order_id = str(execution.order_id or open_request.binance_order_id or "").strip()
+        if not exchange_order_id:
+            raise BinanceApiError("Maker成交订单号缺失，无法接管风险")
+        account_scope = (
+            Q(api_key_fingerprint=account.api_key_fingerprint)
+            if account.api_key_fingerprint
+            else Q(api_key_fingerprint__isnull=True) | Q(api_key_fingerprint="")
+        )
+        duplicate = Order.objects.filter(
+            account_scope,
+            user=request.user,
+            trading_mode=mode,
+            binance_order_id=exchange_order_id,
+        ).exclude(pk=projected_order.pk).exists()
+        if duplicate:
+            raise BinanceApiError("成交订单已存在其他本地持仓，拒绝重复接管")
+        projected_order.position_origin = Order.ORIGIN_WEB
+        projected_order.external_active_key = None
+        projected_order.api_key_fingerprint = account.api_key_fingerprint or None
+        projected_order.binance_order_id = exchange_order_id
+        projected_order.open_price = execution.average_price
+        projected_order.initial_stop_price = stop_loss_price
+        projected_order.stop_loss_price = stop_loss_price
+        projected_order.stop_loss_amount = stop_loss_amount
+        projected_order.current_stop_price = stop_loss_price
+        projected_order.leverage = int(intent["leverage"])
+        projected_order.save(update_fields=[
+            "position_origin", "external_active_key", "api_key_fingerprint",
+            "binance_order_id", "open_price", "initial_stop_price",
+            "stop_loss_price", "stop_loss_amount", "current_stop_price",
+            "leverage",
+        ])
     adoption = adopt_entry_execution(
         user=request.user,
         trading_mode=mode,

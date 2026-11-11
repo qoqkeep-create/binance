@@ -946,7 +946,7 @@ def _scoped(model, user, account):
     )
 
 
-def _adopt_external_positions(user, account, positions):
+def _adopt_external_positions(user, account, positions, *, allow_unresolved_requests=False):
     """Create local owners for exchange positions without exchange writes."""
     local = list(_scoped(Order, user, account).filter(status=0))
     owned = {(o.symbol, o.side) for o in local}
@@ -985,7 +985,11 @@ def _adopt_external_positions(user, account, positions):
     )
     for key, position in positions.items():
         symbol, side = key
-        if key in owned or symbol in blocked_symbols:
+        # A read of the exchange snapshot must still expose a real position
+        # when an older open request is unresolved. The request remains a
+        # durable risk guard for new entries; the external owner lets the
+        # position page and background protection see the actual exposure.
+        if key in owned or (symbol in blocked_symbols and not allow_unresolved_requests):
             continue
         quantity, entry = (
             abs(finite_decimal(position["pos"])),
@@ -1059,7 +1063,12 @@ def adopt_external_position_snapshot(user, account, rows):
     closes to the serialized background reconciler.
     """
     positions = _positions_from_rows(_rows({"data": rows}))
-    return _adopt_external_positions(user, account, positions)
+    return _adopt_external_positions(
+        user,
+        account,
+        positions,
+        allow_unresolved_requests=True,
+    )
 
 
 def reconcile_external_positions(*, trading_mode=TradingMode.ORDINARY):

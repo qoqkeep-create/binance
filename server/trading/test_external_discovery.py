@@ -13,7 +13,11 @@ from common.binance import BinanceApiError, BinanceCredentials, BinanceFuturesCl
 from common.binance_rate_limit import RequestPriority
 from positions.models import LimitOrder, Order
 from trading.account_cache import position_cache_key
-from trading.external_positions import close_external_position, reconcile_external_positions
+from trading.external_positions import (
+    adopt_external_position_snapshot,
+    close_external_position,
+    reconcile_external_positions,
+)
 from trading.models import TradeOpenRequest
 from users.models import User
 
@@ -145,6 +149,17 @@ class ExternalPositionDiscoveryTests(TestCase):
                 self.assertFalse(Order.objects.exists())
                 protect.assert_not_called()
                 request.delete()
+
+    @patch("trading.external_positions.reconcile_external_order")
+    def test_position_read_adopts_manual_position_even_with_unresolved_open_request(self, protect):
+        self.opening_request(TradeOpenRequest.STATUS_SUBMITTED)
+
+        adopted = adopt_external_position_snapshot(self.user, self.account, [self.row()])
+
+        self.assertEqual(len(adopted), 1)
+        self.assertEqual(adopted[0].position_origin, Order.ORIGIN_EXTERNAL)
+        self.assertEqual(adopted[0].symbol, "BTCUSDT")
+        protect.assert_not_called()
 
     @patch("trading.external_positions.reconcile_external_order")
     def test_failed_requests_and_cancelled_limits_do_not_hide_manual_position(self, protect):

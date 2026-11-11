@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 from decimal import Decimal
@@ -41,6 +42,7 @@ from trading.execution import (
 )
 from trading.views import (
     _close_local_order_after_exchange_manual_close,
+    _adopt_maker_fill,
     _emergency_close_position,
     _has_unresolved_stop_protection,
     _resolve_entry_stop_protection,
@@ -168,6 +170,60 @@ class TradingApiTests(APITestCase):
         exchange.cancel_order.assert_not_called()
         request.refresh_from_db()
         self.assertEqual(request.status, TradeOpenRequest.STATUS_FAILED)
+
+    def test_maker_fill_promotes_read_time_external_projection_without_duplicate(self):
+        request = self._create_maker_request()
+        projected = Order.objects.create(
+            user=self.user,
+            api_key_fingerprint=None,
+            position_origin=Order.ORIGIN_EXTERNAL,
+            external_active_key="maker-projection-slot",
+            symbol="BTCUSDT",
+            side=0,
+            open_price=Decimal("100"),
+            stop_loss_price=Decimal("0"),
+            stop_loss_amount=Decimal("10"),
+            size=Decimal("1"),
+            exchange_size=Decimal("1"),
+            position_amount=Decimal("100"),
+            leverage=10,
+            status=0,
+        )
+        request_like = SimpleNamespace(user=self.user, headers={})
+        account = SimpleNamespace(
+            api_key_fingerprint="",
+            identity="test-account",
+            credentials=object(),
+        )
+        execution = SimpleNamespace(
+            has_fill=True,
+            order_id="maker-order-1",
+            filled_size=Decimal("1"),
+            average_price=Decimal("100"),
+        )
+        with (
+            patch("trading.views._extract_instrument", return_value={"ctVal": "1"}),
+            patch("trading.views._resolve_entry_stop_protection", return_value=(None, None)),
+            patch("trading.views._invalidate_position_list_cache"),
+            patch("trading.services._converge_stop_loss_order"),
+        ):
+            adopted = _adopt_maker_fill(
+                request_like,
+                account,
+                request,
+                request.request_payload["_execution_intent"],
+                MagicMock(),
+                execution,
+            )
+
+        self.assertEqual(adopted.pk, projected.pk)
+        self.assertEqual(Order.objects.filter(user=self.user, status=0).count(), 1)
+        projected.refresh_from_db()
+        self.assertEqual(projected.position_origin, Order.ORIGIN_WEB)
+        self.assertIsNone(projected.external_active_key)
+        self.assertEqual(projected.binance_order_id, "maker-order-1")
+        request.refresh_from_db()
+        self.assertEqual(request.order_id, projected.pk)
 
     def test_generated_client_order_id_remains_unique_for_long_account_identity(self):
         identity = "account:" + ("x" * 128)
