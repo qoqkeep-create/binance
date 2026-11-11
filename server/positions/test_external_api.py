@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.core.cache import cache
@@ -64,6 +65,26 @@ class ExternalPositionApiTests(APITestCase):
         row = response.data["data"][0]
         self.assertEqual(row["position_origin"], "exchange_external")
         self.assertFalse(row["can_bind_strategy"])
+
+    @patch("positions.views.user_trading_activity_lock")
+    @patch("positions.views.get_user_trading_account")
+    def test_manual_position_without_local_order_is_discovered_during_list_read(self, account, lock):
+        self.order.delete()
+        account.return_value = SimpleNamespace(
+            identity="user:manual-position",
+            api_key_fingerprint="",
+            binding_created_at=None,
+            generation=("", None),
+            trading_mode="ordinary",
+        )
+        lock.return_value.__enter__.return_value = True
+
+        response = self.client.get("/v1/position/list")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["position_origin"], "exchange_external")
+        self.assertEqual(Order.objects.filter(position_origin=Order.ORIGIN_EXTERNAL).count(), 1)
 
     def test_opposite_positions_are_matched_by_symbol_and_direction(self):
         short = Order.objects.create(

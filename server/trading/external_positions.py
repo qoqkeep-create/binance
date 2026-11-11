@@ -107,7 +107,10 @@ def _position_key(row):
     if not qty:
         return None
     side = str(row.get("posSide") or "").lower()
-    raw_side = str(row.get("rawPositionSide") or "").upper()
+    # Binance's normalized client response includes rawPositionSide. Keep the
+    # read projection tolerant of older adapters and test fixtures that only
+    # expose the normalized direction.
+    raw_side = str(row.get("rawPositionSide") or ("LONG" if side == "long" else "SHORT")).upper()
     if side not in {"long", "short"} or raw_side not in {"BOTH", "LONG", "SHORT"}:
         raise ValueError("持仓方向或模式无效")
     if raw_side != "BOTH" and raw_side.lower() != side:
@@ -115,10 +118,7 @@ def _position_key(row):
     return to_symbol(row["instId"]), 0 if side == "long" else 1
 
 
-def _positions(client, inst_id=None):
-    rows = _rows(
-        client.get_positions("SWAP", inst_id, budget_priority=RequestPriority.CRITICAL)
-    )
+def _positions_from_rows(rows):
     result = {}
     for row in rows:
         key = _position_key(row)
@@ -127,6 +127,12 @@ def _positions(client, inst_id=None):
                 raise ValueError("交易所返回重复方向持仓")
             result[key] = row
     return result
+
+
+def _positions(client, inst_id=None):
+    return _positions_from_rows(_rows(
+        client.get_positions("SWAP", inst_id, budget_priority=RequestPriority.CRITICAL)
+    ))
 
 
 def _target(order, client):
@@ -940,13 +946,8 @@ def _scoped(model, user, account):
     )
 
 
-def _scan_account(user, account):
-    client = account.create_futures_client()
-    config = _rows(client.get_account_config())
-    mode = config[0].get("posMode") if config else None
-    if mode not in {"net_mode", "long_short_mode"}:
-        raise ValueError("无法确认账户持仓模式")
-    positions = _positions(client)
+def _adopt_external_positions(user, account, positions):
+    """Create local owners for exchange positions without exchange writes."""
     local = list(_scoped(Order, user, account).filter(status=0))
     owned = {(o.symbol, o.side) for o in local}
     blocked_symbols = set(
@@ -1029,6 +1030,17 @@ def _scan_account(user, account):
                 event_key=f"external-adopt:{order.id}",
             )
             _invalidate(order)
+    return local
+
+
+def _scan_account(user, account):
+    client = account.create_futures_client()
+    config = _rows(client.get_account_config())
+    mode = config[0].get("posMode") if config else None
+    if mode not in {"net_mode", "long_short_mode"}:
+        raise ValueError("无法确认账户持仓模式")
+    positions = _positions(client)
+    local = _adopt_external_positions(user, account, positions)
     for order in local:
         if order.position_origin == Order.ORIGIN_EXTERNAL:
             reconcile_external_order(
@@ -1037,6 +1049,17 @@ def _scan_account(user, account):
     # Failed cleanup stays tracked even after the lifecycle releases its unique slot.
     for order in _needs_cleanup(_scoped(Order, user, account))[:20]:
         _cleanup_closed(order, client)
+
+
+def adopt_external_position_snapshot(user, account, rows):
+    """Adopt a fresh position response for a read path without protection writes.
+
+    The position endpoint already fetched this snapshot.  Reusing it removes
+    the old ten second visibility gap while leaving stop placement and forced
+    closes to the serialized background reconciler.
+    """
+    positions = _positions_from_rows(_rows({"data": rows}))
+    return _adopt_external_positions(user, account, positions)
 
 
 def reconcile_external_positions(*, trading_mode=TradingMode.ORDINARY):

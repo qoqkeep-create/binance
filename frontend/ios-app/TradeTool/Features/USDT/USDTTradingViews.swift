@@ -714,6 +714,12 @@ struct USDTTradeView: View {
               makerStatusText = filled.isEmpty || filled == "0" ? "等待成交" : "部分成交，等待剩余数量"
               continue
             }
+            if ["CANCELLED", "EXPIRED", "REJECTED"].contains(state) {
+              makerStatusText = store.commandMessage(result)
+              makerPreview = false
+              submitted = false
+              return
+            }
           }
           makerStatusText = store.commandMessage(result)
           return

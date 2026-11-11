@@ -20,6 +20,7 @@ from api_bindings.services import (
     get_user_binance_credentials,
     get_user_binance_credentials_for_generation,
     get_user_api_key_fingerprint,
+    get_user_trading_account,
     scope_queryset_to_trading_account,
 )
 from api_bindings.context import build_trading_account_identity, record_belongs_to_trading_account
@@ -2160,17 +2161,6 @@ class PositionListView(APIView):
         db_started = time.perf_counter()
         orders = list(_scoped_order_queryset(request.user, trading_mode=request_trading_mode(request), status=0).order_by("-created_at"))
         db_ms = _perf_ms(db_started)
-        if not orders:
-            cache.set(list_cache_key, [], timeout=10)
-            logger.info(
-                "perf position_list user=%s total_ms=%s credentials_ms=%s exchange_ms=0 db_ms=%s assemble_ms=0 rows=0 orders=0 synced_closed=0 cache_hit=0 exchange_cache_hit=1 no_open_orders=1",
-                getattr(request.user, "id", None),
-                _perf_ms(total_started),
-                credentials_ms,
-                db_ms,
-            )
-            return ok(data=[])
-
         latest_errors = _latest_strategy_errors([order.id for order in orders])
         client = BinanceFuturesClient(credentials)
         exchange_started = time.perf_counter()
@@ -2229,6 +2219,39 @@ class PositionListView(APIView):
         if not isinstance(rows, list):
             rows = []
 
+        # A manual Binance position used to stay invisible until the ten
+        # second background scan created its local owner. Reuse this fresh
+        # read and create only the local projection here; protection and
+        # forced-close writes remain in the serialized background reconciler.
+        if rows:
+            try:
+                account = get_user_trading_account(
+                    request.user,
+                    active_only=True,
+                    trading_mode=request_trading_mode(request),
+                )
+                if account and account.generation == get_user_binding_generation(
+                    request.user, trading_mode=request_trading_mode(request)
+                ):
+                    from trading.external_positions import adopt_external_position_snapshot
+
+                    with user_trading_activity_lock(account.identity) as account_locked:
+                        if account_locked:
+                            adopt_external_position_snapshot(request.user, account, rows)
+            except Exception as exc:  # noqa: BLE001
+                # Discovery is an availability improvement. A malformed or
+                # racing snapshot must not turn the ordinary position read
+                # into a write-like error; the scheduler will retry safely.
+                logger.warning(
+                    "position_list external discovery user=%s failed: %s",
+                    getattr(request.user, "id", None),
+                    safe_error_summary(exc),
+                )
+
+        db_started = time.perf_counter()
+        orders = list(_scoped_order_queryset(request.user, trading_mode=request_trading_mode(request), status=0).order_by("-created_at"))
+        db_ms += _perf_ms(db_started)
+        latest_errors = _latest_strategy_errors([order.id for order in orders])
         row_map = _exchange_position_row_map(rows)
 
         # If we only have cached exchange rows and miss local open symbols, do one fresh fetch

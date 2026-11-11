@@ -100,6 +100,75 @@ class TradingApiTests(APITestCase):
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
                 self.assertEqual(response.data["message"], "请求参数必须是对象")
 
+    def _create_maker_request(self, *, state=TradeOpenRequest.STATUS_SUBMITTED):
+        return TradeOpenRequest.objects.create(
+            user=self.user,
+            api_key_fingerprint="",
+            symbol="BTCUSDT",
+            client_request_id="maker-request-1",
+            client_order_id="maker-client-1",
+            binance_order_id="maker-order-1",
+            status=state,
+            request_payload={"_execution_intent": {
+                "execution_mode": "maker",
+                "entry_price": "100",
+                "maker_price": "99.9",
+                "maker_market_price": "100",
+                "stop_loss_price": "90",
+                "stop_loss_amount": "10",
+                "open_side": "buy",
+                "side_code": 0,
+                "size": "1",
+                "leverage": 10,
+                "pos_side": "long",
+            }},
+        )
+
+    def test_maker_status_terminal_zero_fill_releases_open_request(self):
+        request = self._create_maker_request()
+        exchange = MagicMock()
+        exchange.get_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "canceled",
+            "fillSz": "0",
+            "accFillSz": "0",
+            "avgPx": "0",
+        }]}
+        with patch("trading.views.BinanceFuturesClient", return_value=exchange):
+            response = self.client.post(
+                "/v1/trade/maker/status",
+                {"client_request_id": request.client_request_id},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["state"], "CANCELLED")
+        request.refresh_from_db()
+        self.assertEqual(request.status, TradeOpenRequest.STATUS_FAILED)
+
+    def test_maker_cancel_only_terminal_zero_fill_releases_open_request(self):
+        request = self._create_maker_request()
+        exchange = MagicMock()
+        exchange.get_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "canceled",
+            "fillSz": "0",
+            "accFillSz": "0",
+            "avgPx": "0",
+        }]}
+        with patch("trading.views.BinanceFuturesClient", return_value=exchange):
+            response = self.client.post(
+                "/v1/trade/maker/fallback",
+                {"client_request_id": request.client_request_id, "cancel_only": True},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["state"], "CANCELLED")
+        exchange.cancel_order.assert_not_called()
+        request.refresh_from_db()
+        self.assertEqual(request.status, TradeOpenRequest.STATUS_FAILED)
+
     def test_generated_client_order_id_remains_unique_for_long_account_identity(self):
         identity = "account:" + ("x" * 128)
 

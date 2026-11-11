@@ -63,7 +63,10 @@ def submit(user, mode, action, payload, key):
         binding = binding_for(user, mode)
         if binding is None:
             raise ValueError("请先绑定当前模式的交易所 API")
-        if action in {"open", "maker-status", "maker-fallback", "limit-create", "limit-chase"} and TradingCommand.objects.filter(
+        # A Maker status read only reconciles an existing exchange order.  It
+        # must remain executable while another command is UNKNOWN so the
+        # account can converge instead of being locked forever.
+        if action in {"open", "maker-fallback", "limit-create", "limit-chase"} and TradingCommand.objects.filter(
                 user=user, trading_mode=mode, binding_id_snapshot=binding.pk, status="UNKNOWN").exists():
             raise ValueError("当前账户有结果未知的交易命令，请先核对订单，暂停新增风险")
         command_id = uuid4()
@@ -186,7 +189,7 @@ def execute_account(binding_id):
                 pending = TradingCommand.objects.filter(binding_id_snapshot=binding_id, status="PENDING")
                 if TradingCommand.objects.filter(binding_id_snapshot=binding_id, status="UNKNOWN").exists():
                     pending = pending.exclude(action__in=[
-                        "open", "maker-status", "maker-fallback", "limit-create", "limit-chase"
+                        "open", "maker-fallback", "limit-create", "limit-chase"
                     ])
                 command = pending.select_related("user").order_by("created_at").first()
                 if command is None:

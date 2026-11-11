@@ -155,6 +155,19 @@ def record_open_request_uncertain(open_request: TradeOpenRequest, error: Excepti
     open_request.save(update_fields=["error", "updated_at"])
 
 
+def mark_open_request_failed(open_request: TradeOpenRequest, error: Exception | str) -> None:
+    """Close a request after the exchange has durably confirmed zero execution.
+
+    ``record_open_request_error`` intentionally keeps any request with an
+    exchange order id unresolved because a transport failure can hide a fill.
+    A later read of the order is different: a terminal zero-fill state is
+    definitive and must release the account's new-entry guard.
+    """
+    open_request.status = TradeOpenRequest.STATUS_FAILED
+    open_request.error = safe_error_summary(error, include_type=False)
+    open_request.save(update_fields=["status", "error", "updated_at"])
+
+
 def record_open_request_error(open_request: Optional[TradeOpenRequest], error: Exception) -> bool:
     if not open_request:
         return False

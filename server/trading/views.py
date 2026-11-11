@@ -81,6 +81,7 @@ from trading.open_requests import (
     find_existing_order_by_open_request as _find_existing_order_by_open_request,
     get_open_request_execution_intent,
     mark_open_request_recovered,
+    mark_open_request_failed,
     mark_open_request_submitted,
     record_open_request_execution_intent,
     record_open_request_error as _record_open_request_error,
@@ -2095,6 +2096,7 @@ class MakerOpenStatusView(APIView):
             inst_id = to_inst_id(open_request.symbol)
             row = client.get_order(inst_id=inst_id, order_id=open_request.binance_order_id).get("data", [])
             exchange_row = row[0] if row else {}
+            raw_state = str(exchange_row.get("state") or "").strip().lower()
             execution = confirm_entry_execution(
                 client,
                 inst_id=inst_id,
@@ -2103,6 +2105,24 @@ class MakerOpenStatusView(APIView):
                 initial_row=exchange_row,
                 retry_delays=(),
             )
+            terminal_states = {"canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed"}
+            if raw_state in terminal_states and execution.state == "pending" and execution.filled_size <= 0:
+                # The exchange has conclusively ended the Maker order without
+                # a fill.  Keep the receipt visible, but release the durable
+                # open request so the next entry is not blocked forever.
+                mark_open_request_failed(open_request, f"maker_{raw_state}")
+                state = "EXPIRED" if raw_state in {"expired", "expired_in_match"} else (
+                    "REJECTED" if raw_state in {"rejected", "failed"} else "CANCELLED"
+                )
+                return ok(message="Maker订单已结束", data={
+                    "state": state,
+                    "maker_order_id": open_request.binance_order_id,
+                    "filled_size": "0",
+                    "symbol": open_request.symbol,
+                })
+            if execution.has_fill and raw_state in terminal_states:
+                order = _adopt_maker_fill(request, account, open_request, intent, client, execution)
+                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
             if execution.has_fill and execution.state == "filled":
                 order = _adopt_maker_fill(request, account, open_request, intent, client, execution)
                 return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
@@ -2142,6 +2162,8 @@ class MakerOpenFallbackView(APIView):
             current_payload = client.get_order(inst_id=inst_id, order_id=open_request.binance_order_id)
             current_row = (current_payload.get("data") or [{}])[0]
             current = parse_entry_execution(current_row, requested_size=requested_size)
+            current_raw_state = str(current_row.get("state") or "").strip().lower()
+            terminal_states = {"canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed"}
             if current.state == "filled":
                 order = _adopt_maker_fill(request, account, open_request, intent, client, current)
                 return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
@@ -2149,12 +2171,22 @@ class MakerOpenFallbackView(APIView):
             # Cancel first and confirm the exchange response.  An unknown
             # cancellation must stop here; sending market after it could
             # double the position if the GTX order was accepted in flight.
-            cancel_payload = client.cancel_order(inst_id=inst_id, order_id=open_request.binance_order_id)
-            cancel_row = (cancel_payload.get("data") or [{}])[0]
+            # If the first read already proves a terminal state, do not send
+            # a redundant cancel request that Binance may reject as "not
+            # found"; the terminal row is the cancellation receipt.
+            if current_raw_state in terminal_states:
+                if current.state not in {"pending", "partially_filled", "filled"}:
+                    raise BinanceApiError("Maker终态数量未确认", outcome_unknown=True)
+                cancel_row = current_row
+            else:
+                cancel_payload = client.cancel_order(inst_id=inst_id, order_id=open_request.binance_order_id)
+                cancel_row = (cancel_payload.get("data") or [{}])[0]
             canceled = parse_entry_execution(cancel_row, requested_size=requested_size)
             raw_state = str(cancel_row.get("state") or "").lower()
-            if raw_state not in {"canceled", "cancelled", "expired", "rejected"}:
+            if raw_state not in {"canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed"}:
                 raise BinanceApiError("Maker撤单结果未确认，已停止市价切换", outcome_unknown=True)
+            if not canceled.has_fill and canceled.state != "pending":
+                raise BinanceApiError("Maker撤单成交数量未确认，已停止市价切换", outcome_unknown=True)
 
             filled = canceled.filled_size
             if filled > 0:
@@ -2162,9 +2194,14 @@ class MakerOpenFallbackView(APIView):
                 # market fallback below uses a separate client order id.
                 _adopt_maker_fill(request, account, open_request, intent, client, canceled)
             if request.data.get("cancel_only"):
+                if filled <= 0:
+                    mark_open_request_failed(open_request, f"maker_{raw_state}")
                 return ok(message="Maker订单已取消", data={
-                    "state": "CANCELLED",
+                    "state": "EXPIRED" if raw_state in {"expired", "expired_in_match"}
+                    else "REJECTED" if raw_state in {"rejected", "failed"} else "CANCELLED",
                     "filled_size": format(filled, "f"),
+                    "maker_order_id": open_request.binance_order_id,
+                    "symbol": open_request.symbol,
                 })
             remaining = requested_size - filled
             if remaining <= 0:

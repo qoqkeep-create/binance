@@ -2,6 +2,7 @@ import json
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api_bindings.models import ApiBinding
@@ -26,6 +27,26 @@ class CommandSafetyTests(TestCase):
         self.assertEqual(command.payload["client_request_id"], str(command.pk))
         with self.assertRaisesMessage(ValueError, "不同请求"):
             submit(self.user, "ordinary", "open", {"symbol": "ETHUSDT"}, "request-1")
+
+    def test_maker_status_read_can_run_while_another_command_is_unknown(self):
+        unknown = submit(self.user, "ordinary", "open", {}, "unknown-open")
+        unknown.status = "UNKNOWN"
+        unknown.save(update_fields=["status"])
+
+        status = submit(self.user, "ordinary", "maker-status", {
+            "client_request_id": "maker-request",
+        }, "maker-status-1")
+
+        self.assertEqual(status.action, "maker-status")
+        self.assertEqual(status.status, "PENDING")
+
+    def test_new_open_stays_blocked_by_unknown_maker_status(self):
+        unknown = submit(self.user, "ordinary", "maker-status", {}, "unknown-maker-status")
+        unknown.status = "UNKNOWN"
+        unknown.save(update_fields=["status"])
+
+        with self.assertRaisesMessage(ValueError, "结果未知"):
+            submit(self.user, "ordinary", "open", {}, "new-risk")
 
     def test_missing_other_mode_binding_never_uses_ordinary_key(self):
         with override_settings(LEAD_TRADING_ENABLED=True):
@@ -127,6 +148,25 @@ class WorkerRecoveryTests(CommandSafetyTests):
         self.assertEqual(first.status, "UNKNOWN")
         self.assertEqual(second.status, "PENDING")
         self.assertEqual(invoke.call_count, 1)
+
+    @patch("mobile.commands.invoke")
+    @patch("mobile.commands.account_lease")
+    def test_maker_status_is_processed_while_new_risk_is_unknown(self, lease, invoke):
+        unknown = submit(self.user, "ordinary", "open", {}, "unknown-open")
+        unknown.status = "UNKNOWN"
+        unknown.save(update_fields=["status"])
+        status_command = submit(self.user, "ordinary", "maker-status", {
+            "client_request_id": "maker-request",
+        }, "maker-status-1")
+        invoke.return_value = Response({"code": 200, "data": {"state": "PENDING_MAKER"}}, status=200)
+        lease.side_effect = self.lease
+
+        from mobile.commands import execute_account
+        execute_account(self.binding.pk)
+
+        status_command.refresh_from_db()
+        self.assertEqual(status_command.status, "SUCCEEDED")
+        invoke.assert_called_once_with(status_command)
 
     def test_command_list_never_crosses_users_or_modes(self):
         submit(self.user, "ordinary", "open", {}, "list-test")

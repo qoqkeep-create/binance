@@ -176,6 +176,18 @@ class UnifiedOrderListTests(APITestCase):
         self.assertIsNone(row["filled_size"])
         self.assertFalse(row["can_cancel"])
 
+    def test_terminal_status_receipt_keeps_canceled_maker_visible(self):
+        maker = self.maker(status=TradeOpenRequest.STATUS_FAILED)
+        self.command(maker, action="maker-status", result={"code": 200, "data": {
+            "state": "CANCELLED",
+            "maker_order_id": maker.binance_order_id,
+            "filled_size": "0",
+            "symbol": maker.symbol,
+        }})
+        row = self.client.get(self.url).data["data"]["items"][0]
+        self.assertEqual((row["status"], row["status_text"], row["filled_size"]), (2, "已撤销", "0"))
+        self.assertFalse(row["can_cancel"])
+
     def test_partial_adopted_order_and_succeeded_command_do_not_claim_full_fill(self):
         maker = self.maker()
         position = self.position(maker, size=Decimal("0.5"))

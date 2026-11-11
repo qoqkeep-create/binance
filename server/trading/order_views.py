@@ -147,7 +147,11 @@ def _maker_receipts(record, binding, commands):
             exchange_id = str(data.get("maker_order_id") or "")
             if not exchange_id:
                 continue
-        elif (state == "CANCELLED" and command.action == "maker-fallback"
+        elif (state in {"CANCELLED", "EXPIRED", "REJECTED"}
+              and command.action == "maker-status"):
+            exchange_id = str(data.get("maker_order_id") or record.binance_order_id or "")
+        elif (state in {"CANCELLED", "EXPIRED", "REJECTED"}
+              and command.action == "maker-fallback"
               and payload.get("cancel_only") is True and _decimal(data.get("filled_size")) is not None):
             exchange_id = ""
         else:
