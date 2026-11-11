@@ -1,10 +1,10 @@
 # 变更与验收记录
 
-## 2026-11-12：手动仓读取与 Maker 投影合并（本地待发布）
+## 2026-11-12：手动仓读取与 Maker 投影合并（已部署）
 
 修复持仓读取遇到旧的 `submitted`／`recovered` 开仓请求时完全隐藏交易所真实仓位的问题；读取路径现在仍显示 Binance 实际仓位并创建只读外部投影，同时继续阻止新增风险开仓。若该仓位随后被确认是同一 Maker 请求的成交，投影原地升级为 Web 持仓并绑定成交订单号，避免重复创建活动仓位。
 
-新增手动仓可见性与 Maker 投影合并回归；定向后端 `trading.test_external_discovery trading.tests trading.test_order_list` **164 项／0 失败**。没有真实开仓、撤单、止损、平仓或资金操作；部署记录在本节完成后补齐。
+新增手动仓可见性与 Maker 投影合并回归；定向后端 `trading.test_external_discovery trading.tests trading.test_order_list` **164 项／0 失败**，隔离 MySQL／Redis **53 项／0 失败**。完整同源提交 **`b85356f5b387e4a7ea412163ec1b7262b4dadbbd`** 已推送并部署到 **47.80.22.243（首尔服务器）** 的 `integrated-20261112-full-b85356f`。没有真实开仓、撤单、止损、平仓或资金操作。
 
 <a id="20261112完整同源部署"></a>
 

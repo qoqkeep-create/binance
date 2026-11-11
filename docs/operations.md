@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+<a id="完整同源发布20261112b85356f"></a>
+
+## 完整同源发布（2026-11-12，手动仓位与 Maker 投影修复）
+
+按用户“提交所有更改并部署”授权，将提交 **`b85356f5b387e4a7ea412163ec1b7262b4dadbbd`** 推送至 GitHub `codex/integrated-ios`，并把完整同源后端发布到 **47.80.22.243（首尔服务器）**。发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261112-full-b85356f`，API／market／worker／scheduler 统一使用镜像 `tradetools-integrated:integrated-20261112-full-b85356f`；319 个运行 Python／requirements 文件与提交清单完全匹配。
+
+北京时间 **2026-11-12 06:15:40** 切换完成。数据库 gzip 备份 **400880380 bytes**，无待应用 migration；MySQL／Redis 容器、卷、环境文件和 Nginx 配置保持不变。切换前后活动持仓、待成交限价、PENDING／RUNNING 命令均为 0，原有 **UNKNOWN 1** 保持原样，没有重放或强改未知命令。六个容器均 healthy，公网健康、数据库／migration／scheduler 验收及 13 个行情周期／192 个历史窗口核对通过；隔离 MySQL／Redis 回归 **53 项通过**，没有真实开仓、撤单、止损、平仓、划转或保护单操作。
+
+这里的“切换”是同一台 **47.80.22.243（首尔服务器）** 内由旧 release／镜像切到新 release／镜像，不是从 USDT 项目的服务器迁移。iOS 整合项目此前一直使用这台首尔服务器；原 USDT／USDC 来源目录和旧生产栈不属于本次运行目标。后续回滚使用该备份中的脚本恢复旧四个应用镜像和 `current`，保留数据库、基础设施及交易事实，不恢复数据库、不反迁移、不重放 UNKNOWN 命令。
+
 <a id="完整同源发布20261112"></a>
 
 ## 完整同源发布（2026-11-12）
