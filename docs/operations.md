@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+<a id="完整同源发布20261112"></a>
+
+## 完整同源发布（2026-11-12）
+
+按用户“提交部署”授权，将完整整合工作区提交 **`06619e7d402ce184a042a112f719d4bb7dd3783c`** 推送至 GitHub `codex/integrated-ios`，并将同源后端发布到 **47.80.22.243（首尔服务器）**。发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261112-full-06619e7`，API／market／worker／scheduler 统一使用镜像 `tradetools-integrated:integrated-20261112-full-06619e7`；运行源码清单 **319 个 Python／requirements 文件**逐项匹配，归档包含 **333 个**后端／部署文件。
+
+北京时间 **2026-11-12 05:35:07** 切换完成。数据库 gzip 备份 **401400449 bytes**，没有待应用 migration；MySQL／Redis 容器、卷、环境文件和 Nginx 配置保持不变。切换前后活动持仓、待成交限价、PENDING／RUNNING 命令均为 0，原有 **UNKNOWN 1** 保持原样，没有重放或强改未知命令。六个容器均 healthy，公网 `/integrated/v1/health` 返回 200，数据库／migration／scheduler 检查通过；13 个行情周期、192 历史窗口和保证金／浮盈监控只读核验通过。
+
+部署前可用磁盘约 **1.61 GiB**，低于历史发布脚本的 3 GiB 预警值；本次确认构建镜像约 319 MB、备份完成后切换成功，未删除历史备份或 Docker 数据。后续发布前仍需优先补充磁盘或制定受控的历史归档清理方案。隔离 MySQL／Redis 回归 **53 项通过**，没有真实开仓、撤单、止损、平仓、划转或保护单操作。证据保存在本机忽略目录 `.integration-runtime/FullDeliveryNov12/` 与服务器备份 `/opt/trade-tools-integrated/backups/integrated-20261112-full-06619e7/`。
+
 <a id="完整同源发布20261111"></a>
 
 ## 完整同源发布（2026-11-11）

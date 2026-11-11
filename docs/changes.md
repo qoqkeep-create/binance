@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+<a id="20261112完整同源部署"></a>
+
+## 2026-11-12：手动仓位与 Maker 状态收敛修复完成部署
+
+本轮完整整合源码已提交为 **`06619e7`** 并推送 `codex/integrated-ios`，后端同源发布到 **47.80.22.243（首尔服务器）** 的 `integrated-20261112-full-06619e7`。本地后端 `mobile positions trading` **728 项通过**，隔离 MySQL／Redis 回归 **53 项通过**；切换后六容器 healthy，公网健康检查、数据库／migration／scheduler 和源码清单核对通过。未执行真实交易、资金或保护单操作；iOS 源码已随提交交付，Xcode Cloud／TestFlight／实机安装仍需单独验收。
+
 <a id="20261112手动仓位与-maker状态收敛修复"></a>
 
 ## 2026-11-12：手动仓位与 Maker 状态收敛修复（本地）
