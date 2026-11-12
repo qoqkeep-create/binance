@@ -1,5 +1,13 @@
 # 开发与验证
 
+<a id="xcode-cloud测试修复20261112"></a>
+
+## Xcode Cloud 测试修复（2026-11-12，本地）
+
+Build 67 的失败来自两类测试问题：`WebModalHostTests.testNestedConfirmationFromSheetPreservesEnvironmentAndSubmitLock` 用固定 500ms 等待系统 Sheet 退场，云端模拟器在断言时仍可能保留 `PresentationHostingController`；`ChartPositionContextTests.testTakeProfitLabelUsesTheSameCompactFilledGeometryAsStopLoss` 的夹具继承了 `market_stop_set=true` 与 67100 市价止损，导致止损线在测试投影外。前者改为 XCTest 等待根控制器的 `presentedViewController` 变为空，后者在夹具中明确设置 `market_stop_set=false`。
+
+定向测试和完整 `TradeToolTests` 均通过：iPhone 18 Pro／iOS 27.2 模拟器 **464 项、0 失败、0 跳过**。本次只修测试等待与测试数据，不把本地结果扩大为 Xcode Cloud、TestFlight 或实机通过。
+
 <a id="失败提示统一弹窗20261112"></a>
 
 ## 失败提示统一弹窗（2026-11-12，本地）

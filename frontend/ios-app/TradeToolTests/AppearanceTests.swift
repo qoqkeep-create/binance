@@ -768,7 +768,10 @@ final class WebModalHostTests: XCTestCase {
     XCTAssertNotNil(window.rootViewController?.presentedViewController, "The original sheet stays open")
     XCTAssertNil(window.rootViewController?.presentedViewController?.presentedViewController)
     state.sheet = false
-    try await Task.sleep(for: .milliseconds(500))
+    let sheetDismissed = expectation(for: NSPredicate { object, _ in
+      (object as? UIViewController)?.presentedViewController == nil
+    }, evaluatedWith: try XCTUnwrap(window.rootViewController))
+    await fulfillment(of: [sheetDismissed], timeout: 3)
     XCTAssertNil(window.rootViewController?.presentedViewController)
   }
 

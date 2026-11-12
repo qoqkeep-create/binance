@@ -8956,6 +8956,7 @@ final class ChartPositionContextTests: XCTestCase {
     func testTakeProfitLabelUsesTheSameCompactFilledGeometryAsStopLoss() throws {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "stop_loss_price": .string("90"), "stop_loss_amount": .string("10"),
+            "market_stop_set": .bool(false),
             "manual_take_profit_set": .bool(true), "manual_take_profit_price": .string("110")])
         let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
             plotLeft: 4, plotTop: 0, plotRight: 302, plotBottom: 300))
