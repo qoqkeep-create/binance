@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+<a id="完整同源发布20261113-unknown开仓收敛"></a>
+
+## 完整同源发布（2026-11-13，UNKNOWN 开仓命令收敛）
+
+提交 **`c6577ac20f91ff0ebbb7d4f72607b0332c33b9e8`** 已推送至 GitHub `codex/integrated-ios`，并部署到 **47.80.22.243（首尔服务器）**。发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261113-full-c6577ac`，API／market／worker／scheduler 使用统一镜像 `tradetools-integrated:integrated-20261113-full-c6577ac`；运行源码清单 320 个文件逐项匹配，MySQL／Redis 镜像和运行配置保持不变。
+
+发布前数据库 gzip 备份 **403544009 bytes**，SHA-256 为 `40d1457e2f318c766d1471f50ab97f7a5d8848f2194ec0cd9dee327224fa1bdf`，位于 `/opt/trade-tools-integrated/backups/integrated-20261113-full-c6577ac/`。已应用唯一新增 migration `trading.0017_alter_tradeopenrequest_status`；没有恢复数据库、反迁移或重放交易命令。
+
+切换后六个容器均 healthy，公网 `/integrated/v1/health` 返回 database、migrations、scheduler 全部 true，`current` 已指向新 release。切换前 `UNKNOWN=1`、PENDING／RUNNING 为 0；Worker 只读查询 Binance 原订单号后，旧命令进入 `SUCCEEDED`，`TradeOpenRequest` 进入 `completed`，全局 `UNKNOWN=0`。对应订单为 `ETHUSDT`，成交数量 `0.706`、成交均价 `2051.56000`；本次没有发送真实开仓、撤单、止损、平仓或资金请求。备份目录保留回滚脚本，回滚只恢复应用镜像，不恢复数据库或反迁移。
+
 <a id="完整同源发布20261112-手动仓历史结算"></a>
 
 ## 完整同源发布（2026-11-12，手动仓历史结算与交易链路收敛）

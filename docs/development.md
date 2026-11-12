@@ -1,12 +1,12 @@
 # 开发与验证
 
-## UNKNOWN 开仓命令收敛重构（2026-11-13，本地）
+## UNKNOWN 开仓命令收敛重构（2026-11-13，已部署）
 
 线上只读核对确认 47.80.22.243（首尔服务器）健康，但一条 2026-11-10 的旧 Maker 开仓命令长期停在 `UNKNOWN`；对应 Binance 订单实际已成交并随后平仓，本地没有 `Order`，所以账户级 UNKNOWN 总闸一直拒绝新开仓。根因是 worker 只查本地订单事实，且 Maker 的正常待成交回包在缺少成交数量时会被解析成 UNKNOWN。
 
 本轮把流程收敛为四种事实：交易所明确待成交、明确成交／部分成交、明确零成交终态、结果仍无法确认。新增 `TradeOpenRequest.completed` 终态表示“交易所事实已确认但当前没有活动本地仓”，这类记录不会再阻塞手动仓发现或新开仓；worker 只按保存的交易所订单号做精确只读查询，绝不重发、撤销或补保护。`live/new` 且暂未返回成交字段统一为待成交；取消／过期等终态仍要求明确数量，缺字段继续 UNKNOWN。统一委托投影同时展示 worker 收敛的 Maker 成交回执。
 
-回归验证：`mobile` **91 项通过**；命令、Maker 与委托定向回归 **164 项通过**；完整 `trading` **443 项通过**；`common positions api_bindings` **412 项通过**；`makemigrations --check --dry-run` 无漂移；未执行真实开仓、撤单、止损、平仓或资金操作。本地代码尚未部署，线上旧 UNKNOWN 仍需配套发布后由 worker 只读收敛。
+回归验证：`mobile` **91 项通过**；命令、Maker 与委托定向回归 **164 项通过**；完整 `trading` **443 项通过**；`common positions api_bindings` **412 项通过**；`makemigrations --check --dry-run` 无漂移；服务器隔离 MySQL／Redis 回归通过。提交 **`c6577ac20f91ff0ebbb7d4f72607b0332c33b9e8`** 已部署到 **47.80.22.243（首尔服务器）** 的 `integrated-20261113-full-c6577ac`，migration 已应用，六容器健康。旧订单由 Worker 只读核对后进入 `SUCCEEDED`／`completed`，没有发送真实开仓、撤单、止损、平仓或资金请求。
 
 ## 手动仓历史结算补齐（2026-11-12，本地）
 

@@ -2,11 +2,11 @@
 
 <a id="20261113unknown开仓命令收敛重构"></a>
 
-## 2026-11-13：UNKNOWN 开仓命令收敛重构（本地）
+## 2026-11-13：UNKNOWN 开仓命令收敛重构（已部署）
 
 线上只读核对发现，47.80.22.243（首尔服务器）的一条旧 Maker 订单实际已成交并平仓，但本地缺少活动 `Order`，worker 只查本地事实，导致账户级 `UNKNOWN` 总闸永久拒绝新开仓。重构后，worker 按原交易所订单号只读核对并区分待成交、成交／部分成交、明确零成交终态和仍未知；新增 `TradeOpenRequest.completed` 作为已确认但无活动本地仓的终态，Maker 待成交／成交回执可直接进入统一委托列表。合法 `live/new` 缺少成交字段不再误判为 UNKNOWN；真实未确认写仍继续阻止新增风险。
 
-新增回归覆盖旧 UNKNOWN 释放、精确成交核对、Maker 待成交解析、外部手动仓发现和委托终态展示。`mobile` 91 项、命令／Maker／委托定向回归 164 项、完整 `trading` 443 项、`common positions api_bindings` 412 项通过；migration 无漂移。代码尚未部署到 **47.80.22.243（首尔服务器）**，未执行真实交易或数据库状态修改。
+新增回归覆盖旧 UNKNOWN 释放、精确成交核对、Maker 待成交解析、外部手动仓发现和委托终态展示。`mobile` 91 项、命令／Maker／委托定向回归 164 项、完整 `trading` 443 项、`common positions api_bindings` 412 项通过；migration 无漂移。提交 **`c6577ac20f91ff0ebbb7d4f72607b0332c33b9e8`** 已推送并部署到 **47.80.22.243（首尔服务器）** 的 `integrated-20261113-full-c6577ac`。发布前数据库 gzip 备份 **403544009 bytes**，SHA-256 为 `40d1457e2f318c766d1471f50ab97f7a5d8848f2194ec0cd9dee327224fa1bdf`，migration `trading.0017_alter_tradeopenrequest_status` 已应用；六容器健康，公网 health、源码清单和隔离 MySQL／Redis 回归通过。Worker 已只读核对旧订单，目标命令从 `UNKNOWN` 收敛为 `SUCCEEDED`，请求为 `completed`，未执行真实交易或数据库恢复。
 
 <a id="20261112手动仓历史结算补齐"></a>
 
