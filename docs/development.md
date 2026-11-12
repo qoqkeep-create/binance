@@ -6,7 +6,7 @@
 
 `AppToastCenter` 现在把 `.error` 与 API 错误报告放入持久错误弹窗：遮罩阻止底层操作，标题和消息可完整阅读，点击“知道了”后才关闭。成功、普通提示和警告仍保持原 Toast 生命周期；弹窗存在时不会让新的普通 Toast 在关闭后重新出现。未绑定 API、画中画不可用等外部浮窗失败路径统一调用错误弹窗。
 
-主 App／Chart Calibration UI 测试目标 generic iOS Simulator Debug `build-for-testing` 通过；`ChartEngineCoreTests` 错误／普通 Toast 定向 **2 项通过**；`WebParityUITests` 的外部浮窗不可用重试、空仓／未绑定／带单失败 **2 项／0 失败**。结果只代表模拟器和内存替身，不代表实机、TestFlight 或真实交易验收。
+主 App／Chart Calibration UI 测试目标 generic iOS Simulator Debug `build-for-testing` 通过；`ChartEngineCoreTests` 错误／普通 Toast 定向 **2 项通过**；`WebParityUITests` 的外部浮窗不可用重试、空仓／未绑定／带单失败 **2 项／0 失败**。完整工作区提交 **`5bedd7c4c54817cc34a1ca3aa44efcac49deb722`** 已推送，并部署到 **47.80.22.243（首尔服务器）** 的 `integrated-20261112-full-5bedd7c4`；线上公网健康、migration 和六容器 healthy。结果只代表模拟器和内存替身，不代表实机、TestFlight 或真实交易验收。
 
 <a id="持仓标记前台连接与止盈标签20261112"></a>
 
