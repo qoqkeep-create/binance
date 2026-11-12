@@ -4,7 +4,7 @@
 
 修复已在 APP 发现、随后在 Binance 后台平仓的手动仓历史缺少平仓价、盈亏和费用的问题。历史页只读读取 Binance 成交／收入历史，按币种、方向、平仓时间、开仓价和数量匹配后保存估算结算；无法唯一匹配时保留未知值，不显示或写入伪造的 0。修复同时限制 Binance 收入查询最多 1000 条，并把开仓与平仓手续费都纳入成交历史汇总。
 
-定向后端 `positions.test_external_api common.tests` **140 项通过**，覆盖手动仓结算匹配、无法匹配保留未知、快照后续刷新标记、手续费完整计入、收入查询上限及歧义候选保持未知。使用 SQLite／LocMem 和交易所替身，没有真实交易或写入 Binance；本轮未部署服务器、未推送 GitHub。整合工作区的 iOS Debug 模拟器构建曾发现前序 Maker 改动遗漏 `entryDisabled` getter 的 `return`，已补回并以 `xcodebuild ... CODE_SIGNING_ALLOWED=NO build` 验证 **BUILD SUCCEEDED**。
+定向后端 `positions.test_external_api common.tests` **140 项通过**，覆盖手动仓结算匹配、无法匹配保留未知、快照后续刷新标记、手续费完整计入、收入查询上限及歧义候选保持未知。使用 SQLite／LocMem 和交易所替身，没有真实交易或写入 Binance。提交 `3a25bcd` 已推送并部署到 47.80.22.243（首尔服务器）；线上迁移无待应用项，六个容器健康检查通过。整合工作区的 iOS Debug 模拟器构建曾发现前序 Maker 改动遗漏 `entryDisabled` getter 的 `return`，已补回并以 `xcodebuild ... CODE_SIGNING_ALLOWED=NO build` 验证 **BUILD SUCCEEDED**。
 
 <a id="xcode-cloud测试修复20261112"></a>
 

@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+<a id="完整同源发布20261112-手动仓历史结算"></a>
+
+## 完整同源发布（2026-11-12，手动仓历史结算与交易链路收敛）
+
+提交 **`3a25bcd`** 已推送至 GitHub `codex/integrated-ios`，并部署到 **47.80.22.243（首尔服务器）**。发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261112-full-3a25bcd`，API／market／worker／scheduler 统一使用镜像 `tradetools-integrated:integrated-20261112-full-3a25bcd`。源码归档 SHA-256 为 `bdb52d4c36bd9a1c99dc0e71d08aabbb0842cbd1600bdcbf80ad27bcfc2ead84`。
+
+发布前数据库 gzip 备份为 **421644376 bytes**，SHA-256 为 `ef4ca92e60f25d1aad8e4263b52edb2a15d9fdf65d71cf11fd02b8f3e0937345`，位于 `/opt/trade-tools-integrated/backups/integrated-20261112-full-3a25bcd/`；前版为 `integrated-20261112-full-5bedd7c4`。迁移检查及正式迁移均显示无待应用项，MySQL／Redis 数据卷保持原样。
+
+切换后 `current` 已指向新 release，六个容器均 healthy，公网 `/integrated/v1/health` 返回 database、migrations、scheduler 全部 true；根分区约 **22 GB 可用／43% 使用率**。线上只做健康、迁移、容器和磁盘只读验收，没有执行真实开仓、撤单、止损、平仓、划转或保护单操作。iOS 源码已随提交推送；后端部署不等同于 TestFlight 上传或实机安装。
+
 <a id="完整同源发布20261112-失败弹窗与-maker修复"></a>
 
 ## 完整同源发布（2026-11-12，失败弹窗与 Maker 开仓收敛）
