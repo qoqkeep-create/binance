@@ -53,11 +53,14 @@ class ExternalPositionApiTests(APITestCase):
             self.addCleanup(patcher.stop)
 
     @staticmethod
-    def position_row(side, size, price, pnl):
-        return {
+    def position_row(side, size, price, pnl, update_time=None):
+        row = {
             "instId": "BTC-USDT-SWAP", "posSide": side, "pos": size,
             "avgPx": price, "markPx": "105", "upl": pnl, "ctVal": "1", "lever": "10",
         }
+        if update_time is not None:
+            row["updateTime"] = update_time
+        return row
 
     def test_manual_position_is_labelled_and_cannot_bind_strategy(self):
         response = self.client.get("/v1/position/list")
@@ -70,6 +73,9 @@ class ExternalPositionApiTests(APITestCase):
     @patch("positions.views.get_user_trading_account")
     def test_manual_position_without_local_order_is_discovered_during_list_read(self, account, lock):
         self.order.delete()
+        self.exchange.get_positions.return_value = {
+            "data": [self.position_row("long", "1", "100", "5", update_time="1762164030123")]
+        }
         account.return_value = SimpleNamespace(
             identity="user:manual-position",
             api_key_fingerprint="",
@@ -84,6 +90,7 @@ class ExternalPositionApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["position_origin"], "exchange_external")
+        self.assertEqual(response.data["data"][0]["opened_at"], "2025-11-03T10:00:30.123000+00:00")
         self.assertEqual(Order.objects.filter(position_origin=Order.ORIGIN_EXTERNAL).count(), 1)
 
     def test_opposite_positions_are_matched_by_symbol_and_direction(self):

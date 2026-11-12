@@ -8811,6 +8811,18 @@ final class ChartPositionContextTests: XCTestCase {
         }
     }
 
+    func testTakeProfitPositionLabelShowsProjectedProfitInsteadOfTargetPrice() {
+        let fallback = row(["side": .number(0), "open_price": .string("100"),
+            "exchange_size": .string("2"), "manual_take_profit_set": .bool(true),
+            "manual_take_profit_price": .string("110")])
+        XCTAssertEqual(ChartPositionLine.lines(in: [fallback], symbol: "BTCUSDT").last?.detail, "+20 U")
+
+        let reported = row(["side": .number(1), "open_price": .string("100"),
+            "exchange_size": .string("2"), "manual_take_profit_set": .bool(true),
+            "manual_take_profit_price": .string("90"), "manual_take_profit_pnl": .string("17.25")])
+        XCTAssertEqual(ChartPositionLine.lines(in: [reported], symbol: "BTCUSDT").last?.detail, "+17.3 U")
+    }
+
     func testInvalidProtectionPricesAreNotDrawnAndStopFallsBack() {
         let invalid = row(["market_stop_price": .string("NaN"), "open_price": .string("-1"),
             "manual_take_profit_set": .bool(true), "manual_take_profit_price": .string("Infinity")])
@@ -8935,6 +8947,20 @@ final class ChartPositionContextTests: XCTestCase {
                 }
             }
         }
+    }
+
+    @MainActor
+    func testTakeProfitLabelUsesTheSameCompactFilledGeometryAsStopLoss() throws {
+        let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
+            "stop_loss_price": .string("90"), "stop_loss_amount": .string("10"),
+            "manual_take_profit_set": .bool(true), "manual_take_profit_price": .string("110")])
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
+            plotLeft: 4, plotTop: 0, plotRight: 302, plotBottom: 300))
+        let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT")
+        let frames = ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection)
+        XCTAssertEqual(lines.map(\.kind), [.entry, .stopLoss, .takeProfit])
+        XCTAssertEqual(frames.map(\.width), [80, 80, 80])
+        XCTAssertEqual(frames.map(\.height), [20, 20, 20])
     }
 
     @MainActor

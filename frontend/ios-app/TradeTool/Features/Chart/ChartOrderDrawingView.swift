@@ -247,7 +247,19 @@ struct ChartPositionLine: Identifiable, Equatable {
                         DisplayNumber.amount(-abs($0), maximumFractionDigits: 1) + " U"
                     } ?? "-"
                 }
-                return row["manual_take_profit_price"]?.decimal.map { DisplayNumber.text($0) } ?? "-"
+                let projected = PositionEntryFeePresentation.finiteDecimal(row["manual_take_profit_pnl"])
+                    ?? {
+                        guard let target = PositionEntryFeePresentation.finiteDecimal(row["manual_take_profit_price"]),
+                              target > 0,
+                              let entry = PositionEntryFeePresentation.finiteDecimal(row["open_price"]),
+                              entry > 0,
+                              let quantity = PositionEntryFeePresentation.finiteDecimal(row["exchange_size"] ?? row["size"]),
+                              quantity > 0 else { return nil }
+                        return (row.value("side") == "0" ? target - entry : entry - target) * quantity
+                    }()
+                return projected.map {
+                    DisplayNumber.amount($0, maximumFractionDigits: 1, signed: true) + " U"
+                } ?? "-"
             }
             var result: [Self] = []
             func append(_ kind: Kind, _ price: Decimal?, _ title: String) {
@@ -306,13 +318,13 @@ struct ChartPositionLinesOverlay: View {
             guard let y = projection.screenY(for: NSDecimalNumber(decimal: line.price).doubleValue),
                   y >= projection.plotTop, y <= projection.plotBottom else { return nil }
             let label = labelLayout(for: line, projection: projection)
-            let height = line.kind == .takeProfit ? 24.0 : 20.0
+            let height = 20.0
             return CGRect(x: label.centerX - label.width / 2, y: y - height / 2, width: label.width, height: height)
         }
     }
 
     private static func labelLayout(for line: ChartPositionLine, projection: ChartPriceProjection) -> ChartPriceLineLabelLayout {
-        ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: line.kind == .takeProfit ? 120 : 80)
+        ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: 80)
     }
 
     var body: some View {
@@ -328,8 +340,7 @@ struct ChartPositionLinesOverlay: View {
                             path.addLine(to: CGPoint(x: projection.plotRight, y: y))
                         }.stroke(color(line), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                         ChartPriceLineLabel(title: line.title, price: line.detail,
-                            color: color(line), width: label.width, filled: line.kind != .takeProfit,
-                            compact: line.kind != .takeProfit)
+                            color: color(line), width: label.width, filled: true, compact: true)
                             .position(x: label.centerX, y: y)
                             .accessibilityIdentifier("position-line." + line.id)
                             .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))

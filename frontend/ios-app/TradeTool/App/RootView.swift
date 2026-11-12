@@ -128,6 +128,13 @@ private struct MainAppView: View {
             if selectedTab == .signals { selectedTab = .markets }
             container.realtimeClient.reconnect()
         }
+        .onChange(of: scenePhase) { previous, phase in
+            guard phase == .active, previous != .active else { return }
+            // iOS may leave the old URLSessionWebSocketTask in .connecting or
+            // keep its retry backoff after suspension. Recreate it immediately
+            // so the chart and latency monitor do not wait for the 30s retry cap.
+            container.realtimeClient.reconnect()
+        }
         .onChange(of: isSignalPageVisible, initial: true) { _, visible in
             store.setSignalPageVisible(visible)
         }

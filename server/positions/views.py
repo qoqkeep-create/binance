@@ -1991,6 +1991,29 @@ def _exchange_position_row_map(rows: list[dict[str, Any]]) -> dict[tuple[str, st
     }
 
 
+def _position_opened_at(order: Order, row: dict[str, Any]):
+    """Use the exchange position timestamp for read-time manual projections.
+
+    An external/manual Order is created when the position is discovered, which
+    can be several candles after the actual fill.  Binance's positionRisk
+    ``updateTime`` is the only timestamp available in this read path and is
+    preferable to the adoption time.  Web owned orders retain their durable
+    local creation time because that is tied to the entry lifecycle.
+    """
+    if order.position_origin == Order.ORIGIN_EXTERNAL:
+        raw_timestamp = row.get("updateTime")
+        try:
+            timestamp = int(str(raw_timestamp or "0"))
+        except (TypeError, ValueError):
+            timestamp = 0
+        if timestamp > 0:
+            try:
+                return datetime.fromtimestamp(timestamp / 1000, tz=dt_timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                pass
+    return order.created_at
+
+
 def _serialize_open_position(
     *,
     order: Order,
@@ -2086,6 +2109,7 @@ def _serialize_open_position(
                 order.save(update_fields=updated_fields)
 
     snapshot = snapshot_map.get(order.strategy_snapshot_id) if order.strategy_snapshot_id else None
+    opened_at = _position_opened_at(order, row)
     return {
         "id": order.id,
         "position_origin": order.position_origin,
@@ -2138,6 +2162,7 @@ def _serialize_open_position(
         "strategy_name": snapshot.strategy_name if snapshot else "",
         "strategy_config": snapshot.strategy_config if snapshot else None,
         "latest_strategy_error": latest_strategy_error,
+        "opened_at": opened_at.isoformat() if opened_at else None,
         "created_at": order.created_at.isoformat() if order.created_at else None,
     }
 

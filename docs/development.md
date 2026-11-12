@@ -1,5 +1,13 @@
 # 开发与验证
 
+<a id="持仓标记前台连接与止盈标签20261112"></a>
+
+## 持仓标记、前台连接与止盈标签（2026-11-12，本地）
+
+回归覆盖手动仓快照时间映射、止盈金额与标签几何，以及前台重连。后端 `ExternalPositionApiTests.test_manual_position_without_local_order_is_discovered_during_list_read` 通过；iOS 定向 XCTest 中前台 WebSocket 在 **1.5 秒**内重新收到 ready，持仓标记、止盈标签和图表绘制相关用例通过。主 App 与单测目标使用 iOS 模拟器 Debug 无签名构建；没有执行真实开仓、平仓、止损或资金操作，也没有部署后端。
+
+根因记录：手动仓本地投影的 `created_at` 是发现时刻，旧客户端把它当作开仓时间；后台恢复又没有调用共享 realtime client 的显式重连，旧任务或 30 秒指数退避会阻塞新连接。修复后手动仓接口返回交易所快照时间，前台回归立即清理旧 WebSocket 并重建订阅。
+
 <a id="手动仓位与-maker-状态收敛20261112"></a>
 
 ## 手动仓位与 Maker 状态收敛（2026-11-12，本地）

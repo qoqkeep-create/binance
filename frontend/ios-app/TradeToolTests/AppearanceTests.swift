@@ -317,6 +317,37 @@ final class NetworkLatencyAndModalTests: XCTestCase {
     await fulfillment(of: [nextPing], timeout: 7)
   }
 
+  func testForegroundReconnectReplacesAnExistingSocketImmediately() async throws {
+    let ready = expectation(description: "Loopback WebSocket listening")
+    let peer = try LatencySocketPeer(ready: ready, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [ready], timeout: 3)
+    let port = try XCTUnwrap(peer.port)
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(port)")!,
+      session: URLSession(configuration: .ephemeral), tokenProvider: { "foreground-token" })
+    defer { client.disconnect() }
+
+    let firstReady = expectation(description: "Initial socket ready")
+    let foregroundReady = expectation(description: "Foreground socket ready")
+    var readyCount = 0
+    let observation = client.$state.sink { state in
+      guard state == .connected else { return }
+      readyCount += 1
+      if readyCount == 1 { firstReady.fulfill() }
+      if readyCount == 2 { foregroundReady.fulfill() }
+    }
+    defer { observation.cancel() }
+    client.connect()
+    await fulfillment(of: [firstReady], timeout: 3)
+
+    // The app foreground handler uses the same explicit reconnect path. It
+    // must cancel a healthy-or-stale task and bypass any pending 30s backoff.
+    client.reconnect()
+    await fulfillment(of: [foregroundReady], timeout: 1.5)
+    XCTAssertEqual(client.state, .connected)
+  }
+
   func testOnlyMatchingPongCompletesTheCurrentMonotonicSample() {
     let start = ContinuousClock.now
     var tracker = RealtimeLatencyTracker()
