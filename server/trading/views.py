@@ -10,7 +10,7 @@ import math
 import os
 import re
 import time
-from uuid import uuid4
+from uuid import UUID, uuid4
 from typing import Optional
 from urllib import request
 
@@ -1454,6 +1454,366 @@ def _resolve_entry_stop_protection(
     return pending_message, None
 
 
+def _settle_unknown_open_command(client_request_id: str, *, status: str, result: dict) -> None:
+    """Resolve the original durable command after a read-only entry check.
+
+    ``TradeOpenRequest.client_request_id`` is the command UUID injected by the
+    mobile command boundary.  Updating only an UNKNOWN ``open`` command keeps
+    a reconciliation read from changing an unrelated retry or a newer command.
+    """
+    try:
+        from mobile.models import TradingCommand
+        command_id = UUID(str(client_request_id or ""))
+
+        TradingCommand.objects.filter(
+            pk=command_id,
+            action__in={"open", "limit-create", "limit-chase"},
+            status="UNKNOWN",
+        ).update(status=status, result=result, updated_at=timezone.now())
+    except (TypeError, ValueError):
+        # Legacy requests may use a non-UUID client request id.  They remain
+        # visible in the normal request record and are never guessed here.
+        return
+
+
+def _entry_status_response(
+    *,
+    client_request_id: str,
+    state: str,
+    message: str,
+    data: Optional[dict] = None,
+    command_status: Optional[str] = None,
+):
+    payload = {"code": 200, "message": message, "data": {"state": state, **(data or {})}}
+    if command_status in {"SUCCEEDED", "FAILED"}:
+        _settle_unknown_open_command(client_request_id, status=command_status, result=payload)
+    return ok(message=message, data=payload["data"])
+
+
+class EntryStatusView(APIView):
+    """Read-only reconciliation for an uncertain market/Maker entry.
+
+    This endpoint may read the exchange and adopt a confirmed fill into the
+    existing local position.  It never calls an exchange write endpoint, so a
+    user can safely use it while the original command is UNKNOWN.
+    """
+
+    def post(self, request):
+        client_request_id = str(request.data.get("client_request_id") or "").strip()
+        if not client_request_id:
+            return fail("缺少原开仓请求编号", code=400, status=400)
+        mode = request_trading_mode(request)
+        open_request = TradeOpenRequest.objects.filter(
+            user=request.user,
+            trading_mode=mode,
+            client_request_id=client_request_id,
+        ).first()
+        if open_request is None:
+            return fail("原开仓请求不存在", code=404, status=404)
+
+        account = get_user_trading_account(request.user, active_only=True, trading_mode=mode)
+        if not account:
+            return fail("当前 API 绑定不可用，请先检查绑定", code=409, status=409)
+        if (
+            open_request.api_key_fingerprint != account.api_key_fingerprint
+            or open_request.created_at < account.binding_created_at
+        ):
+            return fail("API 绑定已变化，拒绝核对旧开仓请求", code=409, status=409)
+
+        existing_order = _find_existing_order_by_open_request(open_request)
+        if existing_order:
+            return _entry_status_response(
+                client_request_id=client_request_id,
+                state="SUCCEEDED",
+                message="开仓已成交，持仓已确认",
+                data={"position_id": existing_order.id, "symbol": open_request.symbol},
+                command_status="SUCCEEDED",
+            )
+
+        intent = get_open_request_execution_intent(open_request)
+        if not intent:
+            return _entry_status_response(
+                client_request_id=client_request_id,
+                state="UNKNOWN",
+                message="原开仓参数尚未完整保存，暂时无法安全核对",
+                data={"symbol": open_request.symbol},
+            )
+
+        # Maker already has a complete read-only state endpoint.  Reuse it so
+        # Maker fills, terminal states and projection adoption retain one path.
+        if intent.get("execution_mode") == "maker":
+            return MakerOpenStatusView().post(request)
+
+        if intent.get("execution_mode") == "limit":
+            try:
+                inst_id = to_inst_id(open_request.symbol)
+                requested_size = _to_decimal(intent.get("size"), "开仓数量")
+                stop_loss_price = _to_decimal(intent.get("stop_loss_price"), "止损价")
+                stop_loss_amount = _to_decimal(intent.get("stop_loss_amount"), "止损金额")
+                leverage = int(intent.get("leverage") or 0)
+                if leverage <= 0:
+                    raise BinanceApiError("原开仓杠杆无法确认", outcome_unknown=True)
+                client = BinanceFuturesClient(account.credentials)
+                payload = client.get_order(
+                    inst_id=inst_id,
+                    orig_client_order_id=open_request.client_order_id,
+                )
+                rows = payload.get("data") or []
+                if not rows:
+                    return _entry_status_response(
+                        client_request_id=client_request_id,
+                        state="UNKNOWN",
+                        message="交易所暂未返回该委托，结果仍需核对",
+                        data={"symbol": open_request.symbol},
+                    )
+                exchange_row = rows[0]
+                exchange_order_id = str(exchange_row.get("ordId") or "").strip()
+                execution = confirm_entry_execution(
+                    client,
+                    inst_id=inst_id,
+                    order_id=exchange_order_id,
+                    requested_size=requested_size,
+                    initial_row=exchange_row,
+                    retry_delays=(),
+                )
+                terminal_states = {"canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed"}
+                if execution.raw_state in terminal_states and not execution.has_fill and execution.filled_size <= 0:
+                    mark_open_request_failed(open_request, f"limit_{execution.raw_state}")
+                    return _entry_status_response(
+                        client_request_id=client_request_id,
+                        state="FAILED",
+                        message="限价委托已确认未成交",
+                        data={"symbol": open_request.symbol},
+                        command_status="FAILED",
+                    )
+                if not execution.has_fill and execution.state != "pending":
+                    return _entry_status_response(
+                        client_request_id=client_request_id,
+                        state="UNKNOWN",
+                        message="限价委托结果暂时无法确认，系统不会重复下单",
+                        data={"symbol": open_request.symbol},
+                    )
+
+                limit_order = LimitOrder.objects.filter(
+                    user=request.user,
+                    trading_mode=mode,
+                    api_key_fingerprint=account.api_key_fingerprint or None,
+                    binance_client_order_id=open_request.client_order_id,
+                ).first()
+                if limit_order is None:
+                    limit_order = LimitOrder.objects.create(
+                        user=request.user,
+                        trading_mode=mode,
+                        api_key_fingerprint=account.api_key_fingerprint or None,
+                        binance_order_id=exchange_order_id,
+                        binance_client_order_id=open_request.client_order_id,
+                        symbol=to_symbol(inst_id),
+                        side=int(intent["side_code"]),
+                        limit_price=_to_decimal(intent.get("entry_price"), "原限价"),
+                        stop_loss_price=stop_loss_price,
+                        stop_loss_amount=stop_loss_amount,
+                        size=requested_size,
+                        leverage=leverage,
+                        strategy_id=str(intent.get("strategy_id") or ""),
+                        strategy_name=str(intent.get("strategy_name") or ""),
+                        strategy_config=intent.get("strategy_config"),
+                    )
+                else:
+                    limit_order.binance_order_id = exchange_order_id
+                limit_order.filled_size = execution.filled_size
+                limit_order.status = LimitOrder.STATUS_PENDING
+                mark_open_request_submitted(open_request, exchange_order_id=exchange_order_id)
+
+                if execution.has_fill:
+                    adoption = adopt_entry_execution(
+                        user=request.user,
+                        trading_mode=mode,
+                        client=client,
+                        binance_order_id=execution.order_id or exchange_order_id,
+                        symbol=to_symbol(inst_id),
+                        side=int(intent["side_code"]),
+                        fill_size=execution.filled_size,
+                        average_price=execution.average_price,
+                        stop_loss_price=stop_loss_price,
+                        stop_loss_amount=stop_loss_amount,
+                        leverage=leverage,
+                        api_key_fingerprint=account.api_key_fingerprint,
+                        strategy_id=str(intent.get("strategy_id") or ""),
+                        strategy_name=str(intent.get("strategy_name") or ""),
+                        strategy_config=intent.get("strategy_config"),
+                        limit_order=limit_order,
+                        pos_mode="long_short_mode" if intent.get("pos_side") else "net_mode",
+                        source_label="核对限价委托",
+                    )
+                    if execution.state == "filled":
+                        limit_order.status = LimitOrder.STATUS_FILLED
+                    limit_order.order = adoption.order
+                    mark_open_request_submitted(
+                        open_request,
+                        exchange_order_id=exchange_order_id,
+                        order_id=adoption.order.id,
+                    )
+                    _invalidate_position_list_cache(
+                        request.user,
+                        account.api_key_fingerprint,
+                        trading_mode=mode,
+                    )
+                    limit_order.save(update_fields=["filled_size", "status", "order", "binance_order_id", "updated_at"])
+                    if execution.state == "filled":
+                        return _entry_status_response(
+                            client_request_id=client_request_id,
+                            state="SUCCEEDED",
+                            message="限价委托已成交，持仓已确认",
+                            data={"position_id": adoption.order.id, "symbol": open_request.symbol},
+                            command_status="SUCCEEDED",
+                        )
+                limit_order.save(update_fields=["filled_size", "status", "binance_order_id", "updated_at"])
+                return _entry_status_response(
+                    client_request_id=client_request_id,
+                    state="PENDING_LIMIT",
+                    message="限价委托已确认，等待成交",
+                    data={"limit_order_id": limit_order.id, "symbol": open_request.symbol},
+                    command_status="SUCCEEDED",
+                )
+            except BinanceApiError as exc:
+                if getattr(exc, "outcome_unknown", False):
+                    return _entry_status_response(
+                        client_request_id=client_request_id,
+                        state="UNKNOWN",
+                        message="限价委托结果暂时无法确认，系统不会重复下单",
+                        data={"symbol": open_request.symbol},
+                    )
+                return fail(_translate_exchange_message(str(exc)), code=409, status=409)
+            except Exception:
+                logger.exception("limit entry status failed")
+                return _entry_status_response(
+                    client_request_id=client_request_id,
+                    state="UNKNOWN",
+                    message="限价委托结果暂时无法确认，系统不会重复下单",
+                    data={"symbol": open_request.symbol},
+                )
+
+        try:
+            inst_id = to_inst_id(open_request.symbol)
+            requested_size = _to_decimal(intent.get("size"), "开仓数量")
+            stop_loss_price = _to_decimal(intent.get("stop_loss_price"), "止损价")
+            stop_loss_amount = _to_decimal(intent.get("stop_loss_amount"), "止损金额")
+            leverage = int(intent.get("leverage") or 0)
+            if leverage <= 0:
+                raise BinanceApiError("原开仓杠杆无法确认", outcome_unknown=True)
+            client = BinanceFuturesClient(account.credentials)
+            exchange_order_id = str(open_request.binance_order_id or "").strip()
+            payload = client.get_order(
+                inst_id=inst_id,
+                order_id=exchange_order_id,
+                orig_client_order_id="" if exchange_order_id else open_request.client_order_id,
+            )
+            rows = payload.get("data") or []
+            if not rows:
+                return _entry_status_response(
+                    client_request_id=client_request_id,
+                    state="UNKNOWN",
+                    message="交易所暂未返回该订单，结果仍需核对",
+                    data={"symbol": open_request.symbol},
+                )
+            initial_row = rows[0]
+            execution = confirm_entry_execution(
+                client,
+                inst_id=inst_id,
+                order_id=exchange_order_id or str(initial_row.get("ordId") or ""),
+                client_order_id="" if exchange_order_id else open_request.client_order_id,
+                requested_size=requested_size,
+                initial_row=initial_row,
+                retry_delays=(),
+            )
+            terminal_states = {"canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed"}
+            if execution.raw_state in terminal_states and not execution.has_fill and execution.filled_size <= 0:
+                mark_open_request_failed(open_request, f"entry_{execution.raw_state}")
+                return _entry_status_response(
+                    client_request_id=client_request_id,
+                    state="FAILED",
+                    message="开仓已确认未成交",
+                    data={"symbol": open_request.symbol},
+                    command_status="FAILED",
+                )
+            if not execution.has_fill:
+                return _entry_status_response(
+                    client_request_id=client_request_id,
+                    state="UNKNOWN",
+                    message="交易所订单尚未确认成交，结果仍需核对",
+                    data={
+                        "symbol": open_request.symbol,
+                        "maker_order_id": execution.order_id,
+                        "filled_size": format(execution.filled_size, "f"),
+                    },
+                )
+
+            symbol = to_symbol(inst_id)
+            strategy_id = str(intent.get("strategy_id") or "")
+            strategy_name = str(intent.get("strategy_name") or "")
+            adoption = adopt_entry_execution(
+                user=request.user,
+                trading_mode=mode,
+                client=client,
+                binance_order_id=execution.order_id or exchange_order_id,
+                symbol=symbol,
+                side=int(intent["side_code"]),
+                fill_size=execution.filled_size,
+                average_price=execution.average_price,
+                stop_loss_price=stop_loss_price,
+                stop_loss_amount=stop_loss_amount,
+                leverage=leverage,
+                api_key_fingerprint=account.api_key_fingerprint,
+                strategy_id=strategy_id,
+                strategy_name=strategy_name,
+                strategy_config=intent.get("strategy_config"),
+                estimated_total_fee=None,
+                pos_mode="long_short_mode" if intent.get("pos_side") else "net_mode",
+                source_label="核对开仓",
+            )
+            mark_open_request_submitted(
+                open_request,
+                exchange_order_id=execution.order_id or exchange_order_id,
+                order_id=adoption.order.id,
+            )
+            _invalidate_position_list_cache(
+                request.user,
+                account.api_key_fingerprint,
+                trading_mode=mode,
+            )
+            message = "开仓已成交，持仓已确认"
+            if adoption.stop_loss_error is not None:
+                message += "；止损保护待处理"
+            return _entry_status_response(
+                client_request_id=client_request_id,
+                state="SUCCEEDED",
+                message=message,
+                data={
+                    "position_id": adoption.order.id,
+                    "symbol": open_request.symbol,
+                    "stop_protection_status": adoption.order.stop_protection_status,
+                },
+                command_status="SUCCEEDED",
+            )
+        except BinanceApiError as exc:
+            if getattr(exc, "outcome_unknown", False):
+                return _entry_status_response(
+                    client_request_id=client_request_id,
+                    state="UNKNOWN",
+                    message="交易所暂时无法确认该订单，系统不会重复下单",
+                    data={"symbol": open_request.symbol},
+                )
+            return fail(_translate_exchange_message(str(exc)), code=409, status=409)
+        except Exception:
+            logger.exception("entry status failed")
+            return _entry_status_response(
+                client_request_id=client_request_id,
+                state="UNKNOWN",
+                message="开仓结果暂时无法确认，系统不会重复下单",
+                data={"symbol": open_request.symbol},
+            )
+
+
 class SymbolListView(APIView):
     CACHE_KEY = "trade:symbols:top100"
     CACHE_TTL = 60
@@ -2127,7 +2487,13 @@ class MakerOpenStatusView(APIView):
             )
             existing_order = _find_existing_order_by_open_request(open_request)
             if existing_order:
-                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": existing_order.id})
+                return _entry_status_response(
+                    client_request_id=str(open_request.client_request_id),
+                    state="SUCCEEDED",
+                    message="开仓已成交，持仓已确认",
+                    data={"position_id": existing_order.id, "symbol": open_request.symbol},
+                    command_status="SUCCEEDED",
+                )
             client = BinanceFuturesClient(account.credentials)
             inst_id = to_inst_id(open_request.symbol)
             row = client.get_order(inst_id=inst_id, order_id=open_request.binance_order_id).get("data", [])
@@ -2150,27 +2516,49 @@ class MakerOpenStatusView(APIView):
                 state = "EXPIRED" if raw_state in {"expired", "expired_in_match"} else (
                     "REJECTED" if raw_state in {"rejected", "failed"} else "CANCELLED"
                 )
-                return ok(message="Maker订单已结束", data={
-                    "state": state,
-                    "maker_order_id": open_request.binance_order_id,
-                    "filled_size": "0",
-                    "symbol": open_request.symbol,
-                })
+                return _entry_status_response(
+                    client_request_id=str(open_request.client_request_id),
+                    state=state,
+                    message="Maker订单已结束",
+                    data={
+                        "maker_order_id": open_request.binance_order_id,
+                        "filled_size": "0",
+                        "symbol": open_request.symbol,
+                    },
+                    command_status="FAILED",
+                )
             if execution.has_fill and raw_state in terminal_states:
                 order = _adopt_maker_fill(request, account, open_request, intent, client, execution)
-                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
+                return _entry_status_response(
+                    client_request_id=str(open_request.client_request_id),
+                    state="SUCCEEDED",
+                    message="Maker已成交，持仓已确认",
+                    data={"position_id": order.id, "symbol": open_request.symbol},
+                    command_status="SUCCEEDED",
+                )
             if execution.has_fill and execution.state == "filled":
                 order = _adopt_maker_fill(request, account, open_request, intent, client, execution)
-                return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
+                return _entry_status_response(
+                    client_request_id=str(open_request.client_request_id),
+                    state="SUCCEEDED",
+                    message="Maker已成交，持仓已确认",
+                    data={"position_id": order.id, "symbol": open_request.symbol},
+                    command_status="SUCCEEDED",
+                )
             if execution.state == "pending" or execution.filled_size > 0:
-                return ok(message="Maker订单等待成交", data={
-                    "state": "PENDING_MAKER",
-                    "maker_order_id": open_request.binance_order_id,
-                    "maker_price": intent.get("maker_price", ""),
-                    "market_price": intent.get("maker_market_price", ""),
-                    "filled_size": format(execution.filled_size, "f"),
-                    "symbol": open_request.symbol,
-                })
+                return _entry_status_response(
+                    client_request_id=str(open_request.client_request_id),
+                    state="PENDING_MAKER",
+                    message="Maker订单等待成交",
+                    data={
+                        "maker_order_id": open_request.binance_order_id,
+                        "maker_price": intent.get("maker_price", ""),
+                        "market_price": intent.get("maker_market_price", ""),
+                        "filled_size": format(execution.filled_size, "f"),
+                        "symbol": open_request.symbol,
+                    },
+                    command_status="SUCCEEDED",
+                )
             return fail("Maker订单已结束，请重新开仓")
         except BinanceApiError as exc:
             if getattr(exc, "outcome_unknown", False):
@@ -2490,11 +2878,16 @@ class LimitOrderCreateView(APIView):
                         {
                             "entry_price": format(limit_price, "f"),
                             "stop_loss_price": format(stop_loss_price, "f"),
+                            "stop_loss_amount": format(stop_loss_amount, "f"),
                             "open_side": open_side,
                             "side_code": side_code,
                             "size": str(size),
                             "leverage": max_leverage,
                             "pos_side": use_pos_side or "",
+                            "execution_mode": "limit",
+                            "strategy_id": str(strategy_payload["strategy_id"] if strategy_payload else ""),
+                            "strategy_name": str(strategy_payload["strategy_name"] if strategy_payload else ""),
+                            "strategy_config": strategy_payload["strategy_config"] if strategy_payload else None,
                         },
                     )
 

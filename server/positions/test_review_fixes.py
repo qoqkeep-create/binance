@@ -120,7 +120,7 @@ class PositionReviewRegressionTests(APITestCase):
             response = self.client.get("/v1/position/history", {"snapshot": "local"})
         exchange.assert_not_called()
         data = response.data["data"]
-        self.assertFalse(data["exchange_refresh_required"])
+        self.assertTrue(data["exchange_refresh_required"])
         self.assertEqual(data["items"][0]["settlement_status"], "estimated")
 
     def strategy_snapshot(self, order=None):

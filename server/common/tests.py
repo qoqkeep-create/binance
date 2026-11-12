@@ -2123,6 +2123,13 @@ class BinanceResponseNormalizationTests(TestCase):
         self.assertEqual(rows[0]["openAvgPx"], "100")
         self.assertEqual(rows[0]["closeAvgPx"], "110")
         self.assertEqual(rows[0]["realizedPnl"], "10")
+        self.assertEqual(rows[0]["fee"], "0.2")
+
+    def test_get_bills_caps_exchange_limit(self):
+        with patch.object(self.client, "_request", return_value=[]) as request:
+            self.client.get_bills(limit=5000)
+
+        self.assertEqual(request.call_args.args[2]["limit"], 1000)
 
     def test_get_today_realized_pnl_includes_fee_and_funding(self):
         class FakeClient:

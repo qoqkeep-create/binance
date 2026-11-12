@@ -284,7 +284,7 @@ final class USDTStore: ObservableObject {
         // order may now exist in the local order projection. Do not depend on
         // a websocket event to invalidate a previously loaded order snapshot;
         // that event can arrive after the user switches tabs or be delayed.
-        if ["open", "maker-fallback", "limit-create", "limit-cancel", "limit-chase"].contains(action) {
+        if ["open", "entry-status", "maker-fallback", "limit-create", "limit-cancel", "limit-chase"].contains(action) {
             liveRevision += 1
         }
         return result
@@ -481,8 +481,12 @@ extension USDTStore {
     }
     func commandMessage(_ result: JSONValue) -> String {
         let status = result.value("status")
-        if status == "SUCCEEDED" { return "操作成功" }
+        let state = result["result"]?["data"]?.value("state") ?? ""
+        if state == "PENDING_MAKER" { return "Maker 委托已挂出，等待成交" }
+        if state == "PENDING_LIMIT" { return "限价委托已确认，等待成交" }
+        if state == "UNKNOWN" { return "开仓结果仍未确认，系统不会重复下单，请点击“核对开仓结果”" }
+        if status == "SUCCEEDED" { return result["result"]?.value("message", fallback: "操作成功") ?? "操作成功" }
         if status == "FAILED" { return result["result"]?.value("message", fallback: "操作失败") ?? "操作失败" }
-        return "请求已保存，结果仍在核对。请查看命令记录，勿重复提交。"
+        return "请求结果仍在核对，系统不会重复提交。"
     }
 }

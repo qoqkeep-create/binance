@@ -257,3 +257,95 @@ class ExternalPositionApiTests(APITestCase):
             with self.subTest(field=field):
                 self.assertIsNone(row[field])
         self.assertEqual(row["settlement_status"], "estimated")
+
+    def test_manual_history_reconciles_missing_financials_from_exchange_history(self):
+        self.order.status = 1
+        self.order.closed_at = timezone.now()
+        self.order.pnl = None
+        self.order.pnl_ratio = None
+        self.order.close_price = None
+        self.order.realized_pnl = None
+        self.order.realized_fee = None
+        self.order.realized_funding_fee = None
+        self.order.save(update_fields=[
+            "status", "closed_at", "pnl", "pnl_ratio", "close_price",
+            "realized_pnl", "realized_fee", "realized_funding_fee",
+        ])
+        close_time = str(int(self.order.closed_at.timestamp() * 1000))
+        self.exchange.get_positions_history.return_value = {"data": [{
+            "instId": "BTC-USDT-SWAP",
+            "direction": "long",
+            "openAvgPx": "100",
+            "closeAvgPx": "110",
+            "closeTotalPos": "1",
+            "realizedPnl": "10",
+            "fee": "0.2",
+            "fundingFee": "-0.1",
+            "uTime": close_time,
+        }]}
+
+        response = self.client.get("/v1/position/history")
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data["data"]["items"][0]
+        self.assertEqual(row["close_price"], "110")
+        self.assertEqual(row["pnl"], "9.70000000")
+        self.assertEqual(row["realized_pnl"], "10.00000000")
+        self.assertEqual(row["fee"], "-0.20000000")
+        self.assertEqual(row["funding_fee"], "-0.10000000")
+        self.assertEqual(row["pnl_ratio"], "9.7000")
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.pnl, Decimal("9.7"))
+        self.assertEqual(self.order.realized_fee, Decimal("-0.2"))
+        self.exchange.get_positions_history.assert_called_once_with(limit=40)
+
+    def test_manual_history_snapshot_requests_exchange_follow_up_for_missing_financials(self):
+        self.order.status = 1
+        self.order.closed_at = timezone.now()
+        self.order.pnl = None
+        self.order.close_price = None
+        self.order.save(update_fields=["status", "closed_at", "pnl", "close_price"])
+
+        response = self.client.get("/v1/position/history", {"snapshot": "local"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["data"]["exchange_refresh_required"])
+        self.exchange.get_positions_history.assert_not_called()
+
+    def test_manual_history_keeps_unknown_when_exchange_match_is_ambiguous(self):
+        self.order.status = 1
+        self.order.closed_at = timezone.now()
+        self.order.pnl = None
+        self.order.close_price = None
+        self.order.realized_pnl = None
+        self.order.realized_fee = None
+        self.order.realized_funding_fee = None
+        close_time = str(int(self.order.closed_at.timestamp() * 1000))
+        segment = {
+            "instId": "BTC-USDT-SWAP",
+            "direction": "long",
+            "openAvgPx": "100",
+            "closeAvgPx": "110",
+            "closeTotalPos": "1",
+            "realizedPnl": "10",
+            "fee": "0.2",
+            "fundingFee": "-0.1",
+            "uTime": close_time,
+        }
+        self.exchange.get_positions_history.return_value = {
+            "data": [segment, dict(segment)]
+        }
+        self.order.save(update_fields=[
+            "status", "closed_at", "pnl", "close_price", "realized_pnl",
+            "realized_fee", "realized_funding_fee",
+        ])
+
+        response = self.client.get("/v1/position/history")
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data["data"]["items"][0]
+        for field in ("pnl", "realized_pnl", "close_price", "fee", "funding_fee"):
+            with self.subTest(field=field):
+                self.assertIsNone(row[field])
+        self.order.refresh_from_db()
+        self.assertIsNone(self.order.pnl)

@@ -203,6 +203,8 @@ struct USDTTradeView: View {
   @State private var confirm = false
   @State private var requestIdentity = UUID().uuidString
   @State private var submitted = false
+  @State private var entryNeedsReconcile = false
+  @State private var entryCommandID = ""
   @State private var confirmedLimitDraft: USDTEntryDraft?
   var initialStop: String = ""
   var initialLimit: String = ""
@@ -230,7 +232,10 @@ struct USDTTradeView: View {
     chartInput != nil ? chartPositionsReady : positions.isReady(scope: store.scope)
   }
   private var entryDisabled: Bool {
-    !hasPosition && confirmedLimitDraft == nil
+    if entryNeedsReconcile {
+      return busy || !store.isBound || entryCommandID.isEmpty
+    }
+    return !hasPosition && confirmedLimitDraft == nil
       && (busy || submitted || !store.isBound || !inputValid || !strategyValid || !positionsReady)
   }
 
@@ -353,6 +358,7 @@ struct USDTTradeView: View {
       }
       .onChange(of: store.scope) { _, _ in
         confirmationDraft = nil; confirm = false; openSuccess = false; submitted = false
+        entryNeedsReconcile = false; entryCommandID = ""
         confirmedLimitDraft = nil
         onChartLimitSubmission?(nil)
         requestIdentity = UUID().uuidString
@@ -508,6 +514,7 @@ struct USDTTradeView: View {
     if hasPosition { return "正在持仓中" }
     if confirmedLimitDraft != nil { return "已挂单" }
     if store.isBound && !positionsReady { return "正在确认持仓…" }
+    if entryNeedsReconcile { return "核对开仓结果" }
     if submitted { return "已提交" }
     if busy { return "处理中…" }
     if !strategyValid { return "请选择止盈方式" }
@@ -560,6 +567,10 @@ struct USDTTradeView: View {
       showPositionPage(.limits)
       return
     }
+    if entryNeedsReconcile {
+      reconcileEntry()
+      return
+    }
     guard !busy, !submitted, store.isBound, inputValid, strategyValid, positionsReady else { return }
     let draft = currentDraft
     let scope = store.scope
@@ -591,13 +602,21 @@ struct USDTTradeView: View {
         let result = try await store.command(
           draft.orderType == "limit" ? "limit-create" : "open", payload: payload, key: key)
         guard scope == store.scope else { return }
+        entryCommandID = result.value("id")
         let status = result.value("status")
         if status == "SUCCEEDED" && draft.orderType == "limit" && !hasPosition {
           // Only an acknowledged limit-create becomes a clickable pending order.
           confirmedLimitDraft = draft
-        } else if status == "FAILED" && draft.orderType == "limit" {
+        } else if status == "FAILED" {
           submitted = false
-          onChartLimitSubmission?(nil)
+          entryNeedsReconcile = false
+          requestIdentity = UUID().uuidString
+          if draft.orderType == "limit" { onChartLimitSubmission?(nil) }
+        }
+        if status == "UNKNOWN" {
+          entryNeedsReconcile = true
+          container.toastCenter.error(store.commandMessage(result))
+          return
         }
         if status == "SUCCEEDED" && draft.orderType == "market" {
           // This dialog is shown only after the backend has confirmed the
@@ -631,20 +650,76 @@ struct USDTTradeView: View {
       do {
         let result = try await store.command("open", payload: payload, key: key)
         guard scope == store.scope else { return }
+        entryCommandID = result.value("id")
+        if result.value("status") == "UNKNOWN" {
+          entryNeedsReconcile = true
+          container.toastCenter.error(store.commandMessage(result))
+          return
+        }
         if result.value("status") == "SUCCEEDED", let data = makerData(result) {
           let state = data.value("state")
           if state == "PENDING_MAKER" {
+            entryNeedsReconcile = false
             showPositionPage(.limits)
           } else if state == "SUCCEEDED" {
+            entryNeedsReconcile = false
             successDraft = draft
             openSuccess = true
+          } else {
+            entryNeedsReconcile = true
+            container.toastCenter.error(store.commandMessage(result))
           }
         } else {
           container.toastCenter.error(store.commandMessage(result))
           submitted = false
+          entryNeedsReconcile = false
+          requestIdentity = UUID().uuidString
         }
       } catch {
         if scope == store.scope { submitted = false; presentEntryError(error, suffix: "。请先核对命令记录。") }
+      }
+    }
+  }
+
+  private func reconcileEntry() {
+    guard !busy, !entryCommandID.isEmpty, store.isBound else { return }
+    let scope = store.scope
+    let originalCommandID = entryCommandID
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        let result = try await store.command(
+          "entry-status",
+          payload: ["client_request_id": .string(originalCommandID)],
+          key: "entry-status-" + originalCommandID + "-" + UUID().uuidString
+        )
+        guard scope == store.scope else { return }
+        let data = result["result"]?["data"]
+        let state = data?.value("state") ?? "UNKNOWN"
+        if state == "SUCCEEDED" {
+          entryNeedsReconcile = false
+          submitted = true
+          if data?.value("position_id") != "" {
+            openSuccess = true
+          } else {
+            showPositionPage(.limits)
+          }
+        } else if ["PENDING_MAKER", "PENDING_LIMIT"].contains(state) {
+          entryNeedsReconcile = false
+          submitted = true
+          showPositionPage(.limits)
+        } else if ["FAILED", "CANCELLED", "EXPIRED", "REJECTED"].contains(state) {
+          entryNeedsReconcile = false
+          submitted = false
+          requestIdentity = UUID().uuidString
+          container.toastCenter.error(store.commandMessage(result))
+        } else {
+          entryNeedsReconcile = true
+          container.toastCenter.error(store.commandMessage(result))
+        }
+      } catch {
+        if scope == store.scope { container.toastCenter.error(APIError.map(error).userMessage) }
       }
     }
   }
@@ -1549,6 +1624,7 @@ struct WebPositionOperation: Identifiable {
 
 struct USDTCommandButton: View {
   @EnvironmentObject private var store: USDTStore
+  @EnvironmentObject private var container: AppContainer
   let title: String
   let action: String
   let payload: [String: JSONValue]
@@ -1598,12 +1674,17 @@ struct USDTCommandButton: View {
         if let preflight, !pending { try await store.preflight(preflight) }
         pending = true
         let result = try await store.command(action, payload: payload, key: key)
-        completed(store.commandMessage(result))
-        if ["SUCCEEDED", "FAILED"].contains(result.value("status")) {
+        let status = result.value("status")
+        let message = store.commandMessage(result)
+        if status != "SUCCEEDED" {
+          container.toastCenter.error(message)
+        }
+        completed(status == "SUCCEEDED" ? message : "")
+        if ["SUCCEEDED", "FAILED"].contains(status) {
           key = UUID().uuidString
           pending = false
         }
-      } catch { completed(error.localizedDescription) }
+      } catch { container.toastCenter.error(error.localizedDescription) }
     }
   }
 

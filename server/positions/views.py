@@ -85,6 +85,9 @@ HISTORY_CLOSED_RECONCILIATION_BUDGET = 2
 BINANCE_PRIVATE_HISTORY_RETENTION_DAYS = 89
 SETTLEMENT_BILL_WINDOW_MS = 10 * 60 * 1000
 POSITION_EXCHANGE_CACHE_TTL_SECONDS = 10
+EXTERNAL_HISTORY_CACHE_TTL_SECONDS = 30
+EXTERNAL_HISTORY_FETCH_LIMIT = 40
+EXTERNAL_HISTORY_MATCH_WINDOW_SECONDS = 15 * 60
 AUTO_CLOSE_MIN_ORDER_AGE_SECONDS = 20
 AUTO_CLOSE_CONFIRMATION_GAP_SECONDS = 3
 AUTO_CLOSE_CANDIDATE_TTL_SECONDS = 180
@@ -501,6 +504,178 @@ def _history_order_needs_exchange_refresh(order: Order) -> bool:
     if order.settlement_status in {Order.SETTLEMENT_STATUS_SETTLED, Order.SETTLEMENT_STATUS_ESTIMATED}:
         return False
     return not order.settlement_next_retry_at or order.settlement_next_retry_at <= timezone.now()
+
+
+def _external_history_order_needs_refresh(order: Order) -> bool:
+    """Whether a closed manual position still lacks exchange settlement facts."""
+    if order.position_origin != Order.ORIGIN_EXTERNAL or order.status != 1:
+        return False
+    return any(
+        value is None
+        for value in (
+            order.close_price,
+            order.pnl,
+            order.realized_pnl,
+            order.realized_fee,
+            order.realized_funding_fee,
+        )
+    )
+
+
+def _external_history_cache_key(user, trading_mode) -> str:
+    try:
+        fingerprint = get_user_api_key_fingerprint(user, trading_mode=trading_mode)
+    except Exception:
+        fingerprint = ""
+    digest = hashlib.sha256(str(fingerprint or "").encode()).hexdigest()[:16]
+    return f"position:external-history:v1:{getattr(user, 'id', 0)}:{trading_mode}:{digest}"
+
+
+def _external_history_segment_time(segment: dict[str, Any]):
+    try:
+        timestamp = int(str(segment.get("uTime") or "0"))
+    except (TypeError, ValueError):
+        return None
+    if timestamp <= 0:
+        return None
+    return datetime.fromtimestamp(timestamp / 1000, tz=dt_timezone.utc)
+
+
+def _match_external_history_segment(
+    order: Order,
+    segments: list[dict[str, Any]],
+    used_indexes: set[int],
+) -> Optional[dict[str, Any]]:
+    if not order.closed_at or not order.open_price or order.open_price <= 0 or order.size <= 0:
+        return None
+    expected_inst_id = to_inst_id(order.symbol)
+    expected_direction = "long" if order.side == 0 else "short"
+    candidates: list[tuple[tuple[float, Decimal, Decimal], int, dict[str, Any]]] = []
+    for index, segment in enumerate(segments):
+        if index in used_indexes or not isinstance(segment, dict):
+            continue
+        if str(segment.get("instId") or "") != expected_inst_id:
+            continue
+        if str(segment.get("direction") or "").lower() != expected_direction:
+            continue
+        closed_at = _external_history_segment_time(segment)
+        if closed_at is None:
+            continue
+        time_delta = abs((closed_at - order.closed_at).total_seconds())
+        if time_delta > EXTERNAL_HISTORY_MATCH_WINDOW_SECONDS:
+            continue
+        open_price = _to_decimal(segment.get("openAvgPx") or "0")
+        close_price = _to_decimal(segment.get("closeAvgPx") or "0")
+        close_size = abs(_to_decimal(segment.get("closeTotalPos") or "0"))
+        if open_price <= 0 or close_price <= 0 or close_size <= 0:
+            continue
+        price_delta = abs(open_price - order.open_price) / order.open_price
+        size_delta = abs(close_size - abs(order.size)) / abs(order.size)
+        # The local snapshot is the only reliable identity for a manual order.
+        # Require both price and quantity to remain close enough before using a
+        # nearby exchange segment; an ambiguous segment stays explicitly unknown.
+        if price_delta > Decimal("0.02") or size_delta > Decimal("0.25"):
+            continue
+        candidates.append(((time_delta, price_delta, size_delta), index, segment))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    # Two exchange segments with the same score do not identify one local
+    # snapshot. Keep the financials unknown instead of attaching the wrong
+    # close to a manual position.
+    if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
+        return None
+    _score, index, segment = candidates[0]
+    used_indexes.add(index)
+    return segment
+
+
+def _apply_external_history_segment(order: Order, segment: dict[str, Any]) -> bool:
+    open_price = _to_decimal(segment.get("openAvgPx") or "0")
+    close_price = _to_decimal(segment.get("closeAvgPx") or "0")
+    close_size = abs(_to_decimal(segment.get("closeTotalPos") or "0"))
+    if open_price <= 0 or close_price <= 0 or close_size <= 0:
+        return False
+    realized_pnl = _to_decimal(segment.get("realizedPnl") or segment.get("pnl") or "0")
+    realized_fee = -abs(_to_decimal(segment.get("fee") or "0"))
+    funding_fee = _to_decimal(segment.get("fundingFee") or "0")
+    pnl = realized_pnl + realized_fee + funding_fee
+    base_notional = open_price * close_size
+    pnl_ratio = (pnl / base_notional) * Decimal("100") if base_notional > 0 else Decimal("0")
+    order.close_price = close_price
+    order.position_amount = close_size * close_price
+    order.realized_pnl = realized_pnl
+    order.realized_fee = realized_fee
+    order.realized_funding_fee = funding_fee
+    order.pnl = pnl
+    order.pnl_ratio = pnl_ratio
+    order.settlement_status = Order.SETTLEMENT_STATUS_ESTIMATED
+    order.settlement_error = "已从币安成交历史核对；接管前的加仓、减仓可能未完全纳入"
+    order.settled_at = timezone.now()
+    order.settlement_retry_count = 0
+    order.settlement_next_retry_at = None
+    order.save(
+        update_fields=[
+            "close_price",
+            "position_amount",
+            "realized_pnl",
+            "realized_fee",
+            "realized_funding_fee",
+            "pnl",
+            "pnl_ratio",
+            "settlement_status",
+            "settlement_error",
+            "settled_at",
+            "settlement_retry_count",
+            "settlement_next_retry_at",
+        ]
+    )
+    return True
+
+
+def _sync_external_closed_history(user, orders: list[Order], *, trading_mode=TradingMode.ORDINARY) -> int:
+    """Fill missing manual-close facts from Binance's read-only position history."""
+    candidates = [order for order in orders if _external_history_order_needs_refresh(order)]
+    if not candidates:
+        return 0
+    credentials = get_user_binance_credentials(user, trading_mode=trading_mode)
+    if not credentials:
+        return 0
+
+    cache_key = _external_history_cache_key(user, trading_mode)
+    segments = cache.get(cache_key)
+    if not isinstance(segments, list):
+        try:
+            payload = BinanceFuturesClient(credentials).get_positions_history(
+                limit=EXTERNAL_HISTORY_FETCH_LIMIT,
+            )
+            rows = payload.get("data") if isinstance(payload, dict) else None
+            segments = [row for row in rows or [] if isinstance(row, dict)]
+            cache.set(cache_key, segments, timeout=EXTERNAL_HISTORY_CACHE_TTL_SECONDS)
+        except BinanceApiError as exc:
+            logger.warning(
+                "external position history refresh failed user=%s err=%s",
+                getattr(user, "id", None),
+                safe_error_summary(exc),
+            )
+            cache.set(cache_key, [], timeout=10)
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "external position history refresh unexpected user=%s err=%s",
+                getattr(user, "id", None),
+                safe_error_summary(exc),
+            )
+            cache.set(cache_key, [], timeout=10)
+            return 0
+
+    used_indexes: set[int] = set()
+    synced = 0
+    for order in sorted(candidates, key=lambda item: item.closed_at or timezone.now(), reverse=True):
+        segment = _match_external_history_segment(order, segments, used_indexes)
+        if segment and _apply_external_history_segment(order, segment):
+            synced += 1
+    return synced
 
 
 def _load_history_exchange_rows(user, orders: list[Order], *, trading_mode=TradingMode.ORDINARY) -> dict[str, Any]:
@@ -3174,6 +3349,12 @@ class PositionHistoryView(APIView):
             request.user, [order for order in visible_orders if order.status == 1],
             trading_mode=request_trading_mode(request),
         ) if not local_snapshot and any(order.status == 1 for order in visible_orders) else {}
+        if not local_snapshot:
+            _sync_external_closed_history(
+                request.user,
+                [order for order in visible_orders if order.status == 1],
+                trading_mode=request_trading_mode(request),
+            )
         exchange_ms += _perf_ms(exchange_started)
         exchange_rows = {
             "rows_by_order_id": {
@@ -3219,6 +3400,7 @@ class PositionHistoryView(APIView):
                 "exchange_refresh_required": local_snapshot and (
                     first_open_order is not None
                     or any(_history_order_needs_exchange_refresh(order) for order in visible_orders)
+                    or any(_external_history_order_needs_refresh(order) for order in visible_orders)
                 ),
                 "pagination": {
                     "page": page,

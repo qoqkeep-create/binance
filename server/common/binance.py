@@ -3494,7 +3494,7 @@ class BinanceFuturesClient:
         bill_type: Optional[str] = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"limit": max(1, int(limit))}
+        params: dict[str, Any] = {"limit": max(1, min(int(limit), 1000))}
         if begin:
             params["startTime"] = begin
         if end:
@@ -3703,6 +3703,11 @@ def build_closed_position_history(
                 total_realized = Decimal("0")
                 total_fee = Decimal("0")
 
+            # Commission is charged on both the opening and closing fills.
+            # Keep it in the lifecycle total before deciding whether this row
+            # increases or reduces the position.
+            total_fee += fee
+
             if running_qty == 0 or running_qty * signed_qty > 0:
                 running_qty += signed_qty
                 open_cost += fill_price * qty
@@ -3719,7 +3724,6 @@ def build_closed_position_history(
             total_close_qty += closing_qty
             weighted_close_px += fill_price * closing_qty
             total_realized += realized_pnl
-            total_fee += fee
 
             if abs(qty - closing_qty) > Decimal("0.00000001"):
                 remaining_qty = qty - closing_qty

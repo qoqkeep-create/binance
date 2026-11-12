@@ -18,6 +18,10 @@ from mobile.models import AccountOutbox, AccountWorkerState, TradingCommand
 # Only these authenticated user operations may be queued. No arbitrary URL or callable.
 ACTIONS = {
     "open": ("/v1/trade/open", "trading.views.TradeOpenView"),
+    # Read-only reconciliation for a market/Maker entry whose write result
+    # was lost. It may adopt an exchange-confirmed fill locally, but it never
+    # submits another exchange order.
+    "entry-status": ("/v1/trade/entry/status", "trading.views.EntryStatusView"),
     # Maker status/fallback are separate commands so the worker never blocks
     # while a post-only order waits on the book.
     "maker-status": ("/v1/trade/maker/status", "trading.views.MakerOpenStatusView"),
