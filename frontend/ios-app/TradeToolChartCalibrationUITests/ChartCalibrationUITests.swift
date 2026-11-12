@@ -1039,6 +1039,7 @@ final class ChartCalibrationUITests: XCTestCase {
         XCTAssertEqual(auto.value as? String, "1")
         app.buttons["chart-interval.4h"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["market-chart-plot"].exists)
+      XCTAssertFalse(app.descendants(matching: .any)["market-chart-recovery-loading-indicator"].exists)
         attachScreenshot(named: "chart-configurable-intervals")
     }
 
@@ -3244,6 +3245,30 @@ final class WebParityUITests: XCTestCase {
     assertChartOrderTypeSwitch(options: ["--fixture-dark"])
   }
 
+  func testMakerEntryShowsOnlyMakerAndOpensUnifiedOrders() {
+    launch("market", ["--fixture-entry-ready", "--fixture-maker-entry", "--fixture-maker-submit"])
+    app.buttons["搜索币种、币对或合约"].tap()
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    let ticket = app.buttons["chart-ticket.submit"]
+    XCTAssertTrue(ticket.waitForExistence(timeout: 10))
+    app.descendants(matching: .any)["chart-ticket.order-type"].firstMatch.buttons["市价"].tap()
+    let chart = app.descendants(matching: .any)["market-chart-plot"].firstMatch
+    let lower = app.coordinate(withNormalizedOffset: .zero).withOffset(
+      CGVector(dx: chart.frame.minX + chart.frame.width * 0.6,
+               dy: chart.frame.minY + 30 + chart.frame.height * 0.85))
+    lower.press(forDuration: 0.6)
+    XCTAssertEqual(ticket.label, "开多（只做 Maker）")
+    XCTAssertEqual(app.staticTexts["chart-ticket.开仓价"].label, "市价")
+    XCTAssertFalse(app.staticTexts["Maker预览"].exists)
+    ticket.tap()
+    XCTAssertTrue(app.staticTexts["开仓确认"].waitForExistence(timeout: 5))
+    app.buttons["确定"].tap()
+    XCTAssertTrue(app.buttons["positions.tabs.limits"].waitForExistence(timeout: 6))
+    XCTAssertTrue(app.buttons["positions.tabs.limits"].isSelected)
+    XCTAssertTrue(app.otherElements["orders.card.maker:301"].waitForExistence(timeout: 6))
+    XCTAssertTrue(app.staticTexts["待成交"].exists)
+  }
+
   private func assertChartOrderTypeSwitch(options: [String]) {
     launch("market", options + ["--fixture-entry-ready", "--fixture-maker-entry"])
     app.buttons["搜索币种、币对或合约"].tap()
@@ -4043,7 +4068,7 @@ final class WebParityUITests: XCTestCase {
     capture("dark-profile-after-modal")
   }
 
-  func testExternalFloatingFailureUsesToastAndCanRetryWithoutAnInlineCard() {
+  func testExternalFloatingFailureUsesErrorDialogAndCanRetryWithoutAnInlineCard() {
     launch("positions", ["--fixture-multiple", "--fixture-pip-unavailable"])
     let toggle = app.buttons["positions.floatingPositions"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
@@ -4051,15 +4076,17 @@ final class WebParityUITests: XCTestCase {
     assertNoInlineFloatingCard()
     for attempt in 1...2 {
       toggle.tap()
-      let toast = app.descendants(matching: .any)["app.toast"].firstMatch
-      XCTAssertTrue(toast.waitForExistence(timeout: 5))
-      XCTAssertTrue(toast.label.contains("此设备暂不支持画中画"))
+      let dismiss = app.buttons["app.error-dialog.dismiss"].firstMatch
+      XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "此设备暂不支持画中画")).firstMatch.exists)
       let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "未开启"), object: toggle)
       XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
       assertNoInlineFloatingCard()
       XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
       capture("external-floating-unavailable-attempt-\(attempt)")
-      XCTAssertTrue(toast.waitForNonExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["app.error-dialog.dismiss"].waitForExistence(timeout: 2))
+      app.buttons["app.error-dialog.dismiss"].tap()
+      XCTAssertTrue(dismiss.waitForNonExistence(timeout: 5))
     }
     app.buttons["行情"].firstMatch.tap()
     assertNoInlineFloatingCard()
@@ -4075,13 +4102,14 @@ final class WebParityUITests: XCTestCase {
     let toggle = app.buttons["positions.floatingPositions"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     toggle.tap()
-    let unavailable = app.descendants(matching: .any)["app.toast"].firstMatch
-    if unavailable.waitForExistence(timeout: 2), unavailable.label.contains("此设备暂不支持画中画") {
+    let unavailable = app.buttons["app.error-dialog.dismiss"].firstMatch
+    if unavailable.waitForExistence(timeout: 2) {
       let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "未开启"), object: toggle)
       XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
       assertNoInlineFloatingCard()
       XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
       capture("external-floating-device-capability-failure")
+      app.buttons["app.error-dialog.dismiss"].tap()
       return
     }
     // The controller's eight-second deadline closes a failed start. Remaining enabled
@@ -4123,14 +4151,16 @@ final class WebParityUITests: XCTestCase {
       let toggle = app.buttons["positions.floatingPositions"]
       XCTAssertTrue(toggle.waitForExistence(timeout: 10))
       toggle.tap()
-      let toast = app.descendants(matching: .any)["app.toast"].firstMatch
-      XCTAssertTrue(toast.waitForExistence(timeout: 5))
-      XCTAssertTrue(toast.label.contains(expected))
+      let dismiss = app.buttons["app.error-dialog.dismiss"].firstMatch
+      XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", expected)).firstMatch.exists)
       let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "未开启"), object: toggle)
       XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
       assertNoInlineFloatingCard()
       XCTAssertFalse(app.alerts["跨 App 浮窗"].exists)
       capture(name)
+      dismiss.tap()
+      XCTAssertTrue(dismiss.waitForNonExistence(timeout: 5))
     }
   }
 

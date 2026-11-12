@@ -275,6 +275,17 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
         }
       }
+      if request.method == .post, request.path == "/api/commands",
+        ProcessInfo.processInfo.arguments.contains("--fixture-maker-submit") {
+        let body = try JSONDecoder().decode(JSONValue.self, from: request.body ?? Data())
+        if body.value("action") == "open" {
+          let result: JSONValue = .object(["id": .string("fixture-maker-open"), "status": .string("SUCCEEDED"),
+            "result": .object(["data": .object(["state": .string("PENDING_MAKER"),
+              "maker_order_id": .string("fixture-maker-order"), "client_request_id": .string("fixture-maker-request"),
+              "symbol": .string("BTCUSDT")])])])
+          return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+        }
+      }
       guard
         request.method == .get || savesFixtureRegistration
           || ["/v1/trade/capital/precheck", "/v1/trade/capital/wallet/precheck"].contains(request.path)
@@ -300,6 +311,13 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         ordinary["status"] = .number(0); ordinary["can_cancel"] = .bool(true)
         ordinary["filled_amount"] = .string("0")
         var records = [JSONValue.object(ordinary)]
+        if ProcessInfo.processInfo.arguments.contains("--fixture-maker-submit") {
+          var maker = ordinary
+          maker["id"] = .string("maker:301"); maker["record_key"] = .string("maker:301")
+          maker["source_id"] = .number(301); maker["order_kind"] = .string("maker")
+          maker["status_text"] = .string("待成交"); maker["can_cancel"] = .bool(false); maker["can_chase"] = .bool(false)
+          records = [.object(maker)]
+        }
         if ProcessInfo.processInfo.arguments.contains("--fixture-unified-orders") {
           let samples: [(String, Int, String, Int, String, String)] = [("limit", 201, "BTCUSDT", 0, "等待成交", "0"),
                      ("maker", 202, "ETHUSDT", 0, "等待成交", "0"),

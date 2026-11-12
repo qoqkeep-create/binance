@@ -361,7 +361,6 @@ private struct MarketChartDetailView: View {
                 frame: viewModel.chartDataFrame,
                 recoveryMessage: viewModel.recoveryState.message,
                 recoveryFailure: viewModel.recoveryState.failureMessage,
-                recoveryLoading: viewModel.recoveryState == .restoring,
                 preservesPresentedChart: viewModel.preservesPresentedChart,
                 onRetryLoading: { Task { await viewModel.retryLoading() } },
                 automaticallyFitsPrice: automaticallyFitsPrice,

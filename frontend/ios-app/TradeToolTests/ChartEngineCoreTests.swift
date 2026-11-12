@@ -665,10 +665,13 @@ final class ChartEngineCoreTests: XCTestCase {
         XCTAssertEqual(center.activeToast?.duration, 1.5)
 
         center.error("失败提示")
-        XCTAssertNil(center.activeToast?.iconSystemName)
-        XCTAssertEqual(center.activeToast?.duration, 1.5)
+        XCTAssertNil(center.activeToast)
+        XCTAssertNil(center.activeError?.iconSystemName)
+        XCTAssertEqual(center.activeError?.duration, 1.5)
+        XCTAssertEqual(center.activeError?.message, "失败提示")
 
         center.dismiss()
+        XCTAssertNil(center.activeError)
     }
 
     @MainActor

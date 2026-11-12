@@ -2,6 +2,10 @@
 
 本主题维护原 USDT Web 的原生业务页面复刻方式。SwiftUI 实现位于 `frontend/ios-app/TradeTool/Features/USDT/`；2026-11-01 按用户新要求，认证入口 `Features/Auth/LoginView.swift` 改为 USDC 原生布局和底部 sheet，名称与图标见 [品牌与认证](ios-authentication.md)。原项目来源及只读路径见 [来源索引](sources.md)，本地参考副本和截图不属于发布资源。
 
+## 统一失败反馈
+
+业务失败和 API 错误使用全局 `AppToastCenter` 错误弹窗展示，标题、消息和“知道了”按钮保持一致；用户确认前不自动关闭。成功、普通提示和警告继续使用短时 Toast。交易与行情页面只负责报告错误，不再各自堆叠一闪而过的失败提示。
+
 <a id="统一委托卡片20261110"></a>
 
 ## 统一委托卡片（2026-11-10，本地）

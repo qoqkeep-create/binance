@@ -64,10 +64,11 @@ def submit(user, mode, action, payload, key):
         if binding is None:
             raise ValueError("请先绑定当前模式的交易所 API")
         # A Maker status read only reconciles an existing exchange order.  It
-        # must remain executable while another command is UNKNOWN so the
-        # account can converge instead of being locked forever.
+        # must remain executable while another command is UNKNOWN, and a
+        # failed status read must not become a permanent new-entry lock.
         if action in {"open", "maker-fallback", "limit-create", "limit-chase"} and TradingCommand.objects.filter(
-                user=user, trading_mode=mode, binding_id_snapshot=binding.pk, status="UNKNOWN").exists():
+                user=user, trading_mode=mode, binding_id_snapshot=binding.pk, status="UNKNOWN").exclude(
+                    action="maker-status").exists():
             raise ValueError("当前账户有结果未知的交易命令，请先核对订单，暂停新增风险")
         command_id = uuid4()
         body = dict(payload)

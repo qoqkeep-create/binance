@@ -40,8 +40,16 @@ class CommandSafetyTests(TestCase):
         self.assertEqual(status.action, "maker-status")
         self.assertEqual(status.status, "PENDING")
 
-    def test_new_open_stays_blocked_by_unknown_maker_status(self):
+    def test_new_open_is_not_blocked_by_unknown_maker_status_read(self):
         unknown = submit(self.user, "ordinary", "maker-status", {}, "unknown-maker-status")
+        unknown.status = "UNKNOWN"
+        unknown.save(update_fields=["status"])
+
+        command = submit(self.user, "ordinary", "open", {}, "new-risk")
+        self.assertEqual(command.status, "PENDING")
+
+    def test_new_open_stays_blocked_by_unknown_write(self):
+        unknown = submit(self.user, "ordinary", "open", {}, "unknown-open")
         unknown.status = "UNKNOWN"
         unknown.save(update_fields=["status"])
 

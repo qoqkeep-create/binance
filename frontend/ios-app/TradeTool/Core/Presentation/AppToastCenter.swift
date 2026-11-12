@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum AppToastStyle {
+enum AppToastStyle: Equatable {
     case success
     case error
     case warning
@@ -35,6 +35,7 @@ struct AppToast: Identifiable {
 @MainActor
 final class AppToastCenter: ObservableObject, APIErrorReporting {
     @Published private(set) var activeToast: AppToast?
+    @Published private(set) var activeError: AppToast?
 
     private var dismissalTask: Task<Void, Never>?
 
@@ -54,6 +55,7 @@ final class AppToastCenter: ObservableObject, APIErrorReporting {
         duration: TimeInterval = AppToast.defaultDuration
     ) {
         dismissalTask?.cancel()
+        dismissalTask = nil
 
         let resolvedDuration = duration.isFinite
             ? max(duration, 0.5)
@@ -66,6 +68,19 @@ final class AppToastCenter: ObservableObject, APIErrorReporting {
             iconSystemName: iconSystemName,
             duration: resolvedDuration
         )
+
+        if style == .error {
+            withAnimation(.snappy(duration: 0.25)) {
+                activeToast = nil
+                activeError = toast
+            }
+            return
+        }
+
+        // An error dialog owns the interaction until the user acknowledges it.
+        // Do not let a later background toast appear behind it and reappear after
+        // the dialog is dismissed.
+        guard activeError == nil else { return }
 
         withAnimation(.snappy(duration: 0.25)) {
             activeToast = toast
@@ -103,6 +118,7 @@ final class AppToastCenter: ObservableObject, APIErrorReporting {
 
         withAnimation(.easeOut(duration: 0.18)) {
             activeToast = nil
+            activeError = nil
         }
     }
 
@@ -122,8 +138,6 @@ private struct GlobalAPIToastModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay {
             ZStack {
-                Color.clear
-
                 if let toast = toastCenter.activeToast {
                     ToastView(toast: toast)
                         .transition(
@@ -131,12 +145,72 @@ private struct GlobalAPIToastModifier: ViewModifier {
                                 .combined(with: .opacity)
                         )
                         .zIndex(1)
+                        .allowsHitTesting(false)
+                }
+
+                if let error = toastCenter.activeError {
+                    AppErrorDialog(error: error) {
+                        toastCenter.dismiss()
+                    }
+                    .transition(
+                        .scale(scale: 0.94)
+                            .combined(with: .opacity)
+                    )
+                    .zIndex(2)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea(.container, edges: .all)
             .ignoresSafeArea(.keyboard, edges: .all)
-            .allowsHitTesting(false)
+        }
+    }
+}
+
+private struct AppErrorDialog: View {
+    let error: AppToast
+    let dismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text(error.title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BinanceTheme.primaryText)
+
+                ScrollView {
+                    Text(error.message)
+                        .font(.body)
+                        .foregroundStyle(BinanceTheme.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 180)
+
+                Button("知道了", action: dismiss)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(BinanceTheme.accentText)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(
+                        BinanceTheme.accentText.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .accessibilityIdentifier("app.error-dialog.dismiss")
+            }
+            .padding(20)
+            .frame(maxWidth: 340)
+            .background(
+                BinanceTheme.surface,
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .shadow(color: .black.opacity(0.3), radius: 24, y: 10)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("app.error-dialog")
+            .padding(.horizontal, 24)
         }
     }
 }

@@ -380,7 +380,6 @@ struct KlineChartSceneView: View {
   let frame: ChartDataFrame?
   var recoveryMessage: String? = nil
   var recoveryFailure: String? = nil
-  var recoveryLoading = false
   var preservesPresentedChart = false
   var onRetryLoading: () -> Void = {}
   var automaticallyFitsPrice = true
@@ -493,13 +492,6 @@ struct KlineChartSceneView: View {
         }
       }
       .overlay(alignment: .top) {
-        if isPresented, recoveryLoading {
-          BinanceKlineLoadingIndicator(isAnimating: true)
-            .frame(width: 48, height: 26)
-            .background(BinanceTheme.background.opacity(0.96), in: RoundedRectangle(cornerRadius: 8))
-            .accessibilityIdentifier("market-chart-recovery-loading-indicator")
-            .padding(.top, 8)
-        }
         if isPresented, let recoveryMessage {
           HStack(spacing: 10) {
             Text(recoveryMessage)

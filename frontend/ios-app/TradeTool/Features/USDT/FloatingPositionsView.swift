@@ -236,7 +236,7 @@ private struct FloatingPositionsOverlay: ViewModifier {
     .onChange(of: enabled) { _, value in
       guard value, !store.isBound else { return }
       enabled = false
-      container.toastCenter.present("请先绑定 API，再开启持仓浮窗。")
+      container.toastCenter.error("请先绑定 API，再开启持仓浮窗。")
     }
     .onChange(of: activation, initial: true) { _, value in
       apply(value)
@@ -250,7 +250,7 @@ private struct FloatingPositionsOverlay: ViewModifier {
     .onChange(of: pip.notice) { _, message in
       guard let message else { return }
       enabled = false
-      container.toastCenter.present(message)
+      container.toastCenter.error(message)
       pip.notice = nil
     }
   }
