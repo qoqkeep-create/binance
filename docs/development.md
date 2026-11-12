@@ -2,9 +2,11 @@
 
 <a id="持仓标记前台连接与止盈标签20261112"></a>
 
-## 持仓标记、前台连接与止盈标签（2026-11-12，本地）
+## 持仓标记、前台连接与止盈标签（2026-11-12，后端已部署）
 
-回归覆盖手动仓快照时间映射、止盈金额与标签几何，以及前台重连。后端 `ExternalPositionApiTests.test_manual_position_without_local_order_is_discovered_during_list_read` 通过；iOS 定向 XCTest 中前台 WebSocket 在 **1.5 秒**内重新收到 ready，持仓标记、止盈标签和图表绘制相关用例通过。主 App 与单测目标使用 iOS 模拟器 Debug 无签名构建；没有执行真实开仓、平仓、止损或资金操作，也没有部署后端。
+回归覆盖手动仓快照时间映射、止盈金额与标签几何，以及前台重连。后端 `ExternalPositionApiTests.test_manual_position_without_local_order_is_discovered_during_list_read` 通过；iOS 定向 XCTest 中前台 WebSocket 在 **1.5 秒**内重新收到 ready，持仓标记、止盈标签和图表绘制相关用例通过。主 App 与单测目标使用 iOS 模拟器 Debug 无签名构建；没有执行真实开仓、平仓、止损或资金操作。
+
+后端完整同源提交 **`736a095d66db2c543604de400f5b3c0d74dc75e8`** 已部署到 **47.80.22.243（首尔服务器）** 的 `integrated-20261112-full-736a095`；线上健康、迁移和六容器验收通过。iOS 仍是已推送源码，未把后端发布写作 TestFlight 或实机安装结果。
 
 根因记录：手动仓本地投影的 `created_at` 是发现时刻，旧客户端把它当作开仓时间；后台恢复又没有调用共享 realtime client 的显式重连，旧任务或 30 秒指数退避会阻塞新连接。修复后手动仓接口返回交易所快照时间，前台回归立即清理旧 WebSocket 并重建订阅。
 

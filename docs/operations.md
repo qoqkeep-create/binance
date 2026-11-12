@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+<a id="完整同源发布20261112-图表前台止盈修复"></a>
+
+## 完整同源发布（2026-11-12，图表标记、前台连接与止盈标签修复）
+
+提交 **`736a095d66db2c543604de400f5b3c0d74dc75e8`** 已推送至 GitHub `codex/integrated-ios`，并按用户授权将包含配套后端的完整同源版本发布到 **47.80.22.243（首尔服务器）**。发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261112-full-736a095`，API／market／worker／scheduler 统一使用镜像 `tradetools-integrated:integrated-20261112-full-736a095`；归档包含 **333 个**后端／部署文件，归档 SHA-256 为 `cacdfb91c24631cd6fb0bc182ef9589d7de7da9edc978cc7a30795a33d9b70c8`。
+
+北京时间 **2026-11-12 10:39** 验收：`current` 已指向该 release，六个容器均 healthy，公网 `/integrated/v1/health` 返回 `{"status":"ok","checks":{"database":true,"migrations":true,"scheduler":true}}`；`migrate --check` 无待应用迁移。发布前数据库 gzip 备份 **421113882 bytes**，SHA-256 为 `c3499029989b5c64d71c4ab975b846724586fe0d59315d871dab6f60ca0ed478`，位于 `/opt/trade-tools-integrated/backups/integrated-20261112-full-736a095/`。Compose 切换时重建了 MySQL／Redis 容器，但沿用原有持久化数据卷；没有改写业务数据或执行交易写入。
+
+清理了发布过程中产生的临时构建镜像和 Docker build cache；当前根分区约 **24 GB 可用／38%**，构建缓存为 0。线上只做健康、迁移、容器、镜像和磁盘只读验收，没有真实开仓、撤单、止损、平仓、划转或保护单操作。后端发布不代表 iOS 已上传 TestFlight 或安装到实机。
+
 <a id="首尔服务器磁盘清理20261112"></a>
 
 ## 首尔服务器磁盘清理（2026-11-12）
