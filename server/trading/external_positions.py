@@ -989,7 +989,10 @@ def _adopt_external_positions(user, account, positions, *, allow_unresolved_requ
     blocked_symbols.update(
         _scoped(TradeOpenRequest, user, account)
         .filter(order_id__isnull=True)
-        .exclude(status=TradeOpenRequest.STATUS_FAILED)
+        .exclude(status__in=[
+            TradeOpenRequest.STATUS_FAILED,
+            TradeOpenRequest.STATUS_COMPLETED,
+        ])
         .annotate(
             has_web_owner=Exists(
                 _scoped(Order, user, account)

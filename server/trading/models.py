@@ -96,12 +96,14 @@ class TradeOpenRequest(models.Model):
     STATUS_SUBMITTED = "submitted"
     STATUS_RECOVERED = "recovered"
     STATUS_FAILED = "failed"
+    STATUS_COMPLETED = "completed"
 
     STATUS_CHOICES = [
         (STATUS_PENDING, "待提交"),
         (STATUS_SUBMITTED, "已提交"),
         (STATUS_RECOVERED, "已恢复"),
         (STATUS_FAILED, "失败"),
+        (STATUS_COMPLETED, "已完成"),
     ]
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="trade_open_requests")

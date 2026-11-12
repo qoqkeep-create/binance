@@ -207,6 +207,19 @@ def mark_open_request_failed(open_request: TradeOpenRequest, error: Exception | 
     open_request.save(update_fields=["status", "error", "updated_at"])
 
 
+def mark_open_request_completed(
+    open_request: TradeOpenRequest,
+    *,
+    exchange_order_id: str = "",
+) -> None:
+    """Record a confirmed exchange terminal fact without inventing a live position."""
+    if exchange_order_id:
+        open_request.binance_order_id = str(exchange_order_id)
+    open_request.status = TradeOpenRequest.STATUS_COMPLETED
+    open_request.error = ""
+    open_request.save(update_fields=["status", "binance_order_id", "error", "updated_at"])
+
+
 def record_open_request_error(open_request: Optional[TradeOpenRequest], error: Exception) -> bool:
     if not open_request:
         return False

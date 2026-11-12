@@ -3,6 +3,7 @@ import hashlib
 import json
 import threading
 from contextlib import contextmanager
+from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 
 from django.conf import settings
@@ -11,6 +12,7 @@ from django.test import RequestFactory
 from django.utils import timezone
 
 from api_bindings.models import ApiBinding
+from api_bindings.services import get_user_trading_account
 from api_bindings.mode_middleware import LEAD_ENTRY_PATHS
 from market_stream.bus import connection
 from mobile.models import AccountOutbox, AccountWorkerState, TradingCommand
@@ -70,9 +72,8 @@ def submit(user, mode, action, payload, key):
         # A Maker status read only reconciles an existing exchange order.  It
         # must remain executable while another command is UNKNOWN, and a
         # failed status read must not become a permanent new-entry lock.
-        if action in {"open", "maker-fallback", "limit-create", "limit-chase"} and TradingCommand.objects.filter(
-                user=user, trading_mode=mode, binding_id_snapshot=binding.pk, status="UNKNOWN").exclude(
-                    action="maker-status").exists():
+        if action in {"open", "maker-fallback", "limit-create", "limit-chase"} and _has_unresolved_unknown_write(
+                user, mode, binding.pk):
             raise ValueError("当前账户有结果未知的交易命令，请先核对订单，暂停新增风险")
         command_id = uuid4()
         body = dict(payload)
@@ -152,9 +153,25 @@ def invoke(command):
 
 
 def resolve_known_commands(binding_id):
-    """Converge from persisted, exchange-confirmed USDT records; never retry a write."""
+    """Converge unknown open writes from local and exact exchange read facts.
+
+    This function never submits, cancels, or modifies an exchange order.  A
+    confirmed pending/filled/zero-fill terminal row resolves the transport
+    uncertainty; a missing or malformed row stays UNKNOWN.
+    """
     from trading.models import TradeOpenRequest
     from positions.models import LimitOrder, Order
+    from common.binance import to_inst_id
+    from trading.execution import parse_entry_execution
+    from trading.open_requests import mark_open_request_completed, mark_open_request_failed
+
+    def finish(command, status, data):
+        message = data.pop("message", "已根据交易所事实核对")
+        result = {"code": 200, "message": message, "data": data}
+        TradingCommand.objects.filter(pk=command.pk, status="UNKNOWN").update(
+            status=status, result=result, updated_at=timezone.now()
+        )
+
     for command in TradingCommand.objects.filter(binding_id_snapshot=binding_id, status="UNKNOWN")[:100]:
         if command.action not in {"open", "limit-create", "limit-chase"}:
             continue
@@ -170,8 +187,113 @@ def resolve_known_commands(binding_id):
             api_key_fingerprint=command.binding_fingerprint, binance_client_order_id=record.client_order_id,
             created_at__gte=command.binding_created_at).first() if command.action == "limit-create" else None
         if order or limit_order:
-            result = {"code": 200, "message": "已根据持久化订单确认", "data": {"position_id": order.pk if order else None, "limit_order_id": limit_order.pk if limit_order else None}}
-            TradingCommand.objects.filter(pk=command.pk, status="UNKNOWN").update(status="SUCCEEDED", result=result, updated_at=timezone.now())
+            finish(command, "SUCCEEDED", {
+                "message": "已根据持久化订单确认",
+                "position_id": order.pk if order else None,
+                "limit_order_id": limit_order.pk if limit_order else None,
+            })
+            continue
+
+        if record.status == TradeOpenRequest.STATUS_FAILED:
+            finish(command, "FAILED", {"message": "开仓已确认失败", "state": "FAILED"})
+            continue
+        if record.status == TradeOpenRequest.STATUS_COMPLETED:
+            finish(command, "SUCCEEDED", {"message": "开仓结果已确认", "state": "COMPLETED"})
+            continue
+
+        # A durable order id is the only safe exchange lookup key here.  A
+        # missing id means the write may never have reached Binance, so it
+        # remains a genuine unknown and continues to block new risk.
+        exchange_order_id = str(record.binance_order_id or "").strip()
+        if not exchange_order_id:
+            continue
+        try:
+            account = get_user_trading_account(
+                command.user, active_only=True, trading_mode=command.trading_mode
+            )
+            if not account or account.binding_id != binding_id:
+                continue
+            payload = account.create_futures_client().get_order(
+                inst_id=to_inst_id(record.symbol), order_id=exchange_order_id
+            )
+            row = (payload.get("data") or [None])[0]
+            if not isinstance(row, dict):
+                continue
+            intent = record.request_payload.get("_execution_intent", {}) if isinstance(record.request_payload, dict) else {}
+            requested_size = None
+            try:
+                requested_size = Decimal(str(intent.get("size"))) if intent.get("size") else None
+                if requested_size is not None and (not requested_size.is_finite() or requested_size <= 0):
+                    requested_size = None
+            except (InvalidOperation, TypeError, ValueError):
+                requested_size = None
+            execution = parse_entry_execution(row, requested_size=requested_size)
+            raw_state = str(row.get("state") or "").strip().lower()
+            terminal_states = {"canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed", "filled"}
+            if execution.has_fill:
+                mark_open_request_completed(record, exchange_order_id=exchange_order_id)
+                finish(command, "SUCCEEDED", {
+                    "message": "已根据交易所成交事实确认",
+                    "state": "FILLED" if execution.state == "filled" else "PARTIALLY_FILLED",
+                    "maker_order_id": exchange_order_id,
+                    "filled_size": format(execution.filled_size, "f"),
+                    "average_price": format(execution.average_price, "f"),
+                    "symbol": record.symbol,
+                })
+            elif raw_state in terminal_states and execution.state == "pending":
+                mark_open_request_failed(record, f"exchange_{raw_state}")
+                finish(command, "FAILED", {
+                    "message": "已根据交易所终态确认未成交",
+                    "state": "FAILED",
+                    "maker_order_id": exchange_order_id,
+                    "filled_size": "0",
+                    "symbol": record.symbol,
+                })
+            elif execution.state == "pending":
+                # A live Maker order is a normal queued request.  Resolving
+                # the transport state makes it visible in the order list and
+                # prevents an unrelated symbol from being blocked forever.
+                pending_state = (
+                    "PENDING_MAKER"
+                    if str(intent.get("execution_mode") or "") == "maker"
+                    else "PENDING_ENTRY"
+                )
+                finish(command, "SUCCEEDED", {
+                    "message": "交易所已确认委托等待成交",
+                    "state": pending_state,
+                    "maker_order_id": exchange_order_id,
+                    "filled_size": "0",
+                    "symbol": record.symbol,
+                    "client_request_id": record.client_request_id,
+                })
+        except Exception:
+            # A read timeout, permission error, or malformed row is still an
+            # unknown write.  Keep the guard until an exact exchange fact is
+            # available; never guess a terminal state.
+            continue
+
+
+def _has_unresolved_unknown_write(user, mode, binding_id):
+    """Return whether an UNKNOWN command still represents unresolved risk."""
+    from trading.models import TradeOpenRequest
+    for command in TradingCommand.objects.filter(
+        user=user, trading_mode=mode, binding_id_snapshot=binding_id, status="UNKNOWN"
+    ).exclude(action__in={"maker-status", "entry-status"}):
+        if command.action != "open":
+            return True
+        request = TradeOpenRequest.objects.filter(
+            user_id=user.pk,
+            trading_mode=mode,
+            api_key_fingerprint=command.binding_fingerprint,
+            client_request_id=str(command.pk),
+            created_at__gte=command.binding_created_at,
+        ).first()
+        if not request or request.status not in {
+            TradeOpenRequest.STATUS_FAILED,
+            TradeOpenRequest.STATUS_COMPLETED,
+        }:
+            return True
+    return False
 
 
 def execute_account(binding_id):

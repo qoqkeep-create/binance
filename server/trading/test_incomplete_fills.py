@@ -20,6 +20,27 @@ def fill_row(order_id="incomplete-fill", *, price="0", quantity="0.5", state="ca
 
 
 class IncompleteFillParsingTests(SimpleTestCase):
+    def test_live_maker_without_fill_quantity_is_pending(self):
+        execution = parse_entry_execution({
+            "ordId": "maker-live",
+            "state": "live",
+        }, requested_size=Decimal("1"))
+
+        self.assertEqual(execution.state, "pending")
+        self.assertEqual(execution.filled_size, Decimal("0"))
+        self.assertFalse(execution.has_fill)
+
+    def test_live_maker_with_malformed_fill_quantity_remains_unknown(self):
+        execution = parse_entry_execution({
+            "ordId": "maker-live-malformed",
+            "state": "live",
+            "fillSz": "not-a-number",
+        }, requested_size=Decimal("1"))
+
+        self.assertEqual(execution.state, UNKNOWN)
+        self.assertEqual(execution.filled_size, Decimal("0"))
+        self.assertFalse(execution.has_fill)
+
     def test_positive_fill_without_valid_average_remains_unknown_and_preserves_quantity(self):
         for price in (None, "0", "-1", "invalid", "NaN", "Infinity"):
             with self.subTest(price=price):

@@ -1,5 +1,6 @@
 import json
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from django.test import TestCase, override_settings
 from rest_framework.response import Response
@@ -11,6 +12,7 @@ from mobile.account_events import ingest, reduce_pending
 from mobile.commands import submit
 from mobile.models import AccountFact, AccountInbox, TradingCommand
 from users.models import User
+from trading.models import TradeOpenRequest
 
 
 class CommandSafetyTests(TestCase):
@@ -55,6 +57,81 @@ class CommandSafetyTests(TestCase):
 
         with self.assertRaisesMessage(ValueError, "结果未知"):
             submit(self.user, "ordinary", "open", {}, "new-risk")
+
+    def test_completed_open_request_does_not_keep_unknown_command_as_risk_lock(self):
+        unknown = submit(self.user, "ordinary", "open", {}, "unknown-open")
+        unknown.status = "UNKNOWN"
+        unknown.save(update_fields=["status"])
+        TradeOpenRequest.objects.create(
+            user=self.user,
+            trading_mode="ordinary",
+            api_key_fingerprint=self.binding.api_key_fingerprint,
+            symbol="BTCUSDT",
+            client_request_id=str(unknown.pk),
+            client_order_id="completed-client-order",
+            binance_order_id="completed-exchange-order",
+            status=TradeOpenRequest.STATUS_COMPLETED,
+        )
+
+        command = submit(self.user, "ordinary", "open", {}, "new-risk")
+
+        self.assertEqual(command.status, "PENDING")
+
+
+class WorkerExchangeReconciliationTests(CommandSafetyTests):
+    @patch("mobile.commands.get_user_trading_account")
+    @patch("mobile.commands.account_lease")
+    def test_terminal_exchange_fill_resolves_unknown_open_without_creating_local_position(
+        self, lease, get_account
+    ):
+        from mobile.commands import execute_account
+
+        command = submit(self.user, "ordinary", "open", {}, "unknown-open")
+        command.status = "UNKNOWN"
+        command.save(update_fields=["status"])
+        TradeOpenRequest.objects.create(
+            user=self.user,
+            trading_mode="ordinary",
+            api_key_fingerprint=self.binding.api_key_fingerprint,
+            symbol="BTCUSDT",
+            client_request_id=str(command.pk),
+            client_order_id="maker-client-order",
+            binance_order_id="maker-exchange-order",
+            status=TradeOpenRequest.STATUS_SUBMITTED,
+            request_payload={"_execution_intent": {"execution_mode": "maker", "size": "1"}},
+        )
+        exchange = SimpleNamespace(get_order=lambda **_kwargs: {"data": [{
+            "ordId": "maker-exchange-order",
+            "state": "filled",
+            "fillSz": "1",
+            "accFillSz": "1",
+            "avgPx": "100",
+        }]})
+        get_account.return_value = SimpleNamespace(
+            binding_id=self.binding.pk,
+            create_futures_client=lambda: exchange,
+        )
+        from contextlib import contextmanager
+        from threading import Event
+        from mobile.models import AccountWorkerState
+
+        @contextmanager
+        def held():
+            AccountWorkerState.objects.update_or_create(
+                binding_id_snapshot=self.binding.pk, defaults={"fence": 1}
+            )
+            alive = Event()
+            alive.set()
+            yield 1, alive
+
+        lease.side_effect = lambda _binding_id: held()
+
+        execute_account(self.binding.pk)
+
+        command.refresh_from_db()
+        request = TradeOpenRequest.objects.get(client_request_id=str(command.pk))
+        self.assertEqual(command.status, "SUCCEEDED")
+        self.assertEqual(request.status, TradeOpenRequest.STATUS_COMPLETED)
 
     def test_missing_other_mode_binding_never_uses_ordinary_key(self):
         with override_settings(LEAD_TRADING_ENABLED=True):

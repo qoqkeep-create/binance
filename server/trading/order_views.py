@@ -141,16 +141,16 @@ def _maker_receipts(record, binding, commands):
                 or (data.get("client_request_id") and str(data["client_request_id"]) != record.client_request_id)):
             continue
         state = data.get("state")
-        if state == "PENDING_MAKER" and command.action in {"open", "maker-status"}:
+        if state in {"PENDING_MAKER", "FILLED", "PARTIALLY_FILLED"} and command.action in {"open", "maker-status"}:
             if command.action == "open" and str(command.pk) != record.client_request_id:
                 continue
             exchange_id = str(data.get("maker_order_id") or "")
             if not exchange_id:
                 continue
-        elif (state in {"CANCELLED", "EXPIRED", "REJECTED"}
+        elif (state in {"CANCELLED", "EXPIRED", "EXPIRED_IN_MATCH", "REJECTED"}
               and command.action == "maker-status"):
             exchange_id = str(data.get("maker_order_id") or record.binance_order_id or "")
-        elif (state in {"CANCELLED", "EXPIRED", "REJECTED"}
+        elif (state in {"CANCELLED", "EXPIRED", "EXPIRED_IN_MATCH", "REJECTED"}
               and command.action == "maker-fallback"
               and payload.get("cancel_only") is True and _decimal(data.get("filled_size")) is not None):
             exchange_id = ""
@@ -159,7 +159,8 @@ def _maker_receipts(record, binding, commands):
             # position may still represent only a partial fill.
             continue
         result.append({"time": command.updated_at, "state": state,
-                       "filled": _decimal(data.get("filled_size")), "average": None,
+                       "filled": _decimal(data.get("filled_size")),
+                       "average": _decimal(data.get("average_price"), positive=True),
                        "original_id": exchange_id, "source": command.action})
     return result
 
@@ -227,6 +228,9 @@ def _maker_row(record, binding, facts, commands, positions):
     if not latest:
         if record.status == TradeOpenRequest.STATUS_FAILED and not record.binance_order_id:
             row["status_text"] = "已拒绝"
+        elif record.status == TradeOpenRequest.STATUS_COMPLETED:
+            row["status"] = 1 if row.get("filled_size") not in {None, "0"} else 2
+            row["status_text"] = "已完成"
         return row
     state = latest["state"]
     if filled is None or size is None or filled > size:

@@ -51,17 +51,26 @@ def parse_entry_execution(row: Optional[dict], *, requested_size: Optional[Decim
 
     raw_state = str(row.get("state") or "").strip().lower()
     order_id = str(row.get("ordId") or "").strip()
-    reported_sizes = [
-        _decimal(row[key]) for key in ("fillSz", "accFillSz")
+    raw_sizes = [
+        row[key] for key in ("fillSz", "accFillSz")
         if row.get(key) not in (None, "")
     ]
+    reported_sizes = [_decimal(raw) for raw in raw_sizes]
     filled_size = max((size for size in reported_sizes if size is not None), default=Decimal("0"))
     average_price = _decimal(row.get("avgPx")) or Decimal("0")
     facts = {
         "order_id": order_id, "filled_size": filled_size,
         "average_price": average_price, "raw_state": raw_state,
     }
-    if not reported_sizes or None in reported_sizes or (filled_size > 0 and average_price <= 0):
+    # A live post-only order can omit executedQty/avgPrice.  That is a normal
+    # waiting state; terminal rows still require an explicit quantity.
+    if not reported_sizes:
+        if raw_state in {"live", "new", "open", "pending"}:
+            return EntryExecution(state=PENDING, **facts)
+        return EntryExecution(state=UNKNOWN, **facts)
+    if None in reported_sizes:
+        return EntryExecution(state=UNKNOWN, **facts)
+    if filled_size > 0 and average_price <= 0:
         return EntryExecution(state=UNKNOWN, **facts)
 
     if filled_size > 0:
