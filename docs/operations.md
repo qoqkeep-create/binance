@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+<a id="完整同源发布20261112-条件单终态查询"></a>
+
+## 完整同源发布（2026-11-12，手动仓条件单终态查询修复）
+
+提交 **`7ed091ff61dabf54fb0653d01c9af336913aadc3`** 已推送至 GitHub `codex/integrated-ios`，并按用户授权将完整同源后端发布到 **47.80.22.243（首尔服务器）**。当前发布目录为 `/opt/trade-tools-integrated/releases/integrated-20261112-full-7ed091f`，API／market／worker／scheduler 统一使用镜像 `tradetools-integrated:integrated-20261112-full-7ed091f`。
+
+本次修复 Binance 条件单已经触发、取消或过期后精确查询返回 `order does not exist` 的正常终态：适配层按空结果处理，已结束的旧止损进入恢复补挂；提交结果仍未知的请求继续等待幂等核对，不重复提交，也不再把原始错误展示在持仓卡片。数据库 gzip 备份 **401138839 bytes**，无待应用 migration；MySQL／Redis、数据卷、环境文件和 Nginx 配置保持不变。六个容器均 healthy，公网健康检查返回 `{"status":"ok","checks":{"database":true,"migrations":true,"scheduler":true}}`；活动仓位、待成交委托及 PENDING／RUNNING 命令均为 0，原有 **UNKNOWN 1** 保持原样。
+
+本地相关后端回归 **341 项／0 失败**，线上只做健康、数据库、迁移、scheduler 和状态只读核验，没有执行真实开仓、撤单、止损、平仓、划转或保护单操作。按用户授权清理了两份旧数据库备份，并清理可重建的 Docker 构建缓存以完成发布空间回收；当前发布备份仍保留，可按其回滚脚本恢复旧应用镜像和 `current`，不恢复数据库、不反迁移、不重放交易命令。这里的切换仍是同一台 **47.80.22.243（首尔服务器）** 内的 release／镜像切换，不是从 USDT 项目服务器迁移。
+
 <a id="完整同源发布20261112b85356f"></a>
 
 ## 完整同源发布（2026-11-12，手动仓位与 Maker 投影修复）
