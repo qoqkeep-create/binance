@@ -8,7 +8,69 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div class="auth-screen" id="auth-screen">
+      <aside class="auth-brand" aria-hidden="true">
+        <div class="brand auth-brand-logo">
+          <div class="brand-symbol"><span></span><span></span><span></span></div>
+          <strong>TRADE PLAN</strong>
+        </div>
+        <h1 class="auth-headline">先有计划，<br />再有交易。</h1>
+        <p class="auth-sub">把入场、失效与目标写下来。计划与复盘按账号云端保存，任何设备打开都是同一份记录。</p>
+        <svg class="auth-chart" viewBox="0 0 520 220" preserveAspectRatio="none">
+          <g class="auth-grid">
+            <line x1="0" y1="55" x2="520" y2="55" /><line x1="0" y1="110" x2="520" y2="110" /><line x1="0" y1="165" x2="520" y2="165" />
+          </g>
+          <g class="auth-candles">
+            <g class="candle up" style="--i:0"><line x1="30" y1="120" x2="30" y2="176" /><rect x="22" y="132" width="16" height="32" /></g>
+            <g class="candle down" style="--i:1"><line x1="78" y1="112" x2="78" y2="170" /><rect x="70" y="120" width="16" height="36" /></g>
+            <g class="candle up" style="--i:2"><line x1="126" y1="96" x2="126" y2="158" /><rect x="118" y="106" width="16" height="38" /></g>
+            <g class="candle up" style="--i:3"><line x1="174" y1="78" x2="174" y2="140" /><rect x="166" y="88" width="16" height="40" /></g>
+            <g class="candle down" style="--i:4"><line x1="222" y1="86" x2="222" y2="146" /><rect x="214" y="94" width="16" height="34" /></g>
+            <g class="candle up" style="--i:5"><line x1="270" y1="64" x2="270" y2="128" /><rect x="262" y="74" width="16" height="42" /></g>
+            <g class="candle down" style="--i:6"><line x1="318" y1="72" x2="318" y2="132" /><rect x="310" y="80" width="16" height="36" /></g>
+            <g class="candle up" style="--i:7"><line x1="366" y1="48" x2="366" y2="112" /><rect x="358" y="58" width="16" height="42" /></g>
+            <g class="candle up" style="--i:8"><line x1="414" y1="34" x2="414" y2="96" /><rect x="406" y="44" width="16" height="38" /></g>
+            <g class="candle down" style="--i:9"><line x1="462" y1="42" x2="462" y2="102" /><rect x="454" y="50" width="16" height="34" /></g>
+          </g>
+          <path class="auth-line" d="M30 148 L78 138 L126 125 L174 108 L222 111 L270 95 L318 98 L366 79 L414 63 L462 67 L505 52" />
+        </svg>
+        <div class="auth-tape"><div class="auth-tape-track">
+          <span>BTCUSDT <b>+2.41%</b></span><span>ETHUSDT <b class="dn">-0.86%</b></span><span>SOLUSDT <b>+5.12%</b></span><span>BNBUSDT <b>+0.94%</b></span><span>XRPUSDT <b class="dn">-1.32%</b></span><span>LINKUSDT <b>+3.08%</b></span>
+          <span>BTCUSDT <b>+2.41%</b></span><span>ETHUSDT <b class="dn">-0.86%</b></span><span>SOLUSDT <b>+5.12%</b></span><span>BNBUSDT <b>+0.94%</b></span><span>XRPUSDT <b class="dn">-1.32%</b></span><span>LINKUSDT <b>+3.08%</b></span>
+        </div></div>
+        <div class="auth-points"><span>账号云端同步</span><span>图片直传 OSS</span><span>计划 · 复盘一体</span></div>
+      </aside>
+      <main class="auth-panel">
+        <div class="auth-card">
+          <div class="auth-tabs" role="tablist">
+            <button class="auth-tab active" id="tab-login" type="button" role="tab" aria-selected="true">登录</button>
+            <button class="auth-tab" id="tab-register" type="button" role="tab" aria-selected="false">注册</button>
+          </div>
+          <div class="auth-error" id="auth-error" role="alert" hidden></div>
+          <form id="login-form" class="auth-form">
+            <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="username" placeholder="you@example.com" required /></label>
+            <label class="field"><span>密码</span>
+              <span class="password-wrap"><input name="password" type="password" autocomplete="current-password" placeholder="账号密码" required /><button class="password-toggle" type="button" data-toggle-password aria-label="显示密码">◉</button></span>
+            </label>
+            <button class="primary-button auth-submit" id="login-submit" type="submit">登录 <span>↗</span></button>
+            <p class="auth-hint">使用整合平台账号登录；计划与经验将保存到该账号。</p>
+          </form>
+          <form id="register-form" class="auth-form" hidden>
+            <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="username" placeholder="you@example.com" required /></label>
+            <label class="field"><span>密码</span>
+              <span class="password-wrap"><input name="password" type="password" autocomplete="new-password" placeholder="至少 8 位，不易猜测" required /><button class="password-toggle" type="button" data-toggle-password aria-label="显示密码">◉</button></span>
+            </label>
+            <label class="field"><span>确认密码</span><input name="confirm_password" type="password" autocomplete="new-password" placeholder="再输入一次" required /></label>
+            <label class="auth-agree"><input name="agreed" type="checkbox" /><span>我已阅读并同意 <button class="link-button" id="open-terms" type="button">用户协议与隐私政策</button></span></label>
+            <button class="primary-button auth-submit" id="register-submit" type="submit">创建账号 <span>↗</span></button>
+            <p class="auth-hint">注册后自动登录，数据只属于这个账号。</p>
+          </form>
+        </div>
+        <p class="auth-foot">TRADE PLAN · 复盘与计划工作台</p>
+      </main>
+    </div>
+
+    <div class="app-shell" id="app-shell" hidden>
       <aside class="sidebar" aria-label="主导航">
         <div class="brand">
           <div class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -19,6 +81,10 @@
           <button class="nav-item" data-view="new-plan"><span class="nav-icon">＋</span>新建计划</button>
           <button class="nav-item" data-view="experiences"><span class="nav-icon">✦</span>交易经验</button>
         </nav>
+        <div class="sidebar-footer">
+          <span class="sidebar-account" id="account-email" title=""></span>
+          <button class="sidebar-logout" id="logout-button" type="button">退出登录</button>
+        </div>
       </aside>
 
       <main class="main-content">
@@ -26,9 +92,9 @@
           <div class="topbar-heading">
             <div class="breadcrumb"><strong id="page-title">计划记录</strong></div>
             <div class="topbar-tools" id="records-top-tools">
-              <div class="top-stat"><span>全部</span><strong id="metric-total">06</strong></div>
-              <div class="top-stat"><span>未做</span><strong id="metric-undone">04</strong></div>
-              <div class="top-stat"><span>已做</span><strong id="metric-done">02</strong></div>
+              <div class="top-stat"><span>全部</span><strong id="metric-total">00</strong></div>
+              <div class="top-stat"><span>未做</span><strong id="metric-undone">00</strong></div>
+              <div class="top-stat"><span>已做</span><strong id="metric-done">00</strong></div>
               <button class="primary-button" data-view-target="new-plan">新建计划 <span>＋</span></button>
             </div>
           </div>
@@ -36,7 +102,7 @@
 
         <section class="page-view active" id="records-view" aria-labelledby="records-title">
           <section class="records-section">
-            <div class="records-heading"><h2 id="records-title">计划列表</h2><span class="records-count"><span id="record-count">06</span> 条</span></div>
+            <div class="records-heading"><h2 id="records-title">计划列表</h2><span class="records-count"><span id="record-count">00</span> 条</span></div>
             <div class="filter-toolbar">
               <div class="filter-line"><span class="filter-label">方向</span><div class="filter-group" data-filter-group="direction"><button class="filter-button active" data-filter="direction" data-value="all">全部</button><button class="filter-button" data-filter="direction" data-value="long">多</button><button class="filter-button" data-filter="direction" data-value="short">空</button></div></div>
               <div class="filter-line"><span class="filter-label">状态</span><div class="filter-group" data-filter-group="completion"><button class="filter-button active" data-filter="completion" data-value="all">全部</button><button class="filter-button" data-filter="completion" data-value="done">已做</button><button class="filter-button" data-filter="completion" data-value="undone">未做</button></div></div>
@@ -45,10 +111,15 @@
             </div>
             <div class="records-table-wrap">
               <table class="records-table">
-                <thead><tr><th>计划</th><th>方向</th><th>周期</th><th>入场 / 失效 / 目标</th><th>风险</th><th>状态</th><th>更新</th></tr></thead>
+                <thead><tr><th>计划</th><th>方向</th><th>周期</th><th>入场 / 失效 / 目标</th><th>风险</th><th>状态</th><th>更新</th><th>操作</th></tr></thead>
                 <tbody id="records-body"></tbody>
               </table>
               <div class="empty-state" id="empty-state" hidden>没有符合条件的计划。</div>
+              <div class="empty-state empty-cta" id="empty-cta" hidden>
+                <strong>这个账号还没有计划</strong>
+                <span>写下第一笔交易的入场、失效与目标。</span>
+                <button class="primary-button" data-view-target="new-plan" type="button">新建第一条计划 <span>＋</span></button>
+              </div>
             </div>
           </section>
         </section>
@@ -66,20 +137,16 @@
                 <label class="field"><span>最大风险（USDT）</span><input name="risk" inputmode="decimal" value="120" required /></label>
                 <label class="field field-wide"><span>交易理由</span><textarea name="thesis" rows="5" placeholder="可选"></textarea></label>
                 <div class="field field-wide">
-                  <span>计划图片 <small class="field-hint">可粘贴或选择，最多 5 张</small></span>
-                  <div class="oss-status" id="oss-status" aria-live="polite">
-                    <span id="oss-status-text">云端图片未登录，图片仅保存在本机</span>
-                    <button class="oss-status-button" id="oss-login-open" type="button">登录开启云端图片</button>
-                  </div>
+                  <span>计划图片 <small class="field-hint">可粘贴或选择，最多 5 张，登录后直传云端</small></span>
                   <div class="image-dropzone" id="plan-image-dropzone" tabindex="0" role="button" aria-label="添加计划图片">
                     <input id="plan-image-input" type="file" accept="image/*" multiple hidden />
                     <strong>粘贴截图，或点击选择图片</strong>
-                    <small>图片只会绑定到这条计划；未启用 OSS 时保存到本机，启用后会直传阿里云 OSS。</small>
+                    <small>图片直传阿里云 OSS；上传失败时自动保留在本机记录中。</small>
                   </div>
                   <div class="image-preview-grid" id="plan-image-preview" aria-live="polite"></div>
                 </div>
               </div>
-              <div class="form-actions"><button type="button" class="secondary-button" data-view="records">取消</button><button class="primary-button" type="submit">保存计划 <span>↗</span></button></div>
+              <div class="form-actions"><button type="button" class="secondary-button" data-view="records">取消</button><button class="primary-button" id="plan-submit" type="submit">保存计划 <span>↗</span></button></div>
             </form>
             <aside class="plan-summary" aria-label="计划摘要">
               <div class="summary-heading">计划摘要</div>
@@ -120,21 +187,30 @@
         <form id="experience-form">
           <label class="field"><span>标题</span><input name="title" maxlength="80" placeholder="例如：震荡行情不要追突破" required /></label>
           <label class="field"><span>正文</span><textarea name="body" maxlength="2400" rows="9" placeholder="写下发生了什么、你的判断，以及下次准备怎么做。" required></textarea></label>
-          <div class="modal-form-footer"><span class="field-hint">标题最多 80 字，正文最多 2400 字</span><div class="form-actions"><button class="secondary-button" id="cancel-experience" type="button">取消</button><button class="primary-button" id="experience-submit" type="submit">保存经验 <span>↗</span></button></div></div>
+          <div class="modal-form-footer">
+            <span class="field-hint">标题最多 80 字，正文最多 2400 字</span>
+            <div class="form-actions">
+              <button class="secondary-button danger-button" id="delete-experience" type="button" hidden>删除</button>
+              <button class="secondary-button" id="cancel-experience" type="button">取消</button>
+              <button class="primary-button" id="experience-submit" type="submit">保存经验 <span>↗</span></button>
+            </div>
+          </div>
         </form>
       </section>
     </div>
-    <div class="modal-backdrop" id="login-modal" hidden>
-      <section class="experience-modal login-modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+
+    <div class="modal-backdrop" id="terms-modal" hidden>
+      <section class="experience-modal terms-modal" role="dialog" aria-modal="true" aria-labelledby="terms-title">
         <div class="modal-heading">
-          <div><span class="page-kicker">CLOUD IMAGES</span><h2 id="login-modal-title">登录开启云端图片</h2></div>
-          <button class="modal-close" id="close-login-modal" type="button" aria-label="关闭">×</button>
+          <div><span class="page-kicker">TERMS</span><h2 id="terms-title">用户协议与隐私政策</h2></div>
+          <button class="modal-close" id="close-terms" type="button" aria-label="关闭">×</button>
         </div>
-        <form id="login-form">
-          <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="username" placeholder="整合平台账号邮箱" required /></label>
-          <label class="field"><span>密码</span><input name="password" type="password" autocomplete="current-password" placeholder="账号密码" required /></label>
-          <div class="modal-form-footer"><span class="field-hint">登录后图片直传阿里云 OSS；不登录则继续保存在本机。</span><div class="form-actions"><button class="secondary-button" id="cancel-login" type="button">取消</button><button class="primary-button" id="login-submit" type="submit">登录 <span>↗</span></button></div></div>
-        </form>
+        <div class="terms-body">
+          <p>Trade Plan 是个人交易计划与复盘记录工具，不提供投资建议，不执行任何真实交易。</p>
+          <p>你创建的计划、经验与图片仅用于你的账号复盘，按账号隔离存储；图片上传至项目专用对象存储，地址为随机不可枚举链接。</p>
+          <p>登录凭证以短期令牌与 HttpOnly 刷新 Cookie 保存，密码经哈希存储，不会明文落库或写入日志。</p>
+          <p>你可以随时删除自己的计划与经验；删除账号数据请联系管理员。继续使用即表示同意以上条款。</p>
+        </div>
       </section>
     </div>
     <script src="app.js"></script>

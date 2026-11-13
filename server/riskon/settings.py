@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "market_stream",
     "mobile",
     "experiences",
+    "plans",
 ]
 
 MIDDLEWARE = [
