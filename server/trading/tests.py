@@ -43,6 +43,7 @@ from trading.execution import (
 from trading.views import (
     _close_local_order_after_exchange_manual_close,
     _adopt_maker_fill,
+    _promote_external_projection,
     _emergency_close_position,
     _has_unresolved_stop_protection,
     _resolve_entry_stop_protection,
@@ -224,6 +225,45 @@ class TradingApiTests(APITestCase):
         self.assertEqual(projected.binance_order_id, "maker-order-1")
         request.refresh_from_db()
         self.assertEqual(request.order_id, projected.pk)
+
+    def test_market_fill_promotes_read_time_external_projection(self):
+        projected = Order.objects.create(
+            user=self.user,
+            api_key_fingerprint=None,
+            position_origin=Order.ORIGIN_EXTERNAL,
+            external_active_key="market-projection-slot",
+            symbol="BTCUSDT",
+            side=0,
+            open_price=Decimal("100"),
+            stop_loss_price=Decimal("0"),
+            stop_loss_amount=Decimal("10"),
+            size=Decimal("1"),
+            exchange_size=Decimal("1"),
+            position_amount=Decimal("100"),
+            leverage=1,
+            status=0,
+        )
+        account = SimpleNamespace(api_key_fingerprint="")
+        execution = SimpleNamespace(order_id="market-order-1", average_price=Decimal("100"))
+
+        adopted = _promote_external_projection(
+            projected,
+            user=self.user,
+            account=account,
+            trading_mode="ordinary",
+            execution=execution,
+            stop_loss_price=Decimal("90"),
+            stop_loss_amount=Decimal("10"),
+            leverage=10,
+        )
+
+        self.assertEqual(adopted.pk, projected.pk)
+        self.assertEqual(Order.objects.filter(user=self.user, status=0).count(), 1)
+        projected.refresh_from_db()
+        self.assertEqual(projected.position_origin, Order.ORIGIN_WEB)
+        self.assertIsNone(projected.external_active_key)
+        self.assertEqual(projected.binance_order_id, "market-order-1")
+        self.assertEqual(projected.leverage, 10)
 
     def test_generated_client_order_id_remains_unique_for_long_account_identity(self):
         identity = "account:" + ("x" * 128)

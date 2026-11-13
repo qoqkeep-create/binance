@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "common",
     "market_stream",
     "mobile",
+    "experiences",
 ]
 
 MIDDLEWARE = [
@@ -217,6 +218,18 @@ if DB_ENGINE == "mysql" and not DEBUG:
     public_app = urlsplit(PUBLIC_APP_URL)
     if public_app.scheme.lower() != "https" or not public_app.hostname:
         raise ImproperlyConfigured("生产环境 PUBLIC_APP_URL 必须使用 HTTPS")
+
+# Trading-plan image uploads use short-lived Aliyun OSS PUT signatures.  Keep
+# these values server-side; the browser receives only a one-shot upload URL.
+OSS_ENDPOINT = os.getenv("OSS_ENDPOINT", "").strip().rstrip("/")
+OSS_BUCKET = os.getenv("OSS_BUCKET", "").strip()
+OSS_REGION = os.getenv("OSS_REGION", "").strip()
+OSS_ACCESS_KEY_ID = os.getenv("OSS_ACCESS_KEY_ID", "").strip()
+OSS_ACCESS_KEY_SECRET = os.getenv("OSS_ACCESS_KEY_SECRET", "").strip()
+OSS_PUBLIC_BASE_URL = os.getenv("OSS_PUBLIC_BASE_URL", "").strip().rstrip("/")
+OSS_KEY_PREFIX = os.getenv("OSS_KEY_PREFIX", "trade-plan").strip().strip("/") or "trade-plan"
+OSS_SIGNED_URL_TTL = max(int(os.getenv("OSS_SIGNED_URL_TTL", "600")), 60)
+OSS_MAX_IMAGE_BYTES = max(int(os.getenv("OSS_MAX_IMAGE_BYTES", str(4 * 1024 * 1024))), 1)
 
 USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "False").lower() == "true"
 if DB_ENGINE == "mysql" and not DEBUG and not USE_REDIS_CACHE:

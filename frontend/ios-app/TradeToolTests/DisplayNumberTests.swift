@@ -179,6 +179,12 @@ final class PositionCardPresentationTests: XCTestCase {
     ]), price: 150), "-0.3 U（估总 -0.9 U）")
   }
 
+  func testPositionLeverageOmitsOneAndShowsHigherLeverage() {
+    XCTAssertNil(PositionCardPresentation.leverageText(row(["leverage": .string("1")])))
+    XCTAssertEqual(PositionCardPresentation.leverageText(row(["leverage": .string("10")])), "x10")
+    XCTAssertEqual(PositionCardPresentation.leverageText(row(["leverage": .string("10.5")])), "x10.5")
+  }
+
   func testExplicitZeroRemainingDoesNotFallBackToInitialQuantity() {
     XCTAssertEqual(cardFee(row([
       "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.3"),

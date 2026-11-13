@@ -14,4 +14,5 @@ urlpatterns = [
     path("v1/position/", include("positions.urls")),
     path("v1/strategy/", include("positions.strategy_urls")),
     path("v1/strategy/", include("trading.strategy_urls")),
+    path("v1/experience/", include("experiences.urls")),
 ]

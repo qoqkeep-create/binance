@@ -314,9 +314,9 @@ struct WebTabs: View {
             .lineLimit(1).minimumScaleFactor(0.95)
             .fixedSize(horizontal: compact, vertical: false)
             .foregroundStyle(selected ? WebTheme.text : WebTheme.secondary)
-            // Keep one glyph layer: only its scale animates, never cross-fade fonts.
+            // Keep the same readable glyph size in every state; selection uses
+            // weight, color, and the underline instead of shrinking the title.
             .transaction { $0.animation = nil }
-            .scaleEffect(selected ? 1 : 0.75)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selected)
             .frame(width: widths[index], height: 44).contentShape(Rectangle())
         }.buttonStyle(.plain).id(key).accessibilityIdentifier("positions.tabs." + key)

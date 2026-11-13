@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0c0d0d" />
+    <title>Trade Plan · 计划记录</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand">
+          <div class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
+          <strong>TRADE PLAN</strong>
+        </div>
+        <nav class="nav-list" aria-label="计划页签">
+          <button class="nav-item active" data-view="records"><span class="nav-icon">▤</span>计划记录</button>
+          <button class="nav-item" data-view="new-plan"><span class="nav-icon">＋</span>新建计划</button>
+          <button class="nav-item" data-view="experiences"><span class="nav-icon">✦</span>交易经验</button>
+        </nav>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="topbar-heading">
+            <div class="breadcrumb"><strong id="page-title">计划记录</strong></div>
+            <div class="topbar-tools" id="records-top-tools">
+              <div class="top-stat"><span>全部</span><strong id="metric-total">06</strong></div>
+              <div class="top-stat"><span>未做</span><strong id="metric-undone">04</strong></div>
+              <div class="top-stat"><span>已做</span><strong id="metric-done">02</strong></div>
+              <button class="primary-button" data-view-target="new-plan">新建计划 <span>＋</span></button>
+            </div>
+          </div>
+        </header>
+
+        <section class="page-view active" id="records-view" aria-labelledby="records-title">
+          <section class="records-section">
+            <div class="records-heading"><h2 id="records-title">计划列表</h2><span class="records-count"><span id="record-count">06</span> 条</span></div>
+            <div class="filter-toolbar">
+              <div class="filter-line"><span class="filter-label">方向</span><div class="filter-group" data-filter-group="direction"><button class="filter-button active" data-filter="direction" data-value="all">全部</button><button class="filter-button" data-filter="direction" data-value="long">多</button><button class="filter-button" data-filter="direction" data-value="short">空</button></div></div>
+              <div class="filter-line"><span class="filter-label">状态</span><div class="filter-group" data-filter-group="completion"><button class="filter-button active" data-filter="completion" data-value="all">全部</button><button class="filter-button" data-filter="completion" data-value="done">已做</button><button class="filter-button" data-filter="completion" data-value="undone">未做</button></div></div>
+              <div class="filter-line"><span class="filter-label">周期</span><div class="filter-group" data-filter-group="timeframe"><button class="filter-button active" data-filter="timeframe" data-value="all">全部</button><button class="filter-button" data-filter="timeframe" data-value="3m">3 分钟</button><button class="filter-button" data-filter="timeframe" data-value="15m">15 分钟</button><button class="filter-button" data-filter="timeframe" data-value="1h">1 小时</button><button class="filter-button" data-filter="timeframe" data-value="4h">4 小时</button><button class="filter-button" data-filter="timeframe" data-value="1d">1 天</button></div></div>
+              <label class="search-box"><span>⌕</span><input id="plan-search" type="search" placeholder="搜索币种或编号" /></label>
+            </div>
+            <div class="records-table-wrap">
+              <table class="records-table">
+                <thead><tr><th>计划</th><th>方向</th><th>周期</th><th>入场 / 失效 / 目标</th><th>风险</th><th>状态</th><th>更新</th></tr></thead>
+                <tbody id="records-body"></tbody>
+              </table>
+              <div class="empty-state" id="empty-state" hidden>没有符合条件的计划。</div>
+            </div>
+          </section>
+        </section>
+
+        <section class="page-view" id="new-plan-view" aria-labelledby="new-plan-title" hidden>
+          <div class="new-plan-layout">
+            <form id="plan-form">
+              <div class="form-grid">
+                <label class="field field-wide"><span>交易标的</span><input name="symbol" value="BTCUSDT" placeholder="例如 BTCUSDT" required /></label>
+                <label class="field"><span>方向</span><select name="direction"><option value="long">做多 / LONG</option><option value="short">做空 / SHORT</option></select></label>
+                <label class="field"><span>时间周期</span><select name="timeframe"><option value="3m">3 分钟</option><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="4h">4 小时</option><option value="1d">1 天</option></select></label>
+                <label class="field"><span>计划入场价</span><input name="entry" inputmode="decimal" value="98400" required /></label>
+                <label class="field"><span>失效 / 止损价</span><input name="stop" inputmode="decimal" value="96900" required /></label>
+                <label class="field"><span>目标价</span><input name="target" inputmode="decimal" value="103800" required /></label>
+                <label class="field"><span>最大风险（USDT）</span><input name="risk" inputmode="decimal" value="120" required /></label>
+                <label class="field field-wide"><span>交易理由</span><textarea name="thesis" rows="5" placeholder="可选"></textarea></label>
+                <div class="field field-wide">
+                  <span>计划图片 <small class="field-hint">可粘贴或选择，最多 5 张</small></span>
+                  <div class="image-dropzone" id="plan-image-dropzone" tabindex="0" role="button" aria-label="添加计划图片">
+                    <input id="plan-image-input" type="file" accept="image/*" multiple hidden />
+                    <strong>粘贴截图，或点击选择图片</strong>
+                    <small>图片只会绑定到这条计划；未启用 OSS 时保存到本机，启用后会直传阿里云 OSS。</small>
+                  </div>
+                  <div class="image-preview-grid" id="plan-image-preview" aria-live="polite"></div>
+                </div>
+              </div>
+              <div class="form-actions"><button type="button" class="secondary-button" data-view="records">取消</button><button class="primary-button" type="submit">保存计划 <span>↗</span></button></div>
+            </form>
+            <aside class="plan-summary" aria-label="计划摘要">
+              <div class="summary-heading">计划摘要</div>
+              <div class="summary-item"><span>标的 / 方向</span><strong id="form-preview-title">BTCUSDT · 做多</strong></div>
+              <div class="summary-item"><span>风险 / 收益比</span><strong id="form-preview-ratio">1 : 3.60</strong></div>
+              <div class="summary-item"><span>保存状态</span><strong>未做</strong></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page-view experiences-view" id="experiences-view" aria-labelledby="experiences-title" hidden>
+          <div class="experiences-header">
+            <div>
+              <span class="page-kicker">JOURNAL / EXPERIENCE</span>
+              <h1 id="experiences-title">交易经验</h1>
+              <p>把每次复盘留下来的判断，整理成下一次能复用的经验。</p>
+            </div>
+            <button class="primary-button" id="open-experience-modal" type="button">记录经验 <span>＋</span></button>
+          </div>
+          <div class="experience-meta"><span id="experience-count">0</span> 条经验 · 仅用于复盘记录</div>
+          <div class="experience-scroller" id="experience-list" aria-live="polite"></div>
+          <div class="experience-empty" id="experience-empty" hidden>
+            <strong>还没有交易经验</strong>
+            <span>把一次判断写下来，下一次就有了可以回看的依据。</span>
+            <button class="secondary-button" id="open-experience-empty" type="button">新增第一条</button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+
+    <div class="modal-backdrop" id="experience-modal" hidden>
+      <section class="experience-modal" role="dialog" aria-modal="true" aria-labelledby="experience-modal-title">
+        <div class="modal-heading">
+          <div><span class="page-kicker">NEW ENTRY</span><h2 id="experience-modal-title">记录交易经验</h2></div>
+          <button class="modal-close" id="close-experience-modal" type="button" aria-label="关闭">×</button>
+        </div>
+        <form id="experience-form">
+          <label class="field"><span>标题</span><input name="title" maxlength="80" placeholder="例如：震荡行情不要追突破" required /></label>
+          <label class="field"><span>正文</span><textarea name="body" maxlength="2400" rows="9" placeholder="写下发生了什么、你的判断，以及下次准备怎么做。" required></textarea></label>
+          <div class="modal-form-footer"><span class="field-hint">标题最多 80 字，正文最多 2400 字</span><div class="form-actions"><button class="secondary-button" id="cancel-experience" type="button">取消</button><button class="primary-button" id="experience-submit" type="submit">保存经验 <span>↗</span></button></div></div>
+        </form>
+      </section>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

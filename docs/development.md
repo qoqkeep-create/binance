@@ -1,5 +1,41 @@
 # 开发与验证
 
+## 交易计划网页：交易经验与计划图片（2026-11-13，本地）
+
+`frontend/trade-plan-web/` 新增独立的“交易经验”页签。经验主页用横向卡片展示标题和正文，录入与编辑使用弹出框，内容按浏览器 `localStorage` 持久化；卡片中的“查看全文”会回填同一弹窗，可直接修改后保存。交易计划表单新增图片选择、拖放和剪贴板粘贴，单条计划最多 5 张，保存后显示图片数量并随本地记录保留。
+
+图片上传支持阿里云 OSS 短期签名直传：后端 `POST /v1/experience/upload-url` 只返回一次性 PUT 地址，浏览器把图片直接上传到 OSS，计划只保存公开／CDN URL。前端可设置 `window.TRADE_PLAN_CONFIG = { enableOssUploads: true, apiBase: '/integrated', getAccessToken: () => token }` 自动调用该接口，也可继续提供 `uploadImage(file)` 自定义适配器；没有配置令牌或 OSS 时使用本地 Data URL 回退，不在网页源码保存 OSS 密钥。OSS Bucket 需要配置允许该网页来源的 CORS（`PUT`、`GET`、`HEAD`，允许 `Content-Type`），如果 Bucket 为私有，应将 `OSS_PUBLIC_BASE_URL` 指向带鉴权的 CDN 或改为应用侧签名 GET。前端仍与交易执行代码分离。
+
+后端新增独立 `server/experiences` Django 应用和迁移，提供按用户隔离的标题、正文和图片 URL 记录接口：`GET/POST /v1/experience/list`、`POST /v1/experience/create`、`GET/PATCH/PUT/DELETE /v1/experience/<id>`。网页默认使用本地记录，带鉴权的部署可按该接口契约同步；序列化层限制最多 5 张、单图 2 MB，并只接受 HTTP(S) 或图片 Data URL，图片实际上传仍由前端/OSS 适配层负责。
+
+本地验证：浏览器手动验证页签切换、经验新增、编辑回填、计划图片选择及超过 5 张的截断；`node --check frontend/trade-plan-web/app.js`、`manage.py check`、`makemigrations --check --dry-run`、`experiences common` 测试和 OSS 签名接口测试通过。生产环境通过 `deploy/integrated/server.env.example` 配置 OSS；如果服务器未提供真实 Bucket／RAM 凭证，上传接口会明确返回 503，网页回退到本地图片。
+
+## 持仓刷新、来源与页签显示修正（2026-11-13，本地）
+
+持仓页的下拉刷新只调用共享持仓快照与保证金读取，保留当前卡片直到新快照完成，避免账户资料和策略刷新触发整棵卡片树重绘。持仓读取先创建外部投影、随后软件开仓确认成交时，后端在同一条记录上完成来源升级和成交订单绑定；市价与 Maker 两条确认路径共用该接管函数，保证止损仍挂在同一持仓上。卡片对杠杆 1 隐藏 `x1`，顶部三个页签未选中状态统一 20 pt 字号。
+
+验证命令与结果：
+
+```bash
+DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test \
+  trading.tests.TradingApiTests.test_maker_fill_promotes_read_time_external_projection_without_duplicate \
+  trading.tests.TradingApiTests.test_market_fill_promotes_read_time_external_projection \
+  trading.test_external_discovery.ExternalPositionDiscoveryTests.test_position_read_adopts_manual_position_even_with_unresolved_open_request \
+  --verbosity 1
+# Ran 3 tests ... OK
+
+xcodebuild test -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool \
+  -destination 'platform=iOS Simulator,id=C5DED9B5-EFE7-4EF1-A46C-3187316BA0C6' \
+  -derivedDataPath .integration-runtime/PositionCardFixNov13Final \
+  -only-testing:TradeToolTests/PositionCardPresentationTests \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+# TEST SUCCEEDED
+```
+
+同一隔离环境下执行 `server/manage.py test trading --verbosity 1`：**444 项通过，0 失败**（157.870 秒）。
+
+本轮测试只使用隔离数据库、交易所替身和 iOS 27.2 模拟器；没有真实交易或资金写入，也没有提交、推送或部署。物理 iPhone 下拉手感及新包验收仍需单独确认。
+
 ## UNKNOWN 开仓命令收敛重构（2026-11-13，已部署）
 
 线上只读核对确认 47.80.22.243（首尔服务器）健康，但一条 2026-11-10 的旧 Maker 开仓命令长期停在 `UNKNOWN`；对应 Binance 订单实际已成交并随后平仓，本地没有 `Order`，所以账户级 UNKNOWN 总闸一直拒绝新开仓。根因是 worker 只查本地订单事实，且 Maker 的正常待成交回包在缺少成交数量时会被解析成 UNKNOWN。

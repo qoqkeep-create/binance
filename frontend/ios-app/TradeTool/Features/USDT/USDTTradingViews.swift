@@ -44,6 +44,21 @@ enum PositionEntryFeePresentation {
 }
 
 enum PositionCardPresentation {
+  static func leverageText(_ row: JSONValue) -> String? {
+    guard let leverage = PositionEntryFeePresentation.finiteDecimal(row["leverage"]), leverage > 1 else {
+      return nil
+    }
+    var value = DisplayNumber.text(leverage)
+    if let separator = value.firstIndex(of: ".") {
+      let fractionStart = value.index(after: separator)
+      let integer = String(value[..<separator])
+      var fraction = String(value[fractionStart...])
+      while fraction.last == "0" { fraction.removeLast() }
+      value = fraction.isEmpty ? integer : integer + "." + fraction
+    }
+    return "x" + value
+  }
+
   static func strategyErrorText(_ row: JSONValue) -> String {
     let message = row.value("latest_strategy_error", fallback: "").trimmingCharacters(in: .whitespacesAndNewlines)
     // Older responses can put a successful binding audit entry in this field.
@@ -1130,7 +1145,7 @@ struct USDTPositionsView: View {
         WebTabs(
           tabs: [("positions", "持仓"), ("limits", "委托"), ("history", "历史仓位")], selection: $segment, compact: true)
           .frame(maxWidth: 248).frame(height: 44)
-          .padding(.leading, 8)
+          .padding(.leading, 12)
         Spacer(minLength: 0)
         PositionMarginBadge(model: margin, scope: store.scope, exposure: margin.exposure(in: store)) {
           marginDetails = true
@@ -1233,6 +1248,17 @@ struct USDTPositionsView: View {
           let refreshFilter = filter
           // Account publication can cancel SwiftUI's refresh action. Keep this
           // read independent, then recheck the selected account and page.
+          if page == "positions" {
+            // Pull-to-refresh on the positions page only needs the position and
+            // margin snapshots. Refreshing profile, strategies, and account
+            // here causes the whole card tree to re-evaluate while the finger
+            // is returning, which produces the visible flash and hitch.
+            async let positionsRefresh: Void = reload(page: page)
+            async let marginRefresh: Void = margin.refresh(store, afterChange: true)
+            await positionsRefresh
+            await marginRefresh
+            return
+          }
           await Task { @MainActor in
             await store.refresh()
             guard scope == store.scope, refreshSegment == segment, refreshFilter == filter else { return }
@@ -1361,7 +1387,9 @@ struct USDTPositionsView: View {
         }.buttonStyle(.plain).accessibilityLabel(row.value("symbol") + " K线图")
           .accessibilityIdentifier("position.symbol." + row.value("id"))
         if row.value("position_origin") == "exchange_external" { WebBadge(text: "手动仓") }
-        Text("x\(row.value("leverage"))").font(.system(size: 14)).foregroundStyle(WebTheme.muted)
+        if let leverage = PositionCardPresentation.leverageText(row) {
+          Text(leverage).font(.system(size: 14)).foregroundStyle(WebTheme.muted)
+        }
         Text("止损\(row["stop_loss_amount"]?.decimal.map { DisplayNumber.amount($0, maximumFractionDigits: 1) } ?? "--")U").font(.system(size: 12)).foregroundStyle(
           WebTheme.brand
         ).padding(.horizontal, 6).padding(.vertical, 2).background(
