@@ -335,6 +335,39 @@ class ExternalPositionDiscoveryTests(TestCase):
         self.assertEqual(order.api_key_fingerprint, other_account.api_key_fingerprint)
         protect.assert_called_once()
 
+    @patch("trading.external_positions.reconcile_external_order")
+    def test_unresolved_short_request_does_not_block_long_adoption(self, protect):
+        TradeOpenRequest.objects.create(
+            user=self.user, api_key_fingerprint=self.account.api_key_fingerprint,
+            symbol="BTCUSDT", client_request_id="req-side-short", client_order_id="req-side-short",
+            status=TradeOpenRequest.STATUS_SUBMITTED,
+            request_payload={"_execution_intent": {"side_code": 1}},
+        )
+        self.assertEqual(reconcile_external_positions(), 1)
+        order = Order.objects.get()
+        self.assertEqual(order.side, 0)
+        # The same unresolved request still blocks its own direction.
+        order.delete()
+        self.exchange.get_positions.return_value = {"data": [self.row(side="short")]}
+        self.assertEqual(reconcile_external_positions(), 1)
+        self.assertFalse(Order.objects.exists())
+
+    @patch("trading.external_positions.reconcile_external_order")
+    def test_request_without_known_direction_blocks_both_sides(self, protect):
+        self.opening_request(TradeOpenRequest.STATUS_SUBMITTED)
+        self.assertEqual(reconcile_external_positions(), 1)
+        self.assertFalse(Order.objects.exists())
+
+    @patch("trading.external_positions.reconcile_external_order")
+    def test_invalid_position_row_does_not_abort_other_adoptions(self, protect):
+        invalid = self.row()
+        invalid["posSide"] = "sideways"
+        self.exchange.get_positions.return_value = {"data": [invalid, self.row()]}
+        self.assertEqual(reconcile_external_positions(), 1)
+        order = Order.objects.get()
+        self.assertEqual(order.symbol, "BTCUSDT")
+        self.assertEqual(order.side, 0)
+
 
 class ExternalCloseAdapterIntegrationTests(TestCase):
     """Exercise the real adapter's Binance payload normalization with mocked I/O."""

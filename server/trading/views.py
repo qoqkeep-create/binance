@@ -27,9 +27,11 @@ from api_bindings.services import (
     get_user_binding,
     get_user_binance_credentials,
     get_user_api_key_fingerprint,
+    get_user_binding_generation,
     get_user_trading_account,
     scope_queryset_to_trading_account,
 )
+from api_bindings.models import ApiBinding
 from api_bindings.context import build_trading_account_identity
 from common.binance import (
     BinanceApiError,
@@ -42,6 +44,7 @@ from common.binance import (
     calc_contract_size,
     is_binance_auth_or_permission_error,
     is_binance_rate_limit_error,
+    is_order_absent_error,
     normalize_stop_trigger_price,
     normalize_limit_price,
     should_verify_cancel_result,
@@ -67,7 +70,7 @@ from trading.models import Strategy, TradeOpenRequest, TradingViewMessage
 from trading.account_cache import invalidate_position_caches
 from trading.execution import PARTIALLY_FILLED, confirm_entry_execution, parse_entry_execution
 from trading.entry_guard import entry_submission_guard
-from trading.locks import serialized_exchange_mutation
+from trading.locks import distributed_cache_lock, serialized_exchange_mutation, user_trading_activity_lock
 from trading.market_snapshots import SnapshotBusy, fresh_snapshot
 from trading.opening import (
     load_exchange_order_by_client_order_id as _load_exchange_order_by_client_order_id,
@@ -2460,11 +2463,26 @@ def _promote_external_projection(
     return projected_order
 
 
-def _adopt_maker_fill(request, account, open_request, intent, client, execution, *, instrument=None):
-    """Adopt confirmed Maker fills and install the same stop protection path."""
+def _adopt_maker_fill(
+    *,
+    user,
+    trading_mode,
+    account,
+    open_request,
+    intent,
+    client,
+    execution,
+    instrument=None,
+    source_label="Maker开仓",
+):
+    """Adopt confirmed exchange fills and install the same stop protection path.
+
+    Shared by the client-facing status views and the server-side periodic
+    reconciler so a fill is never left waiting for a user to open a page.
+    """
     if not execution.has_fill:
         return None
-    mode = request_trading_mode(request)
+    mode = trading_mode
     symbol = to_symbol(open_request.symbol)
     inst_id = to_inst_id(symbol)
     instrument = instrument or _extract_instrument(inst_id)
@@ -2478,7 +2496,7 @@ def _adopt_maker_fill(request, account, open_request, intent, client, execution,
     if projected_order is not None:
         _promote_external_projection(
             projected_order,
-            user=request.user,
+            user=user,
             account=account,
             trading_mode=mode,
             execution=execution,
@@ -2488,7 +2506,7 @@ def _adopt_maker_fill(request, account, open_request, intent, client, execution,
             leverage=int(intent["leverage"]),
         )
     adoption = adopt_entry_execution(
-        user=request.user,
+        user=user,
         trading_mode=mode,
         client=client,
         binance_order_id=execution.order_id or open_request.binance_order_id,
@@ -2505,7 +2523,7 @@ def _adopt_maker_fill(request, account, open_request, intent, client, execution,
         strategy_config=strategy_config,
         estimated_total_fee=_estimate_total_fee(execution.average_price, execution.filled_size, instrument.get("ctVal")),
         pos_mode="long_short_mode" if intent.get("pos_side") else "net_mode",
-        source_label="Maker开仓",
+        source_label=source_label,
     )
     order = adoption.order
     attach_open_request_order(open_request, order.id)
@@ -2518,13 +2536,204 @@ def _adopt_maker_fill(request, account, open_request, intent, client, execution,
             side_code=side_code,
             stop_loss_price=stop_loss_price,
             stop_loss_error=adoption.stop_loss_error,
-            action_label="Maker开仓",
-            pending_message="Maker已成交，止损保护正在后台重试；恢复前不可继续开仓",
+            action_label=source_label,
+            pending_message=f"{source_label}已成交，止损保护正在后台重试；恢复前不可继续开仓",
         )
         if protection_error:
             raise BinanceApiError(protection_error)
-    _invalidate_position_list_cache(request.user, account.api_key_fingerprint, trading_mode=mode)
+    _invalidate_position_list_cache(user, account.api_key_fingerprint, trading_mode=mode)
     return order
+
+
+_OPEN_REQUEST_TERMINAL_STATES = {
+    "canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed",
+}
+# A request without an exchange order id is only declared absent after the
+# submission window has durably closed; younger ones stay with command recovery.
+OPEN_REQUEST_ABSENT_MIN_AGE_SECONDS = 120
+
+
+def _reconcile_one_open_request(open_request, account, client, *, trading_mode):
+    """Converge one non-terminal open request from read-only exchange facts.
+
+    Confirmed fills are adopted with the same protection path as the client
+    views; definitive zero-fill terminal states release the durable guard.
+    Ambiguous reads keep the request unchanged for the next round.
+    """
+    intent = get_open_request_execution_intent(open_request)
+    inst_id = to_inst_id(open_request.symbol)
+    requested_size = None
+    if intent.get("size") not in (None, ""):
+        try:
+            requested_size = _to_decimal(intent["size"], "开仓数量")
+        except (BinanceApiError, ValueError, InvalidOperation):
+            requested_size = None
+    order_id = str(open_request.binance_order_id or "").strip()
+    client_order_id = str(open_request.client_order_id or "").strip()
+    age_seconds = (timezone.now() - open_request.updated_at).total_seconds()
+    if not order_id and not (client_order_id and age_seconds >= OPEN_REQUEST_ABSENT_MIN_AGE_SECONDS):
+        return "waiting"
+    try:
+        payload = client.get_order(
+            inst_id=inst_id,
+            **({"order_id": order_id} if order_id else {"orig_client_order_id": client_order_id}),
+        )
+    except BinanceApiError as exc:
+        if is_order_absent_error(exc):
+            # A regular order Binance definitively does not know was never
+            # accepted. Release the guard instead of waiting for a page read.
+            mark_open_request_failed(open_request, "exchange_order_absent")
+            logger.info(
+                "open request reconciled absent request=%s user=%s symbol=%s",
+                open_request.id, open_request.user_id, open_request.symbol,
+            )
+            return "absent"
+        raise
+    rows = payload.get("data") or []
+    exchange_row = rows[0] if rows else {}
+    if not exchange_row:
+        mark_open_request_failed(open_request, "exchange_order_absent")
+        logger.info(
+            "open request reconciled empty request=%s user=%s symbol=%s",
+            open_request.id, open_request.user_id, open_request.symbol,
+        )
+        return "absent"
+    execution = parse_entry_execution(exchange_row, requested_size=requested_size)
+    if (
+        execution.raw_state in _OPEN_REQUEST_TERMINAL_STATES
+        and not execution.has_fill
+        and execution.filled_size <= 0
+    ):
+        mark_open_request_failed(open_request, f"order_{execution.raw_state}")
+        logger.info(
+            "open request reconciled terminal request=%s user=%s state=%s",
+            open_request.id, open_request.user_id, execution.raw_state,
+        )
+        return "failed"
+    if execution.has_fill:
+        if not intent or intent.get("side_code") is None:
+            # Without the frozen intent, protection cannot be priced. Keep the
+            # request unresolved and visible instead of guessing parameters.
+            raise BinanceApiError("开仓请求缺少执行意图，无法自动接管成交")
+        existing = _find_existing_order_by_open_request(open_request)
+        if existing is not None:
+            return "adopted"
+        _adopt_maker_fill(
+            user=open_request.user,
+            trading_mode=trading_mode,
+            account=account,
+            open_request=open_request,
+            intent=intent,
+            client=client,
+            execution=execution,
+            source_label="Maker开仓" if intent.get("execution_mode") == "maker" else "开仓",
+        )
+        logger.info(
+            "open request fill adopted request=%s user=%s symbol=%s filled=%s",
+            open_request.id, open_request.user_id, open_request.symbol, execution.filled_size,
+        )
+        return "adopted"
+    return "waiting"
+
+
+def _alert_stuck_unknown_commands(user, trading_mode):
+    """An UNKNOWN write gates new risk entries; a long stall must be visible."""
+    from mobile.models import TradingCommand
+    from positions.protection_alerts import (
+        UNKNOWN_COMMAND_ALERT_SECONDS,
+        send_protection_alert,
+    )
+
+    cutoff = timezone.now() - timedelta(seconds=UNKNOWN_COMMAND_ALERT_SECONDS)
+    if TradingCommand.objects.filter(
+        user=user, trading_mode=trading_mode, status="UNKNOWN", updated_at__lt=cutoff,
+    ).exists():
+        send_protection_alert(
+            user.id,
+            kind=f"unknown-command:{user.id}:{trading_mode}",
+            title="开仓命令长时间未确认",
+            body=(
+                "存在超过10分钟仍未确认结果的开仓命令，系统已暂停该账户新增风险开仓并持续核对。"
+                "请打开委托页查看并决定处理方式。"
+            ),
+        )
+
+
+def reconcile_open_requests(*, trading_mode=TradingMode.ORDINARY):
+    """Periodic server-side convergence of non-terminal open requests.
+
+    A filled or definitively ended exchange order must never wait for a user
+    to open a page. Each round is read-only except confirmed-fill adoption,
+    runs under the account activity lock, and rechecks the binding generation.
+    """
+    processed = 0
+    with distributed_cache_lock(f"open-request-reconcile:{trading_mode}", timeout=120) as locked:
+        if not locked:
+            return 0
+        for binding in ApiBinding.objects.filter(
+            status=1, trading_mode=trading_mode
+        ).select_related("user"):
+            try:
+                account = get_user_trading_account(
+                    binding.user, active_only=True, trading_mode=trading_mode
+                )
+                if account is None:
+                    continue
+                requests = list(
+                    scope_queryset_to_trading_account(
+                        TradeOpenRequest.objects.filter(
+                            user=binding.user,
+                            trading_mode=trading_mode,
+                            order_id__isnull=True,
+                            status__in=[
+                                TradeOpenRequest.STATUS_PENDING,
+                                TradeOpenRequest.STATUS_SUBMITTED,
+                                TradeOpenRequest.STATUS_RECOVERED,
+                            ],
+                        ),
+                        api_key_fingerprint=account.api_key_fingerprint,
+                        binding_created_at=account.binding_created_at,
+                        trading_mode=trading_mode,
+                    ).order_by("id")[:20]
+                )
+                if not requests:
+                    continue
+                with user_trading_activity_lock(account.identity) as account_locked:
+                    if not account_locked:
+                        logger.info(
+                            "open request reconcile skipped lock busy user=%s mode=%s",
+                            binding.user_id, trading_mode,
+                        )
+                        continue
+                    if get_user_binding_generation(
+                        binding.user, trading_mode=trading_mode
+                    ) != account.generation:
+                        continue
+                    client = account.create_futures_client()
+                    for open_request in requests:
+                        try:
+                            _reconcile_one_open_request(
+                                open_request, account, client, trading_mode=trading_mode
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "open request reconcile failed request=%s user=%s err=%s",
+                                open_request.id, binding.user_id, safe_error_summary(exc),
+                            )
+                    try:
+                        _alert_stuck_unknown_commands(binding.user, trading_mode)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "unknown command alert check failed user=%s err=%s",
+                            binding.user_id, safe_error_summary(exc),
+                        )
+                processed += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "open request reconcile user=%s mode=%s failed: %s",
+                    binding.user_id, trading_mode, safe_error_summary(exc),
+                )
+    return processed
 
 
 class MakerOpenStatusView(APIView):
@@ -2578,7 +2787,15 @@ class MakerOpenStatusView(APIView):
                     command_status="FAILED",
                 )
             if execution.has_fill and raw_state in terminal_states:
-                order = _adopt_maker_fill(request, account, open_request, intent, client, execution)
+                order = _adopt_maker_fill(
+                    user=request.user,
+                    trading_mode=request_trading_mode(request),
+                    account=account,
+                    open_request=open_request,
+                    intent=intent,
+                    client=client,
+                    execution=execution,
+                )
                 return _entry_status_response(
                     client_request_id=str(open_request.client_request_id),
                     state="SUCCEEDED",
@@ -2587,7 +2804,15 @@ class MakerOpenStatusView(APIView):
                     command_status="SUCCEEDED",
                 )
             if execution.has_fill and execution.state == "filled":
-                order = _adopt_maker_fill(request, account, open_request, intent, client, execution)
+                order = _adopt_maker_fill(
+                    user=request.user,
+                    trading_mode=request_trading_mode(request),
+                    account=account,
+                    open_request=open_request,
+                    intent=intent,
+                    client=client,
+                    execution=execution,
+                )
                 return _entry_status_response(
                     client_request_id=str(open_request.client_request_id),
                     state="SUCCEEDED",
@@ -2639,7 +2864,15 @@ class MakerOpenFallbackView(APIView):
             current_raw_state = str(current_row.get("state") or "").strip().lower()
             terminal_states = {"canceled", "cancelled", "expired", "expired_in_match", "rejected", "failed"}
             if current.state == "filled":
-                order = _adopt_maker_fill(request, account, open_request, intent, client, current)
+                order = _adopt_maker_fill(
+                    user=request.user,
+                    trading_mode=request_trading_mode(request),
+                    account=account,
+                    open_request=open_request,
+                    intent=intent,
+                    client=client,
+                    execution=current,
+                )
                 return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
 
             # Cancel first and confirm the exchange response.  An unknown
@@ -2666,7 +2899,15 @@ class MakerOpenFallbackView(APIView):
             if filled > 0:
                 # Persist any partial fill before adding the remainder.  The
                 # market fallback below uses a separate client order id.
-                _adopt_maker_fill(request, account, open_request, intent, client, canceled)
+                _adopt_maker_fill(
+                    user=request.user,
+                    trading_mode=request_trading_mode(request),
+                    account=account,
+                    open_request=open_request,
+                    intent=intent,
+                    client=client,
+                    execution=canceled,
+                )
             if request.data.get("cancel_only"):
                 if filled <= 0:
                     mark_open_request_failed(open_request, f"maker_{raw_state}")
@@ -2713,7 +2954,15 @@ class MakerOpenFallbackView(APIView):
             )
             if not fallback_execution.has_fill:
                 raise BinanceApiError("市价切换尚未确认成交", outcome_unknown=True)
-            order = _adopt_maker_fill(request, account, open_request, intent, client, fallback_execution)
+            order = _adopt_maker_fill(
+                user=request.user,
+                trading_mode=request_trading_mode(request),
+                account=account,
+                open_request=open_request,
+                intent=intent,
+                client=client,
+                execution=fallback_execution,
+            )
             return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id})
         except BinanceApiError as exc:
             if getattr(exc, "outcome_unknown", False):

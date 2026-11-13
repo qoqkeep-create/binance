@@ -1,12 +1,15 @@
+from datetime import timedelta
 from decimal import Decimal
 from django.test import SimpleTestCase
 from django.test import TestCase
+from django.utils import timezone
 from unittest.mock import Mock, patch
 from common.binance import BinanceApiError, BinanceFuturesClient
 from positions.models import Order
 from users.models import User
 
 from trading.external_positions import (
+    _save_error,
     amount_stop_price,
     finite_decimal,
     tighter_price,
@@ -598,3 +601,86 @@ class ExternalProtectionTests(TestCase):
         self.assertFalse(close_external_position(self.order, self.client, "net_mode"))
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 0)
+
+    def lost_stop_journal(self):
+        self.order.external_stop_request = {
+            "status": "pending", "client_id": "tt-lost", "price": "900",
+            "quantity": "1", "retired_ids": [],
+        }
+        self.order.save(update_fields=["external_stop_request"])
+        self.client.get_algo_order_by_client_id.side_effect = lambda inst, cid: (
+            {"data": [self.algos[cid]]} if cid in self.algos else {"data": []}
+        )
+
+    def age_absent_journal(self, field="external_stop_request"):
+        self.order.refresh_from_db()
+        journal = dict(getattr(self.order, field))
+        journal["first_absent_at"] = (timezone.now() - timedelta(seconds=60)).isoformat()
+        setattr(self.order, field, journal)
+        self.order.save(update_fields=[field])
+
+    def test_pending_stop_absent_keeps_idempotent_wait_before_threshold(self):
+        self.lost_stop_journal()
+        self.cycle()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.external_stop_request["status"], "pending")
+        self.assertEqual(self.order.external_stop_request["absent_rounds"], 1)
+        self.assertEqual(len(self.submits), 0)
+        self.assertIn("待确认", self.order.stop_protection_error)
+
+    def test_pending_stop_absent_converges_and_reprotects(self):
+        self.lost_stop_journal()
+        self.cycle()
+        self.age_absent_journal()
+        self.cycle()
+        self.cycle()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.external_stop_request["status"], "terminal")
+        self.assertEqual(len(self.submits), 0)
+        self.cycle()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.external_stop_request["status"], "live")
+        self.assertEqual(len(self.submits), 1)
+
+    def test_pending_close_absent_converges_to_resubmission(self):
+        self.order.external_close_request = {
+            "status": "pending", "client_id": "tt-close-lost", "quantity": "1",
+            "entry_price": "1000", "reason": "manual",
+        }
+        self.order.save(update_fields=["external_close_request"])
+        self.client.get_order.return_value = {"data": []}
+        self.assertFalse(close_external_position(self.order, self.client, "net_mode"))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.external_close_request["absent_rounds"], 1)
+        self.age_absent_journal("external_close_request")
+        self.assertFalse(close_external_position(self.order, self.client, "net_mode"))
+        self.assertFalse(close_external_position(self.order, self.client, "net_mode"))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.external_close_request["status"], "rejected")
+        self.client.close_position.side_effect = lambda *a, **kw: self.close_receipt()
+        self.assertTrue(close_external_position(self.order, self.client, "net_mode"))
+        self.assertEqual(self.client.close_position.call_count, 1)
+
+    def test_persistent_protection_failure_alerts_user_with_cooldown(self):
+        from positions import protection_alerts
+
+        self.order.stop_protection_first_failed_at = timezone.now() - timedelta(seconds=180)
+        self.order.save(update_fields=["stop_protection_first_failed_at"])
+        with (
+            patch.object(protection_alerts, "_recipient_id", return_value=self.user.id),
+            patch("positions.profit_alerts.send_echobell") as send,
+        ):
+            _save_error(self.order, "simulated failure")
+            send.assert_called_once()
+            _save_error(self.order, "simulated failure")
+            self.assertEqual(send.call_count, 1)
+
+    def test_transient_protection_failure_does_not_alert(self):
+        from positions import protection_alerts
+
+        with (
+            patch.object(protection_alerts, "_recipient_id", return_value=self.user.id),
+            patch("positions.profit_alerts.send_echobell") as send,
+        ):
+            _save_error(self.order, "simulated failure")
+            send.assert_not_called()

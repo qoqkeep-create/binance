@@ -7,9 +7,12 @@ never blindly replayed. This module deliberately does not reconstruct old fills.
 
 import hashlib
 import logging
+import time
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
 from uuid import uuid4
 
+from django.core.cache import cache
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
@@ -40,6 +43,11 @@ from positions.notifications import (
     _CLOSE_CLASSIFICATION_FALLBACK,
 )
 from positions.operation_logs import record_operation
+from positions.protection_alerts import (
+    PROTECTION_FAILURE_ALERT_SECONDS,
+    UNADOPTED_POSITION_ALERT_SECONDS,
+    send_protection_alert,
+)
 from trading.account_cache import invalidate_position_caches
 from trading.locks import distributed_cache_lock, user_trading_activity_lock
 from trading.models import TradeOpenRequest
@@ -49,6 +57,20 @@ logger = logging.getLogger(__name__)
 LIVE = {"live", "partially_filled"}
 TERMINAL = {"filled", "canceled", "cancelled", "expired", "rejected", "failed"}
 ALGO_TERMINAL = TERMINAL | {"finished"}
+# An unknown write is only declared absent after repeated exact reads agree,
+# so a temporarily invisible order is never duplicated.
+ABSENT_CONVERGE_ROUNDS = 3
+ABSENT_CONVERGE_SECONDS = 30
+
+
+def _elapsed_seconds(iso_text, now):
+    try:
+        started = datetime.fromisoformat(str(iso_text))
+    except (TypeError, ValueError):
+        return 0.0
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=dt_timezone.utc)
+    return max((now - started).total_seconds(), 0.0)
 
 
 def _log_number(value):
@@ -119,21 +141,41 @@ def _position_key(row):
     return to_symbol(row["instId"]), 0 if side == "long" else 1
 
 
-def _positions_from_rows(rows):
+def _positions_from_rows(rows, *, skip_invalid=False):
     result = {}
     for row in rows:
-        key = _position_key(row)
+        try:
+            key = _position_key(row)
+        except (ValueError, KeyError, TypeError) as exc:
+            if not skip_invalid:
+                raise
+            # One malformed row must not stop protection of every other
+            # position in the account; skip it and keep scanning.
+            logger.warning(
+                "external scan skipped invalid position row: %s",
+                safe_error_summary(exc),
+            )
+            continue
         if key:
             if key in result:
-                raise ValueError("交易所返回重复方向持仓")
+                if not skip_invalid:
+                    raise ValueError("交易所返回重复方向持仓")
+                logger.warning(
+                    "external scan skipped duplicate position row symbol=%s side=%s",
+                    key[0], key[1],
+                )
+                continue
             result[key] = row
     return result
 
 
-def _positions(client, inst_id=None):
-    return _positions_from_rows(_rows(
-        client.get_positions("SWAP", inst_id, budget_priority=RequestPriority.CRITICAL)
-    ))
+def _positions(client, inst_id=None, *, skip_invalid=False):
+    return _positions_from_rows(
+        _rows(
+            client.get_positions("SWAP", inst_id, budget_priority=RequestPriority.CRITICAL)
+        ),
+        skip_invalid=skip_invalid,
+    )
 
 
 def _target(order, client):
@@ -204,6 +246,21 @@ def _save_error(order, error, *, closing=False):
             event_key=(
                 f"external-protection:{order.id}:"
                 f"{order.stop_protection_first_failed_at.isoformat()}:failed"
+            ),
+        )
+    first_failed = order.stop_protection_first_failed_at
+    if (
+        first_failed
+        and (timezone.now() - first_failed).total_seconds() >= PROTECTION_FAILURE_ALERT_SECONDS
+    ):
+        closing_now = order.external_close_request.get("status") in {"pending", "rejected"}
+        send_protection_alert(
+            order.user_id,
+            kind=f"protection:{order.id}",
+            title="手动仓平仓待确认" if closing_now else "手动仓保护异常",
+            body=(
+                f"{order.symbol} 保护异常已持续超过2分钟：{order.stop_protection_error}。"
+                "系统仍在自动重试，请打开持仓页核对并决定处理方式。"
             ),
         )
 
@@ -393,7 +450,41 @@ def close_external_position(order, client, pos_mode, reason="manual"):
                 return _finalize_close(order, client, receipt)
             if position is None and _target(order, client) is None:
                 return _finalize_close(order, client, receipt)
+            if receipt is not None and journal.get("absent_rounds"):
+                journal["absent_rounds"] = 0
+                journal["first_absent_at"] = ""
+                order.external_close_request = journal
+                order.save(update_fields=["external_close_request"])
             if not receipt or receipt.get("state") not in TERMINAL:
+                if not receipt and position is not None:
+                    # The close order is provably absent while the position is
+                    # still open. After repeated confirmed absence, converge to
+                    # rejected so the next round resubmits against fresh facts
+                    # instead of waiting forever.
+                    now = timezone.now()
+                    absent_rounds = int(journal.get("absent_rounds") or 0) + 1
+                    journal["absent_rounds"] = absent_rounds
+                    journal["first_absent_at"] = journal.get("first_absent_at") or now.isoformat()
+                    order.external_close_request = journal
+                    order.save(update_fields=["external_close_request"])
+                    if (
+                        absent_rounds >= ABSENT_CONVERGE_ROUNDS
+                        and _elapsed_seconds(journal["first_absent_at"], now) >= ABSENT_CONVERGE_SECONDS
+                    ):
+                        journal["status"] = "rejected"
+                        journal["absent_rounds"] = 0
+                        journal["first_absent_at"] = ""
+                        order.external_close_request = journal
+                        order.save(update_fields=["external_close_request"])
+                        record_operation(
+                            order,
+                            action="external_close_absent",
+                            status="info",
+                            message="平仓请求经多轮精确核对确认不存在，系统将按新鲜仓位重新提交平仓",
+                            event_key=f"external-close-absent:{order.id}:{journal['client_id']}",
+                            dedupe=False,
+                        )
+                        return False
                 _save_error(order, "平仓结果未确认，按原请求核对中", closing=True)
                 return False
             # A terminal partial fill is settled before a new attempt can be made.
@@ -719,11 +810,41 @@ def _protect(order, client, pos_mode, position, *, closing=False):
                 recovered_rows = []
             recovered = recovered_rows[0] if recovered_rows else None
         if not recovered:
-            # The POST result is still not fully reconciled. Keep the
-            # idempotent request pending and never replay it merely because
-            # Binance's historical lookup says the order is absent.
+            # The open-algo snapshot and the exact client-id read both show no
+            # order. One ambiguous round keeps the idempotent wait; repeated
+            # confirmed absence converges to a terminal journal so the next
+            # round installs fresh protection instead of waiting forever.
+            now = timezone.now()
+            absent_rounds = int(journal.get("absent_rounds") or 0) + 1
+            journal["absent_rounds"] = absent_rounds
+            journal["first_absent_at"] = journal.get("first_absent_at") or now.isoformat()
+            order.external_stop_request = journal
+            order.save(update_fields=["external_stop_request"])
+            if (
+                absent_rounds >= ABSENT_CONVERGE_ROUNDS
+                and _elapsed_seconds(journal["first_absent_at"], now) >= ABSENT_CONVERGE_SECONDS
+            ):
+                journal["status"] = "terminal"
+                journal["absent_rounds"] = 0
+                journal["first_absent_at"] = ""
+                order.external_stop_request = journal
+                order.save(update_fields=["external_stop_request"])
+                record_operation(
+                    order,
+                    action="external_stop_absent",
+                    status="info",
+                    message="止损提交经多轮精确核对确认不存在，系统将重新挂单保护",
+                    event_key=f"external-stop-absent:{order.id}:{journal['client_id']}",
+                    dedupe=False,
+                )
+                return
             raise ValueError("止损提交结果待确认")
         if recovered:
+            if journal.get("absent_rounds"):
+                journal["absent_rounds"] = 0
+                journal["first_absent_at"] = ""
+                order.external_stop_request = journal
+                order.save(update_fields=["external_stop_request"])
             if recovered.get("state") in ALGO_TERMINAL:
                 journal["status"] = "terminal"
                 order.external_stop_request = journal
@@ -981,12 +1102,15 @@ def _adopt_external_positions(user, account, positions, *, allow_unresolved_requ
     """Create local owners for exchange positions without exchange writes."""
     local = list(_scoped(Order, user, account).filter(status=0))
     owned = {(o.symbol, o.side) for o in local}
-    blocked_symbols = set(
-        _scoped(LimitOrder, user, account)
+    # Block per symbol AND direction: an unresolved short entry must never
+    # hide or delay protection of an unrelated long position.
+    blocked_keys = {
+        (symbol, side)
+        for symbol, side in _scoped(LimitOrder, user, account)
         .filter(status=LimitOrder.STATUS_PENDING)
-        .values_list("symbol", flat=True)
-    )
-    blocked_symbols.update(
+        .values_list("symbol", "side")
+    }
+    for symbol, payload in (
         _scoped(TradeOpenRequest, user, account)
         .filter(order_id__isnull=True)
         .exclude(status__in=[
@@ -1015,15 +1139,23 @@ def _adopt_external_positions(user, account, positions, *, allow_unresolved_requ
         # A durable Web owner or confirmed zero-fill cancellation resolves the
         # request's ownership. Unknown writes and unadopted fills stay blocked.
         .filter(has_web_owner=False, has_unfilled_terminal_limit=False)
-        .values_list("symbol", flat=True)
-    )
+        .values_list("symbol", "request_payload")
+    ):
+        intent = payload.get("_execution_intent") if isinstance(payload, dict) else None
+        side = intent.get("side_code") if isinstance(intent, dict) else None
+        if side in (0, 1):
+            blocked_keys.add((symbol, side))
+        else:
+            # Without a known direction, conservatively block both sides.
+            blocked_keys.add((symbol, 0))
+            blocked_keys.add((symbol, 1))
     for key, position in positions.items():
         symbol, side = key
         # A read of the exchange snapshot must still expose a real position
         # when an older open request is unresolved. The request remains a
         # durable risk guard for new entries; the external owner lets the
         # position page and background protection see the actual exposure.
-        if key in owned or (symbol in blocked_symbols and not allow_unresolved_requests):
+        if key in owned or (key in blocked_keys and not allow_unresolved_requests):
             continue
         quantity, entry = (
             abs(finite_decimal(position["pos"])),
@@ -1071,19 +1203,55 @@ def _adopt_external_positions(user, account, positions, *, allow_unresolved_requ
     return local
 
 
+def _track_unadopted_positions(user, account, positions, local):
+    """Alert when an exchange position stays without a local owner too long.
+
+    Adoption is normally immediate; a persistent gap means a blocked or failed
+    adoption that the user must know about instead of discovering it later.
+    """
+    owned_keys = {(o.symbol, o.side) for o in local}
+    now_ts = time.time()
+    for key in positions:
+        cache_key = f"unadopted-position:{account.identity}:{key[0]}:{key[1]}"
+        try:
+            if key in owned_keys:
+                cache.delete(cache_key)
+                continue
+            first_seen = cache.get(cache_key)
+            if first_seen is None:
+                cache.set(cache_key, now_ts, timeout=900)
+                continue
+            if now_ts - float(first_seen) >= UNADOPTED_POSITION_ALERT_SECONDS:
+                send_protection_alert(
+                    user.id,
+                    kind=f"unadopted:{account.identity}:{key[0]}:{key[1]}",
+                    title="交易所持仓未纳管",
+                    body=(
+                        f"{key[0]} 存在交易所持仓，但系统超过2分钟未能纳管保护。"
+                        "请打开持仓页核对；如有未完成的开仓委托，请先处理该委托。"
+                    ),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "unadopted position tracking failed user=%s error_type=%s",
+                user.id, type(exc).__name__,
+            )
+
+
 def _scan_account(user, account):
     client = account.create_futures_client()
     config = _rows(client.get_account_config())
     mode = config[0].get("posMode") if config else None
     if mode not in {"net_mode", "long_short_mode"}:
         raise ValueError("无法确认账户持仓模式")
-    positions = _positions(client)
+    positions = _positions(client, skip_invalid=True)
     local = _adopt_external_positions(user, account, positions)
     for order in local:
         if order.position_origin == Order.ORIGIN_EXTERNAL:
             reconcile_external_order(
                 order, client, mode, positions.get((order.symbol, order.side))
             )
+    _track_unadopted_positions(user, account, positions, local)
     # Failed cleanup stays tracked even after the lifecycle releases its unique slot.
     for order in _needs_cleanup(_scoped(Order, user, account))[:20]:
         _cleanup_closed(order, client)
@@ -1122,13 +1290,19 @@ def reconcile_external_positions(*, trading_mode=TradingMode.ORDINARY):
                 if account is None:
                     continue
                 with user_trading_activity_lock(account.identity) as account_locked:
-                    if (
-                        not account_locked
-                        or get_user_binding_generation(
-                            binding.user, trading_mode=trading_mode
+                    if not account_locked:
+                        logger.info(
+                            "external position scan skipped lock busy user=%s mode=%s",
+                            binding.user_id, trading_mode,
                         )
-                        != account.generation
-                    ):
+                        continue
+                    if get_user_binding_generation(
+                        binding.user, trading_mode=trading_mode
+                    ) != account.generation:
+                        logger.info(
+                            "external position scan skipped generation changed user=%s mode=%s",
+                            binding.user_id, trading_mode,
+                        )
                         continue
                     _scan_account(binding.user, account)
                     processed += 1

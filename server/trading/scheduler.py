@@ -86,6 +86,17 @@ def _reconcile_external_positions_job(trading_mode="ordinary"):
 
 
 @_with_database_connections
+def _reconcile_open_requests_job(trading_mode="ordinary"):
+    """服务端收敛未终态开仓请求：成交即接管，终态即释放，不依赖用户打开页面。"""
+    try:
+        from trading.views import reconcile_open_requests
+
+        reconcile_open_requests(trading_mode=trading_mode)
+    except Exception as e:
+        logger.error("定时开仓请求收敛失败 mode=%s: %s", trading_mode, safe_error_summary(e))
+
+
+@_with_database_connections
 def _reconcile_stale_open_orders_job():
     """低频修正交易所已无仓位但本地仍未平仓的旧单"""
     try:
@@ -284,6 +295,7 @@ def start_scheduler():
         (_run_strategy_engine_job, "lead_strategy_engine", 10, 4),
         (_reconcile_order_protection_job, "lead_order_protection", 10, 6),
         (_reconcile_external_positions_job, "lead_external_positions", 10, 8),
+        (_reconcile_open_requests_job, "lead_open_request_reconcile", 30, 9),
     ):
         _scheduler.add_job(
             func, trigger=IntervalTrigger(seconds=seconds), id=job_id,
@@ -364,6 +376,19 @@ def start_scheduler():
         name="手动仓强制止损保护",
         replace_existing=True,
         next_run_time=now + timedelta(seconds=7),
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # 每30秒服务端收敛未终态开仓请求，成交/终态不再等待用户打开页面。
+    _scheduler.add_job(
+        _reconcile_open_requests_job,
+        trigger=IntervalTrigger(seconds=30),
+        id="reconcile_open_requests",
+        name="开仓请求服务端收敛",
+        replace_existing=True,
+        next_run_time=now + timedelta(seconds=11),
+        jitter=3,
         max_instances=1,
         coalesce=True,
     )

@@ -209,12 +209,13 @@ class TradingApiTests(APITestCase):
             patch("trading.services._converge_stop_loss_order"),
         ):
             adopted = _adopt_maker_fill(
-                request_like,
-                account,
-                request,
-                request.request_payload["_execution_intent"],
-                MagicMock(),
-                execution,
+                user=request_like.user,
+                trading_mode="ordinary",
+                account=account,
+                open_request=request,
+                intent=request.request_payload["_execution_intent"],
+                client=MagicMock(),
+                execution=execution,
             )
 
         self.assertEqual(adopted.pk, projected.pk)
