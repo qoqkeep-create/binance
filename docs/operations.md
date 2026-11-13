@@ -1,5 +1,15 @@
 # 整合环境部署与运维
 
+<a id="交易经验与oss图片上传发布20261113"></a>
+
+## 交易经验与 OSS 图片上传发布（2026-11-13）
+
+提交 **`0ab6f9f`** 已推送到 GitHub `codex/integrated-ios`，完整后端发布到 **47.80.22.243（首尔服务器）** 的 `/opt/trade-tools-integrated/releases/integrated-20261113-full-0ab6f9f`，`current` 已切换到该目录；交易计划静态页切换到 `/opt/trade-tools-integrated/web/trade-plan-20261113-v7`，访问地址为 `https://47.80.22.243/plan/`。发布前数据库 gzip 备份为 **423404704 bytes**，位于 `/opt/trade-tools-integrated/backups/integrated-20261113-full-0ab6f9f/`；没有执行交易、资金、撤保护或订单改写。
+
+新版本新增独立 `experiences` Django 应用和 `experiences.0001_initial` migration，经验接口与 OSS 上传签名接口随 API 发布；六个整合容器均 healthy，公网 `/integrated/v1/health` 返回 database、migrations、scheduler 全部 true，计划页 HTTP 200 且包含“交易经验”、经验弹窗和图片输入标记，线上 `app.js`／`styles.css` SHA-256 与本地提交一致。未认证调用 `/integrated/v1/experience/upload-url` 返回 401，符合鉴权边界。
+
+阿里云 OSS 的代码链路已经部署，但服务器 `/opt/trade-tools-integrated/server.env` 当前没有 `OSS_*` 变量，因此真实上传保持关闭，网页使用本地 Data URL 回退。启用时只需在该受限环境文件填写 `OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_REGION`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET` 和可选 `OSS_PUBLIC_BASE_URL`，并设置 `OSS_KEY_PREFIX`、`OSS_SIGNED_URL_TTL`、`OSS_MAX_IMAGE_BYTES`；RAM 子账号只授予目标 Bucket 的对象写入／读取权限，Bucket CORS 允许计划页来源的 `PUT`／`GET`／`HEAD` 和 `Content-Type`。修改环境文件后按完整发布流程重启 API／worker／scheduler 并复验，不把凭证写入 Git、前端或日志。
+
 <a id="交易计划网站筛选器分组部署20261113"></a>
 
 ## 交易计划网站筛选器分组部署（2026-11-13）

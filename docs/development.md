@@ -1,6 +1,6 @@
 # 开发与验证
 
-## 交易计划网页：交易经验与计划图片（2026-11-13，本地）
+## 交易计划网页：交易经验与计划图片（2026-11-13，已部署）
 
 `frontend/trade-plan-web/` 新增独立的“交易经验”页签。经验主页用横向卡片展示标题和正文，录入与编辑使用弹出框，内容按浏览器 `localStorage` 持久化；卡片中的“查看全文”会回填同一弹窗，可直接修改后保存。交易计划表单新增图片选择、拖放和剪贴板粘贴，单条计划最多 5 张，保存后显示图片数量并随本地记录保留。
 
@@ -8,7 +8,7 @@
 
 后端新增独立 `server/experiences` Django 应用和迁移，提供按用户隔离的标题、正文和图片 URL 记录接口：`GET/POST /v1/experience/list`、`POST /v1/experience/create`、`GET/PATCH/PUT/DELETE /v1/experience/<id>`。网页默认使用本地记录，带鉴权的部署可按该接口契约同步；序列化层限制最多 5 张、单图 2 MB，并只接受 HTTP(S) 或图片 Data URL，图片实际上传仍由前端/OSS 适配层负责。
 
-本地验证：浏览器手动验证页签切换、经验新增、编辑回填、计划图片选择及超过 5 张的截断；`node --check frontend/trade-plan-web/app.js`、`manage.py check`、`makemigrations --check --dry-run`、`experiences common` 测试和 OSS 签名接口测试通过。生产环境通过 `deploy/integrated/server.env.example` 配置 OSS；如果服务器未提供真实 Bucket／RAM 凭证，上传接口会明确返回 503，网页回退到本地图片。
+本地验证：浏览器手动验证页签切换、经验新增、编辑回填、计划图片选择及超过 5 张的截断；`node --check frontend/trade-plan-web/app.js`、`manage.py check`、`makemigrations --check --dry-run`、`experiences common` **171 项测试**通过。已部署到 47.80.22.243（首尔服务器）的 `integrated-20261113-full-0ab6f9f` 和 `trade-plan-20261113-v7`，公网页面和健康检查通过；服务器未提供真实 Bucket／RAM 凭证，上传接口保持关闭并回退到本地图片。
 
 ## 持仓刷新、来源与页签显示修正（2026-11-13，本地）
 
