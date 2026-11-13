@@ -97,6 +97,10 @@
               <div class="top-stat"><span>已做</span><strong id="metric-done">00</strong></div>
               <button class="primary-button" data-view-target="new-plan">新建计划 <span>＋</span></button>
             </div>
+            <div class="topbar-tools" id="experiences-top-tools" hidden>
+              <div class="top-stat"><span>经验</span><strong id="experience-count">00</strong></div>
+              <button class="primary-button" id="open-experience-modal" type="button">记录经验 <span>＋</span></button>
+            </div>
           </div>
         </header>
 
@@ -157,16 +161,7 @@
           </div>
         </section>
 
-        <section class="page-view experiences-view" id="experiences-view" aria-labelledby="experiences-title" hidden>
-          <div class="experiences-header">
-            <div>
-              <span class="page-kicker">JOURNAL / EXPERIENCE</span>
-              <h1 id="experiences-title">交易经验</h1>
-              <p>把每次复盘留下来的判断，整理成下一次能复用的经验。</p>
-            </div>
-            <button class="primary-button" id="open-experience-modal" type="button">记录经验 <span>＋</span></button>
-          </div>
-          <div class="experience-meta"><span id="experience-count">0</span> 条经验 · 仅用于复盘记录</div>
+        <section class="page-view experiences-view" id="experiences-view" aria-labelledby="page-title" hidden>
           <div class="experience-list" id="experience-list" aria-live="polite"></div>
           <div class="experience-empty" id="experience-empty" hidden>
             <strong>还没有交易经验</strong>

@@ -27,7 +27,7 @@
 | --- | --- |
 | 后端 release | `/opt/trade-tools-integrated/releases/integrated-20261113-accounts-dee9cae` |
 | `current` | 指向上述 release |
-| 交易计划 Web | `/opt/trade-tools-integrated/web/trade-plan-20261113-v10` |
+| 交易计划 Web | `/opt/trade-tools-integrated/web/trade-plan-20261113-v11` |
 | 公网页面 | `https://47.80.22.243/plan/` |
 | migration | `experiences.0001_initial`、`plans.0001_initial` 已应用 |
 | 容器 | MySQL、Redis、api、market、worker、scheduler 六个容器均 healthy（以最新运维记录复核） |

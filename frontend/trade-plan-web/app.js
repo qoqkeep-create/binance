@@ -209,6 +209,7 @@ function showView(view) {
   $$('.nav-item[data-view]').forEach((button) => button.classList.toggle('active', button.dataset.view === activeView));
   $('#page-title').textContent = activeView === 'new-plan' ? '新建计划' : activeView === 'experiences' ? '交易经验' : '计划记录';
   $('#records-top-tools').hidden = activeView !== 'records';
+  $('#experiences-top-tools').hidden = activeView !== 'experiences';
   if (activeView === 'new-plan') window.setTimeout(() => $('input[name="symbol"]')?.focus(), 60);
 }
 
