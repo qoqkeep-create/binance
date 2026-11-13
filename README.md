@@ -24,4 +24,4 @@ TradeTools-Binance-iOS/
 
 在本项目根目录直接使用普通 `git status`、`git diff` 等命令；沿用现有 GitHub 仓库与 `codex/integrated-ios` 分支，交付流程见 [运维](docs/operations.md#github-源码交付)。2026-11-10 已从旧嵌套目录搬迁，历史路径及 Git 参数见 [迁移索引](docs/sources.md#本地目录独立2026-11-10)。Codex、Xcode、DevEco 应打开新根目录下的工程。
 
-[文档目录](docs/README.md) · [整合说明](docs/INTEGRATION.md) · [开发验证](docs/development.md) · [TestFlight](docs/testflight.md) · [鸿蒙客户端](docs/harmony-client.md) · [原项目来源](docs/sources.md)。实际部署与测试结果见 [变更记录](docs/changes.md)。
+[文档目录](docs/README.md) · [Agent 交接手册](docs/agent-handoff.md) · [整合说明](docs/INTEGRATION.md) · [开发验证](docs/development.md) · [TestFlight](docs/testflight.md) · [鸿蒙客户端](docs/harmony-client.md) · [原项目来源](docs/sources.md)。实际部署与测试结果见 [变更记录](docs/changes.md)。

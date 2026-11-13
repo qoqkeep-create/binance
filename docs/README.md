@@ -29,3 +29,4 @@
 | [已知事项](known-issues.md) | 当前待实现与待验证内容 |
 | [原项目来源](sources.md) | 独立项目根目录、USDT / USDC 来源与历史 Git 基线 |
 | [文档维护](maintenance.md) | 主题主文档及更新规则 |
+| [Agent 交接手册](agent-handoff.md) | 面向后续 Agent 的项目全局地图、开发验证、部署回滚、OSS 和安全边界 |
