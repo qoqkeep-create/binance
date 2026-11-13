@@ -85,6 +85,7 @@ from trading.open_requests import (
     find_existing_order_by_open_request as _find_existing_order_by_open_request,
     find_external_projection_for_open_request as _find_external_projection_for_open_request,
     get_open_request_execution_intent,
+    mark_open_request_completed,
     mark_open_request_recovered,
     mark_open_request_failed,
     mark_open_request_submitted,
@@ -2618,6 +2619,38 @@ def _reconcile_one_open_request(open_request, account, client, *, trading_mode):
         existing = _find_existing_order_by_open_request(open_request)
         if existing is not None:
             return "adopted"
+        # A fill whose position no longer exists is a confirmed historical
+        # fact, not live exposure. Record completion without inventing a
+        # phantom local order whose protection would outlive the position.
+        position_rows = (
+            client.get_positions(
+                "SWAP", inst_id, budget_priority=RequestPriority.CRITICAL,
+            ).get("data") or []
+        )
+        expected_side = "long" if int(intent["side_code"]) == 0 else "short"
+        symbol = to_symbol(open_request.symbol)
+        has_live_position = False
+        for row in position_rows:
+            try:
+                qty = Decimal(str(row.get("pos") or "0"))
+            except (InvalidOperation, ValueError):
+                continue
+            if (
+                qty != 0
+                and to_symbol(str(row.get("instId") or "")) == symbol
+                and str(row.get("posSide") or "").lower() == expected_side
+            ):
+                has_live_position = True
+                break
+        if not has_live_position:
+            mark_open_request_completed(
+                open_request, exchange_order_id=execution.order_id or order_id,
+            )
+            logger.info(
+                "open request completed without live position request=%s user=%s symbol=%s",
+                open_request.id, open_request.user_id, open_request.symbol,
+            )
+            return "completed_no_position"
         _adopt_maker_fill(
             user=open_request.user,
             trading_mode=trading_mode,

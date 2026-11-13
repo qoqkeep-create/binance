@@ -4,7 +4,7 @@
 
 线上只读取证定位手动仓"不识别、不挂止损"的真实根因：两笔已成交的 Maker 开仓请求长期停在 `submitted`（收敛只由客户端页面读取触发），按币种阻塞了同币种新手动仓的后台纳管；用户 19:17 在币安手动开的 ETH 多单直到 21:13 打开 App 持仓页才被读路径纳管并挂止损，中间约 2 小时无保护。本轮按"可靠性可以分段，但任何一段不得静默卡死；要么有限时间自动收敛，要么显式告警交用户决策"的原则加固：
 
-- `trading/views.py` 新增 `reconcile_open_requests` 与 `_reconcile_one_open_request`：30 秒调度（普通／带单）对未终态且未关联本地订单的开仓请求按交易所订单号只读精确核对；确认成交（含部分成交）复用 `_adopt_maker_fill`（已重构为不依赖 HTTP 请求，市价／Maker／客户端视图共用）接管并挂止损；明确零成交终态或订单确认不存在置 `failed`；仍挂单或读取模糊保持原状态。无订单号的请求须更新超过 120 秒才按客户端订单号核对，年轻请求仍归命令恢复路径。
+- `trading/views.py` 新增 `reconcile_open_requests` 与 `_reconcile_one_open_request`：30 秒调度（普通／带单）对未终态且未关联本地订单的开仓请求按交易所订单号只读精确核对；确认成交（含部分成交）先核对该币种＋方向仍有交易所持仓才复用 `_adopt_maker_fill`（已重构为不依赖 HTTP 请求，市价／Maker／客户端视图共用）接管并挂止损，持仓已不存在只记录 `completed` 成交事实、不创建幻影订单与保护；明确零成交终态或订单确认不存在置 `failed`；仍挂单或读取模糊保持原状态。无订单号的请求须更新超过 120 秒才按客户端订单号核对，年轻请求仍归命令恢复路径。首次线上验收发现旧成交接管会生成幻影仓（本地创建时间晚于真实平仓时间，陈旧收敛的证据窗口永远匹配不到），该持仓存在性核对即为根因修复。
 - `trading/external_positions.py`：纳管阻塞改为币种＋方向（无方向意图保守阻塞双向）；止损／平仓 pending 日志在活动快照与精确查询连续 ≥3 轮且 ≥30 秒共同确认不存在后收敛（止损→终态下轮重建，平仓→rejected 按新鲜仓位重提）；后台扫描坏行跳过不中断整账户；锁占用／代际变化跳过补日志。
 - `positions/protection_alerts.py`（新增）：保护失败 ≥2 分钟、交易所持仓 ≥2 分钟未纳管、UNKNOWN 命令 ≥10 分钟，经既有 Echobell 通道告警配置接收人，同类 10 分钟冷却；告警失败只记日志。
 
@@ -13,12 +13,12 @@
 ```bash
 DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test \
   trading.test_open_request_reconcile trading.test_external_positions \
-  trading.test_external_discovery trading.tests.TradingApiTests --noinput
-# Ran 184 tests ... OK（含新增收敛 9 项、方向阻塞／坏行隔离 3 项、有界收敛 4 项、告警 2 项）
+  trading.test_external_discovery --noinput
+# Ran 79 tests ... OK（含新增收敛 12 项、方向阻塞／坏行隔离 3 项、有界收敛 4 项、告警 2 项）
 
 DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test \
   trading positions mobile --noinput
-# Ran 759 tests ... OK
+# Ran 762 tests ... OK
 ```
 
 `makemigrations --check --dry-run` 无漂移，`git diff --check` 通过。新增 `test_open_request_reconcile.py` 覆盖成交接管不重复、终态／不存在释放、挂单保持、查询失败保持、部分成交接管、年轻 pending 不查询、缺意图不猜测、失效绑定不扫描。本轮未提交、推送或部署；部署与真实手动仓验收待用户授权。

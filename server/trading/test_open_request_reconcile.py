@@ -31,6 +31,9 @@ class OpenRequestReconcileTests(TestCase):
             passphrase="", alias="test account", status=1,
         )
         self.exchange = MagicMock()
+        self.exchange.get_positions.return_value = {
+            "data": [{"instId": "BTC-USDT-SWAP", "posSide": "long", "pos": "1"}]
+        }
         self.account = SimpleNamespace(
             user_id=self.user.id, trading_mode="ordinary", api_key_fingerprint="fp-open-reconcile",
             binding_created_at=self.binding.created_at,
@@ -169,3 +172,32 @@ class OpenRequestReconcileTests(TestCase):
         self.request()
         self.assertEqual(reconcile_open_requests(), 0)
         self.exchange.get_order.assert_not_called()
+
+    def test_fill_without_live_position_completes_without_phantom_order(self):
+        open_request = self.request()
+        self.exchange.get_order.return_value = self.filled_row()
+        self.exchange.get_positions.return_value = {"data": []}
+        reconcile_open_requests()
+        open_request.refresh_from_db()
+        self.assertEqual(open_request.status, TradeOpenRequest.STATUS_COMPLETED)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_fill_with_live_position_on_other_side_does_not_adopt(self):
+        open_request = self.request()
+        self.exchange.get_order.return_value = self.filled_row()
+        self.exchange.get_positions.return_value = {
+            "data": [{"instId": "BTC-USDT-SWAP", "posSide": "short", "pos": "1"}]
+        }
+        reconcile_open_requests()
+        open_request.refresh_from_db()
+        self.assertEqual(open_request.status, TradeOpenRequest.STATUS_COMPLETED)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_position_read_failure_keeps_request_for_next_round(self):
+        open_request = self.request()
+        self.exchange.get_order.return_value = self.filled_row()
+        self.exchange.get_positions.side_effect = BinanceApiError("throttled", code="-1003")
+        reconcile_open_requests()
+        open_request.refresh_from_db()
+        self.assertEqual(open_request.status, TradeOpenRequest.STATUS_SUBMITTED)
+        self.assertEqual(Order.objects.count(), 0)
