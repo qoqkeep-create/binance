@@ -1,11 +1,11 @@
 # TradeTools-Binance-iOS Agent 交接手册
 
 > 用途：给接手本项目的 Agent、开发者和发布人员提供一份可执行的全局地图。
-> 
+>
 > 更新时间：2026-11-13（北京时间）
-> 
+>
 > 当前分支：`codex/integrated-ios`；当前 HEAD：`d241a39 docs: record trading experience deployment`
-> 
+>
 > 项目根目录：`/Users/apple/work/TradeTools-Binance-iOS`
 
 这份手册描述“如何理解、修改、验证和交付整个整合项目”。它不替代主题文档，也不把历史验收结果升级成当前事实。主题文档有更具体的字段、协议和测试证据时，应以主题文档为准；本手册负责给出阅读顺序、边界和交接动作。
