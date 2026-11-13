@@ -13,7 +13,7 @@ const initialExperiences = [
   { id: 'EXP-001', title: '止损位置应该在逻辑失效处', body: '止损不是为了让单笔看起来更小，而是用来验证最初的判断。价格触发它时，说明这套逻辑已经失效。', createdAt: '11 月 08 日' },
 ];
 
-const STORAGE_KEYS = { plans: 'trade-plan.records.v1', experiences: 'trade-plan.experiences.v1' };
+const STORAGE_KEYS = { plans: 'trade-plan.records.v1', experiences: 'trade-plan.experiences.v1', auth: 'trade-plan.auth.v1' };
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const timeframeLabels = { '3m': '3 分钟', '15m': '15 分钟', '1h': '1 小时', '4h': '4 小时', '1d': '1 天' };
@@ -62,19 +62,44 @@ function safeImageSource(value) {
 
 function uploadApiBase() { return String(tradePlanConfig.apiBase || '/integrated').replace(/\/$/, ''); }
 
+function loadAuth() {
+  try { const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.auth) || 'null'); return stored && stored.token ? stored : null; } catch (error) { return null; }
+}
+function saveAuth(auth) { try { window.localStorage.setItem(STORAGE_KEYS.auth, JSON.stringify(auth)); } catch (error) { /* 存储失败时仅本次会话有效 */ } }
+function clearAuth() { try { window.localStorage.removeItem(STORAGE_KEYS.auth); } catch (error) { /* ignore */ } }
+
 function uploadAccessToken() {
   if (typeof tradePlanConfig.getAccessToken === 'function') return String(tradePlanConfig.getAccessToken() || '');
-  return String(tradePlanConfig.accessToken || '');
+  if (tradePlanConfig.accessToken) return String(tradePlanConfig.accessToken);
+  return String(loadAuth()?.token || '');
 }
 
-async function uploadImageViaApi(file) {
-  const token = uploadAccessToken();
-  if (!token) throw new Error('未配置交易计划登录令牌');
-  const response = await fetch(`${uploadApiBase()}/v1/experience/upload-url`, {
+async function refreshAccessToken() {
+  const response = await fetch(`${uploadApiBase()}/v1/auth/refresh`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.data?.token) return null;
+  const auth = { ...(loadAuth() || {}), token: payload.data.token };
+  saveAuth(auth);
+  return auth.token;
+}
+
+async function requestUploadUrl(file, token) {
+  return fetch(`${uploadApiBase()}/v1/experience/upload-url`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: file.name || 'pasted-image', content_type: file.type, size: file.size }),
   });
+}
+
+async function uploadImageViaApi(file) {
+  let token = uploadAccessToken();
+  if (!token) throw new Error('未登录云端图片');
+  let response = await requestUploadUrl(file, token);
+  if (response.status === 401) {
+    token = await refreshAccessToken();
+    if (!token) { clearAuth(); renderOssStatus(); throw new Error('登录已过期，请重新登录'); }
+    response = await requestUploadUrl(file, token);
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.data?.url) throw new Error(payload.message || 'OSS 签名地址获取失败');
   const uploadResponse = await fetch(payload.data.url, { method: payload.data.method || 'PUT', headers: payload.data.headers || { 'Content-Type': file.type }, body: file });
@@ -84,7 +109,24 @@ async function uploadImageViaApi(file) {
 
 function configuredUploadImage() {
   if (typeof tradePlanConfig.uploadImage === 'function') return tradePlanConfig.uploadImage;
-  return tradePlanConfig.enableOssUploads ? uploadImageViaApi : null;
+  if (tradePlanConfig.enableOssUploads || uploadAccessToken()) return uploadImageViaApi;
+  return null;
+}
+
+function renderOssStatus() {
+  const auth = loadAuth();
+  const text = $('#oss-status-text'); const button = $('#oss-login-open');
+  if (!text || !button) return;
+  if (auth) { text.textContent = `云端图片已登录：${auth.email || '当前账号'}，图片将直传阿里云 OSS`; button.textContent = '退出登录'; }
+  else { text.textContent = '云端图片未登录，图片仅保存在本机'; button.textContent = '登录开启云端图片'; }
+}
+
+async function loginWithPassword(email, password) {
+  const response = await fetch(`${uploadApiBase()}/v1/auth/login`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.data?.token) throw new Error(payload.message || '登录失败');
+  saveAuth({ token: payload.data.token, email: payload.data.email || email });
+  renderOssStatus();
 }
 
 function getVisiblePlans() {
@@ -122,7 +164,7 @@ function renderExperiences() {
   const list = $('#experience-list');
   $('#experience-count').textContent = String(experiences.length).padStart(2, '0');
   $('#experience-empty').hidden = experiences.length > 0;
-  list.innerHTML = experiences.map((experience) => `<article class="experience-card"><div class="experience-card-top"><span class="experience-index">${escapeHtml(experience.id)}</span><time>${escapeHtml(experience.createdAt)}</time></div><h3>${escapeHtml(experience.title)}</h3><p>${richText(experience.body)}</p><button class="experience-read-more" data-experience-id="${escapeHtml(experience.id)}" type="button">查看全文 <span>↗</span></button></article>`).join('');
+  list.innerHTML = experiences.map((experience) => `<article class="experience-row"><div class="experience-row-meta"><span class="experience-index">${escapeHtml(experience.id)}</span><time>${escapeHtml(experience.createdAt)}</time></div><div class="experience-row-body"><h3>${escapeHtml(experience.title)}</h3><p>${richText(experience.body)}</p></div><button class="experience-read-more" data-experience-id="${escapeHtml(experience.id)}" type="button">查看全文 <span>↗</span></button></article>`).join('');
 }
 
 function showToast(message) {
@@ -234,6 +276,21 @@ function bindEvents() {
     persist(STORAGE_KEYS.experiences, experiences); renderExperiences(); closeExperienceModal(); showView('experiences');
   });
   $('#experience-list').addEventListener('click', (event) => { const button = event.target.closest('[data-experience-id]'); if (button) openExperienceModal(button.dataset.experienceId); });
+
+  const loginModal = $('#login-modal');
+  const openLoginModal = () => { $('#login-form').reset(); loginModal.hidden = false; document.body.classList.add('modal-open'); window.setTimeout(() => $('#login-form input[name="email"]')?.focus(), 30); };
+  const closeLoginModal = () => { loginModal.hidden = true; document.body.classList.remove('modal-open'); };
+  $('#oss-login-open').addEventListener('click', () => { if (loadAuth()) { clearAuth(); renderOssStatus(); showToast('已退出云端图片登录'); } else openLoginModal(); });
+  $('#close-login-modal').addEventListener('click', closeLoginModal); $('#cancel-login').addEventListener('click', closeLoginModal);
+  loginModal.addEventListener('click', (event) => { if (event.target === event.currentTarget) closeLoginModal(); });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !loginModal.hidden) closeLoginModal(); });
+  $('#login-form').addEventListener('submit', async (event) => {
+    event.preventDefault(); const form = event.currentTarget; const submit = $('#login-submit');
+    submit.disabled = true;
+    try { await loginWithPassword(form.elements.email.value.trim(), form.elements.password.value); closeLoginModal(); showToast('云端图片已开启'); }
+    catch (error) { showToast(error.message); }
+    finally { submit.disabled = false; }
+  });
 }
 
-renderMetrics(); renderRecords(); renderExperiences(); bindEvents(); updateFormPreview(); renderImagePreviews(); showView('records');
+renderMetrics(); renderRecords(); renderExperiences(); bindEvents(); updateFormPreview(); renderImagePreviews(); renderOssStatus(); showView('records');

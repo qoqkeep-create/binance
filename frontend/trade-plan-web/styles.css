@@ -66,6 +66,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 /* Experience journal and plan image attachments. These styles stay in their
    own namespace so the trading table keeps its original visual language. */
 .field-hint { color:var(--muted-2); font-size:12px; font-weight:400; }
+.oss-status { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px 16px; margin-bottom:10px; padding:11px 14px; border:1px solid var(--line); background:var(--paper); color:var(--muted); font-size:13px; }
+.oss-status-button { padding:7px 13px; border:1px solid var(--line-dark); border-radius:4px; color:var(--ink); background:#fff; font-size:12px; font-weight:700; white-space:nowrap; transition:.2s ease; }
+.oss-status-button:hover { border-color:var(--ink); }
+.login-modal { width:min(100%,460px); }
 .image-dropzone { display:grid; gap:8px; justify-items:center; padding:24px 18px; border:1px dashed var(--line-dark); border-radius:5px; color:var(--muted); background:var(--paper); text-align:center; transition:.2s ease; }
 .image-dropzone strong { color:var(--ink); font-size:15px; }
 .image-dropzone small { font-size:12px; }
@@ -80,14 +84,14 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .experiences-header h1 { margin:12px 0 9px; font-size:clamp(42px,5vw,66px); line-height:.98; letter-spacing:-.08em; }
 .experiences-header p { max-width:520px; margin:0; color:var(--muted); font-size:15px; }
 .experience-meta { margin-top:21px; color:var(--muted-2); font:13px var(--mono); }
-.experience-scroller { display:flex; gap:16px; padding:18px 3px 29px; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-color:var(--line-dark) transparent; }
-.experience-card { display:flex; flex:0 0 min(365px,calc(82vw - 20px)); min-height:275px; flex-direction:column; padding:22px; border:1px solid var(--line); border-top:4px solid var(--ink); background:var(--paper); scroll-snap-align:start; transition:.2s ease; }
-.experience-card:hover { transform:translateY(-3px); box-shadow:0 14px 28px rgba(12,13,13,.08); }
-.experience-card-top { display:flex; align-items:center; justify-content:space-between; color:var(--muted-2); font:12px var(--mono); }
+.experience-list { display:grid; gap:12px; padding:18px 0 29px; }
+.experience-row { display:grid; grid-template-columns:150px minmax(0,1fr) auto; align-items:center; gap:26px; padding:20px 26px; border:1px solid var(--line); border-left:4px solid var(--ink); background:var(--paper); transition:.2s ease; }
+.experience-row:hover { border-color:var(--line-dark); border-left-color:var(--ink); box-shadow:0 10px 24px rgba(12,13,13,.07); }
+.experience-row-meta { display:grid; gap:7px; color:var(--muted-2); font:12px var(--mono); }
 .experience-index { color:var(--ink); letter-spacing:.06em; }
-.experience-card h3 { margin:30px 0 14px; color:var(--ink); font-size:22px; line-height:1.2; letter-spacing:-.04em; }
-.experience-card p { display:-webkit-box; margin:0; overflow:hidden; color:var(--muted); font-size:15px; line-height:1.75; -webkit-box-orient:vertical; -webkit-line-clamp:4; }
-.experience-read-more { display:flex; align-items:center; gap:9px; width:max-content; margin-top:auto; padding:14px 0 0; border:0; color:var(--ink); background:transparent; font-size:13px; font-weight:700; }
+.experience-row-body h3 { margin:0 0 7px; color:var(--ink); font-size:18px; line-height:1.3; letter-spacing:-.03em; }
+.experience-row-body p { display:-webkit-box; margin:0; overflow:hidden; color:var(--muted); font-size:14px; line-height:1.7; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.experience-read-more { display:flex; align-items:center; gap:9px; width:max-content; padding:10px 0; border:0; color:var(--ink); background:transparent; font-size:13px; font-weight:700; white-space:nowrap; }
 .experience-read-more span { font-size:17px; font-weight:400; }
 .experience-empty { display:grid; justify-items:start; gap:10px; margin-top:18px; padding:66px 28px; border:1px dashed var(--line-dark); color:var(--muted); }
 .experience-empty strong { color:var(--ink); font-size:20px; }
@@ -110,7 +114,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .experiences-header .primary-button { width:100%; }
   .nav-list { min-width:0; max-width:calc(100vw - 124px); overflow-x:auto; }
   .nav-item { flex:0 0 auto; }
-  .experience-card { flex-basis:min(340px,calc(88vw - 20px)); }
+  .experience-row { grid-template-columns:minmax(0,1fr) auto; gap:14px 18px; padding:18px; }
+  .experience-row-meta { grid-column:1 / -1; grid-auto-flow:column; justify-content:start; gap:14px; }
   .modal-form-footer { align-items:flex-start; flex-direction:column; }
   .modal-form-footer .form-actions { width:100%; }
   .modal-form-footer .form-actions .primary-button,.modal-form-footer .form-actions .secondary-button { flex:1; }

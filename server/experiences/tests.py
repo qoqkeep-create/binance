@@ -78,3 +78,33 @@ class TradingExperienceApiTests(APITestCase):
         self.assertIn(f"/{self.user.id}/", data["object_key"])
         self.assertEqual(data["headers"], {"Content-Type": "image/png"})
         self.assertTrue(data["public_url"].startswith("https://cdn.example.invalid/trade-plan/"))
+
+    @override_settings(
+        OSS_ENDPOINT="https://oss-cn-seoul.aliyuncs.com",
+        OSS_BUCKET="trade-plan-test",
+        OSS_ACCESS_KEY_ID="test-key",
+        OSS_ACCESS_KEY_SECRET="test-secret",
+        OSS_KEY_PREFIX="trade-plan",
+        OSS_SIGNED_URL_TTL=600,
+        OSS_MAX_IMAGE_BYTES=4 * 1024 * 1024,
+    )
+    def test_upload_url_signature_matches_oss_v1_spec(self):
+        import base64
+        import hashlib
+        import hmac
+        from urllib.parse import parse_qs, urlsplit
+
+        response = self.client.post(
+            "/v1/experience/upload-url",
+            {"filename": "chart.png", "content_type": "image/png", "size": 128},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.data["data"]
+        query = parse_qs(urlsplit(data["url"]).query)
+        expires = query["Expires"][0]
+        string_to_sign = f"PUT\n\nimage/png\n{expires}\n/trade-plan-test/{data['object_key']}"
+        expected = base64.b64encode(
+            hmac.new(b"test-secret", string_to_sign.encode(), hashlib.sha1).digest()
+        ).decode()
+        self.assertEqual(query["Signature"][0], expected)

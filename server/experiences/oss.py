@@ -69,7 +69,7 @@ def create_presigned_put(*, user_id: int, content_type: str, size: int) -> dict:
     key = _object_key(user_id, content_type)
     expires = int(datetime.now(tz=timezone.utc).timestamp()) + settings.OSS_SIGNED_URL_TTL
     resource = _canonical_resource(key)
-    string_to_sign = "\n".join(("PUT", "", content_type, str(expires), "", resource))
+    string_to_sign = "\n".join(("PUT", "", content_type, str(expires), resource))
     signature = base64.b64encode(
         hmac.new(
             settings.OSS_ACCESS_KEY_SECRET.encode("utf-8"),
