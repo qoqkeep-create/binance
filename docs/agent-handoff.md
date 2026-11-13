@@ -4,7 +4,7 @@
 >
 > 更新时间：2026-11-13（北京时间）
 >
-> 当前分支：`codex/integrated-ios`；当前 HEAD：`34f7797 feat: full-width experience rows and working OSS signed uploads`（本地提交，未推送）
+> 当前分支：`codex/integrated-ios`；代码基线：`dee9cae feat: account-gated trade plan web with per-user cloud data`（本地提交，未推送；最新事实以 operations.md 顶部记录为准）
 >
 > 项目根目录：`/Users/apple/work/TradeTools-Binance-iOS`
 
@@ -25,11 +25,11 @@
 
 | 项目 | 当前事实 |
 | --- | --- |
-| 后端 release | `/opt/trade-tools-integrated/releases/integrated-20261113-ossfix-34f7797` |
+| 后端 release | `/opt/trade-tools-integrated/releases/integrated-20261113-accounts-dee9cae` |
 | `current` | 指向上述 release |
-| 交易计划 Web | `/opt/trade-tools-integrated/web/trade-plan-20261113-v8` |
+| 交易计划 Web | `/opt/trade-tools-integrated/web/trade-plan-20261113-v10` |
 | 公网页面 | `https://47.80.22.243/plan/` |
-| migration | `experiences.0001_initial` 已应用 |
+| migration | `experiences.0001_initial`、`plans.0001_initial` 已应用 |
 | 容器 | MySQL、Redis、api、market、worker、scheduler 六个容器均 healthy（以最新运维记录复核） |
 | 公网健康检查 | `/integrated/v1/health` 的 database、migrations、scheduler 均为 true |
 | OSS | 已启用：Bucket `tradetools-plan-images`（杭州）、受限 RAM 子账号、CORS 与 `OSS_*` 环境均已配置；签名→直传→公共读端到端 200 |
@@ -117,6 +117,7 @@
 │   ├── capital/                      # 资金、归集、保证金和转账状态机
 │   ├── lead_trading/                 # 带单模式和组合 Key 边界
 │   ├── experiences/                  # 独立交易经验与计划图片 URL/OSS 签名
+│   ├── plans/                        # 账号隔离的交易计划 CRUD
 │   └── requirements.txt
 ├── frontend/
 │   ├── ios-app/                      # SwiftUI、Metal、Widget、Xcode 工程和 XCTest
@@ -195,6 +196,7 @@ API、market 和客户端的公共事件协议要成套发布。不能只更新 
 | `lead_trading` | 普通/带单模式身份和能力 | `LEAD_TRADING_ENABLED`、组合 Key、存量保护 |
 | `notifications` | 事件入库、独立投递记录和渠道适配 | 交易成功路径不能依赖外部发送成功 |
 | `experiences` | 交易经验内容和图片 URL/OSS 上传签名 | 不得导入订单、持仓、命令或资金服务 |
+| `plans` | 账号隔离的交易计划 CRUD（复盘内容，非执行订单） | 与 `experiences` 同边界；价格用 Decimal；不进入交易命令链路 |
 
 新增功能应尽量落在正确的域中。交易经验是复盘内容，不能用 `trading` 的订单模型承载；计划图片是页面资产，不能进入交易命令 payload；通知失败不能回滚已确认交易。
 
@@ -265,7 +267,7 @@ WSS 连接通过 Bearer JWT 和 `X-Trading-Mode` 建立。事件按用户和模�
 目录：`frontend/trade-plan-web/`
 
 - `index.html`：计划记录、新建计划、交易经验栏目、经验弹窗、计划图片输入。
-- `app.js`：视图切换、筛选、localStorage、经验卡片、弹窗、图片选择/粘贴/拖放和 OSS 适配。
+- `app.js`：登录／注册门禁、账号会话续期、计划与经验云端 CRUD、筛选、经验横条、弹窗、图片选择/粘贴/拖放和 OSS 直传。
 - `styles.css`：白底黑色装饰、横向经验卡片和响应式布局。
 
 交易经验是独立栏目，主页横向滚动显示卡片，每张卡片有标题、正文摘要、时间和“查看全文”；新增/编辑采用弹出框。它不读取订单、持仓、命令或账户余额，也不触发交易 API。
@@ -316,7 +318,7 @@ WSS 连接通过 Bearer JWT 和 `X-Trading-Mode` 建立。事件按用户和模�
 
 ### 10.5 当前持久化现状
 
-当前交易计划页默认使用 `localStorage`。页面已内置轻量登录（整合平台账号，`/integrated/v1/auth/login` + refresh cookie 续期）：登录后新建计划的图片直传 OSS；经验内容本身仍存浏览器本地，未接云端同步。不要把“图片已上云”写成“经验已云端同步”。
+当前交易计划页为账号制：独立登录／注册页门禁，登录后计划与经验均按账号云端保存（`/v1/plan/` 与 `/v1/experience/`），图片直传 OSS，上传失败回退 Data URL。首次登录会把旧 localStorage 记录一次性迁移到空账号。登录与注册请求必须携带平台必填的 `agreed` 字段。
 
 ## 11. 阿里云 OSS 配置和启用方式
 
@@ -563,10 +565,10 @@ curl --fail https://47.80.22.243/plan/
 ### 页面打开但经验为空
 
 1. 看浏览器 console 是否有 JS 错误。
-2. 看 `localStorage` 是否被清理、页面是否换了 origin。
-3. 如果页面配置了 API，检查 access token、`/integrated/v1/experience/list` 的 HTTP 状态和响应结构。
-4. 确认当前用户是否与创建经验的用户相同。
-5. 不要先改数据库；先区分 localStorage 模式和后端同步模式。
+2. 确认已登录且账号正确：数据按账号隔离，换账号看到空列表是预期行为。
+3. 检查 access token 是否过期（401 会自动 refresh 一次）、`/integrated/v1/experience/list` 与 `/integrated/v1/plan/list` 的 HTTP 状态和响应结构。
+4. 旧本机数据只在首次登录且账号为空时迁移一次；之后清空浏览器缓存不会丢云端数据。
+5. 不要先改数据库；先区分账号会话问题和服务端数据问题。
 
 ### 上传按钮失败
 
@@ -608,7 +610,7 @@ curl --fail https://47.80.22.243/plan/
 - 真实开仓、平仓、划转、撤保护单和策略修改未作为本次常规验收；
 - 带单真实组合 Key、新增风险和实盘结果待受控验收，当前新增风险开关关闭；
 - 47.80.22.243（首尔服务器）的 OSS 已完成 Bucket、RAM、CORS、签名 PUT/GET 端到端验证；真实用户页面登录上传、长期容量、CDN 与私有读策略仍待验收；
-- 交易计划 Web 的图片登录后可上云，但经验内容仍默认 localStorage，不能自动假设云端同步已经打开；
+- 交易计划 Web 已账号制云端同步；旧浏览器 localStorage 数据只在首次登录且账号为空时迁移一次，之后以服务端为准；
 - 完整 iPhone 实机、不同设备尺寸、TestFlight 最新构建映射和性能长稳仍需按主题文档验收；
 - Harmony 真实 HTTP/WSS、长稳、后续持仓/账户页面、系统浮窗和通知仍有待验；
 - APNs/Echobell 的自然触发、冷启动导航、SMTP 和 Universal Links 不能由一次手工通知推断；

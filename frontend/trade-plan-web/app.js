@@ -166,7 +166,7 @@ async function handleLogin(event) {
   const form = event.currentTarget; const button = $('#login-submit');
   setAuthError(''); setBusy(button, true, '登录 <span>↗</span>');
   try {
-    const data = await api('/v1/auth/login', { method: 'POST', anonymous: true, body: { email: form.elements.email.value.trim(), password: form.elements.password.value } });
+    const data = await api('/v1/auth/login', { method: 'POST', anonymous: true, body: { email: form.elements.email.value.trim(), password: form.elements.password.value, agreed: true } });
     saveAuth({ token: data.token, email: data.email || form.elements.email.value.trim() });
     form.reset();
     await enterApp();
@@ -184,7 +184,7 @@ async function handleRegister(event) {
   try {
     const email = form.elements.email.value.trim();
     await api('/v1/auth/register', { method: 'POST', anonymous: true, body: { email, password: form.elements.password.value, confirm_password: form.elements.confirm_password.value, agreed: true } });
-    const data = await api('/v1/auth/login', { method: 'POST', anonymous: true, body: { email, password: form.elements.password.value } });
+    const data = await api('/v1/auth/login', { method: 'POST', anonymous: true, body: { email, password: form.elements.password.value, agreed: true } });
     saveAuth({ token: data.token, email: data.email || email });
     form.reset();
     await enterApp();
@@ -435,6 +435,7 @@ function bindEvents() {
     button.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
   }));
   $('#open-terms').addEventListener('click', () => { $('#terms-modal').hidden = false; document.body.classList.add('modal-open'); });
+  $('#open-terms-login').addEventListener('click', () => { $('#terms-modal').hidden = false; document.body.classList.add('modal-open'); });
   $('#close-terms').addEventListener('click', () => { $('#terms-modal').hidden = true; document.body.classList.remove('modal-open'); });
   $('#terms-modal').addEventListener('click', (event) => { if (event.target === event.currentTarget) { event.currentTarget.hidden = true; document.body.classList.remove('modal-open'); } });
   $('#logout-button').addEventListener('click', handleLogout);
