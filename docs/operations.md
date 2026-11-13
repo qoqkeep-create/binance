@@ -1,5 +1,22 @@
 # 整合环境部署与运维
 
+<a id="交易经验横条与oss真实上传启用20261113"></a>
+
+## 交易经验横条布局与 OSS 真实上传启用（2026-11-13）
+
+本地提交 **`34f7797`**（未推送 GitHub，用户未下推送指令）完整同源发布到 **47.80.22.243（首尔服务器）** 的 `/opt/trade-tools-integrated/releases/integrated-20261113-ossfix-34f7797`，`current` 已切换；api／market／worker／scheduler 使用同一新镜像，MySQL／Redis 未重建。交易计划静态页切换到 `/opt/trade-tools-integrated/web/trade-plan-20261113-v8`（`plan` 软链原子切换，保留 v7 可回退），线上三文件 md5 与本地一致。本轮无新增 migration，`migrate` 为空操作，未单独做数据库备份；没有执行交易、资金、撤保护或订单改写。
+
+阿里云 OSS 在用户浏览器授权的新账号（AccountId `34067878`，本机 aliyun CLI 独立 profile `trade-plan`，与旧 `codex-cdn` 配置隔离）下完成配置并启用：
+
+- Bucket `tradetools-plan-images`（oss-cn-hangzhou，public-read，已关闭 Bucket 级 BlockPublicAccess；对象 key 为随机 UUID 不可枚举）。
+- RAM 子账号 `trade-plan-oss`，自定义策略 `TradePlanOssUpload` 仅允许 `oss:PutObject`／`oss:GetObject` 于 `tradetools-plan-images/trade-plan/*`；独立 ossutil 实测越权列其他 Bucket 返回 403、授权上传成功。
+- Bucket CORS 允许来源 `https://47.80.22.243` 的 `PUT`／`GET`／`HEAD`，`content-type` 与 `x-oss-*` 请求头，暴露 ETag。
+- 9 个 `OSS_*` 变量写入受限 `/opt/trade-tools-integrated/server.env`（0600），密钥未进入 Git、前端、文档或日志；本机临时凭证文件已删除。
+
+同时修复 `server/experiences/oss.py` 的 OSS V1 签名 bug：StringToSign 在 CanonicalizedResource 前多一个空行导致所有直传 `SignatureDoesNotMatch`；新增签名格式回归测试，`experiences` 隔离测试 6 项通过。计划页新增轻量登录（`/integrated/v1/auth/login` + HttpOnly refresh cookie 续期），登录后图片直传 OSS，未登录继续 Data URL 本地回退；交易经验列表由横向滚动卡片改为整行横条。
+
+端到端验证（API 容器内临时验证账号，验证后已删除账号与测试对象）：`upload-url` 200 → 浏览器式 PUT 200 → 公共读 GET 200 且字节一致。公网 `/integrated/v1/health` database／migrations／scheduler 全 true，六容器 healthy，线上页面横条与登录弹窗交互通过、无控制台错误。真实用户账号的页面登录上传由用户自行验收；OSS 长期容量、CDN 与私有读策略不在本轮范围。
+
 <a id="交易经验与oss图片上传发布20261113"></a>
 
 ## 交易经验与 OSS 图片上传发布（2026-11-13）

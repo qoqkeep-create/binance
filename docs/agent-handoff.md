@@ -4,7 +4,7 @@
 >
 > 更新时间：2026-11-13（北京时间）
 >
-> 当前分支：`codex/integrated-ios`；当前 HEAD：`d241a39 docs: record trading experience deployment`
+> 当前分支：`codex/integrated-ios`；当前 HEAD：`34f7797 feat: full-width experience rows and working OSS signed uploads`（本地提交，未推送）
 >
 > 项目根目录：`/Users/apple/work/TradeTools-Binance-iOS`
 
@@ -25,15 +25,15 @@
 
 | 项目 | 当前事实 |
 | --- | --- |
-| 后端 release | `/opt/trade-tools-integrated/releases/integrated-20261113-full-0ab6f9f` |
+| 后端 release | `/opt/trade-tools-integrated/releases/integrated-20261113-ossfix-34f7797` |
 | `current` | 指向上述 release |
-| 交易计划 Web | `/opt/trade-tools-integrated/web/trade-plan-20261113-v7` |
+| 交易计划 Web | `/opt/trade-tools-integrated/web/trade-plan-20261113-v8` |
 | 公网页面 | `https://47.80.22.243/plan/` |
 | migration | `experiences.0001_initial` 已应用 |
 | 容器 | MySQL、Redis、api、market、worker、scheduler 六个容器均 healthy（以最新运维记录复核） |
 | 公网健康检查 | `/integrated/v1/health` 的 database、migrations、scheduler 均为 true |
-| OSS | 代码已发布，但当前服务器 `server.env` 没有 `OSS_*` 变量，真实 OSS 上传关闭 |
-| 图片回退 | 交易计划页使用浏览器 Data URL 和 `localStorage` 回退 |
+| OSS | 已启用：Bucket `tradetools-plan-images`（杭州）、受限 RAM 子账号、CORS 与 `OSS_*` 环境均已配置；签名→直传→公共读端到端 200 |
+| 图片回退 | 未登录或上传失败时，交易计划页使用浏览器 Data URL 和 `localStorage` 回退 |
 
 “页面能打开”“容器 healthy”“后端有 OSS 代码”分别只证明页面、进程和代码存在，不能互相替代。尤其不能把当前状态写成“OSS 已验收”“真实图片已上传”“交易功能已实盘通过”。
 
@@ -316,7 +316,7 @@ WSS 连接通过 Bearer JWT 和 `X-Trading-Mode` 建立。事件按用户和模�
 
 ### 10.5 当前持久化现状
 
-当前交易计划页默认使用 `localStorage`。后端接口已经具备，但页面只有在部署时注入 `window.TRADE_PLAN_CONFIG` 并提供 token 适配后，才会调用带鉴权的经验/OSS API。不要把“后端接口已经存在”写成“网页已经完成云端同步”。
+当前交易计划页默认使用 `localStorage`。页面已内置轻量登录（整合平台账号，`/integrated/v1/auth/login` + refresh cookie 续期）：登录后新建计划的图片直传 OSS；经验内容本身仍存浏览器本地，未接云端同步。不要把“图片已上云”写成“经验已云端同步”。
 
 ## 11. 阿里云 OSS 配置和启用方式
 
@@ -347,7 +347,7 @@ OSS_SIGNED_URL_TTL=600
 OSS_MAX_IMAGE_BYTES=4194304
 ```
 
-当前生产文件没有这些 `OSS_*` 变量，所以 `oss-configured=False`，真实上传关闭。`OSS_REGION` 当前由配置保留供部署和审计使用；签名实现使用 Endpoint 的 host 生成 URL。
+生产 `server.env` 已配置上述 `OSS_*` 变量（账号 AccountId `34067878`，Bucket `tradetools-plan-images`，oss-cn-hangzhou），真实上传已启用并通过端到端验证。`OSS_REGION` 当前由配置保留供部署和审计使用；签名实现使用 Endpoint 的 host 生成 URL。
 
 ### 11.3 启用前必须完成的云端配置
 
@@ -570,7 +570,7 @@ curl --fail https://47.80.22.243/plan/
 
 ### 上传按钮失败
 
-- 503：服务器没有完整 `OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`，这是当前线上预期状态。
+- 503：服务器没有完整 `OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`。当前线上已配置，若再现 503 说明环境文件被改动或容器未加载新环境。
 - 401：页面没有有效 Bearer token。
 - 400：文件类型、大小或请求字段不符合接口约束。
 - 浏览器 CORS 错误：检查 Bucket CORS 的来源、方法、请求头和 HTTPS。
@@ -607,8 +607,8 @@ curl --fail https://47.80.22.243/plan/
 
 - 真实开仓、平仓、划转、撤保护单和策略修改未作为本次常规验收；
 - 带单真实组合 Key、新增风险和实盘结果待受控验收，当前新增风险开关关闭；
-- 47.80.22.243（首尔服务器）的真实 OSS Bucket、RAM 权限、CORS、PUT/GET、私有读策略和长期 CDN 行为尚未验收；
-- 交易计划 Web 的后端经验 API 已实现，但页面默认 localStorage，不能自动假设云端同步已经打开；
+- 47.80.22.243（首尔服务器）的 OSS 已完成 Bucket、RAM、CORS、签名 PUT/GET 端到端验证；真实用户页面登录上传、长期容量、CDN 与私有读策略仍待验收；
+- 交易计划 Web 的图片登录后可上云，但经验内容仍默认 localStorage，不能自动假设云端同步已经打开；
 - 完整 iPhone 实机、不同设备尺寸、TestFlight 最新构建映射和性能长稳仍需按主题文档验收；
 - Harmony 真实 HTTP/WSS、长稳、后续持仓/账户页面、系统浮窗和通知仍有待验；
 - APNs/Echobell 的自然触发、冷启动导航、SMTP 和 Universal Links 不能由一次手工通知推断；
