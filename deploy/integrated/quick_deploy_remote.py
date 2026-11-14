@@ -130,93 +130,104 @@ def main() -> int:
         if any(counts[key] for key in ("pending", "running", "unknown")):
             raise SystemExit(f"存在未收敛命令，停止快速发布：{json.dumps(counts, ensure_ascii=False)}")
 
-        release.mkdir(mode=0o755)
-        extract(archive, release)
-        (release / "server.env").symlink_to(ROOT / "server.env")
-        new_nginx = release / "deploy/integrated/nginx-location.conf"
-        if sha256(new_nginx) != sha256(NGINX_CONFIG):
-            raise SystemExit("Nginx 配置有变化，请使用完整发布流程")
-
-        runtime = release / "compose.runtime.yaml"
-        runtime.write_text(json.dumps({
-            "services": {
-                "mysql": {"image": before["mysql"]["Config"]["Image"]},
-                "redis": {"image": before["redis"]["Config"]["Image"]},
-            }
-        }, indent=2) + "\n")
-        files = [release / "compose.integrated.yaml", runtime]
-        env = dict(os.environ, INTEGRATED_RELEASE=release_name)
-        old_tag = before["api"]["Config"]["Image"]
-        image = f"tradetools-integrated:{release_name}"
         log_path = incoming / "quick-deploy.log"
-        with log_path.open("w") as log:
-            if subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
-                print(f"47.80.22.243（首尔服务器）：构建 {image}", flush=True)
-                command([
-                    "docker", "build", "--cache-from", old_tag,
-                    "-f", str(release / "deploy/integrated/Dockerfile"),
-                    "-t", image, str(release),
-                ], output=log)
-            else:
-                print(f"47.80.22.243（首尔服务器）：复用已有镜像 {image}", flush=True)
-            command(compose(files) + ["config", "--quiet"], env=env, output=log)
-            checks = compose(files) + [
-                "run", "--rm", "--no-deps", "-e", "RUN_SCHEDULER_IN_WEB=false",
-                "--entrypoint", "sh", "api", "-c",
-                "python manage.py check && "
-                "python manage.py makemigrations --check --dry-run && "
-                "python manage.py migrate --check",
-            ]
-            command(checks, env=env, output=log)
+        old_files = [Path(item) for item in before["api"]["Config"].get("Labels", {}).get(
+            "com.docker.compose.project.config_files", ""
+        ).split(",") if item]
+        if not old_files or not all(path.is_file() for path in old_files):
+            current_release = (ROOT / "current").resolve()
+            old_files = [current_release / "compose.integrated.yaml"]
+            runtime_file = current_release / "compose.runtime.yaml"
+            if runtime_file.is_file():
+                old_files.append(runtime_file)
+        if not old_files or not all(path.is_file() for path in old_files):
+            raise SystemExit("无法找到旧 Compose 配置，停止快速发布")
+        changed = False
+        activated = False
+        try:
+            release.mkdir(mode=0o755)
+            extract(archive, release)
+            (release / "server.env").symlink_to(ROOT / "server.env")
+            new_nginx = release / "deploy/integrated/nginx-location.conf"
+            if sha256(new_nginx) != sha256(NGINX_CONFIG):
+                raise SystemExit("Nginx 配置有变化，请使用完整发布流程")
 
-            old_files = [Path(item) for item in before["api"]["Config"].get("Labels", {}).get(
-                "com.docker.compose.project.config_files", ""
-            ).split(",") if item]
-            if not old_files:
-                raise SystemExit("无法找到旧 Compose 配置，停止快速发布")
-            changed = False
-            try:
+            runtime = release / "compose.runtime.yaml"
+            runtime.write_text(json.dumps({
+                "services": {
+                    "mysql": {"image": before["mysql"]["Config"]["Image"]},
+                    "redis": {"image": before["redis"]["Config"]["Image"]},
+                }
+            }, indent=2) + "\n")
+            files = [release / "compose.integrated.yaml", runtime]
+            env = dict(os.environ, INTEGRATED_RELEASE=release_name)
+            old_tag = before["api"]["Config"]["Image"]
+            image = f"tradetools-integrated:{release_name}"
+            with log_path.open("w") as log:
+                if subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+                    print(f"47.80.22.243（首尔服务器）：构建 {image}", flush=True)
+                    command([
+                        "docker", "build", "--cache-from", old_tag,
+                        "-f", str(release / "deploy/integrated/Dockerfile"),
+                        "-t", image, str(release),
+                    ], output=log)
+                else:
+                    print(f"47.80.22.243（首尔服务器）：复用已有镜像 {image}", flush=True)
+                command(compose(files) + ["config", "--quiet"], env=env, output=log)
+                checks = compose(files) + [
+                    "run", "--rm", "--no-deps", "-e", "RUN_SCHEDULER_IN_WEB=false",
+                    "--entrypoint", "sh", "api", "-c",
+                    "python manage.py check && "
+                    "python manage.py makemigrations --check --dry-run && "
+                    "python manage.py migrate --check",
+                ]
+                command(checks, env=env, output=log)
                 print("47.80.22.243（首尔服务器）：切换四个应用容器", flush=True)
-                command(["docker", "stop", "--time", "120", "tradetools-integrated-worker-1", "tradetools-integrated-scheduler-1"], output=log)
                 changed = True
+                command(["docker", "stop", "--time", "120", "tradetools-integrated-worker-1", "tradetools-integrated-scheduler-1"], output=log)
                 command(compose(files) + ["up", "-d", "--no-deps", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180", *SERVICES], env=env, output=log)
-            except BaseException:
-                if changed:
-                    print("47.80.22.243（首尔服务器）：新服务未就绪，恢复旧应用容器；不恢复数据库", flush=True)
-                    command(compose(old_files) + ["up", "-d", "--no-deps", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180", *SERVICES], output=log)
-                raise
 
-        next_link = ROOT / "current.quick-next"
-        if next_link.exists() or next_link.is_symlink():
-            next_link.unlink()
-        next_link.symlink_to(release)
-        os.replace(next_link, ROOT / "current")
-        after = {service: inspect(service) for service in ALL_SERVICES}
-        for service in SERVICES:
-            if after[service]["State"].get("Health", {}).get("Status") != "healthy":
-                raise SystemExit(f"新 {service} 未通过健康检查")
-            if after[service]["Config"]["Image"] != image:
-                raise SystemExit(f"新 {service} 镜像不一致")
-        for service in ("mysql", "redis"):
-            if after[service]["Id"] != before[service]["Id"]:
-                raise SystemExit(f"基础设施容器被替换：{service}")
-        health = subprocess.check_output([
-            "curl", "--fail", "--silent", "--show-error", "--max-time", "20",
-            "https://47.80.22.243/integrated/v1/health",
-        ], text=True)
-        result = {
-            "target": "47.80.22.243（首尔服务器）",
-            "release": release_name,
-            "sourceCommit": metadata["sourceCommit"],
-            "deployedAtUTC": datetime.now(timezone.utc).isoformat(),
-            "databaseBackup": False,
-            "isolatedTests": False,
-            "activityBefore": counts,
-            "health": json.loads(health),
-            "infrastructureReplaced": False,
-        }
-        (incoming / "quick-deploy-result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
-        print(json.dumps(result, ensure_ascii=False), flush=True)
+                after = {service: inspect(service) for service in ALL_SERVICES}
+                for service in SERVICES:
+                    if after[service]["State"].get("Health", {}).get("Status") != "healthy":
+                        raise SystemExit(f"新 {service} 未通过健康检查")
+                    if after[service]["Config"]["Image"] != image:
+                        raise SystemExit(f"新 {service} 镜像不一致")
+                for service in ("mysql", "redis"):
+                    if after[service]["Id"] != before[service]["Id"]:
+                        raise SystemExit(f"基础设施容器被替换：{service}")
+                health = subprocess.check_output([
+                    "curl", "--fail", "--silent", "--show-error", "--max-time", "20",
+                    "https://47.80.22.243/integrated/v1/health",
+                ], text=True)
+                next_link = ROOT / "current.quick-next"
+                if next_link.exists() or next_link.is_symlink():
+                    next_link.unlink()
+                next_link.symlink_to(release)
+                os.replace(next_link, ROOT / "current")
+                activated = True
+
+            result = {
+                "target": "47.80.22.243（首尔服务器）",
+                "release": release_name,
+                "sourceCommit": metadata["sourceCommit"],
+                "deployedAtUTC": datetime.now(timezone.utc).isoformat(),
+                "databaseBackup": False,
+                "isolatedTests": False,
+                "activityBefore": counts,
+                "health": json.loads(health),
+                "infrastructureReplaced": False,
+            }
+            (incoming / "quick-deploy-result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+        except BaseException:
+            if changed and not activated:
+                print("47.80.22.243（首尔服务器）：新服务未就绪，恢复旧应用容器；不恢复数据库", flush=True)
+                with log_path.open("a") as log:
+                    command(compose(old_files) + ["up", "-d", "--no-deps", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180", *SERVICES], output=log)
+            if not activated and release.exists() and (ROOT / "current").resolve() != release:
+                shutil.rmtree(release)
+            raise
     return 0
 
 
