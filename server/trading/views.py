@@ -1119,8 +1119,8 @@ def _maker_entry_price(client, inst_id: str, instrument: dict, side: str) -> tup
     """Return (post-only price, reference market price) from the live book.
 
     GTX rejects an order that would immediately take liquidity.  Moving one
-    tick away from the best quote keeps the order on the maker side; a GTX
-    rejection is still surfaced to the caller and is never silently retried.
+    tick away from the best quote keeps the order on the maker side. The
+    submission path may reprice only after a definitive post-only rejection.
     """
     book = _extract_book_ticker(client, inst_id)
     tick = _to_decimal(str(instrument.get("tickSz") or instrument.get("tickSize") or "0"), "价格精度")
@@ -1138,6 +1138,71 @@ def _maker_entry_price(client, inst_id: str, instrument: dict, side: str) -> tup
     if price <= 0:
         raise BinanceApiError("Maker价格暂不可用")
     return price, reference
+
+
+MAKER_POST_ONLY_MAX_SUBMISSIONS = 3
+
+
+def _submit_maker_entry_order(
+    *, client, open_request, inst_id, instrument, client_order_id, recovered_row=None,
+):
+    """Reprice a rejected GTX write without increasing the frozen stop risk.
+
+    A -5022 response explicitly says no order was created. Every other failed
+    write keeps the existing recovery contract and cannot start this loop.
+    Persist the revised price before the next write so a lost reply can be
+    recovered against the exact same client id and execution intent.
+    """
+    if recovered_row is None and open_request.status == TradeOpenRequest.STATUS_FAILED:
+        # A deliberate user retry can reuse a definitively rejected id. Restore
+        # the unresolved state before writing so a new timeout cannot retain
+        # the old terminal failure and escape the unknown-write guard.
+        open_request.status = TradeOpenRequest.STATUS_PENDING
+        open_request.error = ""
+        open_request.save(update_fields=["status", "error", "updated_at"])
+    for attempt in range(MAKER_POST_ONLY_MAX_SUBMISSIONS):
+        intent = get_open_request_execution_intent(open_request)
+        side = str(intent["open_side"])
+        price = _to_decimal(intent["maker_price"], "Maker价格")
+        try:
+            return submit_or_recover_exchange_order(
+                client=client,
+                open_request=open_request,
+                inst_id=inst_id,
+                client_order_id=client_order_id,
+                recovered_row=recovered_row,
+                submit=lambda: client.place_limit_order(
+                    inst_id=inst_id,
+                    side=side,
+                    size=str(intent["size"]),
+                    price=format(price, "f"),
+                    pos_side=str(intent.get("pos_side") or "") or None,
+                    new_client_order_id=client_order_id,
+                    time_in_force="GTX",
+                ),
+            )
+        except BinanceApiError as exc:
+            if str(exc.code or "").strip() != "-5022" or exc.outcome_unknown:
+                raise
+            if attempt + 1 >= MAKER_POST_ONLY_MAX_SUBMISSIONS:
+                raise BinanceApiError(
+                    "盘口变化较快，Maker订单未挂成；请重试Maker，或自行选择市价开仓",
+                    code="-5022",
+                ) from exc
+            candidate, reference = _maker_entry_price(client, inst_id, instrument, side)
+            # Lower buys / higher sells reduce the distance to the original
+            # stop. Keep both the side and quantity frozen across retries.
+            price = min(price, candidate) if side == "buy" else max(price, candidate)
+            stop = _to_decimal(intent["stop_loss_price"], "止损价")
+            if (side == "buy" and (price <= stop or reference <= stop)) or (
+                side == "sell" and (price >= stop or reference >= stop)
+            ):
+                raise BinanceApiError("当前价格已触及原止损位，Maker订单未挂成；请重新确认止损价") from exc
+            intent.update(
+                maker_price=format(price, "f"),
+                maker_market_price=format(reference, "f"),
+            )
+            record_open_request_execution_intent(open_request, intent)
 
 
 def _resolve_pos_side(
@@ -2018,6 +2083,18 @@ class TradeOpenView(APIView):
                             open_request,
                             str(recovered_open_row.get("ordId") or ""),
                         )
+                    elif (
+                        get_open_request_execution_intent(open_request).get("execution_mode") == "maker"
+                        and open_request.status != TradeOpenRequest.STATUS_FAILED
+                    ):
+                        # An intent saved before a lost reply (or process exit)
+                        # may already have reached Binance. An empty lookup is
+                        # not permission to reprice or resend that Maker write.
+                        return fail(
+                            "Maker开仓结果尚未确认，系统会按原请求继续核对，请勿重复开仓",
+                            code=409,
+                            status=409,
+                        )
                 if not recovered_open_row:
                     activity = load_exchange_activity(client)
                     # T022: 多单限制校验
@@ -2189,34 +2266,33 @@ class TradeOpenView(APIView):
                 if is_maker and maker_price is None:
                     maker_price = _to_decimal(persisted_intent.get("maker_price"), "Maker价格")
                     maker_market_price = _to_decimal(persisted_intent.get("maker_market_price"), "市价")
-                submission = submit_or_recover_exchange_order(
-                    client=client,
-                    open_request=open_request,
-                    inst_id=inst_id,
-                    client_order_id=client_order_id,
-                    recovered_row=recovered_open_row,
-                    submit=(
-                        (lambda: client.place_limit_order(
+                if is_maker:
+                    submission = _submit_maker_entry_order(
+                        client=client,
+                        open_request=open_request,
+                        inst_id=inst_id,
+                        instrument=instrument,
+                        client_order_id=client_order_id,
+                        recovered_row=recovered_open_row,
+                    )
+                    persisted_intent = get_open_request_execution_intent(open_request)
+                    maker_price = _to_decimal(persisted_intent["maker_price"], "Maker价格")
+                    maker_market_price = _to_decimal(persisted_intent["maker_market_price"], "市价")
+                else:
+                    submission = submit_or_recover_exchange_order(
+                        client=client,
+                        open_request=open_request,
+                        inst_id=inst_id,
+                        client_order_id=client_order_id,
+                        recovered_row=recovered_open_row,
+                        submit=lambda: client.place_market_order(
                             inst_id=inst_id,
                             side=open_side,
                             size=size,
-                            price=str(maker_price),
                             pos_side=use_pos_side,
                             new_client_order_id=client_order_id,
-                            # GTX means post-only.  A -5022 rejection is
-                            # explicit failure; do not convert it to market.
-                            time_in_force="GTX",
-                        ))
-                        if is_maker
-                        else (lambda: client.place_market_order(
-                            inst_id=inst_id,
-                            side=open_side,
-                            size=size,
-                            pos_side=use_pos_side,
-                            new_client_order_id=client_order_id,
-                        ))
-                    ),
-                )
+                        ),
+                    )
                 if not submission.confirmed:
                     return fail(
                         "开仓提交结果未确认；请保留当前页面并重试，系统会按原请求恢复",

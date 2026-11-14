@@ -239,6 +239,228 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
 #endif
 
 #if DEBUG
+  /// A passive UI-test probe: it changes accessibility metadata, never SwiftUI
+  /// state, scroll offsets, gesture recognizers or production networking.
+  @MainActor
+  private final class WebParityScrollProbeState {
+    static let shared = WebParityScrollProbeState()
+    var values: [String: Int] = [:]
+    nonisolated static func key(_ path: String) -> String? {
+      ["/v1/position/list": "positions", "/v1/trade/order/list": "orders",
+       "/v1/account/profile": "profile", "/v1/account/info": "account",
+       "/api/market/tickers": "market", "/api/commands": "commands",
+       "/v1/trade/tradingview/signals": "signals", "/v1/account/operation-logs": "operations",
+       "/v1/account/transfer-history": "transfers", "/v1/strategy/log": "strategy"][path]
+    }
+    func begin(_ path: String) -> Int {
+      guard let key = Self.key(path) else { return 0 }
+      values[key + "Started", default: 0] += 1
+      if WebParityScrollProbeView.visibleScrollView()?.isDragging == true {
+        values[key + "StartedDuringDrag", default: 0] += 1
+      }
+      if let pan = WebParityScrollProbeView.visibleScrollView()?.panGestureRecognizer,
+        [.began, .changed].contains(pan.state) {
+        values[key + "StartedDuringTouch", default: 0] += 1
+      }
+      return values[key + "Started", default: 0]
+    }
+    func finish(_ path: String) {
+      guard let key = Self.key(path) else { return }
+      values[key + "Finished", default: 0] += 1
+    }
+  }
+
+  private struct WebParityScrollProbe: UIViewRepresentable {
+    func makeUIView(context: Context) -> WebParityScrollProbeView { WebParityScrollProbeView() }
+    func updateUIView(_ uiView: WebParityScrollProbeView, context: Context) { }
+  }
+
+  @MainActor
+  private final class WebParityScrollProbeView: UIView {
+    private var sampling: Timer?
+    private weak var lastScrollView: UIScrollView?
+    private var lastOffset: CGFloat = 0
+    private var wasDragging = false
+    private var forwardDrag = false
+    private var restingContentTop: CGFloat?
+    private var previousReleaseTop: Int?
+    private var pullCaptureCount = 0
+    private var nextPullCaptureAt = Date.distantPast
+    private var releasedReadStartedAt: Date?
+    private var releaseCaptureCount = 0
+    private var capturePage: String {
+      ProcessInfo.processInfo.arguments.first { $0.hasPrefix("--fixture-scroll-page=") }
+        .map { String($0.dropFirst("--fixture-scroll-page=".count)) } ?? "shared"
+    }
+    override init(frame: CGRect) {
+      super.init(frame: frame)
+      isAccessibilityElement = true
+      accessibilityIdentifier = "fixture.scrollProbe"
+      accessibilityLabel = "刷新过程探针"
+      isUserInteractionEnabled = false
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func didMoveToWindow() {
+      super.didMoveToWindow()
+      sampling?.invalidate()
+      sampling = nil
+      guard window != nil else { return }
+      let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+        MainActor.assumeIsolated { self?.sample() }
+      }
+      RunLoop.main.add(timer, forMode: .common)
+      sampling = timer
+      sample()
+    }
+    static func visibleScrollView() -> UIScrollView? {
+      let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        .flatMap(\.windows).filter { !$0.isHidden }
+      func scrollViews(_ view: UIView) -> [UIScrollView] {
+        ((view as? UIScrollView).map { [$0] } ?? [])
+          + view.subviews.flatMap { scrollViews($0) }
+      }
+      return windows.flatMap { window in
+        scrollViews(window).filter { scroll in
+          !scroll.isHidden && scroll.bounds.height > 100 && scroll.bounds.width > 100
+            && scroll.alwaysBounceVertical
+            && scroll.contentSize.width <= scroll.bounds.width + 1
+            && scroll.convert(scroll.bounds, to: window).intersection(window.bounds).width
+              > scroll.bounds.width * 0.8
+        }
+      }.first
+    }
+    private func sample() {
+      let state = WebParityScrollProbeState.shared
+      if let scroll = Self.visibleScrollView() {
+        if scroll === lastScrollView, scroll.isDragging, wasDragging,
+          scroll.contentOffset.y >= 0, lastOffset >= 0 {
+          let change = scroll.contentOffset.y - lastOffset
+          if change > 3 { forwardDrag = true }
+          if forwardDrag && change < -3 { state.values["forwardScrollReversals", default: 0] += 1 }
+        } else {
+          forwardDrag = false
+        }
+        lastScrollView = scroll
+        lastOffset = scroll.contentOffset.y
+        wasDragging = scroll.isDragging
+        let distance = max(0, -(scroll.contentOffset.y + scroll.adjustedContentInset.top))
+        if scroll.isDragging && distance >= 70 {
+          state.values["sawArmedPull"] = 1
+          if hasVisibleIndicator(for: scroll) {
+            state.values["sawPullIndicator"] = 1
+          }
+          captureHeldPull(from: scroll)
+        }
+        state.values["refreshing"] = scroll.refreshControl?.isRefreshing == true ? 1 : 0
+        state.values["offset"] = Int(scroll.contentOffset.y.rounded())
+        let reading = state.values.keys.filter { $0.hasSuffix("Started") }.contains { key in
+          state.values[key, default: 0] > state.values[String(key.dropLast(7)) + "Finished", default: 0]
+        }
+        state.values["reading"] = reading ? 1 : 0
+        if reading, state.values["sawArmedPull"] == 1, hasVisibleIndicator(for: scroll) {
+          state.values["sawReadingIndicator"] = 1
+        }
+        if let content = scroll.subviews.max(by: { $0.bounds.height < $1.bounds.height }),
+          let window = scroll.window {
+          let top = content.convert(content.bounds, to: window).minY
+          if !scroll.isDragging, !reading, state.values["sawArmedPull"] != 1,
+            scroll.refreshControl?.isRefreshing != true,
+            abs(scroll.contentOffset.y + scroll.adjustedContentInset.top) < 2 {
+            restingContentTop = top
+            state.values["restingRawTop"] = Int(top.rounded())
+          }
+          if !scroll.isDragging, reading, state.values["sawArmedPull"] == 1,
+            let baseline = restingContentTop {
+            captureReleasedRead(from: scroll)
+            let displacement = Int((top - baseline).rounded())
+            state.values["releaseRawMinimumTop"] = min(state.values["releaseRawMinimumTop"] ?? Int(top.rounded()), Int(top.rounded()))
+            state.values["releaseRawMaximumTop"] = max(state.values["releaseRawMaximumTop"] ?? Int(top.rounded()), Int(top.rounded()))
+            state.values["releaseSamples", default: 0] += 1
+            if let previousReleaseTop {
+              state.values["releaseMaximumStep"] = max(
+                state.values["releaseMaximumStep", default: 0], abs(displacement - previousReleaseTop))
+            }
+            previousReleaseTop = displacement
+            state.values["releaseMinimumTop"] = min(state.values["releaseMinimumTop"] ?? displacement, displacement)
+            state.values["releaseMaximumTop"] = max(state.values["releaseMaximumTop"] ?? displacement, displacement)
+            if displacement <= 10 { state.values["returnedWhileReading"] = 1 }
+            if displacement >= 35, state.values["returnedWhileReading"] == 1 {
+              state.values["droppedAfterReturning"] = 1
+            }
+          } else {
+            previousReleaseTop = nil
+          }
+        }
+      }
+      if let data = try? JSONSerialization.data(withJSONObject: state.values, options: [.sortedKeys]),
+        let value = String(data: data, encoding: .utf8) {
+        accessibilityValue = value
+      }
+    }
+    private func hasVisibleIndicator(for scroll: UIScrollView) -> Bool {
+      guard let window = scroll.window else { return false }
+      let viewport = scroll.convert(scroll.bounds, to: window)
+      func visible(_ view: UIView) -> Bool {
+        var rendered = view.convert(view.bounds, to: window).intersection(viewport)
+        var ancestor: UIView? = view
+        while let current = ancestor {
+          if current.isHidden || current.alpha <= 0.01 { return false }
+          if current.clipsToBounds {
+            rendered = rendered.intersection(current.convert(current.bounds, to: window))
+          }
+          ancestor = current.superview
+        }
+        return rendered.width > 1 && rendered.height > 1
+      }
+      func indicators(_ view: UIView) -> [UIActivityIndicatorView] {
+        ((view as? UIActivityIndicatorView).map { [$0] } ?? []) + view.subviews.flatMap { indicators($0) }
+      }
+      if indicators(window).contains(where: { $0.isAnimating && visible($0) }) { return true }
+      // Native pull progress may use a static image or shape before release.
+      // Inspect rendered artwork, never the refresh-control container alone.
+      func hasArtwork(_ view: UIView) -> Bool {
+        guard visible(view) else { return false }
+        if let image = view as? UIImageView, image.image != nil { return true }
+        func hasStroke(_ layer: CALayer) -> Bool {
+          guard !layer.isHidden, layer.opacity > 0.01 else { return false }
+          if let shape = layer as? CAShapeLayer, let path = shape.path,
+            !path.boundingBox.isEmpty, let stroke = shape.strokeColor,
+            stroke.alpha > 0.01, shape.lineWidth > 0 { return true }
+          if let fill = layer.backgroundColor, fill.alpha > 0.01,
+            layer.bounds.width > 1, layer.bounds.width < 40,
+            layer.bounds.height > 1, layer.bounds.height < 40 { return true }
+          return (layer.sublayers ?? []).contains(where: hasStroke)
+        }
+        return hasStroke(view.layer) || view.subviews.contains(where: hasArtwork)
+      }
+      return scroll.refreshControl.map(hasArtwork) ?? false
+    }
+    private func captureHeldPull(from scroll: UIScrollView) {
+      guard pullCaptureCount < 3, Date() >= nextPullCaptureAt, let window = scroll.window else { return }
+      writeSnapshot(window, name: "fixture-\(capturePage)-held-pull-\(pullCaptureCount)")
+      pullCaptureCount += 1
+      nextPullCaptureAt = Date().addingTimeInterval(0.25)
+      WebParityScrollProbeState.shared.values["heldPullCaptures"] = pullCaptureCount
+    }
+    private func captureReleasedRead(from scroll: UIScrollView) {
+      let windows: [TimeInterval] = [0, 0.1, 0.25, 0.5, 1, 3, 4.5]
+      if releasedReadStartedAt == nil { releasedReadStartedAt = Date() }
+      guard releaseCaptureCount < windows.count, let start = releasedReadStartedAt,
+        Date().timeIntervalSince(start) >= windows[releaseCaptureCount], let window = scroll.window else { return }
+      writeSnapshot(window, name: "fixture-\(capturePage)-released-read-\(releaseCaptureCount)")
+      releaseCaptureCount += 1
+    }
+    private func writeSnapshot(_ window: UIWindow, name: String) {
+      let format = UIGraphicsImageRendererFormat()
+      format.scale = 1
+      let snapshot = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+        window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+      }
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent(name + ".png")
+      try? snapshot.pngData()?.write(to: url, options: .atomic)
+    }
+  }
+
   private actor WebParityFixtureRequests {
     private var counts: [String: Int] = [:]
     private var registrationEnabled = false
@@ -257,14 +479,27 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     private let requests = WebParityFixtureRequests()
     static var empty: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-empty") }
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+      let continuity = ProcessInfo.processInfo.arguments.contains("--fixture-scroll-continuity")
+      let observedRead = (continuity || ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay"))
+        && WebParityScrollProbeState.key(request.path) != nil
+      let readNumber = observedRead
+        ? await MainActor.run { WebParityScrollProbeState.shared.begin(request.path) } : 0
+      defer {
+        if observedRead {
+          Task { @MainActor in WebParityScrollProbeState.shared.finish(request.path) }
+        }
+      }
+      if readNumber > 1, ["/v1/position/list", "/v1/trade/order/list"].contains(request.path) {
+        try await Task.sleep(for: .seconds(5))
+      }
       if request.path == "/v1/auth/admin-settings",
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-unavailable") {
         throw APIError.business(code: "VISUAL_FIXTURE", message: "注册状态测试不可用")
       }
       let savesFixtureRegistration = request.method == .post && request.path == "/v1/auth/admin-settings"
         && ProcessInfo.processInfo.arguments.contains("--fixture-registration-operator")
-      // Explicit, transport-free UI fixture. Only limit-create can reach this
-      // branch; every other trading write remains rejected by the guard below.
+      // Explicit, transport-free UI fixtures. Entry commands return synthetic
+      // data only when enabled; all other writes reach the rejection below.
       if request.method == .post, request.path == "/api/commands",
         ProcessInfo.processInfo.arguments.contains("--fixture-limit-submit") {
         let body = try JSONDecoder().decode(JSONValue.self, from: request.body ?? Data())
@@ -272,6 +507,16 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           let status = ProcessInfo.processInfo.arguments.contains("--fixture-limit-unknown") ? "UNKNOWN" : "SUCCEEDED"
           let result: JSONValue = .object(["id": .string("fixture-limit-create"), "status": .string(status),
             "result": .object(["data": .object(["limit_order_id": .number(201)])])])
+          return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+        }
+      }
+      if request.method == .post, request.path == "/api/commands",
+        ProcessInfo.processInfo.arguments.contains("--fixture-market-submit") {
+        let body = try JSONDecoder().decode(JSONValue.self, from: request.body ?? Data())
+        if body.value("action") == "open" {
+          let result: JSONValue = .object(["id": .string("fixture-market-open"), "status": .string("SUCCEEDED"),
+            "result": .object(["data": .object(["state": .string("SUCCEEDED"),
+              "position_id": .number(999), "symbol": .string("BTCUSDT")])])])
           return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
         }
       }
@@ -476,12 +721,12 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         await requests.next(request.path) == 1 {
         value = .array([])
       }
-      if ProcessInfo.processInfo.arguments.contains("--fixture-position-pager"),
+      if (ProcessInfo.processInfo.arguments.contains("--fixture-position-pager") || continuity),
         ["/v1/position/list", "/v1/position/history", "/v1/trade/limit-order/list", "/v1/trade/order/list"].contains(request.path),
         let sample = value.rows.first ?? value["items"]?.rows.first {
         let page = Int(request.queryItems.first { $0.name == "page" }?.value ?? "1") ?? 1
         let prefix = request.path == "/v1/position/list" ? "POS" : request.path == "/v1/position/history" ? "HIS" : "LIM"
-        let records: [JSONValue] = (1...5).map { offset in
+        let records: [JSONValue] = (1...(continuity ? 12 : 5)).map { offset in
           let index = (page - 1) * 5 + offset
           var fields = sample.fields
           fields["id"] = .number(Double(index))
@@ -491,11 +736,12 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
             fields["source_id"] = .number(Double(index))
           }
           fields["symbol"] = .string(prefix + String(format: "%02d", index) + "USDT")
+          if continuity { fields["fixture_read"] = .number(Double(readNumber)) }
           return .object(fields)
         }
         value = request.path == "/v1/position/list" ? .array(records)
           : .object(["items": .array(records), "pagination": .object([
-            "has_next": .bool(page < 2), "total": .number(10)])])
+            "has_next": .bool(!continuity && page < 2), "total": .number(continuity ? 12 : 10)])])
       }
       if request.path == "/v1/auth/admin-settings",
         ProcessInfo.processInfo.arguments.contains("--fixture-registration-open") {
@@ -847,10 +1093,11 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         },
         "/v1/account/stop-loss": {
           "stop_loss_amount": "10",
-          "balance": "100",
-          "total_balance": "100",
+          "balance": null,
+          "total_balance": null,
           "current_amount": "10",
-          "percentage": 10,
+          "minimum_amount": "50",
+          "maximum_amount": "200",
           "pending_amount": null
         },
         "/v1/trade/capital/remind": {
@@ -1007,6 +1254,12 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
             })
         }
       }
+      .overlay(alignment: .bottomTrailing) {
+        if ProcessInfo.processInfo.arguments.contains("--fixture-scroll-continuity")
+          || ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay") {
+          WebParityScrollProbe().frame(width: 1, height: 1).allowsHitTesting(false)
+        }
+      }
       .floatingPositionsOverlay()
       .globalAPIToasts(using: container.toastCenter)
       .environmentObject(container).environmentObject(page == "login" ? container.authStore : fixtureAuth).environmentObject(
@@ -1015,6 +1268,16 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       .environmentObject(livePositions)
       .environmentObject(container.strategySignalNotifications)
       .preferredColorScheme(dark ? .dark : .light)
+      .task {
+        guard ProcessInfo.processInfo.arguments.contains("--fixture-scroll-continuity") else { return }
+        // Stress retained hosts with the same broad publications that account
+        // and margin updates generate, without making extra network requests.
+        while !Task.isCancelled {
+          do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+          store.objectWillChange.send()
+          WebParityScrollProbeState.shared.values["publications", default: 0] += 1
+        }
+      }
       .task {
         if ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
           UserDefaults.standard.set(ProcessInfo.processInfo.arguments.contains("--fixture-maker-entry"),

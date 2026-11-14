@@ -66,6 +66,11 @@ enum RealtimeConnectionState: Equatable {
     case connected
 }
 
+struct RealtimeNetworkPath: Sendable {
+    let available: Bool
+    let signature: String
+}
+
 struct RealtimeSubscription: Codable, Equatable, Sendable {
     let channel: String
     let filters: [String: [String]]
@@ -311,7 +316,7 @@ final class RealtimeClient: ObservableObject {
     #if DEBUG
     private var fixtureLatencyTask: Task<Void, Never>?
     #endif
-    private var pathMonitor: NWPathMonitor?
+    private var pathTask: Task<Void, Never>?
     private var pathGeneration = UUID()
     private var pathSignature = ""
     private var networkAvailable = true
@@ -322,11 +327,14 @@ final class RealtimeClient: ObservableObject {
     var refreshAccessToken: (() async throws -> String)?
     private let tokenProvider: () -> String?
     private let notificationCenter: NotificationCenter
+    private let networkPaths: @Sendable () -> AsyncStream<RealtimeNetworkPath>
 
     private var socketTask: URLSessionWebSocketTask?
+    private var connectionGeneration = UUID()
     private var receiveTask: Task<Void, Never>?
     private var subscriptionSendTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+    private var connectionWatchdog: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var subscriptions: [String: RealtimeSubscription] = [:]
     private var observers: [
@@ -343,13 +351,17 @@ final class RealtimeClient: ObservableObject {
         baseURL: URL,
         session: URLSession = .shared,
         notificationCenter: NotificationCenter = .default,
+        networkPaths: @escaping @Sendable () -> AsyncStream<RealtimeNetworkPath> = { RealtimeClient.systemNetworkPaths() },
         tokenProvider: @escaping () -> String?
     ) {
         self.baseURL = baseURL
         self.session = session
         self.tokenProvider = tokenProvider
         self.notificationCenter = notificationCenter
+        self.networkPaths = networkPaths
     }
+
+    deinit { pathTask?.cancel(); connectionWatchdog?.cancel() }
 
     func events(
         bufferingPolicy:
@@ -375,6 +387,7 @@ final class RealtimeClient: ObservableObject {
 
     func connect() {
         shouldStayConnected = true
+        startNetworkMonitoring()
         reconnectTask?.cancel()
         reconnectTask = nil
         openConnectionIfNeeded()
@@ -383,6 +396,7 @@ final class RealtimeClient: ObservableObject {
     func disconnect() {
         setLatencyMonitoring(false)
         shouldStayConnected = false
+        stopNetworkMonitoring()
         reconnectTask?.cancel()
         reconnectTask = nil
         closeCurrentConnection(
@@ -392,8 +406,13 @@ final class RealtimeClient: ObservableObject {
         reconnectAttempt = 0
     }
 
-    func reconnect() {
+    func reconnect(refreshReads: Bool = false) {
         shouldStayConnected = true
+        startNetworkMonitoring()
+        if refreshReads {
+            notificationCenter.post(name: .apiNetworkPathChanged, object: nil,
+                userInfo: ["available": networkAvailable, "initial": false])
+        }
         reconnectTask?.cancel()
         reconnectTask = nil
         closeCurrentConnection(
@@ -421,30 +440,70 @@ final class RealtimeClient: ObservableObject {
         guard monitorsLatency != enabled else { return }
         monitorsLatency = enabled
         resetLatency()
-        pathMonitor?.cancel()
-        pathMonitor = nil
+        if state == .connected { startHeartbeat() }
+    }
+
+    nonisolated private static func systemNetworkPaths() -> AsyncStream<RealtimeNetworkPath> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(8)) { continuation in
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { path in
+                let interfaces = path.availableInterfaces.filter { path.usesInterfaceType($0.type) }
+                    .map(\.name).sorted()
+                continuation.yield(RealtimeNetworkPath(available: path.status == .satisfied,
+                    signature: "\(path.status):\(interfaces)"))
+            }
+            continuation.onTermination = { _ in
+                monitor.pathUpdateHandler = nil
+                monitor.cancel()
+            }
+            monitor.start(queue: DispatchQueue(label: "tradetool.connection-path"))
+        }
+    }
+
+    private func startNetworkMonitoring() {
+        guard pathTask == nil else { return }
+        let generation = pathGeneration
+        let updates = networkPaths()
+        pathTask = Task { [weak self] in
+            for await path in updates {
+                guard !Task.isCancelled, let self, self.pathGeneration == generation,
+                      self.shouldStayConnected else { return }
+                self.handleNetworkPathChange(available: path.available, signature: path.signature)
+            }
+        }
+    }
+
+    private func stopNetworkMonitoring() {
+        pathTask?.cancel()
+        pathTask = nil
         pathGeneration = UUID()
         pathSignature = ""
         networkAvailable = true
-        if enabled {
-            let generation = pathGeneration
-            let monitor = NWPathMonitor()
-            monitor.pathUpdateHandler = { [weak self] path in
-                let available = path.status == .satisfied
-                let signature = "\(path.status):\(path.availableInterfaces.filter { path.usesInterfaceType($0.type) }.map(\.name).sorted())"
-                Task { @MainActor [weak self] in
-                    guard let self, self.pathGeneration == generation, self.monitorsLatency,
-                          self.pathSignature != signature else { return }
-                    self.pathSignature = signature
-                    self.networkAvailable = available
-                    self.resetLatency()
-                    if self.state == .connected { self.startHeartbeat() }
-                }
-            }
-            pathMonitor = monitor
-            monitor.start(queue: DispatchQueue(label: "tradetool.latency-path"))
+    }
+
+    private func handleNetworkPathChange(available: Bool, signature: String) {
+        guard shouldStayConnected, pathSignature != signature else { return }
+        let hadPath = !pathSignature.isEmpty
+        pathSignature = signature
+        networkAvailable = available
+        resetLatency()
+        notificationCenter.post(name: .apiNetworkPathChanged, object: nil,
+            userInfo: ["available": available, "initial": !hadPath])
+        guard available else {
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            closeCurrentConnection(code: .goingAway, reason: "Network unavailable")
+            return
         }
-        if state == .connected { startHeartbeat() }
+        // The first satisfied snapshot describes the path used by an existing
+        // healthy connection. A later handover must discard that old transport,
+        // including a connecting task or a retry sleeping for up to 30 seconds.
+        if hadPath {
+            reconnectAttempt = 0
+            reconnect()
+        } else {
+            openConnectionIfNeeded()
+        }
     }
 
     private func resetLatency() {
@@ -513,7 +572,7 @@ final class RealtimeClient: ObservableObject {
     private func openConnectionIfNeeded() {
         // Re-entering the screen must preserve an existing connection and its heartbeat.
         guard socketTask == nil else { return }
-        guard shouldStayConnected,
+        guard shouldStayConnected, networkAvailable,
               let token = tokenProvider(),
               !token.isEmpty,
               let websocketURL = websocketURL else {
@@ -528,10 +587,12 @@ final class RealtimeClient: ObservableObject {
         request.setValue(NativeTradingMode.current, forHTTPHeaderField: "X-Trading-Mode")
 
         let task = session.webSocketTask(with: request)
+        connectionGeneration = UUID()
         socketTask = task
         state = .connecting
         lastServerMessageAt = ContinuousClock.now
         task.resume()
+        startConnectionWatchdog(for: task)
 
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(from: task)
@@ -611,6 +672,7 @@ final class RealtimeClient: ObservableObject {
         switch serverMessage.type {
         case "ready":
             state = .connected
+            reconnectAttempt = 0
             if case let .array(values) = serverMessage.data?["capabilities"] {
                 serverCapabilities = Set(values.compactMap { value in
                     if case let .string(text) = value { return text }
@@ -723,10 +785,36 @@ final class RealtimeClient: ObservableObject {
                         )
                     )
                   )
-                  nextPing = now.advanced(by: monitorsLatency ? RealtimeLatencyTracker.sampleInterval : heartbeatInterval)
+                  nextPing = now.advanced(by: monitorsLatency ? RealtimeLatencyTracker.sampleInterval : min(heartbeatInterval, .seconds(5)))
                 }
-                do { try await Task.sleep(for: monitorsLatency ? .milliseconds(250) : heartbeatInterval) }
+                do { try await Task.sleep(for: monitorsLatency ? .milliseconds(250) : min(heartbeatInterval, .seconds(5))) }
                 catch { return }
+            }
+        }
+    }
+
+    private func startConnectionWatchdog(for task: URLSessionWebSocketTask) {
+        connectionWatchdog?.cancel()
+        let generation = connectionGeneration
+        let openedAt = ContinuousClock.now
+        connectionWatchdog = Task { [weak self, weak task] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                guard let self, let task, self.shouldStayConnected,
+                      self.connectionGeneration == generation, self.socketTask === task else { return }
+                let connected = self.state == .connected
+                let lastProgress = connected ? self.lastServerMessageAt : openedAt
+                let limit: Duration = connected ? min(self.serverTimeout, .seconds(10)) : .seconds(8)
+                guard ContinuousClock.now - lastProgress > limit else { continue }
+                // This runs separately from send/receive: a suspended socket
+                // write cannot prevent the liveness deadline from being read.
+                if connected {
+                    self.notificationCenter.post(name: .apiNetworkPathChanged, object: nil,
+                        userInfo: ["available": self.networkAvailable, "initial": false])
+                }
+                self.closeCurrentConnection(code: .goingAway, reason: "Connection stopped making progress")
+                self.scheduleReconnect()
+                return
             }
         }
     }
@@ -803,17 +891,24 @@ final class RealtimeClient: ObservableObject {
         receiveTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
+        connectionWatchdog?.cancel()
+        connectionWatchdog = nil
         state = .disconnected
         resetLatency()
 
         if closeCode.rawValue == 4_401 {
+            let generation = connectionGeneration
             Task { [weak self] in
-                guard let self else { return }
+                guard let self, self.shouldStayConnected, self.connectionGeneration == generation else { return }
                 do {
                     guard let refreshAccessToken else { self.expireSession(); return }
                     _ = try await refreshAccessToken()
+                    guard self.shouldStayConnected, self.connectionGeneration == generation else { return }
                     self.scheduleReconnect()
-                } catch { self.expireSession() }
+                } catch {
+                    guard self.shouldStayConnected, self.connectionGeneration == generation else { return }
+                    self.expireSession()
+                }
             }
             return
         }
@@ -826,7 +921,7 @@ final class RealtimeClient: ObservableObject {
     }
 
     private func scheduleReconnect() {
-        guard shouldStayConnected, reconnectTask == nil else {
+        guard shouldStayConnected, networkAvailable, socketTask == nil, reconnectTask == nil else {
             return
         }
 
@@ -850,12 +945,15 @@ final class RealtimeClient: ObservableObject {
         code: URLSessionWebSocketTask.CloseCode,
         reason: String
     ) {
+        connectionGeneration = UUID()
         subscriptionSendTask?.cancel()
         subscriptionSendTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
+        connectionWatchdog?.cancel()
+        connectionWatchdog = nil
         socketTask?.cancel(
             with: code,
             reason: reason.data(using: .utf8)
@@ -867,6 +965,9 @@ final class RealtimeClient: ObservableObject {
 
     private func expireSession() {
         shouldStayConnected = false
+        stopNetworkMonitoring()
+        reconnectTask?.cancel()
+        reconnectTask = nil
         closeCurrentConnection(
             code: .policyViolation,
             reason: "Session expired"

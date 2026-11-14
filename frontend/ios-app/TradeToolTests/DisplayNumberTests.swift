@@ -1,4 +1,6 @@
 import XCTest
+import SwiftUI
+import UIKit
 @testable import TradeTool
 
 final class DisplayNumberTests: XCTestCase {
@@ -61,33 +63,129 @@ final class DisplayNumberTests: XCTestCase {
   }
 }
 
-final class WebRefreshInteractionTests: XCTestCase {
-  func testReleaseBelowThresholdAndProgrammaticBounceDoNotRefresh() {
-    var interaction = WebRefreshInteraction()
-    interaction.update(distance: 100, dragging: false)
-    XCTAssertFalse(interaction.release())
-    interaction.update(distance: 69, dragging: true)
-    XCTAssertFalse(interaction.release())
+@MainActor
+final class WebNativeRefreshTests: XCTestCase {
+  private final class LayoutProbe {
+    var measurements = 0
+    var updates = 0
   }
 
-  func testSeventyPointReleaseStartsOnlyOneReadUntilCompleted() {
-    var interaction = WebRefreshInteraction()
-    interaction.update(distance: 70, dragging: true)
-    XCTAssertTrue(interaction.release())
-    interaction.update(distance: 140, dragging: true)
-    XCTAssertFalse(interaction.release())
-    interaction.complete()
-    interaction.update(distance: 70, dragging: true)
-    XCTAssertTrue(interaction.release())
+  private struct ContentProbe: UIViewRepresentable {
+    let probe: LayoutProbe
+    func makeUIView(context: Context) -> UIView { UIView() }
+    func updateUIView(_ uiView: UIView, context: Context) { probe.updates += 1 }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+      probe.measurements += 1
+      return CGSize(width: proposal.width ?? 390, height: 1800)
+    }
   }
 
-  func testPullingBackBeforeReleaseDisarmsRefresh() {
-    var interaction = WebRefreshInteraction()
-    interaction.update(distance: 95, dragging: true)
-    interaction.update(distance: 40, dragging: true)
-    XCTAssertFalse(interaction.release())
-    interaction.update(distance: -200, dragging: true)
-    XCTAssertEqual(interaction.distance, 0)
+  private func descendants<T: UIView>(_ view: UIView, _ type: T.Type) -> [T] {
+    ((view as? T).map { [$0] } ?? []) + view.subviews.flatMap { descendants($0, type) }
+  }
+
+  private func settle(_ window: UIWindow) async {
+    for _ in 0..<3 {
+      window.layoutIfNeeded()
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+  }
+
+  func testOrdinaryScrollingKeepsTheNativeHostWithoutContentRelayout() async throws {
+    let probe = LayoutProbe()
+    var reads = 0
+    let root = WebRefreshScrollView { ContentProbe(probe: probe) }.webRefreshable { reads += 1 }
+    let host = UIHostingController(rootView: root)
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+    await settle(window)
+    let scroll = try XCTUnwrap(descendants(host.view, UIScrollView.self).first)
+    let before = probe.measurements
+    for step in 1...12 {
+      scroll.contentOffset.y = CGFloat(step * 10)
+      await settle(window)
+    }
+    XCTAssertEqual(probe.measurements, before,
+      "Ordinary scrolling must not invalidate the SwiftUI content's layout")
+    XCTAssertEqual(reads, 0, "Scrolling a list must never submit a refresh")
+    XCTAssertNotNil(scroll.refreshControl,
+      "The vertical scroll host must own pull progress and its inset, before release starts the read")
+  }
+
+  func testRefreshRetainsNativeHostUntilTheReadFinishesAndRejectsDuplicateRelease() async throws {
+    var reads = 0
+    var finish: CheckedContinuation<Void, Never>?
+    let action: @MainActor () async -> Void = {
+      reads += 1
+      await withCheckedContinuation { finish = $0 }
+    }
+    func root(_ version: Int, active: Bool = true) -> AnyView {
+      AnyView(WebRefreshScrollView(isActive: active) {
+        Text("Snapshot \(version)").frame(height: 1800)
+      }.webRefreshable(action))
+    }
+    let host = UIHostingController(rootView: root(1))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+    await settle(window)
+    let scroll = try XCTUnwrap(descendants(host.view, UIScrollView.self).first)
+    let control = try XCTUnwrap(scroll.refreshControl)
+    let originalInset = scroll.contentInset
+    control.beginRefreshing()
+    control.sendActions(for: .valueChanged)
+    await settle(window)
+    XCTAssertEqual(reads, 1)
+    XCTAssertTrue(control.isRefreshing)
+    let heldOffset = scroll.contentOffset
+    host.rootView = root(2)
+    await settle(window)
+    XCTAssertTrue(descendants(host.view, UIScrollView.self).first === scroll)
+    XCTAssertTrue(scroll.refreshControl === control)
+    XCTAssertEqual(scroll.contentOffset, heldOffset)
+    control.sendActions(for: .valueChanged)
+    await settle(window)
+    XCTAssertEqual(reads, 1)
+    finish?.resume()
+    await settle(window)
+    XCTAssertFalse(control.isRefreshing)
+    XCTAssertEqual(scroll.contentInset, originalInset)
+  }
+
+  func testDeactivationDisablesFeedbackAndIgnoresALateReadCompletion() async throws {
+    var finish: CheckedContinuation<Void, Never>?
+    let action: @MainActor () async -> Void = {
+      await withCheckedContinuation { finish = $0 }
+    }
+    func root(_ active: Bool) -> AnyView {
+      AnyView(WebRefreshScrollView(isActive: active) { Text("Content") }.webRefreshable(action))
+    }
+    let host = UIHostingController(rootView: root(true))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+    await settle(window)
+    let scroll = try XCTUnwrap(descendants(host.view, UIScrollView.self).first)
+    let control = try XCTUnwrap(scroll.refreshControl)
+    control.beginRefreshing()
+    control.sendActions(for: .valueChanged)
+    await settle(window)
+    host.rootView = root(false)
+    await settle(window)
+    XCTAssertTrue(scroll.refreshControl === control)
+    XCTAssertFalse(control.isEnabled)
+    XCTAssertFalse(control.isRefreshing)
+    finish?.resume()
+    await settle(window)
+    XCTAssertFalse(control.isEnabled)
+    host.rootView = root(true)
+    await settle(window)
+    XCTAssertNotNil(scroll.refreshControl)
+    XCTAssertFalse(try XCTUnwrap(scroll.refreshControl).isRefreshing)
   }
 }
 

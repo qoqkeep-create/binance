@@ -520,11 +520,15 @@ private final class LatencySocketPeer: @unchecked Sendable {
   private var connections: [NWConnection] = []
   private var pings: [XCTestExpectation]
   private var lastTickerSymbols: [String] = []
+  private var mutedConnections: Set<ObjectIdentifier> = []
+  private let holdsFirstReady: Bool
   var tickerSymbols: [String] { queue.sync { lastTickerSymbols } }
+  var connectionCount: Int { queue.sync { connections.count } }
   var port: UInt16? { listener.port?.rawValue }
 
-  init(ready: XCTestExpectation, pings: [XCTestExpectation]) throws {
+  init(ready: XCTestExpectation, pings: [XCTestExpectation], holdsFirstReady: Bool = false) throws {
     self.pings = pings
+    self.holdsFirstReady = holdsFirstReady
     let parameters = NWParameters.tcp
     let websocket = NWProtocolWebSocket.Options()
     websocket.autoReplyPing = true
@@ -539,7 +543,9 @@ private final class LatencySocketPeer: @unchecked Sendable {
       self.connections.append(connection)
       connection.stateUpdateHandler = { [weak self] state in
         guard case .ready = state else { return }
-        self?.send(["version": 1, "type": "ready", "timestamp": 0], to: connection)
+        if let self, !(self.holdsFirstReady && self.connections.first === connection) {
+          self.send(["version": 1, "type": "ready", "timestamp": 0], to: connection)
+        }
         self?.receive(from: connection)
       }
       connection.start(queue: self.queue)
@@ -548,6 +554,21 @@ private final class LatencySocketPeer: @unchecked Sendable {
 
   func start() { listener.start(queue: queue) }
   func expectNextPing(_ expectation: XCTestExpectation) { queue.sync { pings.append(expectation) } }
+  func blackholeCurrentConnections() {
+    queue.sync { mutedConnections.formUnion(connections.map(ObjectIdentifier.init)) }
+  }
+  func closeCurrentConnections() { queue.sync { connections.forEach { $0.cancel() } } }
+  func closeUnauthorized() {
+    queue.sync {
+      for connection in connections {
+        let metadata = NWProtocolWebSocket.Metadata(opcode: .close)
+        metadata.closeCode = .privateCode(4_401)
+        let context = NWConnection.ContentContext(identifier: "test-expired", metadata: [metadata])
+        connection.send(content: nil, contentContext: context, isComplete: true,
+          completion: .contentProcessed { _ in })
+      }
+    }
+  }
   func stop() {
     queue.sync {
       listener.cancel()
@@ -558,6 +579,10 @@ private final class LatencySocketPeer: @unchecked Sendable {
   private func receive(from connection: NWConnection) {
     connection.receiveMessage { [weak self] data, _, _, error in
       guard let self, error == nil, let data else { return }
+      if self.mutedConnections.contains(ObjectIdentifier(connection)) {
+        self.receive(from: connection)
+        return
+      }
       if let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
          message["type"] as? String == "ping", let id = message["requestId"] as? String {
         if !self.pings.isEmpty { self.pings.removeFirst().fulfill() }
@@ -587,6 +612,522 @@ private final class LatencySocketPeer: @unchecked Sendable {
     let context = NWConnection.ContentContext(identifier: "latency-test", metadata: [metadata])
     connection.send(content: try? JSONSerialization.data(withJSONObject: message),
       contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
+  }
+}
+
+@MainActor
+final class NetworkRecoveryTests: XCTestCase {
+  private final class Paths: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: AsyncStream<RealtimeNetworkPath>.Continuation?
+    func makeStream() -> AsyncStream<RealtimeNetworkPath> {
+      let pair = AsyncStream<RealtimeNetworkPath>.makeStream()
+      lock.lock(); defer { lock.unlock() }
+      continuation = pair.continuation
+      return pair.stream
+    }
+    func send(_ available: Bool, _ signature: String) {
+      lock.lock(); let continuation = continuation; lock.unlock()
+      continuation?.yield(RealtimeNetworkPath(available: available, signature: signature))
+    }
+  }
+
+  func testNetworkHandoverReplacesBlackholedSocketAndRestoresSubscriptionsWithoutLatencyUI() async throws {
+    let listening = expectation(description: "Recovery peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let paths = Paths()
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-recovery-test" })
+    defer { client.disconnect() }
+    let firstReady = expectation(description: "First socket ready")
+    let recovered = expectation(description: "New path socket ready")
+    var readyCount = 0
+    let observation = client.$state.filter { $0 == .connected }.sink { _ in
+      readyCount += 1
+      if readyCount == 1 { firstReady.fulfill() }
+      if readyCount == 2 { recovered.fulfill() }
+    }
+    defer { observation.cancel() }
+    client.subscribe([.marketTicker(symbols: ["HOLDUSDT"])])
+    client.connect()
+    paths.send(true, "test-wifi")
+    await fulfillment(of: [firstReady], timeout: 3)
+    try await Task.sleep(for: .milliseconds(200))
+    peer.blackholeCurrentConnections()
+    paths.send(false, "test-offline")
+    paths.send(true, "test-cellular")
+    await fulfillment(of: [recovered], timeout: 1.5)
+    XCTAssertEqual(peer.connectionCount, 2, "A restored path must not wait for the old socket's server timeout")
+    XCTAssertEqual(peer.tickerSymbols, ["HOLDUSDT"])
+    paths.send(true, "test-cellular")
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(peer.connectionCount, 2, "Duplicate path events must not churn a healthy connection")
+    client.disconnect()
+    paths.send(false, "test-stopped-offline")
+    paths.send(true, "test-stopped-online")
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(client.state, .disconnected, "Connectivity must never reopen a signed-out or stopped client")
+  }
+
+  func testHandoverReplacesAConnectingSocketBeforeHandshakeTimeout() async throws {
+    let listening = expectation(description: "Stalled ready peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [], holdsFirstReady: true)
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let paths = Paths()
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-connecting-test" })
+    defer { client.disconnect() }
+    let recovered = expectation(description: "Replacement handshake ready")
+    let observation = client.$state.filter { $0 == .connected }.prefix(1).sink { _ in recovered.fulfill() }
+    defer { observation.cancel() }
+    client.connect()
+    paths.send(true, "test-initial-interface")
+    try await Task.sleep(for: .milliseconds(250))
+    XCTAssertEqual(peer.connectionCount, 1)
+    XCTAssertEqual(client.state, .connecting)
+    paths.send(true, "test-restored-interface")
+    await fulfillment(of: [recovered], timeout: 1.5)
+    XCTAssertEqual(peer.connectionCount, 2)
+  }
+
+  func testOfflinePausesTransportRetriesAndRestorationBypassesPendingBackoff() async throws {
+    let listening = expectation(description: "Retry peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let paths = Paths()
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-retry-test" })
+    defer { client.disconnect() }
+    let initial = expectation(description: "Initial retry socket ready")
+    let disconnected = expectation(description: "Transport ended")
+    let recovered = expectation(description: "Recovered immediately")
+    var hasConnected = false
+    var recoveredOnce = false
+    var observedDisconnect = false
+    let observation = client.$state.sink { state in
+      if state == .connected {
+        if hasConnected && !recoveredOnce { recoveredOnce = true; recovered.fulfill() }
+        else if !hasConnected { hasConnected = true; initial.fulfill() }
+      } else if state == .disconnected && hasConnected && !recoveredOnce && !observedDisconnect {
+        observedDisconnect = true
+        disconnected.fulfill()
+      }
+    }
+    defer { observation.cancel() }
+    client.connect()
+    paths.send(true, "test-wifi")
+    await fulfillment(of: [initial], timeout: 3)
+    peer.closeCurrentConnections()
+    await fulfillment(of: [disconnected], timeout: 2)
+    paths.send(false, "test-offline")
+    try await Task.sleep(for: .milliseconds(1_500))
+    XCTAssertEqual(peer.connectionCount, 1, "Offline time must not consume retry attempts or open more sockets")
+    paths.send(true, "test-wifi")
+    await fulfillment(of: [recovered], timeout: 0.75)
+    XCTAssertEqual(peer.connectionCount, 2)
+  }
+
+  func testOldUnauthorizedSocketRefreshCannotCloseAReplacementConnection() async throws {
+    let listening = expectation(description: "Expired session peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let paths = Paths()
+    let events = NotificationCenter()
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, notificationCenter: events, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-session-test" })
+    defer { client.disconnect() }
+    let first = expectation(description: "Old session connected")
+    let replacement = expectation(description: "Replacement session connected")
+    let refreshStarted = expectation(description: "Old token refresh pending")
+    let unauthorized = expectation(description: "Replacement session must not expire")
+    unauthorized.isInverted = true
+    let observer = events.addObserver(forName: .apiSessionUnauthorized, object: nil, queue: .main) { _ in unauthorized.fulfill() }
+    defer { events.removeObserver(observer) }
+    var refresh: CheckedContinuation<String, Error>?
+    client.refreshAccessToken = {
+      refreshStarted.fulfill()
+      return try await withCheckedThrowingContinuation { refresh = $0 }
+    }
+    defer { refresh?.resume(throwing: CancellationError()) }
+    var readyCount = 0
+    let observation = client.$state.filter { $0 == .connected }.sink { _ in
+      readyCount += 1
+      if readyCount == 1 { first.fulfill() }
+      if readyCount == 2 { replacement.fulfill() }
+    }
+    defer { observation.cancel() }
+    client.connect()
+    paths.send(true, "test-old-interface")
+    await fulfillment(of: [first], timeout: 3)
+    peer.closeUnauthorized()
+    await fulfillment(of: [refreshStarted], timeout: 2)
+    client.disconnect()
+    client.connect()
+    paths.send(true, "test-new-interface")
+    await fulfillment(of: [replacement], timeout: 1.5)
+    refresh?.resume(throwing: APIError.unauthorized(message: "old session superseded"))
+    refresh = nil
+    await fulfillment(of: [unauthorized], timeout: 0.15)
+    XCTAssertEqual(client.state, .connected)
+  }
+
+  func testOfflineDisconnectAndForegroundInitialOnlineRestoreHTTPReads() async throws {
+    let listening = expectation(description: "Foreground recovery peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    RecoveryHTTPProtocol.reset(parked: 0)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [RecoveryHTTPProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let events = NotificationCenter()
+    let paths = Paths()
+    let api = URLSessionAPIClient(baseURL: URL(string: "https://network-recovery.invalid")!, session: session,
+      notificationCenter: events, readRecovery: APIReadRecovery(notificationCenter: events))
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, notificationCenter: events, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-foreground-test" })
+    defer { client.disconnect() }
+    let offline = expectation(description: "Offline path processed")
+    let offlineObservation = client.$state.dropFirst().filter { $0 == .disconnected }.prefix(1).sink { _ in offline.fulfill() }
+    defer { offlineObservation.cancel() }
+    client.connect()
+    paths.send(false, "test-offline")
+    await fulfillment(of: [offline], timeout: 1)
+    do {
+      _ = try await api.send(APIRequest<JSONValue>(path: "/foreground-read", responseMode: .plain, showsErrorToast: false))
+      XCTFail("Offline read must fail promptly")
+    } catch {
+      guard case .networkUnavailable = APIError.map(error) else { return XCTFail("Expected offline read") }
+    }
+    client.disconnect()
+    let connected = expectation(description: "Foreground path connected")
+    let connectedObservation = client.$state.filter { $0 == .connected }.prefix(1).sink { _ in connected.fulfill() }
+    defer { connectedObservation.cancel() }
+    client.connect()
+    paths.send(true, "test-new-monitor-initial-online")
+    await fulfillment(of: [connected], timeout: 1.5)
+    let value = try await api.send(APIRequest<JSONValue>(path: "/foreground-read", responseMode: .plain, showsErrorToast: false))
+    XCTAssertEqual(value["ok"], .bool(true))
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/foreground-read"), 1)
+  }
+
+  func testSilentBlackholeRecoversWithoutPathEventsOrLatencyMonitoring() async throws {
+    let listening = expectation(description: "Silent peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let paths = Paths()
+    let events = NotificationCenter()
+    RecoveryHTTPProtocol.reset(parked: 1)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [RecoveryHTTPProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, notificationCenter: events, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-blackhole-test" })
+    let api = URLSessionAPIClient(baseURL: URL(string: "https://network-recovery.invalid")!, session: session,
+      notificationCenter: events, readRecovery: APIReadRecovery(notificationCenter: events))
+    defer { client.disconnect() }
+    let first = expectation(description: "Silent peer initially connected")
+    let recovered = expectation(description: "Independent liveness replaces silent socket")
+    var count = 0
+    let observation = client.$state.filter { $0 == .connected }.sink { _ in
+      count += 1
+      if count == 1 { first.fulfill() }
+      if count == 2 { recovered.fulfill() }
+    }
+    defer { observation.cancel() }
+    client.connect()
+    paths.send(true, "test-cellular-still-satisfied")
+    await fulfillment(of: [first], timeout: 3)
+    peer.blackholeCurrentConnections()
+    let readRecovered = expectation(description: "Silent transport releases old HTTP read")
+    let read = Task {
+      defer { readRecovered.fulfill() }
+      return try await api.send(APIRequest<JSONValue>(path: "/silent-blackhole-read", responseMode: .plain, showsErrorToast: false))
+    }
+    defer { read.cancel() }
+    // No additional NWPath event: the radio can lose packets while its cellular
+    // interface remains satisfied. The old 60s server timeout must not own this.
+    let recoveryResult = await XCTWaiter.fulfillment(of: [recovered, readRecovered], timeout: 14)
+    XCTAssertEqual(recoveryResult, .completed)
+    guard recoveryResult == .completed else { return }
+    XCTAssertEqual(peer.connectionCount, 2)
+    let value = try await read.value
+    XCTAssertEqual(value["ok"], .bool(true))
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/silent-blackhole-read"), 2)
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/silent-blackhole-read", stopped: true), 1)
+  }
+
+  func testConnectingSocketWithoutReadyHasABoundedIndependentWatchdog() async throws {
+    let listening = expectation(description: "Stalled ready watchdog peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [], holdsFirstReady: true)
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let paths = Paths()
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-watchdog-test" })
+    defer { client.disconnect() }
+    let recovered = expectation(description: "Connecting watchdog starts replacement handshake")
+    let observation = client.$state.filter { $0 == .connected }.prefix(1).sink { _ in recovered.fulfill() }
+    defer { observation.cancel() }
+    client.connect()
+    paths.send(true, "test-same-interface")
+    await fulfillment(of: [recovered], timeout: 11)
+    XCTAssertEqual(peer.connectionCount, 2)
+  }
+}
+
+private final class RecoveryHTTPProtocol: URLProtocol {
+  private final class State: @unchecked Sendable {
+    let lock = NSLock()
+    var parked = 1
+    var requests: [URLRequest] = []
+    var stopped: [URLRequest] = []
+    var pending: [ObjectIdentifier: RecoveryHTTPProtocol] = [:]
+  }
+  private static let state = State()
+  static func reset(parked: Int) {
+    state.lock.lock(); defer { state.lock.unlock() }
+    state.parked = parked; state.requests = []; state.stopped = []; state.pending = [:]
+  }
+  static func count(_ path: String, stopped: Bool = false) -> Int {
+    state.lock.lock(); defer { state.lock.unlock() }
+    return (stopped ? state.stopped : state.requests).filter { $0.url?.path == path }.count
+  }
+  static func finishPending(_ path: String, status: Int = 200) {
+    state.lock.lock()
+    let pending = state.pending.values.filter { $0.request.url?.path == path }
+    state.lock.unlock()
+    for request in pending { request.reply(status: status) }
+  }
+  override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "network-recovery.invalid" }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() {
+    Self.state.lock.lock()
+    Self.state.requests.append(request)
+    Self.state.pending[ObjectIdentifier(self)] = self
+    let count = Self.state.requests.filter { $0.url?.path == request.url?.path }.count
+    let replyNow = count > Self.state.parked
+    Self.state.lock.unlock()
+    if replyNow { reply() }
+  }
+  override func stopLoading() {
+    Self.state.lock.lock(); defer { Self.state.lock.unlock() }
+    if Self.state.pending.removeValue(forKey: ObjectIdentifier(self)) != nil {
+      Self.state.stopped.append(request)
+    }
+  }
+  private func reply(status: Int = 200) {
+    Self.state.lock.lock()
+    let active = Self.state.pending.removeValue(forKey: ObjectIdentifier(self)) != nil
+    Self.state.lock.unlock()
+    guard active, let url = request.url else { return }
+    client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status,
+      httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: Data("{\"ok\":true}".utf8))
+    client?.urlProtocolDidFinishLoading(self)
+  }
+}
+
+@MainActor
+final class HTTPNetworkRecoveryTests: XCTestCase {
+  private func makeAPI(parked: Int = 1) -> (URLSessionAPIClient, URLSession, NotificationCenter) {
+    RecoveryHTTPProtocol.reset(parked: parked)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [RecoveryHTTPProtocol.self]
+    let session = URLSession(configuration: configuration)
+    let events = NotificationCenter()
+    let recovery = APIReadRecovery(notificationCenter: events)
+    return (URLSessionAPIClient(baseURL: URL(string: "https://network-recovery.invalid")!,
+      session: session, notificationCenter: events, readRecovery: recovery), session, events)
+  }
+  private func start(_ api: URLSessionAPIClient, path: String, method: HTTPMethod = .get,
+                     completed: XCTestExpectation) -> Task<Result<JSONValue, Error>, Never> {
+    Task {
+      defer { completed.fulfill() }
+      do {
+        return .success(try await api.send(APIRequest<JSONValue>(path: path, method: method,
+          responseMode: .plain, showsErrorToast: false, timeoutInterval: 30)))
+      } catch { return .failure(error) }
+    }
+  }
+  private func waitForRead(_ path: String, count: Int = 1) async {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while RecoveryHTTPProtocol.count(path) < count, ContinuousClock.now < deadline {
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(RecoveryHTTPProtocol.count(path), count)
+  }
+  private func path(_ events: NotificationCenter, available: Bool, initial: Bool = false) {
+    events.post(name: .apiNetworkPathChanged, object: nil,
+      userInfo: ["available": available, "initial": initial])
+  }
+
+  func testRestoredPathReplacesHungReadBeforeItsThirtySecondTimeout() async throws {
+    let (api, session, events) = makeAPI()
+    defer { session.invalidateAndCancel() }
+    let done = expectation(description: "Hung GET recovered")
+    let read = start(api, path: "/hung-read", completed: done)
+    defer { read.cancel() }
+    await waitForRead("/hung-read")
+    path(events, available: true)
+    let result = await XCTWaiter.fulfillment(of: [done], timeout: 1)
+    XCTAssertEqual(result, .completed, "A restored path must not wait on the abandoned 30s request")
+    guard result == .completed else { return }
+    let recoveredValue = try await read.value.get()
+    XCTAssertEqual(recoveredValue["ok"], .bool(true))
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/hung-read"), 2)
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/hung-read", stopped: true), 1)
+    path(events, available: true)
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/hung-read"), 2, "Completed reads must not be replayed")
+  }
+
+  func testOfflineReleasesHungReadAndRejectsFurtherReadsUntilInitialOnlineSnapshot() async throws {
+    let (api, session, events) = makeAPI()
+    defer { session.invalidateAndCancel() }
+    let done = expectation(description: "Offline GET released")
+    let read = start(api, path: "/offline-read", completed: done)
+    defer { read.cancel() }
+    await waitForRead("/offline-read")
+    path(events, available: false)
+    let result = await XCTWaiter.fulfillment(of: [done], timeout: 1)
+    XCTAssertEqual(result, .completed, "Shared readers must be released promptly while offline")
+    guard result == .completed else { return }
+    if case let .failure(error) = await read.value {
+      guard case .networkUnavailable = APIError.map(error) else { return XCTFail("Expected offline error") }
+    } else { XCTFail("Offline read must not succeed") }
+    do {
+      _ = try await api.send(APIRequest<JSONValue>(path: "/offline-read", responseMode: .plain, showsErrorToast: false))
+      XCTFail("Offline reads must fail promptly")
+    } catch {
+      guard case .networkUnavailable = APIError.map(error) else { return XCTFail("Expected offline error") }
+    }
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/offline-read"), 1)
+    // Foreground reconnect restarts NWPathMonitor and reports its first snapshot.
+    path(events, available: true, initial: true)
+    let value = try await api.send(APIRequest<JSONValue>(path: "/offline-read", responseMode: .plain, showsErrorToast: false))
+    XCTAssertEqual(value["ok"], .bool(true))
+  }
+
+  func testInitialHealthySnapshotKeepsInFlightReadAndSecondHandoverDoesNotLoopRetries() async {
+    let (api, session, events) = makeAPI(parked: .max)
+    defer { session.invalidateAndCancel() }
+    let done = expectation(description: "Bounded GET recovery")
+    let read = start(api, path: "/bounded-read", completed: done)
+    defer { read.cancel() }
+    await waitForRead("/bounded-read")
+    path(events, available: true, initial: true)
+    try? await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/bounded-read"), 1)
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/bounded-read", stopped: true), 0)
+    path(events, available: true)
+    await waitForRead("/bounded-read", count: 2)
+    path(events, available: true)
+    let result = await XCTWaiter.fulfillment(of: [done], timeout: 1)
+    XCTAssertEqual(result, .completed)
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/bounded-read"), 2, "One read can be retried only once")
+  }
+
+  func testBindingLogoutAndCallerCancellationPreventOldContextReplay() async {
+    for reason in ["binding", "logout", "caller"] {
+      let (api, session, events) = makeAPI(parked: .max)
+      defer { session.invalidateAndCancel() }
+      let done = expectation(description: reason + " read cancelled")
+      let requestPath = "/context-" + reason
+      let read = start(api, path: requestPath, completed: done)
+      defer { read.cancel() }
+      await waitForRead(requestPath)
+      if reason == "binding" { api.invalidateReadContext() }
+      else if reason == "logout" { events.post(name: .apiReadContextChanged, object: nil) }
+      else { read.cancel() }
+      path(events, available: true)
+      let result = await XCTWaiter.fulfillment(of: [done], timeout: 1)
+      XCTAssertEqual(result, .completed, reason)
+      guard result == .completed else { continue }
+      if case let .failure(error) = await read.value {
+        guard case .cancelled = APIError.map(error) else { XCTFail(reason); continue }
+      } else { XCTFail(reason) }
+      XCTAssertEqual(RecoveryHTTPProtocol.count(requestPath), 1, "An obsolete account read must not be replayed")
+    }
+  }
+
+  func testTradeAndCapitalWritesAreNeitherCancelledNorReplayedByNetworkChanges() async throws {
+    for requestPath in ["/api/commands", "/v1/trade/capital/wallet/execute"] {
+      let (api, session, events) = makeAPI(parked: .max)
+      defer { session.invalidateAndCancel() }
+      let done = expectation(description: "Original write completed")
+      let write = start(api, path: requestPath, method: .post, completed: done)
+      defer { write.cancel() }
+      await waitForRead(requestPath)
+      path(events, available: false)
+      path(events, available: true)
+      api.invalidateReadContext()
+      try await Task.sleep(for: .milliseconds(50))
+      XCTAssertEqual(RecoveryHTTPProtocol.count(requestPath), 1)
+      XCTAssertEqual(RecoveryHTTPProtocol.count(requestPath, stopped: true), 0)
+      RecoveryHTTPProtocol.finishPending(requestPath)
+      let result = await XCTWaiter.fulfillment(of: [done], timeout: 1)
+      XCTAssertEqual(result, .completed)
+      let writtenValue = try await write.value.get()
+      XCTAssertEqual(writtenValue["ok"], .bool(true))
+    }
+  }
+
+  func testOldReadRefreshFailureCannotExpireANewAccountContext() async {
+    let fixture = makeAPI(parked: .max)
+    var api = fixture.0
+    let session = fixture.1
+    let events = fixture.2
+    defer { session.invalidateAndCancel() }
+    let refreshStarted = expectation(description: "Old read token refresh started")
+    var refresh: CheckedContinuation<String, Error>?
+    api.refreshAccessToken = {
+      refreshStarted.fulfill()
+      return try await withCheckedThrowingContinuation { refresh = $0 }
+    }
+    defer { refresh?.resume(throwing: CancellationError()) }
+    let unauthorized = expectation(description: "New context must not be signed out")
+    unauthorized.isInverted = true
+    let observer = events.addObserver(forName: .apiSessionUnauthorized, object: nil, queue: .main) { _ in unauthorized.fulfill() }
+    defer { events.removeObserver(observer) }
+    let done = expectation(description: "Old read cancelled after refresh")
+    let read = start(api, path: "/old-auth-read", completed: done)
+    defer { read.cancel() }
+    await waitForRead("/old-auth-read")
+    RecoveryHTTPProtocol.finishPending("/old-auth-read", status: 401)
+    await fulfillment(of: [refreshStarted], timeout: 1)
+    api.invalidateReadContext()
+    refresh?.resume(throwing: APIError.unauthorized(message: "old account superseded"))
+    refresh = nil
+    await fulfillment(of: [done, unauthorized], timeout: 0.2)
+    if case let .failure(error) = await read.value {
+      guard case .cancelled = APIError.map(error) else { return XCTFail("Obsolete refresh must be a cancellation") }
+    } else { XCTFail("Obsolete request must not succeed") }
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/old-auth-read"), 1)
   }
 }
 

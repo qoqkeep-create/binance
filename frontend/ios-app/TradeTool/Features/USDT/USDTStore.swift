@@ -163,6 +163,7 @@ final class USDTStore: ObservableObject {
     }
 
     func invalidate() {
+        (api as? any APIReadContextInvalidating)?.invalidateReadContext()
         stopRealtime()
         refreshCompletion?.finish()
         refreshCompletion = nil
@@ -463,11 +464,28 @@ final class USDTPageModel: ObservableObject {
         if let previousItems {
             var object = next.fields
             let key = object["items"] != nil ? "items" : "records"
-            object[key] = .array(previousItems + (next[key]?.rows ?? []))
+            // Offset pagination may repeat a boundary row after a newer order
+            // is inserted. Keep its slot and accept its newest state exactly once.
+            var combined: [JSONValue] = []
+            var slots: [String: Int] = [:]
+            for row in previousItems + (next[key]?.rows ?? []) {
+                if let identity = Self.recordIdentity(row) {
+                    if let slot = slots[identity] { combined[slot] = row; continue }
+                    slots[identity] = combined.count
+                }
+                combined.append(row)
+            }
+            object[key] = .array(combined)
             value = .object(object)
         } else { value = next }
         error = ""
         hasNext = next["pagination"]?["has_next"]?.flag ?? false
+    }
+    nonisolated static func recordIdentity(_ row: JSONValue) -> String? {
+        let key = row.value("record_key", fallback: "")
+        if !key.isEmpty { return key }
+        let id = row.value("id", fallback: "")
+        return id.isEmpty ? nil : id
     }
     var items: [JSONValue] { value.rows.isEmpty ? (value["items"]?.rows ?? value["records"]?.rows ?? value["logs"]?.rows ?? []) : value.rows }
 }

@@ -7,6 +7,15 @@ from django.utils import timezone
 from api_bindings.services import get_user_binance_credentials
 from common.binance import BinanceApiError, BinanceFuturesClient, get_usdt_total_equity
 
+MIN_STOP_LOSS_AMOUNT = Decimal("50")
+MAX_STOP_LOSS_AMOUNT = Decimal("200")
+
+
+def validate_stop_loss_amount(amount: Decimal) -> Decimal:
+    if not amount.is_finite() or not MIN_STOP_LOSS_AMOUNT <= amount <= MAX_STOP_LOSS_AMOUNT:
+        raise ValueError("止损金额须在 50～200 USDT 之间")
+    return amount
+
 
 def round_up_stop_loss(value: Decimal) -> Decimal:
     if value < Decimal("20"):
@@ -44,9 +53,8 @@ def touch_pending_stop_loss(user) -> bool:
 def get_user_trade_balance(user) -> Decimal:
     """Return the user's total USDT assets across futures, funding and spot.
 
-    The historical function name is kept for API/test compatibility.  It no
-    longer means futures *available* balance: stop-loss percentages must remain
-    configurable when funds have not yet been moved into the futures wallet.
+    The historical helper remains for callers needing total assets. Fixed
+    stop-loss settings do not query or derive their value from this balance.
     """
     credentials = get_user_binance_credentials(user)
     if not credentials:
@@ -85,18 +93,20 @@ def get_stop_loss_state(user, balance: Optional[Decimal] = None) -> dict:
         # Explicit name for new clients; ``balance`` remains for compatibility
         # with older web builds and now carries the same total-asset value.
         "total_balance": format(balance, "f") if balance is not None else None,
+        "minimum_amount": format(MIN_STOP_LOSS_AMOUNT, "f"),
+        "maximum_amount": format(MAX_STOP_LOSS_AMOUNT, "f"),
     }
 
 
 @transaction.atomic
-def update_stop_loss_by_percentage(user, percentage: int, balance: Decimal) -> tuple[str, dict]:
+def update_stop_loss_amount(user, amount: Decimal) -> tuple[str, dict]:
     user = type(user).objects.select_for_update().get(pk=user.pk)
     touch_pending_stop_loss(user)
 
-    target_amount = round_up_stop_loss((balance * Decimal(percentage)) / Decimal("100"))
+    target_amount = validate_stop_loss_amount(amount)
     current_amount = user.stop_loss_amount
     if target_amount == current_amount:
-        return "当前止损金额未变化", get_stop_loss_state(user, balance=balance)
+        return "当前止损金额未变化", get_stop_loss_state(user)
 
     # 测试阶段暂时取消调高止损额的冷却时间。无论调高还是调低，
     # 确认后都立即生效，并清理历史待生效记录，避免旧记录继续阻塞测试。
@@ -113,7 +123,7 @@ def update_stop_loss_by_percentage(user, percentage: int, balance: Decimal) -> t
             "updated_at",
         ]
     )
-    return "止损金额已立即生效", get_stop_loss_state(user, balance=balance)
+    return "止损金额已立即生效", get_stop_loss_state(user)
 
 
 @transaction.atomic

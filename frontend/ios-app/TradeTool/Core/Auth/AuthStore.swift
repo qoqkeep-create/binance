@@ -157,6 +157,7 @@ final class AuthStore: ObservableObject {
             return
         }
 
+        notificationCenter.post(name: .apiReadContextChanged, object: nil)
         state = .signedOut
         toastCenter.success("已退出登录")
 
@@ -170,6 +171,7 @@ final class AuthStore: ObservableObject {
             return
         }
 
+        notificationCenter.post(name: .apiReadContextChanged, object: nil)
         try? service.clearStoredSession()
         state = .signedOut
     }

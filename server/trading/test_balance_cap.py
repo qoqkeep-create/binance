@@ -177,9 +177,46 @@ class BalanceCapTests(TestCase):
         balance_cap.refresh_capital_precheck(self.user, self.client)
         self.assertEqual(len(mail.outbox), 1)
 
-    def test_threshold_is_five_times_stop_loss(self):
-        self.assertEqual(balance_cap.retention_threshold(self.user), Decimal("1000"))
-        self.assertEqual(balance_cap.refill_trigger_threshold(self.user), Decimal("300"))
+    def test_collection_cap_is_fixed_and_independent_of_stop_loss(self):
+        self.client.get_balance.return_value = _balance("1100")
+        for amount in ("50", "120", "200"):
+            with self.subTest(stop_loss=amount):
+                self.user.stop_loss_amount = Decimal(amount)
+                self.user.save(update_fields=["stop_loss_amount"])
+                self.assertEqual(balance_cap.retention_threshold(self.user), Decimal("1000"))
+                state = balance_cap.refresh_capital_precheck(self.user, self.client)
+                self.assertEqual(Decimal(state["futures_collect"]), Decimal("100"))
+                self.assertEqual(Decimal(state["upper_limit"]), Decimal("1000"))
+        self.client.transfer_between_spot_and_futures.assert_not_called()
+
+    def test_fixed_cap_collects_cent_and_sub_dollar_futures_excess(self):
+        self.user.stop_loss_amount = Decimal("50")
+        self.user.save(update_fields=["stop_loss_amount"])
+        # Wallet residuals below 1 USDT are ignored; futures excess uses cents.
+        self.client.get_funding_usdt_free_balance.return_value = "0.99"
+        self.client.get_spot_usdt_free_balance.return_value = "0.99"
+        for futures, excess in (("1000", "0.00"), ("1000.01", "0.01"), ("1000.50", "0.50")):
+            with self.subTest(futures=futures):
+                self.client.get_balance.return_value = _balance(futures)
+                self.spot_delta = Decimal("0")
+                self.client.transfer_between_spot_and_futures.reset_mock()
+                self.client.transfer_spot_to_master.reset_mock()
+                state = balance_cap.refresh_capital_precheck(self.user, self.client)
+                self.assertEqual(Decimal(state["futures_collect"]), Decimal(excess))
+                self.assertEqual(Decimal(state["collection_total"]), Decimal(excess))
+                self.assertEqual(Decimal(state["target_balance"]), Decimal("1000"))
+                self.assertEqual(state["status"], "ready" if excess == "0.00" else "normalization_required")
+                if excess == "0.00":
+                    self.client.transfer_between_spot_and_futures.assert_not_called()
+                    continue
+                result = balance_cap.normalize_capital(
+                    self.user, self.client, "normalization_required", purpose="manual_sweep",
+                    expected_plan=state["plan_token"],
+                )
+                self.assertEqual(result["reason"], "normalization_completed")
+                self.client.transfer_between_spot_and_futures.assert_called_once_with(excess, to_futures=False)
+                self.client.transfer_spot_to_master.assert_called_once_with(excess, ccy="USDT")
+        self.assertEqual(CapitalSweep.objects.count(), 2)
 
     def test_changed_preview_amount_requires_another_confirmation(self):
         self.client.get_balance.return_value = _balance("1100")
@@ -413,8 +450,8 @@ class BalanceCapTests(TestCase):
         state = balance_cap.capital_precheck(self.user, self.client, purpose="manual_sweep")
 
         self.assertEqual(state["status"], "normalization_required")
-        self.assertEqual(state["spot_to_futures"], "295.00")
-        self.assertEqual(state["spot_collect"], "17.70")
+        self.assertEqual(state["spot_to_futures"], "312.70")
+        self.assertEqual(state["spot_collect"], "0.00")
         self.assertEqual(CapitalSweep.objects.get(user=self.user).status, CapitalSweep.STATUS_SPOT_PENDING)
 
         normalized = balance_cap.normalize_capital(
@@ -1201,7 +1238,7 @@ class BalanceCapTests(TestCase):
         self.assertEqual(sweep.spot_amount, Decimal("290"))
 
     def test_manual_sweep_refills_funding_then_spot_and_collects_remaining_spot(self):
-        """Manual collection uses all available wallets toward the 5x cap."""
+        """Manual collection uses all available wallets toward the fixed cap."""
         self.client.get_balance.side_effect = [_balance("250"), _balance("300"), _balance("300")]
         self.client.get_funding_usdt_free_balance.side_effect = ["30", "0", "0"]
         self.client.get_spot_usdt_free_balance.side_effect = ["80", "60", "0"]
@@ -1228,7 +1265,7 @@ class BalanceCapTests(TestCase):
         self.client.transfer_spot_to_master.assert_called_once_with("250.00", ccy="USDT")
         self.assertEqual(state["status"], "ready")
 
-    def test_manual_sweep_refills_to_five_times_then_collects_only_remainder(self):
+    def test_manual_sweep_refills_to_fixed_cap_then_collects_only_remainder(self):
         self.client.get_balance.side_effect = [_balance("850"), _balance("1000")]
         self.client.get_spot_usdt_free_balance.side_effect = ["200", "50", "0"]
 
@@ -1258,7 +1295,7 @@ class BalanceCapTests(TestCase):
         self.client.transfer_spot_to_master.assert_not_called()
         self.assertEqual(normalized["status"], "ready")
 
-    def test_entry_is_ready_at_one_point_five_to_five_times_range(self):
+    def test_entry_is_ready_from_risk_minimum_to_fixed_cap(self):
         for futures in ("300", "650", "1000"):
             with self.subTest(futures=futures):
                 self.client.get_balance.return_value = _balance(futures)

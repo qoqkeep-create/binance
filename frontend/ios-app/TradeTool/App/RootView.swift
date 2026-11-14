@@ -133,7 +133,7 @@ private struct MainAppView: View {
             // iOS may leave the old URLSessionWebSocketTask in .connecting or
             // keep its retry backoff after suspension. Recreate it immediately
             // so the chart and latency monitor do not wait for the 30s retry cap.
-            container.realtimeClient.reconnect()
+            container.realtimeClient.reconnect(refreshReads: true)
         }
         .onChange(of: isSignalPageVisible, initial: true) { _, visible in
             store.setSignalPageVisible(visible)

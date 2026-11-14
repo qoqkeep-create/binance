@@ -3280,6 +3280,41 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(app.buttons["取消"].exists)
   }
 
+  func testMarketEntrySuccessIconAndSymbolRemainCenteredInBothAppearances() {
+    for options in [[], ["--fixture-dark"]] {
+      launch("trade", options + ["--fixture-entry-ready", "--fixture-market-submit"])
+      let stop = app.textFields["usdt.field.止损价"]
+      XCTAssertTrue(stop.waitForExistence(timeout: 10))
+      stop.tap()
+      stop.typeText("66000")
+      let done = app.buttons["完成"].firstMatch
+      if done.waitForExistence(timeout: 3) { done.tap() }
+      let ticket = app.buttons["市价开多"]
+      if !ticket.isHittable { app.swipeUp() }
+      XCTAssertTrue(ticket.isEnabled)
+      ticket.tap()
+      XCTAssertTrue(app.staticTexts["开仓确认"].waitForExistence(timeout: 5))
+      app.buttons["确定"].tap()
+      assertEntrySuccessCentered()
+      capture("market-entry-success-centered-" + (options.isEmpty ? "light" : "dark"))
+    }
+  }
+
+  private func assertEntrySuccessCentered(file: StaticString = #filePath, line: UInt = #line) {
+    XCTAssertTrue(app.staticTexts["开仓成功"].waitForExistence(timeout: 6), file: file, line: line)
+    let icon = app.descendants(matching: .any)["entry-success.icon"].firstMatch
+    let symbol = app.staticTexts["entry-success.symbol"]
+    XCTAssertTrue(icon.exists, file: file, line: line)
+    XCTAssertEqual(symbol.label, "BTCUSDT", file: file, line: line)
+    let close = app.buttons.matching(identifier: "关闭").allElementsBoundByIndex
+      .first { $0.frame.width > 80 }
+    XCTAssertNotNil(close, file: file, line: line)
+    guard let close else { return }
+    let actions = close.frame.union(app.buttons["查看持仓"].frame)
+    XCTAssertEqual(icon.frame.midX, actions.midX, accuracy: 1, file: file, line: line)
+    XCTAssertEqual(symbol.frame.midX, actions.midX, accuracy: 1, file: file, line: line)
+  }
+
   private func assertChartOrderTypeSwitch(options: [String]) {
     launch("market", options + ["--fixture-entry-ready", "--fixture-maker-entry"])
     app.buttons["搜索币种、币对或合约"].tap()
@@ -3387,7 +3422,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(ticket.label, "开空")
     capture("chart-market-short-crosshair")
     app.buttons["chart-ticket.risk-settings"].tap()
-    XCTAssertTrue(app.sliders["stop-loss.percentage"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.sliders["stop-loss.amount-slider"].waitForExistence(timeout: 5))
     app.buttons["关闭"].firstMatch.tap()
     modes.buttons["限价"].tap()
     let stopLine = app.descendants(matching: .any)["chart-order-line.stopLoss"].firstMatch
@@ -3436,7 +3471,7 @@ final class WebParityUITests: XCTestCase {
   func testTradeUsesProfileRiskSheetAndCompactUnboundAvatarHeader() {
     launch("trade", ["--fixture-unbound"])
     app.buttons["调整止损金额"].tap()
-    XCTAssertTrue(app.sliders["stop-loss.percentage"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.sliders["stop-loss.amount-slider"].waitForExistence(timeout: 5))
     let tradeFooter = app.buttons["stop-loss.submit"].frame
     capture("trade-shared-stop-loss")
     app.buttons["关闭"].firstMatch.tap()
@@ -3456,7 +3491,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertLessThan(bind.frame.width, 150)
     capture("profile-compact-bind-with-avatar")
     app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "止损额设置")).firstMatch.tap()
-    XCTAssertTrue(app.sliders["stop-loss.percentage"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.sliders["stop-loss.amount-slider"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["stop-loss.submit"].frame.height, tradeFooter.height, accuracy: 1)
     XCTAssertEqual(app.buttons["stop-loss.submit"].frame.maxY, tradeFooter.maxY, accuracy: 1)
   }
@@ -3602,10 +3637,10 @@ final class WebParityUITests: XCTestCase {
       let submit = app.buttons["stop-loss.submit"]
       XCTAssertTrue(submit.waitForExistence(timeout: 5))
       let footerY = submit.frame.maxY
-      let slider = app.sliders["stop-loss.percentage"]
+      let slider = app.sliders["stop-loss.amount-slider"]
       XCTAssertTrue(slider.waitForExistence(timeout: 5))
-      XCTAssertEqual(app.staticTexts["stop-loss.percentageText"].label, "10%")
-      XCTAssertEqual(app.staticTexts["stop-loss.amount"].label, "10 USDT")
+      XCTAssertFalse(app.staticTexts["stop-loss.percentageText"].exists)
+      XCTAssertEqual(app.staticTexts["stop-loss.amount"].label, "50 USDT")
       XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "表单控制柄")).firstMatch.exists)
       slider.adjust(toNormalizedSliderPosition: 0.7)
       XCTAssertEqual(submit.frame.maxY, footerY, accuracy: 1)
@@ -3877,14 +3912,14 @@ final class WebParityUITests: XCTestCase {
   }
 
   private var refreshIndicator: XCUIElement {
-    app.activityIndicators.matching(NSPredicate(format: "label == %@", "正在刷新")).firstMatch
+    app.descendants(matching: .any).matching(identifier: "refresh.indicator").firstMatch
   }
 
   private func assertRefreshIndicatorVisible(_ indicator: XCUIElement, page: String = "",
     file: StaticString = #filePath, line: UInt = #line) {
     // The overlay is intentionally passive, so tappability is not a visibility check.
-    XCTAssertEqual(indicator.frame.width, 20, accuracy: 1, page, file: file, line: line)
-    XCTAssertEqual(indicator.frame.height, 20, accuracy: 1, page, file: file, line: line)
+    XCTAssertGreaterThan(indicator.frame.width, 0, page, file: file, line: line)
+    XCTAssertGreaterThan(indicator.frame.height, 0, page, file: file, line: line)
     XCTAssertTrue(app.windows.firstMatch.frame.contains(indicator.frame), page, file: file, line: line)
   }
 
@@ -3895,20 +3930,122 @@ final class WebParityUITests: XCTestCase {
     start.press(forDuration: 0.1, thenDragTo: end)
   }
 
+  private func scrollProbe() -> [String: Int] {
+    let probe = app.otherElements["fixture.scrollProbe"]
+    guard let value = probe.value as? String, let data = value.data(using: .utf8),
+      let result = try? JSONDecoder().decode([String: Int].self, from: data) else { return [:] }
+    return result
+  }
+
+  func testPositionAndOrderRefreshArmsDuringPullWaitsForReleaseAndReturnsSmoothly() {
+    let previousFailurePolicy = continueAfterFailure
+    continueAfterFailure = true
+    defer { continueAfterFailure = previousFailurePolicy }
+    for (page, symbol, counter) in [("positions", "POS01USDT", "positions"),
+                                    ("limits", "LIM01USDT", "orders")] {
+      launch("positions", ["--fixture-scroll-continuity", "--fixture-scroll-page=" + page])
+      XCTAssertTrue(app.buttons["positions.tabs.positions"].waitForExistence(timeout: 5))
+      if page == "limits" {
+        app.buttons["positions.tabs.limits"].tap()
+        waitForNativePositionPageToSettle()
+      }
+      let first = page == "positions" ? app.buttons["position.symbol.1"] : app.staticTexts[symbol].firstMatch
+      XCTAssertTrue(first.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.otherElements["fixture.scrollProbe"].waitForExistence(timeout: 5))
+      let initial = scrollProbe()
+      let before = initial[counter + "Started", default: 0]
+      let restingY = first.frame.minY
+      let list = app.scrollViews["positions.list"]
+      let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
+      start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 260)),
+        withVelocity: .slow, thenHoldForDuration: 1.2)
+
+      let observed = scrollProbe()
+      XCTAssertEqual(observed["sawArmedPull"], 1, page)
+      XCTAssertEqual(observed["sawPullIndicator"], 1, "The spinner must appear while the finger is held")
+      XCTAssertEqual(observed[counter + "StartedDuringTouch", default: 0], 0,
+        "Reading must start only after release")
+      XCTAssertEqual(observed[counter + "Started", default: 0], before + 1, page)
+      XCTAssertGreaterThan(observed["releaseSamples", default: 0], 0,
+        "The fixture must be observed reading after release")
+      XCTAssertEqual(observed["profileStarted"], initial["profileStarted"],
+        "Refreshing one list must not reload the account profile")
+      XCTAssertEqual(observed["accountStarted"], initial["accountStarted"],
+        "Refreshing one list must not reload the account balance")
+      XCTAssertGreaterThan(observed["releaseMinimumTop", default: 0], 30,
+        "Native content must stay displaced throughout the read")
+
+      let settled = XCTNSPredicateExpectation(predicate: NSPredicate { [self] _, _ in
+        let probe = scrollProbe()
+        return probe[counter + "Finished", default: 0] >= before + 1
+          && probe["refreshing", default: 0] == 0
+          && abs(first.frame.minY - restingY) < 2
+      }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 12), .completed, page)
+      XCTAssertEqual(scrollProbe()["droppedAfterReturning", default: 0], 0,
+        "While reading, content must not first rebound and then jump down a second time")
+      let trace = XCTAttachment(string: String(describing: scrollProbe()))
+      trace.name = page + "-refresh-geometry-and-read-counts"
+      trace.lifetime = .keepAlways
+      add(trace)
+      capture(page + "-native-refresh-returned")
+    }
+  }
+
+  func testOrderScrollingRetainsOffsetAndOrderDuringRepeatedAccountPublications() {
+    launch("positions", ["--fixture-scroll-continuity"])
+    let limits = app.buttons["positions.tabs.limits"]
+    XCTAssertTrue(limits.waitForExistence(timeout: 5))
+    limits.tap()
+    waitForNativePositionPageToSettle()
+    XCTAssertTrue(app.staticTexts["LIM01USDT"].waitForExistence(timeout: 5))
+    let baseline = scrollProbe()
+    let list = app.scrollViews["positions.list"]
+    for _ in 0..<3 {
+      let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+      start.press(forDuration: 0.05,
+        thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)),
+        withVelocity: .slow, thenHoldForDuration: 0)
+    }
+    let visible = list.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIM"))
+      .allElementsBoundByIndex.filter { $0.isHittable && list.frame.contains($0.frame) }
+    XCTAssertGreaterThan(visible.count, 0)
+    guard let anchor = visible.first else { return }
+    XCTAssertNotEqual(anchor.label, "LIM01USDT")
+    let labels = visible.map(\.label)
+    XCTAssertEqual(labels, labels.sorted(), "Order must remain stable through normal scrolling")
+    let restingY = anchor.frame.minY
+    let publications = scrollProbe()["publications", default: 0]
+    let stressed = XCTNSPredicateExpectation(predicate: NSPredicate { [self] _, _ in
+      scrollProbe()["publications", default: 0] >= publications + 6
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [stressed], timeout: 6), .completed)
+    XCTAssertEqual(anchor.frame.minY, restingY, accuracy: 2,
+      "Unchanged background snapshots must not move a scrolled list")
+    let observed = scrollProbe()
+    XCTAssertEqual(observed["ordersStarted"], baseline["ordersStarted"],
+      "Scrolling and unchanged publications must not create reads")
+    XCTAssertEqual(observed["forwardScrollReversals", default: 0], 0,
+      "Content must not jump backwards during a continuous forward drag")
+    capture("orders-scroll-through-background-publications")
+  }
+
   func testSignalsPullRefreshShowsIndicatorAndLoadsNewSnapshot() {
     launch("signals", ["--fixture-page-state", "--fixture-refresh-delay"])
     XCTAssertTrue(app.staticTexts["读取 1 · 测试信号 1"].waitForExistence(timeout: 10))
     let list = app.scrollViews["signals.list"]
-    let indicator = refreshIndicator
+    let before = scrollProbe()["signalsStarted", default: 0]
     pullToRefresh(list, distance: 30)
-    XCTAssertFalse(indicator.exists)
+    XCTAssertEqual(scrollProbe()["signalsStarted", default: 0], before)
     XCTAssertTrue(app.staticTexts["读取 1 · 测试信号 1"].exists)
     pullToRefresh(list)
-    XCTAssertTrue(indicator.waitForExistence(timeout: 2))
-    assertRefreshIndicatorVisible(indicator)
-    capture("signals-pull-refresh-indicator")
+    let observed = scrollProbe()
+    XCTAssertEqual(observed["signalsStarted", default: 0], before + 1)
+    XCTAssertEqual(observed["signalsStartedDuringTouch", default: 0], 0)
+    XCTAssertEqual(observed["sawReadingIndicator"], 1,
+      "Actual spinner artwork must be visible while the read is running")
     XCTAssertTrue(app.staticTexts["读取 2 · 测试信号 1"].waitForExistence(timeout: 10))
-    XCTAssertFalse(indicator.exists)
+    capture("signals-pull-refresh-returned")
   }
 
   func testRefreshHoldsContentBelowHeaderUntilLoadingFinishes() {
@@ -3917,22 +4054,21 @@ final class WebParityUITests: XCTestCase {
     XCTAssertTrue(first.waitForExistence(timeout: 10))
     let restingY = first.frame.minY
     pullToRefresh(app.scrollViews["signals.list"])
-    let indicator = refreshIndicator
-    XCTAssertTrue(indicator.waitForExistence(timeout: 2))
-    assertRefreshIndicatorVisible(indicator)
-    capture("refresh-after-release")
-    XCTAssertGreaterThan(first.frame.minY, restingY + 40,
+    let observed = scrollProbe()
+    XCTAssertEqual(observed["sawReadingIndicator"], 1)
+    XCTAssertGreaterThan(observed["releaseSamples", default: 0], 0)
+    XCTAssertGreaterThanOrEqual(observed["releaseMinimumTop", default: 0], 40,
       "The refresh region must stay open until the request completes")
-    let header = app.otherElements["signals.header"]
-    XCTAssertGreaterThanOrEqual(indicator.frame.minY, header.frame.maxY,
-      "The loading indicator must emerge below the fixed header")
+    XCTAssertEqual(observed["droppedAfterReturning", default: 0], 0)
     XCTAssertTrue(app.staticTexts["读取 2 · 测试信号 1"].waitForExistence(timeout: 10))
-    XCTAssertTrue(indicator.waitForNonExistence(timeout: 3))
     XCTAssertEqual(app.staticTexts["读取 2 · 测试信号 1"].frame.minY, restingY, accuracy: 1)
+    capture("refresh-returned-to-original-anchor")
   }
 
   func testSharedRefreshIndicatorOnMarketProfileCommandsAndRecords() {
-    for page in ["market", "profile", "commands", "operations", "transfers", "strategy-log", "embedded-records"] {
+    for (page, counter) in [("market", "market"), ("profile", "account"),
+      ("commands", "commands"), ("operations", "operations"), ("transfers", "transfers"),
+      ("strategy-log", "strategy"), ("embedded-records", "transfers")] {
       launch(page, ["--fixture-refresh-delay"])
       let list = app.scrollViews.firstMatch
       XCTAssertTrue(list.waitForExistence(timeout: 10), page)
@@ -3947,14 +4083,25 @@ final class WebParityUITests: XCTestCase {
           object: app.staticTexts["正在加载..."])
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
       }
+      let anchor = list.staticTexts.allElementsBoundByIndex.first { $0.isHittable }
+      let anchorLabel = anchor?.label
+      let restingY = anchor?.frame.minY
+      let before = scrollProbe()[counter + "Started", default: 0]
       pullToRefresh(list)
-      let indicator = refreshIndicator
-      XCTAssertTrue(indicator.waitForExistence(timeout: 2), page)
-      assertRefreshIndicatorVisible(indicator, page: page)
-      capture(page + "-pull-refresh-indicator")
-      let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
-        object: indicator)
+      let observed = scrollProbe()
+      XCTAssertGreaterThan(observed[counter + "Started", default: 0], before, page)
+      XCTAssertEqual(observed[counter + "StartedDuringTouch", default: 0], 0, page)
+      XCTAssertEqual(observed["sawReadingIndicator"], 1, page)
+      let finished = XCTNSPredicateExpectation(predicate: NSPredicate { [self] _, _ in
+        let probe = scrollProbe()
+        return probe[counter + "Finished", default: 0] >= probe[counter + "Started", default: 0]
+          && probe["refreshing", default: 0] == 0
+      }, object: nil)
       XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed, page)
+      if let anchorLabel, let restingY {
+        XCTAssertEqual(list.staticTexts[anchorLabel].firstMatch.frame.minY, restingY, accuracy: 2, page)
+      }
+      capture(page + "-pull-refresh-returned")
     }
   }
 

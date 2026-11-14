@@ -365,6 +365,26 @@ final class PositionPageReuseTests: XCTestCase {
         [.init(name: "filter", value: "all"), .init(name: "page", value: String(page))]
     }
 
+    func testOverlappingOrderPagesKeepOneBusinessIdentityAndTheLatestStatus() async {
+        let store = USDTStore(api: OverlappingPositionPageFixtureAPI())
+        let model = USDTPageModel()
+        await model.load(store, path: "/orders", query: query())
+        await model.load(store, path: "/orders", query: query(2), append: true)
+        XCTAssertEqual(model.items.map { $0.value("record_key") }, ["maker:1", "limit:1", "maker:2"])
+        XCTAssertEqual(model.items[1].value("status_text"), "已成交")
+        XCTAssertFalse(model.hasNext)
+    }
+
+    func testOverlappingHistoryPagesUseIDsAndPreserveRecordsWithoutIdentity() async {
+        let store = USDTStore(api: OverlappingPositionPageFixtureAPI())
+        let model = USDTPageModel()
+        await model.load(store, path: "/history", query: query())
+        await model.load(store, path: "/history", query: query(2), append: true)
+        XCTAssertEqual(model.items.count, 4)
+        XCTAssertEqual(model.items.compactMap(USDTPageModel.recordIdentity), ["1", "2"])
+        XCTAssertEqual(model.items[0].value("status_text"), "已结算")
+    }
+
     func testReturningToLoadedPositionsDoesNotReadAgain() async {
         let api = PositionPageReuseFixtureAPI()
         let store = USDTStore(api: api)
@@ -485,6 +505,28 @@ final class PositionPageReuseTests: XCTestCase {
         XCTAssertEqual(model.items.first?.value("symbol"), "/positions")
         let reads = await api.readCount("/positions")
         XCTAssertEqual(reads, 1)
+    }
+}
+
+private actor OverlappingPositionPageFixtureAPI: APIClient {
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        let second = request.queryItems.contains { $0.name == "page" && $0.value == "2" }
+        let rows: [JSONValue]
+        if request.path == "/orders" {
+            func order(_ key: String, _ status: String) -> JSONValue {
+                .object(["id": .number(1), "record_key": .string(key), "status_text": .string(status)])
+            }
+            // A new first-page order shifted limit:1 into the second-page boundary.
+            rows = second ? [order("limit:1", "已成交"), order("maker:2", "待成交")]
+                : [order("maker:1", "待成交"), order("limit:1", "待成交")]
+        } else {
+            rows = second ? [.object(["id": .number(1), "status_text": .string("已结算")]),
+                .object(["id": .number(2)]), .object(["status_text": .string("未编号记录2")])]
+                : [.object(["id": .number(1)]), .object(["status_text": .string("未编号记录1")])]
+        }
+        let value = JSONValue.object(["items": .array(rows),
+            "pagination": .object(["has_next": .bool(!second)])])
+        return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(value))
     }
 }
 

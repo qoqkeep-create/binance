@@ -40,7 +40,7 @@ from users.models import User
 
 logger = logging.getLogger(__name__)
 
-THRESHOLD_MULTIPLIER = Decimal("5")
+FUTURES_RETENTION_CAP = Decimal("1000")
 REFILL_TRIGGER_MULTIPLIER = Decimal("1.5")
 DUST_AMOUNT = Decimal("0.01")
 # 低于该值的钱包余额视为已清空：不参与规划、不尝试划转（币安对小额划转有最小限额，
@@ -69,8 +69,8 @@ UNCERTAIN_WITHDRAW_ERROR_CODES = {"-1001", "-1003", "-1006", "-1007", "-1021", "
 
 
 def retention_threshold(user: User) -> Decimal:
-    """Return the maximum permitted futures balance (5x stop-loss)."""
-    return Decimal(user.stop_loss_amount or 0) * THRESHOLD_MULTIPLIER
+    """Return the fixed USDT futures retention cap, independent of risk settings."""
+    return FUTURES_RETENTION_CAP
 
 
 def refill_trigger_threshold(user: User) -> Decimal:
@@ -79,7 +79,7 @@ def refill_trigger_threshold(user: User) -> Decimal:
 
 
 def required_futures_balance(user: User) -> Decimal:
-    # Kept as the public compatibility name for the five-times target.
+    # Kept as the public compatibility name for the fixed retention target.
     return retention_threshold(user)
 
 
@@ -900,11 +900,11 @@ def _capital_plan(
     funding = _transferable_wallet_balance(funding)
     spot = _transferable_wallet_balance(spot)
     # A confirmed normalization tries to bring the futures wallet up to the
-    # retention cap (5x), while the entry gate remains the lower 1.5x line.
-    # Keep both gaps explicit: a remaining gap to 5x is not an entry shortfall
+    # fixed retention cap, while the entry gate remains the lower 1.5x line.
+    # Keep both gaps explicit: a remaining gap to the cap is not an entry shortfall
     # when the futures balance is already at or above the opening minimum.
     # Round transfers down so a sub-cent balance gap never pushes the futures
-    # wallet above the 5x retention cap.
+    # wallet above the fixed retention cap.
     refill_required = _amount(maximum - futures) if futures < maximum else Decimal("0")
     funding_to_futures = _amount(min(refill_required, funding))
     refill_remaining = max(Decimal("0"), refill_required - funding_to_futures)
@@ -919,7 +919,7 @@ def _capital_plan(
     funding_collect = _amount(funding - funding_to_futures)
     spot_collect = _amount(spot - spot_to_futures)
     # Excess can only be transferred in cents. Rounding up would take more than
-    # the confirmed excess and leave the futures wallet below its 5x target.
+    # the confirmed excess and leave the futures wallet below its fixed target.
     futures_collect = _amount(futures - maximum) if futures > maximum else Decimal("0")
     collection_total = _amount(futures_collect + funding_collect + spot_collect)
     target_balance = futures + funding_to_futures + spot_to_futures - futures_collect
@@ -1547,7 +1547,7 @@ def capital_shortfall_reminder_preview(user: User, client: BinanceFuturesClient)
         f"当前账户总余额：{format(total, 'f')} USDT\n"
         f"开仓最低要求：{format(minimum, 'f')} USDT（止损额的 1.5 倍）\n"
         f"至少需要补充：{shortfall_fields['minimum_topup']} USDT\n"
-        f"最多可补充：{shortfall_fields['maximum_topup']} USDT（补至止损额的 5 倍）\n"
+        f"最多可补充：{shortfall_fields['maximum_topup']} USDT（补至固定保留上限 1000 USDT）\n"
         f"建议向该交易账户的资金账户转入：{format(recommended, 'f')} USDT。\n"
         "建议金额已向上取整，确保到账后达到开仓最低线；补资金额不要超过最多可补充金额。"
     )

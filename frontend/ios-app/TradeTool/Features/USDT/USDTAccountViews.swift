@@ -363,7 +363,7 @@ struct USDTStopLossView: View {
   @EnvironmentObject private var store: USDTStore
   @Environment(\.dismiss) private var dismiss
   @State private var value: JSONValue = .null
-  @State private var percentage = 2
+  @State private var amount: Decimal = 120
   @State private var loading = true
   @State private var saving = false
   @State private var notice = ""
@@ -382,27 +382,13 @@ struct USDTStopLossView: View {
       }.padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 8)
       ScrollView {
         VStack(alignment: .leading, spacing: 24) {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("账户总资产（USDT）").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
-            Text("\(money(balance)) USDT").font(.system(size: 24, weight: .bold))
-          }
           VStack(spacing: 12) {
             HStack {
-              Text("单笔止损占账户总资产百分比").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
+              Text("单笔止损金额").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
               Spacer()
-              Text("\(percentage)%").font(.system(size: 24, weight: .bold)).foregroundStyle(
-                WebTheme.brand)
-                .accessibilityIdentifier("stop-loss.percentageText")
-              Text(percentage <= 4 ? "低风险" : percentage <= 10 ? "中风险" : "高风险").font(.system(size: 14))
-                .foregroundStyle(
-                  percentage <= 4
-                    ? WebTheme.success : percentage <= 10 ? WebTheme.brand : WebTheme.danger)
+              Text("50～200 USDT").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
             }
             VStack(alignment: .leading, spacing: 4) {
-              (Text("单笔止损额：").font(.system(size: 14))
-                + Text(
-                  " (\(money(balance))*\(percentage)%=\(money(balance * Decimal(percentage) / 100)) USDT 向上取整)"
-                ).font(.system(size: 12))).foregroundStyle(WebTheme.secondary)
               HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(money(target)) USDT").font(.system(size: 24, weight: .bold))
                   .accessibilityIdentifier("stop-loss.amount")
@@ -412,20 +398,22 @@ struct USDTStopLossView: View {
               }.foregroundStyle(WebTheme.brand)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(
               WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
-            Slider(value: Binding(get: { Double(percentage) }, set: { percentage = Int($0) }),
-              in: 1...25, step: 1)
+            Slider(value: Binding(get: { NSDecimalNumber(decimal: amount).doubleValue },
+              set: { amount = Decimal(Int($0.rounded())) }), in: 50...200, step: 1)
               .tint(WebTheme.brand).disabled(loading)
-              .accessibilityLabel("止损比例").accessibilityValue("\(percentage)%")
-              .accessibilityIdentifier("stop-loss.percentage")
+              .accessibilityLabel("单笔止损金额").accessibilityValue("\(money(target)) USDT")
+              .accessibilityIdentifier("stop-loss.amount-slider")
             HStack {
-              Text("1%")
+              Text("50 USDT")
               Spacer()
-              Text("25%")
+              Text("200 USDT")
             }.font(.system(size: 12)).foregroundStyle(WebTheme.muted)
+            Text("当前止损额：\(money(value["current_amount"]?.decimal ?? 0)) USDT")
+              .font(.system(size: 12)).foregroundStyle(WebTheme.secondary)
           }
           VStack(alignment: .leading, spacing: 8) {
-            Text("1. 止损金额按合约、资金、现货三类账户的 USDT 总资产计算")
-            Text("2. 止损金额设定后，不再随账户余额变动而变动")
+            Text("1. 止损金额固定在 50～200 USDT 之间设置")
+            Text("2. 设置金额不根据账户余额计算，也不随余额变动")
             Text("3. 确认后止损额立即生效（测试阶段暂不启用调高冷却）")
           }.font(.system(size: 12)).foregroundStyle(WebTheme.muted).lineSpacing(4)
           if let pending = value["pending_amount"], pending != .null {
@@ -461,7 +449,7 @@ struct USDTStopLossView: View {
         cancelPending = false
         confirm = true
       }.buttonStyle(WebButtonStyle(height: 56, radius: 14, weight: .bold, mutedDisabled: true))
-        .disabled(loading || saving || target == (value["current_amount"]?.decimal ?? 0) || balance <= 0)
+        .disabled(loading || saving || target == (value["current_amount"]?.decimal ?? 0))
         .accessibilityIdentifier("stop-loss.submit")
         .padding(.horizontal, 24).padding(.vertical, 12)
         .frame(maxWidth: 448).frame(maxWidth: .infinity).background(WebTheme.surface)
@@ -476,10 +464,7 @@ struct USDTStopLossView: View {
         withTransaction(transaction) {
           value = response
           let current = value["current_amount"]?.decimal ?? 0
-          if balance > 0 {
-            percentage = min(25, max(1,
-              Int(NSDecimalNumber(decimal: current / balance * 100).doubleValue.rounded())))
-          }
+          amount = min(200, max(50, current))
           loading = false
         }
       } catch { notice = error.localizedDescription; loading = false }
@@ -501,18 +486,12 @@ struct USDTStopLossView: View {
       }
     }
   }
-  private var balance: Decimal {
-    value["total_balance"]?.decimal
-      ?? ["balance", "spot_balance", "funding_balance"].reduce(Decimal.zero) {
-        $0 + (store.account[$1]?.decimal ?? 0)
-      }
-  }
   private func countdownText(at now: Date) -> String {
     let deadline = WebFormat.date(value.value("pending_effective_at"))
     let seconds = max(0, Int(deadline?.timeIntervalSince(now) ?? 0))
     return String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
   }
-  private var target: Decimal { WebStopLossAmount.roundUp(balance * Decimal(percentage) / 100) }
+  private var target: Decimal { amount }
   private func money(_ value: Decimal) -> String {
     WebStopLossAmount.text(value)
   }
@@ -525,7 +504,7 @@ struct USDTStopLossView: View {
         let previous = value["current_amount"]?.decimal ?? 0
         value = try await store.send(
           cancel ? "/v1/account/stop-loss/cancel" : "/v1/account/stop-loss",
-          cancel ? [:] : ["percentage": .number(Double(percentage))])
+          cancel ? [:] : ["amount": .string(NSDecimalNumber(decimal: amount).stringValue)])
         await store.refresh()
         if let current = value["current_amount"]?.decimal, previous != current {
           completed = (previous, current)
@@ -665,7 +644,7 @@ struct USDTCapitalView: View {
             }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
           }
           if direction != "to_spot" {
-            Text("按合约距 5 倍止损额的差额补入，最多使用所选账户的可用余额。")
+            Text("按合约距固定保留上限 1000 USDT 的差额补入，最多使用所选账户的可用余额。")
               .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
           }
         } else {
@@ -1324,9 +1303,9 @@ struct USDTCapitalReminderView: View {
 
 }
 
-/// Same 1 / 5 / 10 USDT steps as the Web stop-loss preview; all arithmetic stays decimal.
+/// Decimal display and legacy rounding used by historical previews.
 enum WebStopLossAmount {
-  /// Display only; the risk calculation and submitted percentage keep their original precision.
+  /// Display only; fixed settings submit the original Decimal amount.
   static func text(_ value: Decimal) -> String {
     guard !value.isNaN else { return "--" }
     var source = value

@@ -137,6 +137,29 @@ class CapitalWalletTests(TestCase):
         self.assertEqual(self.preview()["status"], "ready")
         self.assertEqual(self.preview()["operation_amount"], "0.00")
 
+    def test_to_spot_executes_only_futures_excess_at_fixed_cap_boundaries(self):
+        self.user.stop_loss_amount = Decimal("50")
+        self.user.save(update_fields=["stop_loss_amount"])
+        self.exchange.get_funding_usdt_free_balance.return_value = "0.99"
+        for futures, excess in (("1000", "0.00"), ("1000.01", "0.01"), ("1000.50", "0.50")):
+            with self.subTest(futures=futures):
+                self.exchange.get_balance.return_value = {"data": [{"details": [{"eq": futures, "availEq": futures}]}]}
+                self.exchange.transfer_between_spot_and_futures.reset_mock()
+                plan = self.preview()
+                self.assertEqual(Decimal(plan["operation_amount"]), Decimal(excess))
+                self.assertEqual(Decimal(plan["futures_collect"]), Decimal(excess))
+                result = self.execute(preview=plan)
+                if excess == "0.00":
+                    self.assertEqual(result["status"], "ready")
+                    self.exchange.transfer_between_spot_and_futures.assert_not_called()
+                else:
+                    self.assertEqual(result["reason"], "normalization_completed")
+                    self.exchange.transfer_between_spot_and_futures.assert_called_once_with(excess, to_futures=False)
+                    self.assertEqual(Decimal(result["target"]), Decimal("1000"))
+        self.exchange.transfer_funding_to_spot.assert_not_called()
+        self.exchange.transfer_spot_to_master.assert_not_called()
+        self.assertEqual(CapitalSweep.objects.count(), 2)
+
     def test_foreign_binding_pending_operation_blocks(self):
         CapitalSweep.objects.create(user=self.user, api_key_fingerprint="another-key", amount=0, target_balance=1000)
         self.assertEqual(self.preview()["status"], "blocked")

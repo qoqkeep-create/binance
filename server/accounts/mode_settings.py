@@ -2,7 +2,7 @@
 from decimal import Decimal
 
 from accounts.models import LeadTradingSettings
-from accounts.services import round_up_stop_loss
+from accounts.services import MAX_STOP_LOSS_AMOUNT, MIN_STOP_LOSS_AMOUNT, validate_stop_loss_amount
 from api_bindings.services import get_user_binance_credentials
 from common.binance import BinanceApiError, BinanceFuturesClient, get_usdt_equity_snapshot
 from common.trading_mode import TradingMode
@@ -20,18 +20,17 @@ def lead_balance(user, *, fresh=False):
     return get_usdt_equity_snapshot(BinanceFuturesClient(credentials), fresh=fresh)
 
 
-def lead_stop_loss_state(user, *, percentage=None):
-    _, total = lead_balance(user, fresh=percentage is not None)
-    balance = Decimal(total)
-    amount = lead_stop_loss_amount(user)
-    if percentage is not None:
-        if balance <= 0:
-            raise BinanceApiError("带单组合暂无可用资产，请先在币安“我的带单”页面充值")
-        amount = round_up_stop_loss(balance * Decimal(percentage) / 100)
+def lead_stop_loss_state(user, *, amount=None):
+    if amount is not None:
+        amount = validate_stop_loss_amount(amount)
         LeadTradingSettings.objects.update_or_create(user=user, defaults={"stop_loss_amount": amount})
+    else:
+        amount = lead_stop_loss_amount(user)
     return {"current_amount": format(amount, "f"), "pending_amount": None,
             "pending_from_amount": None, "pending_effective_at": None, "countdown_seconds": 0,
-            "balance": total, "total_balance": total}
+            "balance": None, "total_balance": None,
+            "minimum_amount": format(MIN_STOP_LOSS_AMOUNT, "f"),
+            "maximum_amount": format(MAX_STOP_LOSS_AMOUNT, "f")}
 
 
 def lead_account_info(user, *, fresh=False):

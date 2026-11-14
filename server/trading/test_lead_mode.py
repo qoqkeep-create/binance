@@ -191,7 +191,7 @@ class LeadAccountIsolationTests(APITestCase):
     def test_lead_capital_thresholds_and_existing_position_behavior(self, balance):
         adapter = LeadTradingAdapter()
         empty = ExchangeActivitySnapshot((), (), ())
-        for amount, expected in (("149.99", "shortfall"), ("150", "ready"), ("499.99", "ready"), ("500", "ready"), ("500.01", "normalization_required")):
+        for amount, expected in (("149.99", "shortfall"), ("150", "ready"), ("499.99", "ready"), ("500", "ready"), ("500.01", "ready"), ("1000", "ready"), ("1000.01", "normalization_required")):
             with self.subTest(amount=amount):
                 balance.return_value = (amount, amount)
                 self.assertEqual(adapter.capital_precheck(self.user, Mock(), activity_snapshot=empty)["status"], expected)
@@ -203,7 +203,7 @@ class LeadAccountIsolationTests(APITestCase):
     @patch("accounts.mode_settings.lead_balance", return_value=("1000", "1000"))
     def test_lead_risk_setting_does_not_change_ordinary_setting(self, _balance):
         old_amount = self.user.stop_loss_amount
-        response = self.client.post("/v1/account/stop-loss", {"percentage": 10}, format="json", HTTP_X_TRADING_MODE="lead")
+        response = self.client.post("/v1/account/stop-loss", {"amount": "100"}, format="json", HTTP_X_TRADING_MODE="lead")
         self.assertEqual(response.status_code, 200)
         self.user.refresh_from_db()
         self.assertEqual(self.user.stop_loss_amount, old_amount)

@@ -128,6 +128,12 @@ protocol APIErrorReporting: AnyObject {
 }
 
 extension Notification.Name {
+    static let apiReadContextChanged = Notification.Name(
+        "com.oovso.tradetool.api-read-context-changed"
+    )
+    static let apiNetworkPathChanged = Notification.Name(
+        "com.oovso.tradetool.api-network-path-changed"
+    )
     static let apiSessionUnauthorized = Notification.Name(
         "com.oovso.tradetool.api-session-unauthorized"
     )

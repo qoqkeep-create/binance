@@ -511,11 +511,13 @@ struct USDTTradeView: View {
           VStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
               .font(.system(size: 42)).foregroundStyle(WebTheme.success)
+              .accessibilityIdentifier("entry-success.icon")
             Text(successDraft?.symbol ?? symbol).font(.system(size: 18, weight: .bold))
+              .accessibilityIdentifier("entry-success.symbol")
             Text("交易所已确认成交，持仓保护已进入系统管理。")
               .font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
               .multilineTextAlignment(.center)
-          }
+          }.frame(maxWidth: .infinity, alignment: .center)
           HStack(spacing: 12) {
             Button("关闭") { openSuccess = false }
               .buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
@@ -1168,6 +1170,18 @@ struct PositionLiveButtonLabel: View {
 }
 
 struct USDTPositionsView: View {
+  private struct PageRow: Identifiable {
+    let row: JSONValue
+    let id: String
+
+    init(_ row: JSONValue, page: String) {
+      self.row = row
+      let key = USDTPageModel.recordIdentity(row) ?? ""
+      let fallback = ["symbol", "side", "created_at"].map { row.value($0, fallback: "") }.joined(separator: ":")
+      id = page + ":" + (key.isEmpty ? fallback : key)
+    }
+  }
+
   var isVisible = true
   var onOpenChart: ((String, String) -> Void)? = nil
   var navigationRequest: PositionPageRequest? = nil
@@ -1416,7 +1430,8 @@ struct USDTPositionsView: View {
                 error: loadError
               ) { Task { await reload(page: page) } }
             }
-            ForEach(Array(pageRows.enumerated()), id: \.offset) { _, row in
+            ForEach(pageRows.map { PageRow($0, page: page) }) { item in
+              let row = item.row
               if page == "positions" {
                 positionCard(row)
               } else if page == "limits" {
@@ -1442,13 +1457,8 @@ struct USDTPositionsView: View {
           let scope = store.scope
           let refreshSegment = page
           let refreshFilter = filter
-          // Account publication can cancel SwiftUI's refresh action. Keep this
-          // read independent, then recheck the selected account and page.
           if page == "positions" {
-            // Pull-to-refresh on the positions page only needs the position and
-            // margin snapshots. Refreshing profile, strategies, and account
-            // here causes the whole card tree to re-evaluate while the finger
-            // is returning, which produces the visible flash and hitch.
+            // Refresh the position and risk snapshots without publishing unrelated account data.
             async let positionsRefresh: Void = reload(page: page)
             async let marginRefresh: Void = margin.refresh(store, afterChange: true)
             await positionsRefresh
@@ -1456,12 +1466,9 @@ struct USDTPositionsView: View {
             return
           }
           await Task { @MainActor in
-            await store.refresh()
             guard scope == store.scope, refreshSegment == segment, refreshFilter == filter else { return }
-            if page != "positions" { model.page = 1 }
-            async let marginRefresh: Void = margin.refresh(store, afterChange: true)
+            model.page = 1
             await reload(page: page)
-            await marginRefresh
           }.value
         }
       }

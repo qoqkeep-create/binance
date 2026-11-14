@@ -49,7 +49,7 @@ class LeadTradingAdapter:
 
     def capital_precheck(self, user, client, *, purpose="entry", activity_snapshot=None):
         from accounts.mode_settings import lead_stop_loss_amount
-        from trading.balance_cap import load_exchange_activity
+        from trading.balance_cap import load_exchange_activity, retention_threshold
         amount = lead_stop_loss_amount(user)
         if amount <= 0:
             raise BinanceApiError("请先在“我的”中设置带单止损额度")
@@ -58,7 +58,7 @@ class LeadTradingAdapter:
             return {"status": "not_required", "reason": "has_positions"}
         _, total = get_usdt_equity_snapshot(client, fresh=True)
         balance = Decimal(total)
-        lower, upper = amount * Decimal("1.5"), amount * Decimal("5")
+        lower, upper = amount * Decimal("1.5"), retention_threshold(user)
         if lower <= balance <= upper:
             return {"status": "ready", "trading_mode": "lead"}
         shortfall = max(lower - balance, Decimal("0")).to_integral_value(rounding=ROUND_CEILING)
@@ -66,7 +66,7 @@ class LeadTradingAdapter:
         message = (
             f"带单组合资金不足，至少需补充 {shortfall} USDT，请在币安“我的带单”页面划入"
             if balance < lower else
-            f"带单组合余额超过 5 倍止损额，请在币安“我的带单”页面转出 {excess:f} USDT 后再开仓"
+            f"带单组合余额超过固定上限 1000 USDT，请在币安“我的带单”页面转出 {excess:f} USDT 后再开仓"
         )
         return {"status": "shortfall" if balance < lower else "normalization_required",
                 "trading_mode": "lead", "message": message, "shortfall": str(shortfall),

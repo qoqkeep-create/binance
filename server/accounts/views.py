@@ -17,7 +17,7 @@ from accounts.services import (
     get_stop_loss_state,
     get_user_trade_balance,
     touch_pending_stop_loss,
-    update_stop_loss_by_percentage,
+    update_stop_loss_amount,
 )
 from accounts.transfer_history import (
     get_cached_transfer_history,
@@ -110,7 +110,15 @@ def _single_line_log_value(value) -> str:
 
 
 class StopLossUpdateSerializer(serializers.Serializer):
-    percentage = serializers.IntegerField(min_value=1, max_value=25)
+    amount = serializers.DecimalField(
+        max_digits=20, decimal_places=2, min_value=Decimal("50"), max_value=Decimal("200"),
+        error_messages={"min_value": "止损金额须在 50～200 USDT 之间", "max_value": "止损金额须在 50～200 USDT 之间"},
+    )
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict) and "percentage" in data:
+            raise serializers.ValidationError({"amount": ["止损设置已改为固定金额，请更新客户端并提交 50～200 USDT 的 amount"]})
+        return super().to_internal_value(data)
 
 
 class ClientLayoutLogSerializer(serializers.Serializer):
@@ -288,8 +296,7 @@ class StopLossSettingView(APIView):
             if request_trading_mode(request) == TradingMode.LEAD:
                 from accounts.mode_settings import lead_stop_loss_state
                 return ok(data=lead_stop_loss_state(request.user))
-            balance = get_user_trade_balance(request.user)
-            state = get_stop_loss_state(request.user, balance=balance)
+            state = get_stop_loss_state(request.user)
             return ok(data=state)
         except BinanceApiError as exc:
             return fail(safe_error_summary(exc, include_type=False))
@@ -309,12 +316,10 @@ class StopLossSettingView(APIView):
         try:
             if request_trading_mode(request) == TradingMode.LEAD:
                 from accounts.mode_settings import lead_stop_loss_state
-                return ok(data=lead_stop_loss_state(request.user, percentage=serializer.validated_data["percentage"]), message="带单止损金额已立即生效")
-            balance = get_user_trade_balance(request.user)
-            message, state = update_stop_loss_by_percentage(
+                return ok(data=lead_stop_loss_state(request.user, amount=serializer.validated_data["amount"]), message="带单止损金额已立即生效")
+            message, state = update_stop_loss_amount(
                 request.user,
-                percentage=serializer.validated_data["percentage"],
-                balance=balance,
+                amount=serializer.validated_data["amount"],
             )
             return ok(message=message, data=state)
         except BinanceApiError as exc:

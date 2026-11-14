@@ -104,7 +104,8 @@ final class AppContainer: ObservableObject {
                 HTTPStatusInterceptor(),
             ],
             errorReporter: toastCenter,
-            notificationCenter: sessionEvents
+            notificationCenter: sessionEvents,
+            readRecovery: APIReadRecovery(notificationCenter: sessionEvents)
         )
         let refresher = MobileSessionRefresher(baseURL: baseURL, network: networkSession, store: sessionStore)
         apiClient.refreshAccessToken = { try await refresher.refresh() }

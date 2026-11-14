@@ -1,6 +1,5 @@
 import { Runtime } from '../platform/Runtime';
 import { DataValue } from '../core/Json';
-import { stopLossPreview } from '../core/MoneyRules';
 import { Decimal, amount } from '../core/Decimal';
 import { SectionCard, Metric, Field, ActionButton, MenuRow, confirmAction, RED, GOLD, GREEN, dateText } from '../components/Ui';
 
@@ -71,7 +70,7 @@ export struct AccountFormPage {
   @State apiKey: string = '';
   @State secret: string = '';
   @State alias: string = '';
-  @State percentage: string = '2';
+  @State stopAmount: string = '120';
   @State address: string = '';
   @State network: string = '';
   @State loading: boolean = false;
@@ -86,7 +85,7 @@ export struct AccountFormPage {
       const path = this.kind === 'stop-loss' ? '/v1/account/stop-loss' : this.kind === 'collection' ? '/v1/account/capital-collect-account' : this.kind === 'reminder' ? '/v1/trade/capital/remind' : this.kind === 'account' ? '/v1/account/profile' : '/v1/api/info';
       const value = this.kind === 'capital' ? await Runtime.store.capital.preview() : await Runtime.store.session.request(path);
       if (!this.active) return;
-      this.data = value; this.percentage = value.value('current_percentage', '2');
+      this.data = value; this.stopAmount = value.value('current_amount', '120');
       this.address = value.value('capital_collect_address', ''); this.network = value.value('capital_collect_network', '');
     } catch (e) { if (this.active) this.message = (e as Error).message; }
     finally { if (this.active) this.loading = false; }
@@ -104,11 +103,11 @@ export struct AccountFormPage {
     const payload = DataValue.object({ api_key: this.apiKey, secret_key: this.secret, passphrase: '', alias: this.alias.trim() });
     confirmAction('确认绑定 API', '绑定到当前' + (Runtime.store.session.mode === 'lead' ? '带单账户' : '合约账户') + '：' + this.alias, async () => { await this.write('/v1/api/bind', payload); });
   }
-  private stopTarget(): string { try { return stopLossPreview(this.data.value('total_balance', this.data.value('balance')), this.percentage); } catch (_) { return '--'; } }
+  private stopTarget(): string { try { return new Decimal(this.stopAmount).fixed(2); } catch (_) { return '--'; } }
   private updateStop(): void {
-    if (!/^\d+$/.test(this.percentage) || Number(this.percentage) < 1 || Number(this.percentage) > 25) { this.message = '请输入1至25之间的整数百分比'; return; }
-    const payload = DataValue.object({ percentage: this.percentage });
-    confirmAction('调整止损金额', '比例：' + this.percentage + '%，预计止损金额：' + this.stopTarget() + ' USDT。调整只作用于后续开仓；降低金额的生效时间以服务器结果为准。', async () => { await this.write('/v1/account/stop-loss', payload); });
+    if (!/^\d+(\.\d{1,2})?$/.test(this.stopAmount) || new Decimal(this.stopAmount).compare(new Decimal('50')) < 0 || new Decimal(this.stopAmount).compare(new Decimal('200')) > 0) { this.message = '请输入50至200 USDT之间的金额，最多两位小数'; return; }
+    const payload = DataValue.object({ amount: this.stopAmount });
+    confirmAction('调整止损金额', '固定止损金额：' + this.stopTarget() + ' USDT，确认后立即生效，不根据账户余额计算。', async () => { await this.write('/v1/account/stop-loss', payload); });
   }
   private collectValue(): DataValue { return this.data.get('pending_collection').empty() ? this.data : this.data.get('pending_collection'); }
   private normalize(): void {
@@ -141,13 +140,12 @@ export struct AccountFormPage {
         } else if (this.kind === 'stop-loss') {
           SectionCard() {
             Metric({ label: '当前止损金额', value: amount(this.data.value('current_amount')) + ' USDT' })
-            Metric({ label: '账户总资产', value: amount(this.data.value('total_balance', this.data.value('balance'))) + ' USDT' })
             if (!this.data.get('pending_amount').empty()) {
               Metric({ label: '待生效金额', value: amount(this.data.value('pending_amount')) + ' USDT', color: GOLD })
               Metric({ label: '生效时间', value: dateText(this.data.value('pending_effective_at')) })
               ActionButton({ label: '取消待生效调整', secondary: true, interactive: !this.busy, action: () => { confirmAction('取消调整', '确认取消尚未生效的止损金额调整？', async () => { await this.write('/v1/account/stop-loss/cancel', DataValue.object()); }); } })
             }
-            Field({ label: '账户余额百分比（%）', value: $percentage, numeric: true })
+            Field({ label: '固定止损金额（50～200 USDT）', value: $stopAmount, numeric: true })
             Metric({ label: '预计止损金额', value: this.stopTarget() + ' USDT', color: GOLD })
             ActionButton({ label: '确认调整', interactive: !this.busy && this.stopTarget() !== '--', action: () => this.updateStop() })
           }

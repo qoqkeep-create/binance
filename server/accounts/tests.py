@@ -205,7 +205,7 @@ class AccountInfoTests(APITestCase):
     @patch("accounts.views.get_user_trade_balance")
     def test_post_stop_loss_setting(self, mock_balance):
         mock_balance.return_value = Decimal("50.74")
-        resp = self.client.post("/v1/account/stop-loss", {"percentage": 3}, format="json")
+        resp = self.client.post("/v1/account/stop-loss", {"amount": "150"}, format="json")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertIn("message", resp.data)
 
@@ -224,11 +224,11 @@ class AccountInfoTests(APITestCase):
 
     @patch("accounts.views.get_user_trade_balance", return_value=Decimal("1000"))
     def test_increasing_stop_loss_takes_effect_immediately_during_testing(self, _mock_balance):
-        resp = self.client.post("/v1/account/stop-loss", {"percentage": 25}, format="json")
+        resp = self.client.post("/v1/account/stop-loss", {"amount": "200"}, format="json")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data["message"], "止损金额已立即生效")
         self.user.refresh_from_db()
-        self.assertEqual(self.user.stop_loss_amount, Decimal("250"))
+        self.assertEqual(self.user.stop_loss_amount, Decimal("200"))
         self.assertIsNone(self.user.pending_stop_loss_amount)
         self.assertIsNone(self.user.pending_stop_loss_effective_at)
 
@@ -239,7 +239,7 @@ class AccountInfoTests(APITestCase):
         with api_binding_lifecycle_lock(self.user.id) as locked:
             response = self.client.post(
                 "/v1/account/stop-loss",
-                {"percentage": 10},
+                {"amount": "100"},
                 format="json",
             )
 
@@ -257,7 +257,7 @@ class AccountInfoTests(APITestCase):
         with user_trading_activity_lock(identity) as locked:
             response = self.client.post(
                 "/v1/account/stop-loss",
-                {"percentage": 10},
+                {"amount": "100"},
                 format="json",
             )
 
