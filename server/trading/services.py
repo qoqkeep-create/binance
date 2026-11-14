@@ -889,17 +889,16 @@ def _load_order_close_trade_rows(
     return rows
 
 
-# "仓位是否已被交易所侧抵消"检测只是兜底：平仓回执/陈旧订单修正等主路径会先行更新状态。
-# 它触发的 userTrades 拉取权重很高，每单限频到最多 30 秒一次，避免限频。
+# userTrades 权重较高，有仓兜底和空仓查证分别每单最多 30 秒一次。
+# 目标方向首次空仓不能被上一轮有仓检查挡住；重复空仓事件仍须限频。
 FULLY_OFFSET_CHECK_INTERVAL_SECONDS = 30
 
 
-def _fully_offset_check_due(order: Order) -> bool:
+def _fully_offset_check_due(order: Order, *, position_absent: bool = False) -> bool:
     key = f"order:fully_offset_check:{order.id}"
-    if cache.get(key):
-        return False
-    cache.set(key, "1", timeout=FULLY_OFFSET_CHECK_INTERVAL_SECONDS)
-    return True
+    if position_absent:
+        key += ":absent"
+    return cache.add(key, "1", timeout=FULLY_OFFSET_CHECK_INTERVAL_SECONDS)
 
 
 def _close_fully_offset_order(
@@ -908,8 +907,9 @@ def _close_fully_offset_order(
     *,
     source: str,
     trade_cache: Optional[dict[int, list[dict[str, Any]]]] = None,
+    position_absent: bool = False,
 ) -> bool:
-    if not _fully_offset_check_due(order):
+    if not _fully_offset_check_due(order, position_absent=position_absent):
         return False
     trade_rows = _load_order_close_trade_rows(client, order, trade_cache=trade_cache)
     anchor = build_close_anchor_from_trade_rows(order, trade_rows)
@@ -2468,12 +2468,15 @@ def run_strategy_engine(*, trading_mode=TradingMode.ORDINARY):
                                 pos_mode = str(exchange_context.get("pos_mode") or "long_short_mode")
                                 pos_rows = exchange_context.get("positions") or []
                                 exchange_size = _find_position_size(order, pos_rows, pos_mode)
-                                if exchange_size > 0 and _close_fully_offset_order(
+                                if _close_fully_offset_order(
                                     order,
                                     client,
                                     source="strategy_engine",
                                     trade_cache=exchange_context.get("close_trade_rows"),
+                                    position_absent=exchange_size <= 0,
                                 ):
+                                    continue
+                                if exchange_size <= 0:
                                     continue
                                 _process_single_strategy_order(
                                     order,
@@ -2832,15 +2835,16 @@ def _reconcile_single_order_protection(
     repaired = _cancel_disabled_strategy_take_profit(order, snapshot)
     pos_row = _find_position_row(order, snapshot.positions, snapshot.pos_mode)
     exchange_size = _find_position_size(order, snapshot.positions, snapshot.pos_mode)
-    if exchange_size <= 0:
-        return repaired
     if _close_fully_offset_order(
         order,
         snapshot.client,
         source="reconcile_open_orders",
         trade_cache=snapshot.close_trade_rows,
+        position_absent=exchange_size <= 0,
     ):
         return repaired + 1
+    if exchange_size <= 0:
+        return repaired
 
     current_price = _parse_decimal(
         (pos_row or {}).get("last") or (pos_row or {}).get("markPx") or "0"
