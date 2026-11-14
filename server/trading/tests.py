@@ -72,6 +72,10 @@ class TradingApiTests(APITestCase):
         self.mock_entry_capital_error = capital_gate_patcher.start()
         self.addCleanup(capital_gate_patcher.stop)
         self.user = User.objects.create_user(email="trade_test@example.com", password="123456")
+        self.strategy = Strategy.objects.create(user=self.user, name="测试止盈策略", is_active=True)
+        StrategyLevel.objects.create(
+            strategy=self.strategy, sort_order=1, profit_rr=Decimal("2"),
+            reduce_position=Decimal("50"), stop_loss_type=StrategyLevel.STOP_LOSS_TYPE_NONE)
         entry_account_patcher = patch("trading.views.get_user_trading_account")
         self.mock_entry_account = entry_account_patcher.start()
         self.mock_entry_account.return_value = TradingAccountContext(
@@ -543,6 +547,7 @@ class TradingApiTests(APITestCase):
         response = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -570,6 +575,7 @@ class TradingApiTests(APITestCase):
         response = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -600,6 +606,7 @@ class TradingApiTests(APITestCase):
         response = self.client.post(
             "/v1/trade/limit-order/create",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "limit_price": "100",
                 "stop_loss_price": "90",
@@ -1350,7 +1357,8 @@ class TradingApiTests(APITestCase):
             "expires_at_ts": timezone.now().timestamp() - 5,
         }, timeout=180)
         body = {"symbol": "BTCUSDT", "stop_loss_price": "90.12345678",
-            "stop_loss_amount": "30.001", "include_fee": False}
+            "stop_loss_amount": "30.001", "include_fee": False,
+            "strategy_id": str(self.strategy.id)}
         for legacy, expected_legacy in (({}, ""), ({"ema_check_id": "expired-check"}, "expired-check"),
                 ({"ema_check_id": "arbitrary-check"}, "arbitrary-check"), ({"ema_check_id": ""}, ""),
                 ({"ema_check_id": None}, ""), ({"ema_check_id": {"retired": True}}, "{'retired': True}"),
@@ -1398,7 +1406,8 @@ class TradingApiTests(APITestCase):
         exchange.get_order.return_value = {"data": [{"state": "filled", "fillSz": "3", "avgPx": "100.1"}]}
         exchange.place_stop_market_order.return_value = {"data": [{"algoId": "direct-stop"}]}
         body = {"symbol": "BTCUSDT", "stop_loss_price": "90", "stop_loss_amount": "30",
-            "include_fee": False, "client_request_id": "77777777-7777-4777-8777-777777777777"}
+            "include_fee": False, "client_request_id": "77777777-7777-4777-8777-777777777777",
+            "strategy_id": str(self.strategy.id)}
         first = self.client.post("/v1/trade/open", body, format="json")
         second = self.client.post("/v1/trade/open", body, format="json")
         self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
@@ -1444,6 +1453,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -1490,6 +1500,7 @@ class TradingApiTests(APITestCase):
         response = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -1530,6 +1541,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -1575,6 +1587,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -1612,6 +1625,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -1663,6 +1677,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -1720,6 +1735,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -1792,6 +1808,7 @@ class TradingApiTests(APITestCase):
             "include_fee": False,
             "ema_check_id": "ema-retry-intent",
             "client_request_id": "33333333-3333-4333-8333-333333333333",
+            "strategy_id": str(self.strategy.id),
         }
 
         first = self.client.post("/v1/trade/open", payload, format="json")
@@ -1839,6 +1856,7 @@ class TradingApiTests(APITestCase):
         response = self.client.post(
             "/v1/trade/limit-order/create",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "limit_price": "100",
                 "stop_loss_price": "90",
@@ -1895,6 +1913,7 @@ class TradingApiTests(APITestCase):
         mock_client_cls.return_value = mock_client
         payload = {
             "symbol": "BTCUSDT",
+            "strategy_id": str(self.strategy.id),
             "limit_price": "100",
             "stop_loss_price": "90",
             "stop_loss_amount": "30",
@@ -1955,6 +1974,7 @@ class TradingApiTests(APITestCase):
         mock_client_cls.return_value = mock_client
         payload = {
             "symbol": "BTCUSDT",
+            "strategy_id": str(self.strategy.id),
             "limit_price": "100",
             "stop_loss_price": "90",
             "stop_loss_amount": "30",
@@ -2027,6 +2047,7 @@ class TradingApiTests(APITestCase):
         mock_client_cls.return_value = mock_client
         payload = {
             "symbol": "BTCUSDT",
+            "strategy_id": str(self.strategy.id),
             "limit_price": "100",
             "stop_loss_price": "90",
             "stop_loss_amount": "30",
@@ -2399,6 +2420,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",
@@ -2445,6 +2467,7 @@ class TradingApiTests(APITestCase):
         resp = self.client.post(
             "/v1/trade/open",
             {
+                "strategy_id": str(self.strategy.id),
                 "symbol": "BTCUSDT",
                 "stop_loss_price": "90",
                 "stop_loss_amount": "30",

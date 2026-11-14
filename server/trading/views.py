@@ -2057,6 +2057,8 @@ class TradeOpenView(APIView):
                         safe_error_summary(exc),
                     )
                     strategy_payload = None
+                if created_open_request and strategy_payload is None:
+                    return fail("开仓必须选择止盈策略，请先在策略页选择并启用一个止盈策略")
 
                 if recovered_open_row:
                     recovered_side = str(recovered_open_row.get("side") or "").strip().lower()
@@ -2340,8 +2342,6 @@ class TradeOpenView(APIView):
                     )
                     if protection_error:
                         return fail(protection_error)
-                elif order.strategy_snapshot_id and order.strategy_status == Order.STRATEGY_STATUS_CANCELLED:
-                    message = "开仓成功，但策略止盈预挂失败，已转为手动止盈"
                 _invalidate_position_list_cache(request.user, api_key_fingerprint, trading_mode=request_trading_mode(request))
                 return ok(
                     message=message,
@@ -3147,6 +3147,8 @@ class LimitOrderCreateView(APIView):
                     if not recovered_limit_row:
                         raise
                     strategy_payload = None
+                if created_open_request and strategy_payload is None:
+                    return fail("开仓必须选择止盈策略，请先在策略页选择并启用一个止盈策略")
 
                 execution_intent = get_open_request_execution_intent(open_request)
                 if recovered_limit_row:
@@ -3929,8 +3931,6 @@ class LimitOrderChaseView(APIView):
                     )
                     if protection_error:
                         return fail(protection_error)
-                elif order.strategy_snapshot_id and order.strategy_status == Order.STRATEGY_STATUS_CANCELLED:
-                    message = "追单成功，但策略止盈预挂失败，已转为手动止盈"
                 _invalidate_position_list_cache(request.user, api_key_fingerprint, trading_mode=request_trading_mode(request))
                 return ok(
                     message=message,

@@ -496,12 +496,13 @@ def adopt_entry_execution(
                 exchange_size=effective_fill_size,
             )
         except Exception as exc:  # noqa: BLE001
-            order.strategy_status = Order.STRATEGY_STATUS_CANCELLED
-            order.save(update_fields=["strategy_status"])
+            # The strategy stays bound: the periodic strategy engine retries
+            # take-profit placement. Silently dropping to manual management
+            # would leave a mandatory-strategy position without its TP.
             _log_strategy(
                 order,
                 snapshot,
-                "策略预挂止盈失败，已转为手动止盈",
+                "策略预挂止盈失败，策略保持运行，后台引擎将继续重试",
                 OrderStrategyLog.RESULT_FAILED,
                 str(exc),
             )

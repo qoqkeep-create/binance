@@ -14,6 +14,7 @@ from common.binance_rate_limit import RequestBudgetExceeded, RequestBudgetSpec, 
 from common.trading_mode import TradingMode
 from common.utils import aes_encrypt
 from positions.models import LimitOrder, Order
+from trading.models import Strategy, StrategyLevel
 from positions.views import _record_current_account_key, _scoped_order_queryset
 from trading.adapters import LeadTradingAdapter
 from trading.balance_cap import ExchangeActivitySnapshot
@@ -127,6 +128,10 @@ class LeadAccountIsolationTests(APITestCase):
                 api_key=aes_encrypt(key), secret_key=aes_encrypt("test-secret"), passphrase=aes_encrypt(""),
                 api_key_fingerprint=build_api_key_fingerprint(key))
         LeadTradingSettings.objects.create(user=self.user, stop_loss_amount=Decimal("100"))
+        self.strategy = Strategy.objects.create(user=self.user, name="测试止盈策略", is_active=True)
+        StrategyLevel.objects.create(
+            strategy=self.strategy, sort_order=1, profit_rr=Decimal("2"),
+            reduce_position=Decimal("50"), stop_loss_type=StrategyLevel.STOP_LOSS_TYPE_NONE)
 
     def order(self, mode):
         return Order.objects.create(user=self.user, trading_mode=mode,
@@ -261,6 +266,7 @@ class LeadAccountIsolationTests(APITestCase):
         ordinary = self.order("ordinary")
         exchange = self.mock_exchange()
         payload = {"symbol": "BTCUSDT", "stop_loss_price": "90", "stop_loss_amount": "100", "include_fee": False,
+                   "strategy_id": str(self.strategy.id),
                    "ema_check_id": "test-ema", "client_request_id": "11111111-1111-4111-8111-111111111111"}
         first = self.client.post("/v1/trade/open", payload, format="json", HTTP_X_TRADING_MODE="lead")
         self.assertEqual(first.status_code, 200, first.data)
@@ -281,6 +287,7 @@ class LeadAccountIsolationTests(APITestCase):
         exchange = self.mock_exchange()
         exchange.get_order.return_value = exchange.place_limit_order.return_value
         payload = {"symbol": "BTCUSDT", "limit_price": "100", "stop_loss_price": "90", "stop_loss_amount": "100",
+                   "strategy_id": str(self.strategy.id),
                    "client_request_id": "22222222-2222-4222-8222-222222222222"}
         response = self.client.post("/v1/trade/limit-order/create", payload, format="json", HTTP_X_TRADING_MODE="lead")
         self.assertEqual(response.status_code, 200, response.data)
@@ -323,6 +330,7 @@ class LeadAccountIsolationTests(APITestCase):
         exchange = self.mock_exchange()
         exchange.place_market_order.side_effect = BinanceApiError("timeout", outcome_unknown=True)
         payload = {"symbol": "BTCUSDT", "stop_loss_price": "90", "stop_loss_amount": "100",
+                   "strategy_id": str(self.strategy.id),
                    "include_fee": False, "ema_check_id": "test-ema",
                    "client_request_id": "33333333-3333-4333-8333-333333333333"}
         response = self.client.post("/v1/trade/open", payload, format="json", HTTP_X_TRADING_MODE="lead")
@@ -356,6 +364,7 @@ class LeadAccountIsolationTests(APITestCase):
             'maxLever':'50','notionalCap':'100', 'brackets':[
                 {'initialLeverage':50,'notionalCap':'100'}, {'initialLeverage':25,'notionalCap':'1000000'}]}]}
         payload = {'symbol':'BTCUSDT','stop_loss_price':'90','stop_loss_amount':'100','include_fee':False,
+            'strategy_id':str(self.strategy.id),
             'ema_check_id':'test-ema','leverage':25,'client_request_id':'55555555-5555-4555-8555-555555555555'}
         response=self.client.post('/v1/trade/open',payload,format='json',HTTP_X_TRADING_MODE='lead')
         self.assertEqual(response.status_code,200,response.data)
@@ -371,6 +380,7 @@ class LeadAccountIsolationTests(APITestCase):
         exchange.get_leverage_bracket.return_value={'data':[{'instId':'BTC-USDT-SWAP','brackets':[
             {'initialLeverage':25,'notionalCap':'1000000'}]}]}
         payload={'symbol':'BTCUSDT','limit_price':'100','stop_loss_price':'90','stop_loss_amount':'100',
+            'strategy_id':str(self.strategy.id),
             'leverage':25,'client_request_id':'66666666-6666-4666-8666-666666666666'}
         response=self.client.post('/v1/trade/limit-order/create',payload,format='json',HTTP_X_TRADING_MODE='lead')
         self.assertEqual(response.status_code,200,response.data)

@@ -54,10 +54,11 @@ export struct PositionDetailPage {
           ActionButton({ label: '策略和执行日志', secondary: true, action: () => this.openLogs(this.positionData.value('id')) })
         }
         if (!this.historical && this.available) {
+          if (this.positionData.value('strategy_status') !== 'running') {
           SectionCard() {
             Field({ label: '手动止盈价', value: $takeProfit, numeric: true, interactive: !this.busy })
             ChoiceBar({ labels: ['市价止盈', '限价止盈'], selected: $orderType }).enabled(!this.busy)
-            Text('设置手动止盈可能停止自动止盈策略，实际处理以服务器结果为准。').fontSize(12).fontColor($r('app.color.text_secondary'))
+            Text('手动止盈仅适用于未绑定策略的持仓；已绑定策略的持仓由策略自动止盈。').fontSize(12).fontColor($r('app.color.text_secondary'))
             ActionButton({ label: '设置止盈', interactive: !this.busy && validPositive(this.takeProfit), action: () => this.execute('take-profit', '设置手动止盈', DataValue.object({ take_profit_price: this.takeProfit, order_type: this.orderType === 0 ? 'market' : 'limit' })) })
             if (this.positionData.get('manual_take_profit_set').flag()) {
               ActionButton({ label: '取消手动止盈', secondary: true, interactive: !this.busy, action: () => {
@@ -66,18 +67,20 @@ export struct PositionDetailPage {
               } })
             }
           }
+          }
+          if (this.positionData.value('strategy_status') !== 'running') {
           SectionCard() {
             Text('保本处理').fontSize(16).fontColor($r('app.color.text_primary')).fontWeight(FontWeight.Bold)
             Text('盈利时移动止损；亏损时按服务器规则设置回价止盈。').fontSize(12).fontColor($r('app.color.text_secondary'))
             ActionButton({ label: '保本（含手续费）', secondary: true, interactive: !this.busy, action: () => this.execute('break-even', '设置保本损（含手续费）', DataValue.object({ mode: 'with_fee' })) })
             ActionButton({ label: '保本（不含手续费）', secondary: true, interactive: !this.busy, action: () => this.execute('break-even', '设置保本损（不含手续费）', DataValue.object({ mode: 'without_fee' })) })
           }
+          }
           SectionCard() {
             if (this.positionData.get('can_bind_strategy').flag()) {
               Select(Runtime.store.strategies.map((v: DataValue): SelectOption => { return { value: v.value('name') }; })).selected(this.strategy).value(Runtime.store.strategies[this.strategy]?.value('name') || '选择策略').onSelect((i: number) => { this.strategy = i; }).width('100%')
               ActionButton({ label: '添加自动止盈策略', interactive: !this.busy && Runtime.store.strategies.length > this.strategy, action: () => { const strategy = Runtime.store.strategies[this.strategy]; if (strategy) this.execute('strategy-rebind', '添加自动止盈策略', DataValue.object({ strategy_id: strategy.get('id').raw })); } })
             }
-            if (this.positionData.value('strategy_status') === 'running') { ActionButton({ label: '取消自动止盈策略', secondary: true, interactive: !this.busy, action: () => this.execute('strategy-cancel', '取消自动止盈策略') }) }
           }
           ActionButton({ label: this.busy ? '处理中…' : '立即平仓', color: RED, interactive: !this.busy, action: () => this.execute('position-close', '立即平仓') })
           ActionButton({ label: '刷新仓位', secondary: true, interactive: !this.busy, action: () => { this.refresh().catch((e: Error) => Runtime.store.report(e)); } })

@@ -137,7 +137,6 @@ class PositionApiTests(APITestCase):
             ("post", "/v1/position/break-even-stop"),
             ("post", "/v1/position/take-profit"),
             ("delete", "/v1/position/take-profit"),
-            ("post", "/v1/strategy/cancel"),
             ("post", "/v1/strategy/rebind"),
         )
         for method, path in requests:
@@ -567,6 +566,9 @@ class PositionApiTests(APITestCase):
     @patch("positions.views.get_user_binance_credentials")
     @patch("positions.views.BinanceFuturesClient")
     def test_break_even_stop_with_fee_moves_stop_to_fee_covered_price(self, mock_client_cls, mock_creds, mock_move_stop):
+        self.order.strategy_status = Order.STRATEGY_STATUS_UNBOUND
+        self.order.strategy_snapshot_id = None
+        self.order.save(update_fields=["strategy_status", "strategy_snapshot_id"])
         mock_creds.return_value = object()
         self.order.estimated_total_fee = Decimal("2")
         self.order.save(update_fields=["estimated_total_fee"])
@@ -602,6 +604,9 @@ class PositionApiTests(APITestCase):
     @patch("positions.views.get_user_binance_credentials")
     @patch("positions.views.BinanceFuturesClient")
     def test_break_even_stop_with_fee_rejects_when_profit_cannot_cover_fee(self, mock_client_cls, mock_creds, mock_move_stop):
+        self.order.strategy_status = Order.STRATEGY_STATUS_UNBOUND
+        self.order.strategy_snapshot_id = None
+        self.order.save(update_fields=["strategy_status", "strategy_snapshot_id"])
         mock_creds.return_value = object()
         self.order.estimated_total_fee = Decimal("2")
         self.order.save(update_fields=["estimated_total_fee"])
@@ -1849,16 +1854,38 @@ class PositionApiTests(APITestCase):
         self.assertEqual(unrelated_pending.status, LimitOrder.STATUS_PENDING)
         mock_client.cancel_order.assert_called_once_with(inst_id="BTC-USDT-SWAP", order_id="pending-limit-linked")
 
-    def test_strategy_cancel(self):
+    def test_strategy_cancel_is_rejected_and_strategy_keeps_running(self):
         resp = self.client.post("/v1/strategy/cancel", {"position_id": self.order.id}, format="json")
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("不可手动取消", resp.data["message"])
         self.order.refresh_from_db()
-        self.assertEqual(self.order.strategy_status, Order.STRATEGY_STATUS_CANCELLED)
-        self.assertTrue(OrderStrategyLog.objects.filter(order=self.order, snapshot=self.snapshot).exists())
+        self.assertEqual(self.order.strategy_status, Order.STRATEGY_STATUS_RUNNING)
+        self.assertTrue(self.order.strategy_snapshot_id)
+
+    def test_manual_take_profit_and_break_even_rejected_while_strategy_running(self):
+        resp = self.client.post(
+            "/v1/position/take-profit",
+            {"position_id": self.order.id, "take_profit_price": "120", "order_type": "limit"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("止盈策略", resp.data["message"])
+        resp = self.client.post(
+            "/v1/position/break-even-stop",
+            {"position_id": self.order.id, "mode": "with_fee"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("止盈策略", resp.data["message"])
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.strategy_status, Order.STRATEGY_STATUS_RUNNING)
 
     @patch("positions.views.get_user_binance_credentials")
     @patch("positions.views.BinanceFuturesClient")
     def test_manual_take_profit_set_and_cancel(self, mock_client_cls, mock_creds):
+        self.order.strategy_status = Order.STRATEGY_STATUS_UNBOUND
+        self.order.strategy_snapshot_id = None
+        self.order.save(update_fields=["strategy_status", "strategy_snapshot_id"])
         mock_creds.return_value = object()
         mock_client = MagicMock()
         mock_client.get_positions.return_value = {
@@ -1903,6 +1930,9 @@ class PositionApiTests(APITestCase):
     @patch("positions.views.get_user_binance_credentials")
     @patch("positions.views.BinanceFuturesClient")
     def test_manual_take_profit_replacement_failure_keeps_existing_order(self, mock_client_cls, mock_creds):
+        self.order.strategy_status = Order.STRATEGY_STATUS_UNBOUND
+        self.order.strategy_snapshot_id = None
+        self.order.save(update_fields=["strategy_status", "strategy_snapshot_id"])
         self.order.manual_take_profit_algo_id = "mtp-old"
         self.order.manual_take_profit_price = Decimal("120")
         self.order.manual_take_profit_order_type = "limit"
@@ -1949,6 +1979,9 @@ class PositionApiTests(APITestCase):
         mock_client_cls,
         mock_creds,
     ):
+        self.order.strategy_status = Order.STRATEGY_STATUS_UNBOUND
+        self.order.strategy_snapshot_id = None
+        self.order.save(update_fields=["strategy_status", "strategy_snapshot_id"])
         self.order.manual_take_profit_algo_id = "mtp-old"
         self.order.manual_take_profit_price = Decimal("120")
         self.order.manual_take_profit_order_type = "market"
@@ -2016,6 +2049,9 @@ class PositionApiTests(APITestCase):
         mock_creds,
         _mock_sleep,
     ):
+        self.order.strategy_status = Order.STRATEGY_STATUS_UNBOUND
+        self.order.strategy_snapshot_id = None
+        self.order.save(update_fields=["strategy_status", "strategy_snapshot_id"])
         self.order.manual_take_profit_algo_id = "mtp-old"
         self.order.manual_take_profit_price = Decimal("120")
         self.order.manual_take_profit_order_type = "market"
@@ -2076,6 +2112,9 @@ class PositionApiTests(APITestCase):
         mock_creds,
         _mock_sleep,
     ):
+        self.order.strategy_status = Order.STRATEGY_STATUS_UNBOUND
+        self.order.strategy_snapshot_id = None
+        self.order.save(update_fields=["strategy_status", "strategy_snapshot_id"])
         self.order.manual_take_profit_algo_id = "mtp-keep"
         self.order.manual_take_profit_price = Decimal("120")
         self.order.manual_take_profit_order_type = "market"

@@ -1,5 +1,23 @@
 # 开发与验证
 
+## 开仓强制止盈策略、策略不可手动取消（2026-11-13，本地）
+
+软件开仓必须绑定止盈策略且策略不可手动取消。后端：`TradeOpenView`／`LimitOrderCreateView` 对新建请求强制策略快照校验（恢复路径沿用原冻结意图）；`set-active {manual:true}` 拒绝；`StrategyCancelView` 一律拒绝；策略运行中持仓的手动止盈／保本入口拒绝（两者原会取消策略）；`adopt_entry_execution` 策略止盈预挂失败不再静默降级为手动止盈，策略保持运行由 10 秒引擎重试。iOS：开仓必选策略（`strategyValid` 要求有效策略，未选禁用提交）、策略页删除"手动止盈"行与 manual 提交、持仓卡片对策略运行中持仓隐藏手动止盈／保本按钮。鸿蒙：删除"取消自动止盈策略"按钮，手动止盈／保本区块按策略状态门控。
+
+验证命令与结果（隔离 SQLite／LocMem＋交易所替身，无真实交易）：
+
+```bash
+DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test \
+  trading.test_lead_mode trading.test_incomplete_fills positions.test_external_api \
+  trading.test_strategy_loading trading.tests.TradingApiTests positions.tests.PositionApiTests --noinput
+# 受影响定向批次全部通过（含策略必选、取消拒绝、手动止盈/保本门控、预挂失败保持运行）
+
+DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test trading positions mobile --noinput
+# Ran 763 tests ... OK（完整回归，0 失败）
+```
+
+iOS：`xcodebuild build-for-testing`（iPhone 18 Pro 模拟器）**TEST BUILD SUCCEEDED**；`StrategySelectionConfirmationTests`／`PositionStrategyPickerTests` **TEST EXECUTE SUCCEEDED**。测试夹具同步改为必选策略语义（开仓 payload 补策略、取消测试改拒绝断言、手动止盈机制测试改用未绑定策略订单）。
+
 ## 手动仓保护链路可靠性加固（2026-11-13，已部署）
 
 线上只读取证定位手动仓"不识别、不挂止损"的真实根因：两笔已成交的 Maker 开仓请求长期停在 `submitted`（收敛只由客户端页面读取触发），按币种阻塞了同币种新手动仓的后台纳管；用户 19:17 在币安手动开的 ETH 多单直到 21:13 打开 App 持仓页才被读路径纳管并挂止损，中间约 2 小时无保护。本轮按"可靠性可以分段，但任何一段不得静默卡死；要么有限时间自动收敛，要么显式告警交用户决策"的原则加固：

@@ -18,32 +18,6 @@ struct USDTStrategiesView: View {
   var body: some View {
     List {
       Group {
-        Button {
-          chooseStrategy(.null)
-        } label: {
-          HStack(spacing: 12) {
-            Image(systemName: "hand.tap").font(.system(size: 20)).foregroundStyle(WebTheme.brand)
-            VStack(alignment: .leading, spacing: 6) {
-              HStack {
-                Text("手动止盈").font(.system(size: 18, weight: .medium)).foregroundStyle(WebTheme.text)
-                Spacer(minLength: 0)
-                if store.activeStrategy == nil {
-                  Image(systemName: "checkmark").font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(BinanceTheme.accent)
-                }
-              }
-              Text("自行决定止盈时机，保留止损保护").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
-            }
-          }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay {
-              RoundedRectangle(cornerRadius: 16).stroke(
-                store.activeStrategy == nil ? BinanceTheme.accent : WebTheme.border,
-                lineWidth: store.activeStrategy == nil ? 2 : 1)
-            }
-            .accessibilityAddTraits(store.activeStrategy == nil ? .isSelected : [])
-        }.buttonStyle(.plain).disabled(mutating).accessibilityIdentifier("strategy.manual")
-          .listRowInsets(EdgeInsets(top: WebTheme.pageContentSpacing, leading: 16, bottom: 8, trailing: 16))
         ForEach(Array(store.strategies.enumerated()), id: \.offset) { _, strategy in
           ZStack(alignment: .bottomTrailing) {
             Button { chooseStrategy(strategy) } label: {
@@ -113,8 +87,7 @@ struct USDTStrategiesView: View {
       .onChange(of: store.scope) { _, _ in cancelSelection() }
       .webModal(isPresented: $confirmingSelection) {
         WebModal(title: "确认选择") {
-          Text(pendingSelection == .null ? "确定使用手动止盈吗？"
-            : "确定使用“\(pendingSelection.value("name"))”策略吗？")
+          Text("确定使用“\(pendingSelection.value("name"))”策略吗？")
             .foregroundStyle(WebTheme.secondary)
           HStack(spacing: 12) {
             Button("取消") { cancelSelection() }.buttonStyle(
@@ -161,7 +134,7 @@ struct USDTStrategiesView: View {
   }
   private func finishSelection(_ strategy: JSONValue) {
     guard returnAfterSelection else { return }
-    onSelection?(strategy == .null ? nil : strategy)
+    onSelection?(strategy)
     if let onClose { onClose() } else { dismiss() }
   }
   private func mutate(_ action: String, strategy: JSONValue) {
@@ -174,7 +147,7 @@ struct USDTStrategiesView: View {
       guard scope == store.scope else { return }
       do {
         _ = try await store.send("/v1/strategy/" + action,
-          strategy == .null && action == "set-active" ? ["manual": .bool(true)] : ["strategy_id": strategy["id"] ?? .null])
+          ["strategy_id": strategy["id"] ?? .null])
         guard scope == store.scope else { return }
         try await store.reloadStrategies()
         guard scope == store.scope else { return }

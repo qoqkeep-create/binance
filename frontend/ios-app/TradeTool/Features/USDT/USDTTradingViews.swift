@@ -260,7 +260,6 @@ struct USDTTradeView: View {
   @State private var showSymbols = false
   @State private var showStopLoss = false
   @State private var showChart = false
-  private var strategyEnabled: Bool { !strategyID.isEmpty }
 
   private var standardForm: some View {
     VStack(spacing: 0) {
@@ -505,7 +504,7 @@ struct USDTTradeView: View {
   private var currentDraft: USDTEntryDraft {
     USDTEntryDraft(symbol: symbol, orderType: orderType, stopLossPrice: stop,
       limitPrice: limit, currentPrice: currentQuote, riskAmount: risk, includeFee: includeFee,
-      strategy: strategyEnabled ? store.strategies.first { $0.value("id") == strategyID } : nil,
+      strategy: store.strategies.first { $0.value("id") == strategyID },
       leverage: store.selectedLeverage(for: symbol))
   }
   private var referencePrice: Decimal { currentDraft.referencePrice }
@@ -523,7 +522,7 @@ struct USDTTradeView: View {
     currentDraft.isValid
   }
   private var strategyValid: Bool {
-    !strategyEnabled || store.strategies.contains { $0.value("id") == strategyID }
+    store.strategies.contains { $0.value("id") == strategyID }
   }
   private var entryButtonText: String {
     if hasPosition { return "正在持仓中" }
@@ -532,7 +531,7 @@ struct USDTTradeView: View {
     if entryNeedsReconcile { return "核对开仓结果" }
     if submitted { return "已提交" }
     if busy { return "处理中…" }
-    if !strategyValid { return "请选择止盈方式" }
+    if !strategyValid { return "请选择止盈策略" }
     if !inputValid { return chartInput != nil ? "在 K 线图上选择止损价开仓"
       : orderType == "market" ? "输入止损价开仓" : "输入止损价/限价开仓" }
     let action = chartInput != nil
@@ -543,8 +542,7 @@ struct USDTTradeView: View {
 
   private var takeProfitSelectionText: String {
     if hasPosition { return heldTakeProfit }
-    if !strategyEnabled { return "手动止盈" }
-    return store.strategies.first { $0.value("id") == strategyID }?.value("name", fallback: "选择止盈方式") ?? "选择止盈方式"
+    return store.strategies.first { $0.value("id") == strategyID }?.value("name", fallback: "选择止盈策略") ?? "选择止盈策略"
   }
   private var takeProfitSelectionLabel: some View {
     HStack(spacing: 4) {
@@ -1423,10 +1421,12 @@ struct USDTPositionsView: View {
             "市价止盈：",
             PositionCardPresentation.takeProfitText(row),
             expands: false)
-          Button("设置") { show("takeProfit", row) }.font(.system(size: 12)).foregroundStyle(
-            WebTheme.brand
-          ).padding(.horizontal, 8).padding(.vertical, 2).background(
-            WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+          if row.value("strategy_status") != "1" {
+            Button("设置") { show("takeProfit", row) }.font(.system(size: 12)).foregroundStyle(
+              WebTheme.brand
+            ).padding(.horizontal, 8).padding(.vertical, 2).background(
+              WebTheme.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+          }
           Spacer(minLength: 0)
         }
         HStack(spacing: 4) {
@@ -1459,8 +1459,10 @@ struct USDTPositionsView: View {
           ) { show("strategy", row) }.lineLimit(1).minimumScaleFactor(0.8).buttonStyle(
             WebPositionStrategyStyle(running: row.value("strategy_status") == "1")
           ).disabled(row.value("strategy_status") != "1" && row["can_bind_strategy"]?.flag != true)
-          Button("设置保本损") { show("breakEven", row) }.lineLimit(1).minimumScaleFactor(0.8)
-            .buttonStyle(WebPositiveActionStyle())
+          if row.value("strategy_status") != "1" {
+            Button("设置保本损") { show("breakEven", row) }.lineLimit(1).minimumScaleFactor(0.8)
+              .buttonStyle(WebPositiveActionStyle())
+          }
         }
         Button("立即平仓") { show("close", row) }.lineLimit(1).minimumScaleFactor(0.8)
           .buttonStyle(WebButtonStyle(height: 38, fontSize: 14))

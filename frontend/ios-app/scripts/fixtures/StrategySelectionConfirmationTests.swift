@@ -8,8 +8,8 @@ final class StrategySelectionConfirmationTests: XCTestCase {
     "id": .string("2"), "name": .string("趋势止盈"), "is_active": .bool(true)
   ])
 
-  func testManualAndAutomaticRequireConfirmationAndCancellationDoesNotSaveOrReturn() async {
-    for choice in [JSONValue.null, automatic] {
+  func testAutomaticRequiresConfirmationAndCancellationDoesNotSaveOrReturn() async {
+    for choice in [automatic] {
       let (flow, api, navigation) = fixture(returnAfterSelection: true)
       flow.chooseStrategy(choice)
       XCTAssertTrue(flow.confirmingSelection)
@@ -27,8 +27,8 @@ final class StrategySelectionConfirmationTests: XCTestCase {
     }
   }
 
-  func testConfirmedManualAndAutomaticSaveThenCallbackAndReturnToChart() async {
-    for choice in [JSONValue.null, automatic] {
+  func testConfirmedAutomaticSavesThenCallbackAndReturnToChart() async {
+    for choice in [automatic] {
       let (flow, api, navigation) = fixture(returnAfterSelection: true)
       flow.chooseStrategy(choice)
       flow.confirmSelection()
@@ -36,21 +36,16 @@ final class StrategySelectionConfirmationTests: XCTestCase {
       XCTAssertEqual(api.saves.count, 1)
       XCTAssertEqual(api.reads, 1)
       XCTAssertEqual(navigation.selections.count, 1)
-      XCTAssertEqual(navigation.selections.first!, choice == .null ? nil : choice)
+      XCTAssertEqual(navigation.selections.first!, choice)
       XCTAssertEqual(navigation.returns, 1)
       XCTAssertTrue(flow.notice.isEmpty)
-      if choice == .null {
-        XCTAssertEqual(api.saves[0]["manual"], .bool(true))
-        XCTAssertNil(flow.store.activeStrategy)
-      } else {
-        XCTAssertEqual(api.saves[0]["strategy_id"], .string("2"))
-        XCTAssertEqual(flow.store.activeStrategy?.value("id"), "2")
-      }
+      XCTAssertEqual(api.saves[0]["strategy_id"], .string("2"))
+      XCTAssertEqual(flow.store.activeStrategy?.value("id"), "2")
     }
   }
 
-  func testSettingsEntrySavesBothChoicesAndStaysOnList() async {
-    for choice in [JSONValue.null, automatic] {
+  func testSettingsEntrySavesChoiceAndStaysOnList() async {
+    for choice in [automatic] {
       let (flow, api, navigation) = fixture(returnAfterSelection: false)
       flow.chooseStrategy(choice)
       flow.confirmSelection()
@@ -62,8 +57,8 @@ final class StrategySelectionConfirmationTests: XCTestCase {
     }
   }
 
-  func testSaveOrReloadFailureStaysOnListAndShowsErrorForBothChoices() async {
-    for choice in [JSONValue.null, automatic] {
+  func testSaveOrReloadFailureStaysOnListAndShowsError() async {
+    for choice in [automatic] {
       for failure in ["save", "reload"] {
         let (flow, api, navigation) = fixture(returnAfterSelection: true)
         api.failure = failure
@@ -181,7 +176,7 @@ private final class SelectionAPI: APIClient {
       reads += 1
       if failure == "reload" { throw APIError.business(code: "fixture", message: "测试保存失败") }
       result = .array([.object(["id": .string("2"), "name": .string("趋势止盈"),
-        "is_active": .bool(saves.last?["manual"] != .bool(true))])])
+        "is_active": .bool(true)])])
     default:
       throw APIError.invalidResponse
     }

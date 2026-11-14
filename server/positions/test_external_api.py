@@ -185,14 +185,14 @@ class ExternalPositionApiTests(APITestCase):
     def test_manual_strategy_rebind_and_cancel_do_not_disable_protection(self):
         self.order.binance_stop_market_order_id = "manual-protection"
         self.order.save(update_fields=["binance_stop_market_order_id"])
-        for path, data in (
-            ("/v1/strategy/rebind", {"position_id": self.order.id, "strategy_id": "any"}),
-            ("/v1/strategy/cancel", {"position_id": self.order.id}),
+        for path, data, expected in (
+            ("/v1/strategy/rebind", {"position_id": self.order.id, "strategy_id": "any"}, "手动仓"),
+            ("/v1/strategy/cancel", {"position_id": self.order.id}, "不可手动取消"),
         ):
             with self.subTest(path=path):
                 response = self.client.post(path, data, format="json")
                 self.assertEqual(response.status_code, 400)
-                self.assertIn("手动仓", response.data["message"])
+                self.assertIn(expected, response.data["message"])
         self.order.refresh_from_db()
         self.assertEqual(self.order.binance_stop_market_order_id, "manual-protection")
         self.exchange.cancel_algo_order.assert_not_called()

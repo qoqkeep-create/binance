@@ -307,6 +307,7 @@ class IncompleteLimitMutationTests(TestCase):
             response = self.fixture.client.post("/v1/trade/limit-order/create", {
                 "symbol": "BTCUSDT", "limit_price": "100", "stop_loss_price": "90",
                 "stop_loss_amount": "30", "client_request_id": "11111111-1111-4111-8111-111111111111",
+                "strategy_id": str(self.fixture.strategy.id),
             }, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         created = LimitOrder.objects.get(binance_order_id="created-incomplete-fill")

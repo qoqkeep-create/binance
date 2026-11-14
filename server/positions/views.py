@@ -2862,6 +2862,8 @@ class BreakEvenStopView(APIView):
             return fail("该订单已完成平仓，已同步最新状态")
         if order.position_origin == Order.ORIGIN_EXTERNAL:
             return fail("手动仓由强制止损保护管理，暂不支持保本操作")
+        if order.strategy_status == Order.STRATEGY_STATUS_RUNNING and order.strategy_snapshot_id:
+            return fail("已绑定止盈策略，保本入口不可用；止盈策略不可手动取消")
 
         credentials = get_user_binance_credentials(request.user, trading_mode=request_trading_mode(request))
         if not credentials:
@@ -3064,6 +3066,8 @@ class ManualTakeProfitView(APIView):
         order = _scoped_order_queryset(request.user, trading_mode=request_trading_mode(request), status=0).filter(id=position_id).first()
         if not order:
             return fail("订单不存在或已平仓")
+        if order.strategy_status == Order.STRATEGY_STATUS_RUNNING and order.strategy_snapshot_id:
+            return fail("已绑定止盈策略，不可切换手动止盈；止盈策略不可手动取消")
 
         credentials = get_user_binance_credentials(request.user, trading_mode=request_trading_mode(request))
         if not credentials:
@@ -3419,79 +3423,10 @@ class PositionHistoryView(APIView):
 
 
 class StrategyCancelView(APIView):
-    """取消订单策略：不修改止损，仅冻结策略运行"""
+    """开仓必须绑定止盈策略，且策略不可手动取消；保留路由仅用于明确拒绝旧客户端。"""
 
-    @serialized_exchange_mutation
     def post(self, request):
-        payload = request_data_mapping(request)
-        if payload is None:
-            return fail("请求参数必须是对象")
-        position_id = payload.get("position_id")
-        if not position_id:
-            return fail("position_id不能为空")
-
-        order = _scoped_order_queryset(request.user, trading_mode=request_trading_mode(request), status=0).filter(id=position_id).first()
-        if not order:
-            return fail("订单不存在或已平仓")
-        if order.position_origin == Order.ORIGIN_EXTERNAL:
-            return fail("手动仓采用强制止损保护，不能通过取消策略解除")
-        if order.strategy_status != Order.STRATEGY_STATUS_RUNNING:
-            return fail("该订单当前无运行中的策略")
-        if not order.strategy_snapshot_id:
-            return fail("策略快照不存在，无法取消")
-
-        snapshot = OrderStrategySnapshot.objects.filter(
-            id=order.strategy_snapshot_id,
-            order_id=order.id,
-            user=request.user,
-        ).first()
-        if not snapshot:
-            return fail("策略快照不存在，无法取消")
-
-        credentials = get_user_binance_credentials(request.user, trading_mode=request_trading_mode(request))
-        tp_algo_ids = order.strategy_tp_algo_ids or []
-        if tp_algo_ids and not credentials:
-            return fail("取消策略前请先恢复 API 连接")
-        if credentials:
-            client = BinanceFuturesClient(credentials)
-            algo_client = BinanceAlgoClient(client, log=logger)
-            inst_id = to_inst_id(order.symbol)
-            if isinstance(tp_algo_ids, list):
-                for algo_id in tp_algo_ids:
-                    if not algo_id:
-                        continue
-                    try:
-                        algo_client.cancel_algo_confirmed(
-                            str(algo_id),
-                            inst_id,
-                            action="cancel_strategy_take_profit",
-                        )
-                    except BinanceApiError as exc:
-                        return fail(
-                            "策略止盈单撤销结果未确认："
-                            f"{safe_error_summary(exc, include_type=False)}"
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.error(
-                            "strategy take profit cancel failed user=%s order=%s algo=%s err=%s",
-                            getattr(request.user, "id", None),
-                            order.id,
-                            algo_id,
-                            safe_error_summary(exc),
-                        )
-                        return fail("策略止盈单撤销失败，请稍后重试")
-
-        order.strategy_status = Order.STRATEGY_STATUS_CANCELLED
-        order.strategy_tp_algo_ids = []
-        order.save(update_fields=["strategy_status", "strategy_tp_algo_ids"])
-
-        OrderStrategyLog.objects.create(
-            order=order,
-            snapshot=snapshot,
-            behavior_desc=f"用户取消策略，止损已冻结为 {format(order.stop_loss_price, 'f')}",
-            result=OrderStrategyLog.RESULT_SUCCESS,
-        )
-        return ok(message="策略已取消，止损保持当前设置")
+        return fail("止盈策略不可手动取消；如需调整请使用换绑策略，平仓时系统会自动清理止盈单")
 
 
 class StrategyRebindView(APIView):
