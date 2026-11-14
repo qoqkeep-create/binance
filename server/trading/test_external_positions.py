@@ -310,6 +310,19 @@ class ExternalProtectionTests(TestCase):
         self.client.get_pending_algo_orders.return_value = {"data": [self.submits[-1]]}
         self.cycle()
         self.assertEqual(self.order.current_stop_price, Decimal("950"))
+        self.assertEqual(self.submits[-1]["sz"], "0.5")
+
+    def test_risk_over_position_notional_is_configuration_error(self):
+        self.order.stop_loss_amount = Decimal("130")
+        self.order.save(update_fields=["stop_loss_amount"])
+        self.position.update(avgPx="100", markPx="100", rawUpl="0")
+        self.cycle()
+        self.assertEqual(
+            self.order.stop_protection_status,
+            Order.STOP_PROTECTION_CONFIG_REQUIRED,
+        )
+        self.client.place_stop_market_order.assert_not_called()
+        self.client.close_position.assert_not_called()
 
     def test_limit_stop_gets_market_fallback_before_retirement(self):
         self.client.get_pending_algo_orders.return_value = {
@@ -388,20 +401,17 @@ class ExternalProtectionTests(TestCase):
         self.assertEqual(self.order.status, 0)
         self.assertEqual(self.order.external_active_key, "slot")
 
-    def test_float_loss_over_budget_closes_even_with_stop_and_broken_algo_query(self):
+    def test_float_loss_over_budget_waits_when_algo_snapshot_is_unavailable(self):
         self.position["rawUpl"] = "-101"
         self.client.get_pending_algo_orders.side_effect = RuntimeError(
             "algo unavailable"
         )
         self.client.close_position.side_effect = lambda *a, **kw: self.close_receipt()
         self.cycle()
-        self.assertEqual(self.order.status, 1)
-        self.assertIsNone(self.order.external_active_key)
-        self.assertIsNone(self.order.pnl)
-        self.client.get_pending_algo_orders.assert_not_called()
-        self.assertEqual(
-            self.client.close_position.call_args.kwargs["max_quantity"], Decimal("1")
-        )
+        self.assertEqual(self.order.status, 0)
+        self.assertEqual(self.order.external_active_key, "slot")
+        self.client.close_position.assert_not_called()
+        self.client.get_pending_algo_orders.assert_called_once()
 
     def test_equality_does_not_trigger_excess_branch(self):
         self.position["rawUpl"] = "-100"
@@ -417,7 +427,51 @@ class ExternalProtectionTests(TestCase):
         self.cycle()
         self.assertEqual(self.order.status, 1)
         self.assertEqual(self.order.external_close_request["reason"], "stop_crossed")
-        self.client.get_pending_algo_orders.assert_not_called()
+        self.client.get_pending_algo_orders.assert_called_once()
+
+    def test_crossed_price_waits_for_live_full_stop_before_market_exit(self):
+        self.client.get_ticker.return_value = {"data": [{"last": "900"}]}
+        self.client.get_pending_algo_orders.return_value = {
+            "data": [self.stop(price="900", size="1")]
+        }
+        self.client.close_position.side_effect = lambda *a, **kw: self.close_receipt()
+        self.cycle()
+        self.assertEqual(self.order.status, 0)
+        self.client.close_position.assert_not_called()
+        self.assertEqual(self.order.external_stop_request["exit_wait_rounds"], 1)
+
+    def test_crossed_price_falls_back_after_stop_wait_timeout(self):
+        self.order.external_stop_request = {
+            "exit_wait_reason": "stop_crossed",
+            "exit_wait_rounds": 3,
+            "exit_wait_first_at": (timezone.now() - timedelta(seconds=31)).isoformat(),
+            "exit_wait_algo_ids": ["old"],
+        }
+        self.order.save(update_fields=["external_stop_request"])
+        self.client.get_ticker.return_value = {"data": [{"last": "900"}]}
+        self.client.get_pending_algo_orders.return_value = {
+            "data": [self.stop(algo_id="old", price="900", size="1")]
+        }
+        self.client.close_position.side_effect = lambda *a, **kw: self.close_receipt()
+        self.cycle()
+        self.assertEqual(self.order.status, 1)
+        self.cancel.assert_called_once_with(
+            "old", "BTC-USDT-SWAP", action="external_stop_exit_fallback_cancel"
+        )
+        self.client.close_position.assert_called_once()
+
+    def test_crossed_oversized_stop_is_cancelled_before_market_fallback(self):
+        self.client.get_ticker.return_value = {"data": [{"last": "900"}]}
+        self.client.get_pending_algo_orders.return_value = {
+            "data": [self.stop(algo_id="oversized", price="900", size="2")]
+        }
+        self.client.close_position.side_effect = lambda *a, **kw: self.close_receipt()
+        self.cycle()
+        self.assertEqual(self.order.status, 1)
+        self.cancel.assert_called_once_with(
+            "oversized", "BTC-USDT-SWAP", action="external_stop_stale_size_cancel"
+        )
+        self.client.close_position.assert_called_once()
 
     def test_missing_pnl_does_not_act_as_zero(self):
         self.position["rawUpl"] = None

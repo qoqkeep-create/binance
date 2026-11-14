@@ -282,7 +282,26 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           let result: JSONValue = .object(["id": .string("fixture-maker-open"), "status": .string("SUCCEEDED"),
             "result": .object(["data": .object(["state": .string("PENDING_MAKER"),
               "maker_order_id": .string("fixture-maker-order"), "client_request_id": .string("fixture-maker-request"),
-              "symbol": .string("BTCUSDT")])])])
+              "maker_price": .string("100"), "market_price": .string("100.20"),
+              "filled_size": .string("0"), "symbol": .string("BTCUSDT")])])])
+          return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+        }
+        if body.value("action") == "maker-status" {
+          let result: JSONValue = .object(["id": .string("fixture-maker-status"), "status": .string("SUCCEEDED"),
+            "result": .object(["data": .object(["state": .string("PENDING_MAKER"),
+              "maker_order_id": .string("fixture-maker-order"), "client_request_id": .string("fixture-maker-request"),
+              "maker_price": .string("100"), "market_price": .string("100.20"),
+              "filled_size": .string("0"), "symbol": .string("BTCUSDT")])])])
+          return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+        }
+        if body.value("action") == "maker-fallback" {
+          let cancelOnly = body["payload"]?["cancel_only"]?.flag == true
+          let state = cancelOnly ? "CANCELLED" : "SUCCEEDED"
+          var data: [String: JSONValue] = ["state": .string(state),
+            "client_request_id": .string("fixture-maker-request"), "symbol": .string("BTCUSDT")]
+          if !cancelOnly { data["position_id"] = .number(999) }
+          let result: JSONValue = .object(["id": .string("fixture-maker-fallback"), "status": .string("SUCCEEDED"),
+            "result": .object(["data": .object(data)])])
           return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
         }
       }
@@ -315,7 +334,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           var maker = ordinary
           maker["id"] = .string("maker:301"); maker["record_key"] = .string("maker:301")
           maker["source_id"] = .number(301); maker["order_kind"] = .string("maker")
-          maker["status_text"] = .string("待成交"); maker["can_cancel"] = .bool(false); maker["can_chase"] = .bool(false)
+          maker["status_text"] = .string("待成交"); maker["can_cancel"] = .bool(true); maker["can_chase"] = .bool(true)
+          maker["client_request_id"] = .string("fixture-maker-request")
+          maker["limit_price"] = .string("100"); maker["market_price"] = .string("100.20")
           records = [.object(maker)]
         }
         if ProcessInfo.processInfo.arguments.contains("--fixture-unified-orders") {
@@ -334,7 +355,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
               "stop_loss_amount": .string("10"), "size": .string("1"), "filled_size": .string(filled),
               "position_amount": .string("100"), "filled_amount": status == 1 ? .null : .string(filled == "0.5" ? "50" : "0"),
               "average_price": status == 1 ? .null : .string("100"), "leverage": .number(10),
-              "can_cancel": .bool(status == 0), "can_chase": .bool(kind == "limit" && status == 0),
+              "can_cancel": .bool(status == 0), "can_chase": .bool(status == 0),
               "created_at": .string("2026-11-10T10:00:00Z"), "updated_at": .string("2026-11-10T10:02:00Z")]
             row["position_id"] = status == 1 ? .number(204) : .null
             return .object(row)

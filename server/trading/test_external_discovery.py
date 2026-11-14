@@ -280,13 +280,13 @@ class ExternalPositionDiscoveryTests(TestCase):
         self.assertFalse(Order.objects.exists())
         protect.assert_not_called()
 
-    def test_zero_risk_is_visible_as_pending_without_guessing_an_order(self):
+    def test_zero_risk_is_explicitly_blocked_without_guessing_an_order(self):
         self.user.stop_loss_amount = Decimal("0")
         self.user.save(update_fields=["stop_loss_amount"])
         reconcile_external_positions()
         order = Order.objects.get(position_origin=Order.ORIGIN_EXTERNAL)
         self.assertEqual(order.stop_loss_amount, Decimal("0"))
-        self.assertEqual(order.stop_protection_status, Order.STOP_PROTECTION_PENDING)
+        self.assertEqual(order.stop_protection_status, Order.STOP_PROTECTION_CONFIG_REQUIRED)
         self.assertIn("止损额度", order.stop_protection_error)
         self.exchange.close_position.assert_not_called()
         self.exchange.place_stop_market_order.assert_not_called()

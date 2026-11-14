@@ -121,7 +121,7 @@ class UnifiedOrderListTests(APITestCase):
         self.assertIsNone(row["filled_amount"])
         self.assertIsNone(row["average_price"])
         self.assertTrue(row["can_cancel"])
-        self.assertFalse(row["can_chase"])
+        self.assertTrue(row["can_chase"])
 
     def test_submitted_without_fill_evidence_never_invents_zero_or_success(self):
         maker = self.maker()
@@ -174,7 +174,7 @@ class UnifiedOrderListTests(APITestCase):
         row = self.client.get(self.url).data["data"]["items"][0]
         self.assertEqual((row["status"], row["status_text"]), (0, "待成交"))
         self.assertIsNone(row["filled_size"])
-        self.assertFalse(row["can_cancel"])
+        self.assertTrue(row["can_cancel"])
 
     def test_terminal_status_receipt_keeps_canceled_maker_visible(self):
         maker = self.maker(status=TradeOpenRequest.STATUS_FAILED)
@@ -238,7 +238,7 @@ class UnifiedOrderListTests(APITestCase):
         row = self.client.get(self.url).data["data"]["items"][0]
         self.assertEqual(row["status"], 0)
         self.assertIsNone(row["filled_size"])
-        self.assertFalse(row["can_cancel"])
+        self.assertTrue(row["can_cancel"])
 
     def test_terminal_fact_never_regresses_to_a_later_pending_receipt(self):
         maker = self.maker()
@@ -260,7 +260,7 @@ class UnifiedOrderListTests(APITestCase):
         }})
         row = self.client.get(self.url).data["data"]["items"][0]
         self.assertEqual((row["status"], row["filled_size"], row["filled_amount"]), (0, "0.5", "50.5"))
-        self.assertFalse(row["can_cancel"])
+        self.assertTrue(row["can_cancel"])
 
     def test_pending_receipt_with_full_quantity_does_not_invent_a_terminal_fill(self):
         maker = self.maker()

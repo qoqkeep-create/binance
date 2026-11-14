@@ -1,12 +1,18 @@
 # 开发与验证
 
+## 手动仓保护与 Maker 追单（2026-11-14，本地已验证，待发布）
+
+后端将缺失／超额止损额度标记为 `config_required` 并告警；保护对账对精确止损数量、减仓换挂和条件止损与市价兜底竞态进行有界收敛；历史人工管理订单进入只读巡检；坏持仓行与扫描跳过均记录日志。Maker fallback 使用当前 ticker 和原止损参数重新计算目标数量，持久化 `fallback_client_order_id`／数量，未知结果按客户端 ID 恢复并只提交未成交余量。
+
+验证：手动仓保护、发现、委托列表及 Maker／交易 API 定向回归共 **97 项通过**；完整 `trading positions mobile` **772 项通过、0 失败**。iOS `TradeTool` 与 `TradeTool Chart Calibration` 两个 scheme 的 `xcodebuild build-for-testing`（generic iOS Simulator，签名关闭）均通过。指定模拟器 UI 执行因 CoreSimulator 设备目录在启动期间被系统移除而未完成，不代表代码断言失败；未执行真实交易。`git diff --check` 已通过。
+
 ## 止损自动平仓恢复（2026-11-14，已部署）
 
 提交 **`6e3f452`** 保留 **`2cdd280`** 的有效代码树，并回退 `7cad9a5` 的“只告警不平仓”改动。`external_positions` 对 `loss_exceeded`、`stop_crossed` 调用方向限定的市价平仓；止损保护缺失且已触价时由 `services.py` 进入紧急平仓并等待交易所空仓确认。
 
 隔离运行器全量结果为 **1223 tests，0 失败，6 skipped**；远端一次性 MySQL／Redis 回归通过。未执行真实交易所写操作。
 
-## 开仓强制止盈策略、策略不可手动取消（2026-11-13，本地）
+## 开仓强制止盈策略、策略不可手动取消（2026-11-13，后端已部署，客户端本地）
 
 软件开仓必须绑定止盈策略且策略不可手动取消。后端：`TradeOpenView`／`LimitOrderCreateView` 对新建请求强制策略快照校验（恢复路径沿用原冻结意图）；`set-active {manual:true}` 拒绝；`StrategyCancelView` 一律拒绝；策略运行中持仓的手动止盈／保本入口拒绝（两者原会取消策略）；`adopt_entry_execution` 策略止盈预挂失败不再静默降级为手动止盈，策略保持运行由 10 秒引擎重试。iOS：开仓必选策略（`strategyValid` 要求有效策略，未选禁用提交）、策略页删除"手动止盈"行与 manual 提交、持仓卡片对策略运行中持仓隐藏手动止盈／保本按钮。鸿蒙：删除"取消自动止盈策略"按钮，手动止盈／保本区块按策略状态门控。
 
@@ -23,6 +29,8 @@ DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test tradi
 ```
 
 iOS：`xcodebuild build-for-testing`（iPhone 18 Pro 模拟器）**TEST BUILD SUCCEEDED**；`StrategySelectionConfirmationTests`／`PositionStrategyPickerTests` **TEST EXECUTE SUCCEEDED**。测试夹具同步改为必选策略语义（开仓 payload 补策略、取消测试改拒绝断言、手动止盈机制测试改用未绑定策略订单）。
+
+后端策略实现实际来自 **`2cdd280`**，已随 **`6e3f452`** 完整同源版本部署到 **47.80.22.243（首尔服务器）**；`7cad9a5` 是另一项系统主动平仓改动，已由 `6e3f452` 回滚。当前线上包含“预挂失败保持策略运行、10 秒重试、写策略失败日志”的路径；客户端仍只有源码/模拟器验证，不等同于 TestFlight 或实机安装。
 
 ## 手动仓保护链路可靠性加固（2026-11-13，已部署）
 

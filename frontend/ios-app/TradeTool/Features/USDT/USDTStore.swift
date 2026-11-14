@@ -284,7 +284,7 @@ final class USDTStore: ObservableObject {
         // order may now exist in the local order projection. Do not depend on
         // a websocket event to invalidate a previously loaded order snapshot;
         // that event can arrive after the user switches tabs or be delayed.
-        if ["open", "entry-status", "maker-fallback", "limit-create", "limit-cancel", "limit-chase"].contains(action) {
+        if ["open", "entry-status", "maker-status", "maker-fallback", "limit-create", "limit-cancel", "limit-chase"].contains(action) {
             liveRevision += 1
         }
         return result

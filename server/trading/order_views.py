@@ -233,6 +233,31 @@ def _maker_row(record, binding, facts, commands, positions):
             row["status_text"] = "已完成"
         return row
     state = latest["state"]
+    # A confirmed live Maker receipt is safe to route through the durable
+    # fallback command. The fallback endpoint re-reads and cancels the
+    # exchange order before submitting any market remainder, so a stream fact
+    # is not required here. Terminal or binding-mismatched rows remain
+    # read-only.
+    row["can_chase"] = (
+        state in {"NEW", "PARTIALLY_FILLED", "PENDING_MAKER"}
+        and (filled is None or (size is not None and Decimal("0") <= filled < size))
+        and record.trading_mode == TradingMode.ORDINARY
+        and not has_fallback
+        and bool(record.binance_order_id)
+        and record.binance_order_id == original_id
+        and bool(binding.api_key_fingerprint)
+        and record.api_key_fingerprint == binding.api_key_fingerprint
+    )
+    row["can_cancel"] = (
+        state in {"NEW", "PARTIALLY_FILLED", "PENDING_MAKER"}
+        and latest["source"] in {"fact", "open", "maker-status"}
+        and record.trading_mode == TradingMode.ORDINARY
+        and not has_fallback
+        and bool(record.binance_order_id)
+        and record.binance_order_id == original_id
+        and bool(binding.api_key_fingerprint)
+        and record.api_key_fingerprint == binding.api_key_fingerprint
+    )
     if filled is None or size is None or filled > size:
         if state == "PENDING_MAKER" and latest["filled"] is None and not has_fallback:
             row.update(status=0, status_text="待成交")
@@ -251,7 +276,7 @@ def _maker_row(record, binding, facts, commands, positions):
         row.update(status=3 if expired else 2, status_text="已过期" if expired else "已撤销")
     elif state == "REJECTED":
         row["status_text"] = "已拒绝"
-    row["can_cancel"] = (row["status"] == 0 and latest["source"] == "fact"
+    row["can_cancel"] = (row["status"] == 0 and latest["source"] in {"fact", "open", "maker-status"}
                          and record.trading_mode == TradingMode.ORDINARY and not has_fallback
                          and bool(record.binance_order_id) and record.binance_order_id == original_id
                          and bool(binding.api_key_fingerprint)

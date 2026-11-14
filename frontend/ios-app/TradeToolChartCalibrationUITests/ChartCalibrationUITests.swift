@@ -3263,10 +3263,21 @@ final class WebParityUITests: XCTestCase {
     ticket.tap()
     XCTAssertTrue(app.staticTexts["开仓确认"].waitForExistence(timeout: 5))
     app.buttons["确定"].tap()
+    XCTAssertTrue(app.staticTexts["Maker 委托"].waitForExistence(timeout: 6))
+    XCTAssertTrue(app.staticTexts["Maker 价格"].exists)
+    XCTAssertTrue(app.staticTexts["当前价格"].exists)
+    XCTAssertTrue(app.staticTexts["距离 Maker 价"].exists)
+    XCTAssertTrue(app.buttons["追单"].exists)
+    XCTAssertTrue(app.buttons["取消"].exists)
+    XCTAssertTrue(app.buttons["关闭"].exists)
+    // The durable order remains accessible in the unified order list.
+    app.buttons["查看挂单"].tap()
     XCTAssertTrue(app.buttons["positions.tabs.limits"].waitForExistence(timeout: 6))
     XCTAssertTrue(app.buttons["positions.tabs.limits"].isSelected)
     XCTAssertTrue(app.otherElements["orders.card.maker:301"].waitForExistence(timeout: 6))
     XCTAssertTrue(app.staticTexts["待成交"].exists)
+    XCTAssertTrue(app.buttons["追单"].exists)
+    XCTAssertTrue(app.buttons["取消"].exists)
   }
 
   private func assertChartOrderTypeSwitch(options: [String]) {
@@ -3494,8 +3505,8 @@ final class WebParityUITests: XCTestCase {
     XCTAssertEqual(tab.label, "委托")
     for (key, symbol, state, canCancel, canChase) in [
       ("limit:201", "BTCUSDT", "等待成交", true, true),
-      ("maker:202", "ETHUSDT", "等待成交", true, false),
-      ("maker:203", "SOLUSDT", "部分成交", true, false),
+      ("maker:202", "ETHUSDT", "等待成交", true, true),
+      ("maker:203", "SOLUSDT", "部分成交", true, true),
       ("maker:204", "ADAUSDT", "已成交", false, false),
       ("maker:205", "XRPUSDT", "已撤销", false, false),
       ("maker:206", "DOGEUSDT", "待核对", false, false),
@@ -3504,7 +3515,8 @@ final class WebParityUITests: XCTestCase {
       for _ in 0..<10 where !app.staticTexts[symbol].isHittable { list.swipeUp() }
       XCTAssertTrue(card.exists, key)
       XCTAssertTrue(card.staticTexts[state].exists, key)
-      XCTAssertEqual(card.buttons["撤单"].exists, canCancel, key)
+      let cancelTitle = key.hasPrefix("maker:") ? "取消" : "撤单"
+      XCTAssertEqual(card.buttons[cancelTitle].exists, canCancel, key)
       XCTAssertEqual(card.buttons["追单"].exists, canChase, key)
       XCTAssertTrue(card.staticTexts[key.hasPrefix("maker:") ? "Maker" : "限价"].exists, key)
       if key == "maker:204" {

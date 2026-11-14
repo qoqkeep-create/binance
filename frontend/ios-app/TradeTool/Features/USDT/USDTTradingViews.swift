@@ -147,11 +147,20 @@ struct OrderCardPresentation {
   }
   var canCancel: Bool { row["can_cancel"]?.flag == true && operationIdentity != nil }
   var canChase: Bool {
-    row.value("order_kind") == "limit" && row["can_chase"]?.flag == true && operationIdentity != nil
+    ["limit", "maker"].contains(row.value("order_kind"))
+      && row["can_chase"]?.flag == true && operationIdentity != nil
   }
   var cancelAction: String { row.value("order_kind") == "maker" ? "maker-fallback" : "limit-cancel" }
+  var chaseAction: String { row.value("order_kind") == "maker" ? "maker-fallback" : "limit-chase" }
   var cancelPayload: [String: JSONValue]? { canCancel ? operationIdentity : nil }
-  var chasePayload: [String: JSONValue]? { canChase ? operationIdentity : nil }
+  var chasePayload: [String: JSONValue]? {
+    guard canChase else { return nil }
+    if row.value("order_kind") == "maker", case let .string(requestID) = row["client_request_id"],
+       !requestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return ["client_request_id": .string(requestID)]
+    }
+    return operationIdentity
+  }
   var orderAmountText: String { money(row["position_amount"]) }
   var filledAmountText: String { money(row["filled_amount"]) }
   var filledQuantityText: String {
@@ -239,6 +248,14 @@ struct USDTTradeView: View {
   @AppStorage(ChartOrderExecutionPreferences.marketEntryMaker) private var marketEntryMaker = false
   @State private var openSuccess = false
   @State private var successDraft: USDTEntryDraft?
+  @State private var makerPending = false
+  @State private var makerPendingVisible = false
+  @State private var makerDraft: USDTEntryDraft?
+  @State private var makerRequestID = ""
+  @State private var makerOrderID = ""
+  @State private var makerPrice = ""
+  @State private var makerMarketPrice = ""
+  @State private var makerFilledSize = ""
   private var symbol: String { chartInput?.symbol ?? store.selectedSymbol }
   private var hasPosition: Bool {
     chartInput != nil ? chartHasPosition : !positions.positions(for: symbol, scope: store.scope).isEmpty
@@ -359,6 +376,10 @@ struct USDTTradeView: View {
         guard chartInput == nil, scenePhase == .active else { return }
         await positions.monitor(store)
       }
+      .task(id: "maker-status:\(store.scope):\(makerPending):\(makerRequestID)") {
+        guard makerPending, !makerRequestID.isEmpty, store.isBound else { return }
+        await monitorMaker()
+      }
       .onChange(of: store.liveRevision) { _, _ in
         guard chartInput == nil, scenePhase == .active else { return }
         Task { await positions.refresh(store) }
@@ -373,6 +394,8 @@ struct USDTTradeView: View {
       .onChange(of: store.scope) { _, _ in
         confirmationDraft = nil; confirm = false; openSuccess = false; submitted = false
         entryNeedsReconcile = false; entryCommandID = ""
+        makerPending = false; makerPendingVisible = false; makerDraft = nil
+        makerRequestID = ""; makerOrderID = ""; makerPrice = ""; makerMarketPrice = ""; makerFilledSize = ""
         confirmedLimitDraft = nil
         onChartLimitSubmission?(nil)
         requestIdentity = UUID().uuidString
@@ -439,7 +462,7 @@ struct USDTTradeView: View {
           ).frame(maxWidth: .infinity)
           VStack(spacing: 12) {
             USDTMetric(title: "币种", value: draft.symbol)
-            USDTMetric(title: "模式", value: draft.orderType == "limit" ? "限价委托" : "市价开仓")
+            USDTMetric(title: "模式", value: draft.orderType == "limit" ? "限价委托" : marketEntryMaker ? "只做 Maker" : "市价开仓")
             USDTMetric(title: "止损价", value: DisplayNumber.text(draft.stopLossPrice))
             if draft.orderType == "limit" { USDTMetric(title: "限价值", value: DisplayNumber.text(draft.limitPrice)) }
             USDTMetric(title: "仓位", value: draft.positionText + " U")
@@ -480,6 +503,9 @@ struct USDTTradeView: View {
           }
         }
       }
+      .webModal(isPresented: $makerPendingVisible) {
+        makerPendingModal
+      }
       .webModal(isPresented: $openSuccess, motion: .fade) {
         WebModal(title: "开仓成功") {
           VStack(spacing: 10) {
@@ -501,6 +527,84 @@ struct USDTTradeView: View {
         }
       }
   }
+  private var makerSideDraft: USDTEntryDraft? { makerDraft ?? confirmationDraft ?? currentDraft }
+  private var makerDistance: Decimal? {
+    guard let maker = Decimal(string: makerPrice), maker > 0,
+      let market = Decimal(string: makerMarketPrice), market > 0 else { return nil }
+    return (market - maker) / maker * 100
+  }
+  private var makerDistanceText: String {
+    makerDistance.map { DisplayNumber.text($0, signed: true) + "%" } ?? "--"
+  }
+  private var makerDistanceExceeded: Bool {
+    guard let distance = makerDistance else { return false }
+    return abs(distance) >= Decimal(string: "0.5")!
+  }
+  private var makerStatusPriceText: String {
+    makerPrice.isEmpty ? "--" : DisplayNumber.text(makerPrice)
+  }
+  private var makerStatusMarketText: String {
+    makerMarketPrice.isEmpty ? "--" : DisplayNumber.text(makerMarketPrice)
+  }
+  private var makerRequestPayload: [String: JSONValue] {
+    let id = makerRequestID.isEmpty ? entryCommandID : makerRequestID
+    return ["client_request_id": .string(id)]
+  }
+  private var makerCancelPayload: [String: JSONValue] {
+    var payload = makerRequestPayload
+    payload["cancel_only"] = .bool(true)
+    return payload
+  }
+  @ViewBuilder private var makerPendingModal: some View {
+    let draft = makerSideDraft
+    WebModal(title: "Maker 委托") {
+      VStack(spacing: 10) {
+        Text((draft?.symbol ?? symbol) + " · " + ((draft?.isLong ?? isLong) ? "多单" : "空单"))
+          .font(.system(size: 18, weight: .bold))
+        Text("委托仍在交易所等待成交，系统会持续监控状态。")
+          .font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+          .multilineTextAlignment(.center)
+        VStack(spacing: 10) {
+          USDTMetric(title: "Maker 价格", value: makerStatusPriceText)
+          USDTMetric(title: "当前价格", value: makerStatusMarketText)
+          HStack {
+            Text("距离 Maker 价").foregroundStyle(WebTheme.secondary)
+            Spacer()
+            Text(makerDistanceText).fontWeight(.medium)
+              .foregroundStyle(makerDistanceExceeded ? WebTheme.danger : WebTheme.text)
+          }
+          if makerDistanceExceeded {
+            Text("当前价格距离 Maker 价已达 0.5% 以上，可追单或撤销委托。")
+              .font(.system(size: 12)).foregroundStyle(WebTheme.danger)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          if !makerFilledSize.isEmpty && makerFilledSize != "0" {
+            USDTMetric(title: "已成交数量", value: DisplayNumber.text(makerFilledSize))
+          }
+        }.font(.system(size: 14)).padding(16).background(
+          WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
+        HStack(spacing: 10) {
+          USDTCommandButton(title: "追单", action: "maker-fallback", payload: makerRequestPayload,
+            buttonKind: .primary) { message in
+              makerChaseCompleted(message)
+            }
+          USDTCommandButton(title: "取消", action: "maker-fallback", payload: makerCancelPayload,
+            buttonKind: .secondary) { message in
+              makerCancelCompleted(message)
+            }
+        }
+        HStack(spacing: 10) {
+          Button("关闭") { makerPendingVisible = false }
+            .buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
+          Button("查看挂单") {
+            makerPendingVisible = false
+            showPositionPage(.limits)
+          }.buttonStyle(WebButtonStyle(radius: 14, weight: .bold))
+        }
+      }
+    }
+  }
+
   private var currentDraft: USDTEntryDraft {
     USDTEntryDraft(symbol: symbol, orderType: orderType, stopLossPrice: stop,
       limitPrice: limit, currentPrice: currentQuote, riskAmount: risk, includeFee: includeFee,
@@ -658,6 +762,7 @@ struct USDTTradeView: View {
     payload["execution_mode"] = .string("maker")
     busy = true
     submitted = true
+    makerDraft = draft
     Task {
       defer { busy = false }
       do {
@@ -673,9 +778,17 @@ struct USDTTradeView: View {
           let state = data.value("state")
           if state == "PENDING_MAKER" {
             entryNeedsReconcile = false
-            showPositionPage(.limits)
+            makerPending = true
+            makerPendingVisible = true
+            makerRequestID = data.value("client_request_id", fallback: entryCommandID)
+            makerOrderID = data.value("maker_order_id", fallback: "")
+            makerPrice = data.value("maker_price", fallback: "")
+            makerMarketPrice = data.value("market_price", fallback: data.value("maker_market_price", fallback: ""))
+            makerFilledSize = data.value("filled_size", fallback: "")
           } else if state == "SUCCEEDED" {
             entryNeedsReconcile = false
+            makerPending = false
+            makerPendingVisible = false
             successDraft = draft
             openSuccess = true
           } else {
@@ -692,6 +805,80 @@ struct USDTTradeView: View {
         if scope == store.scope { submitted = false; presentEntryError(error, suffix: "。请先核对命令记录。") }
       }
     }
+  }
+
+  private func monitorMaker() async {
+    // The pending sheet is only a presentation choice. This task keeps the
+    // durable Maker request monitored after the user dismisses the sheet.
+    while makerPending, !Task.isCancelled, store.isBound {
+      do {
+        try await Task.sleep(for: .seconds(10))
+        guard makerPending, !Task.isCancelled else { return }
+        let scope = store.scope
+        let requestID = makerRequestID.isEmpty ? entryCommandID : makerRequestID
+        guard !requestID.isEmpty else { return }
+        let result = try await store.command(
+          "maker-status",
+          payload: ["client_request_id": .string(requestID)],
+          key: "maker-status-" + requestID + "-" + UUID().uuidString
+        )
+        guard scope == store.scope else { return }
+        let data = makerData(result)
+        let state = data?.value("state") ?? "UNKNOWN"
+        if state == "PENDING_MAKER" {
+          makerPrice = data?.value("maker_price", fallback: makerPrice) ?? makerPrice
+          makerMarketPrice = data?.value("market_price", fallback: data?.value("maker_market_price", fallback: makerMarketPrice) ?? makerMarketPrice)
+            ?? makerMarketPrice
+          makerFilledSize = data?.value("filled_size", fallback: makerFilledSize) ?? makerFilledSize
+          continue
+        }
+        if state == "SUCCEEDED" {
+          makerPending = false
+          makerPendingVisible = false
+          submitted = true
+          successDraft = makerDraft ?? currentDraft
+          openSuccess = true
+          return
+        }
+        if ["FAILED", "CANCELLED", "EXPIRED", "REJECTED"].contains(state) {
+          makerPending = false
+          makerPendingVisible = false
+          submitted = false
+          entryNeedsReconcile = false
+          requestIdentity = UUID().uuidString
+          container.toastCenter.error(store.commandMessage(result))
+          return
+        }
+        // UNKNOWN or malformed status remains pending. A later poll can
+        // safely retry the read-only status command without submitting a new
+        // exchange order.
+      } catch is CancellationError {
+        return
+      } catch {
+        // Keep monitoring on transient transport failures; the order remains
+        // visible in the unified order list for manual recovery.
+      }
+    }
+  }
+
+  private func makerChaseCompleted(_ message: String) {
+    guard !message.isEmpty else { return }
+    makerPending = false
+    makerPendingVisible = false
+    submitted = true
+    successDraft = makerDraft ?? currentDraft
+    openSuccess = true
+  }
+
+  private func makerCancelCompleted(_ message: String) {
+    guard !message.isEmpty else { return }
+    makerPending = false
+    makerPendingVisible = false
+    makerDraft = nil
+    submitted = false
+    entryNeedsReconcile = false
+    requestIdentity = UUID().uuidString
+    container.toastCenter.present(message, style: .success, duration: 2)
   }
 
   private func reconcileEntry() {
@@ -718,7 +905,18 @@ struct USDTTradeView: View {
           } else {
             showPositionPage(.limits)
           }
-        } else if ["PENDING_MAKER", "PENDING_LIMIT"].contains(state) {
+        } else if state == "PENDING_MAKER" {
+          entryNeedsReconcile = false
+          submitted = true
+          makerPending = true
+          makerPendingVisible = true
+          makerDraft = makerDraft ?? currentDraft
+          makerRequestID = data?.value("client_request_id", fallback: originalCommandID) ?? originalCommandID
+          makerOrderID = data?.value("maker_order_id", fallback: "") ?? ""
+          makerPrice = data?.value("maker_price", fallback: "") ?? ""
+          makerMarketPrice = data?.value("market_price", fallback: data?.value("maker_market_price", fallback: "") ?? "") ?? ""
+          makerFilledSize = data?.value("filled_size", fallback: "") ?? ""
+        } else if state == "PENDING_LIMIT" {
           entryNeedsReconcile = false
           submitted = true
           showPositionPage(.limits)
@@ -1602,13 +1800,14 @@ struct USDTPositionsView: View {
         Rectangle().fill(WebTheme.border).frame(height: 1)
         HStack(spacing: 8) {
           if let payload = order.chasePayload {
-            USDTCommandButton(title: "追单", action: "limit-chase", payload: payload, preflight: "chase") {
+            USDTCommandButton(title: "追单", action: order.chaseAction, payload: payload,
+              preflight: order.chaseAction == "limit-chase" ? "chase" : nil) {
               notice = $0
               Task { await reload() }
             }
           }
           if let payload = order.cancelPayload {
-            USDTCommandButton(title: "撤单", action: order.cancelAction, payload: payload, buttonKind: .primary) {
+            USDTCommandButton(title: order.cancelAction == "maker-fallback" ? "取消" : "撤单", action: order.cancelAction, payload: payload, buttonKind: .primary) {
               notice = $0
               Task { await reload() }
             }
@@ -1667,6 +1866,7 @@ struct USDTCommandButton: View {
   @State private var confirm = false
   @State private var pending = false
   private var makerCancel: Bool { action == "maker-fallback" && payload["cancel_only"]?.flag == true }
+  private var makerChase: Bool { action == "maker-fallback" && !makerCancel }
   var body: some View {
     Button(busy ? "处理中…" : pending ? "查询\(title)结果" : title) {
       if requiresConfirmation { confirm = true } else { execute() }
@@ -1678,11 +1878,11 @@ struct USDTCommandButton: View {
     ).disabled(busy)
     .webModal(isPresented: $confirm) {
       WebModal(
-        title: action == "limit-chase" ? "市价追单" : action == "limit-cancel" || makerCancel ? "撤销委托" : "确认" + title
+        title: action == "limit-chase" || makerChase ? "市价追单" : action == "limit-cancel" ? "撤销委托" : makerCancel ? "取消委托" : "确认" + title
       ) {
         Text(
           action == "limit-chase"
-            ? "将按当前市价追单，确认继续？" : makerCancel ? "确认撤销此 Maker 委托？"
+            ? "将按当前市价追单，确认继续？" : makerChase ? "将取消 Maker 委托并按当前市价成交剩余数量，确认继续？" : makerCancel ? "确认取消此 Maker 委托？"
               : action == "limit-cancel" ? "确认撤销此限价委托？" : "确认\(title)？"
         ).font(.system(size: 16)).foregroundStyle(WebTheme.secondary)
         HStack(spacing: 12) {

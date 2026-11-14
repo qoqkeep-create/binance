@@ -3444,11 +3444,14 @@ final class OrderCardPresentationTests: XCTestCase {
         XCTAssertEqual(value.recordKey, "maker:42")
         XCTAssertEqual(value.kindText, "Maker")
         XCTAssertTrue(value.canCancel)
-        XCTAssertFalse(value.canChase)
+        XCTAssertTrue(value.canChase)
         XCTAssertEqual(value.cancelAction, "maker-fallback")
         XCTAssertEqual(value.cancelPayload?["client_request_id"], .string("maker-original-request"))
         XCTAssertEqual(value.cancelPayload?["cancel_only"], .bool(true))
         XCTAssertNil(value.cancelPayload?["limit_order_id"])
+        XCTAssertEqual(value.chaseAction, "maker-fallback")
+        XCTAssertEqual(value.chasePayload?["client_request_id"], .string("maker-original-request"))
+        XCTAssertNil(value.chasePayload?["cancel_only"])
     }
     func testLimitActionsUseSourceNumberInsteadOfNamespacedRecordID() {
         let value = OrderCardPresentation(row: row(kind: "limit"))

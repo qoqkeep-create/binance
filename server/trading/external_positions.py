@@ -61,6 +61,8 @@ ALGO_TERMINAL = TERMINAL | {"finished"}
 # so a temporarily invisible order is never duplicated.
 ABSENT_CONVERGE_ROUNDS = 3
 ABSENT_CONVERGE_SECONDS = 30
+STOP_EXIT_WAIT_ROUNDS = 3
+STOP_EXIT_WAIT_SECONDS = 30
 
 
 def _elapsed_seconds(iso_text, now):
@@ -115,6 +117,90 @@ def amount_stop_price(side, entry, quantity, risk, tick):
             rounding=ROUND_CEILING if side == 0 else ROUND_FLOOR,
         )
         * tick,
+    )
+
+
+def _risk_notional(entry, quantity, contract_value):
+    return positive(entry) * positive(quantity) * positive(contract_value)
+
+
+def _mark_risk_configuration_required(order, *, reason, notional=None):
+    """Persist an explicit risk gate and alert without creating a fake stop."""
+    if reason == "missing":
+        message = "止损额度未配置，手动仓保护暂不可用"
+        title = "手动仓止损额度待配置"
+    else:
+        message = (
+            "止损额度超过当前仓位市值，无法计算有效止损价"
+            if notional is None
+            else f"止损额度 {_log_number(order.stop_loss_amount)} USDT 超过当前仓位市值 {_log_number(notional)} USDT"
+        )
+        title = "手动仓止损额度超过仓位市值"
+    was_required = order.stop_protection_status == Order.STOP_PROTECTION_CONFIG_REQUIRED
+    order.stop_protection_status = Order.STOP_PROTECTION_CONFIG_REQUIRED
+    order.stop_protection_error = message[:500]
+    order.stop_protection_first_failed_at = order.stop_protection_first_failed_at or timezone.now()
+    order.stop_protection_last_retry_at = timezone.now()
+    update_fields = [
+        "stop_protection_status",
+        "stop_protection_error",
+        "stop_protection_first_failed_at",
+        "stop_protection_last_retry_at",
+    ]
+    order.save(update_fields=update_fields)
+    if not was_required:
+        record_operation(
+            order,
+            action="external_risk_config",
+            status="failed",
+            message=message,
+            event_key=f"external-risk-config:{order.id}:{reason}",
+        )
+    send_protection_alert(
+        order.user_id,
+        kind=f"risk-config:{order.id}:{reason}",
+        title=title,
+        body=f"{order.symbol} {message}。请调整止损额度或仓位后再继续保护。",
+    )
+
+
+def _record_stop_exit_wait(order, *, reason, algo_ids):
+    """Remember that a live exchange stop owns the exit decision for now."""
+    journal = dict(order.external_stop_request)
+    now = timezone.now()
+    journal["exit_wait_reason"] = reason
+    journal["exit_wait_rounds"] = int(journal.get("exit_wait_rounds") or 0) + 1
+    journal["exit_wait_first_at"] = journal.get("exit_wait_first_at") or now.isoformat()
+    journal["exit_wait_algo_ids"] = sorted({str(item) for item in algo_ids if item})
+    order.external_stop_request = journal
+    order.save(update_fields=["external_stop_request"])
+    record_operation(
+        order,
+        action="external_stop_trigger_wait",
+        status="pending",
+        message="交易所已有全仓止损，优先等待条件单触发，暂不并发提交市价平仓",
+        event_key=f"external-stop-trigger-wait:{order.id}:{reason}",
+    )
+
+
+def _clear_stop_exit_wait(order):
+    journal = dict(order.external_stop_request)
+    if not any(journal.get(key) for key in ("exit_wait_reason", "exit_wait_rounds", "exit_wait_first_at", "exit_wait_algo_ids")):
+        return
+    for key in ("exit_wait_reason", "exit_wait_rounds", "exit_wait_first_at", "exit_wait_algo_ids"):
+        journal.pop(key, None)
+    order.external_stop_request = journal
+    order.save(update_fields=["external_stop_request"])
+
+
+def _stop_exit_wait_expired(order):
+    journal = order.external_stop_request
+    first_at = journal.get("exit_wait_first_at")
+    if not first_at:
+        return False
+    return (
+        int(journal.get("exit_wait_rounds") or 0) >= STOP_EXIT_WAIT_ROUNDS
+        and _elapsed_seconds(first_at, timezone.now()) >= STOP_EXIT_WAIT_SECONDS
     )
 
 
@@ -604,6 +690,14 @@ def _full_stop(row, quantity):
     return row.get("closePosition") is True or finite_decimal(row.get("sz")) >= quantity
 
 
+def _stop_quantity_matches(row, quantity, lot_size=None):
+    if row.get("closePosition") is True:
+        return True
+    actual = finite_decimal(row.get("sz"))
+    tolerance = max(lot_size or Decimal("0"), Decimal("0.00000001"))
+    return abs(actual - quantity) <= tolerance
+
+
 def _persist_floor(order, price, working_type):
     order.current_stop_price = price
     order.stop_loss_price = price
@@ -660,7 +754,7 @@ def _previous_stop_identities(order):
     return ids - {None, ""}, client_ids - {None, ""}
 
 
-def _protect(order, client, pos_mode, position, *, closing=False):
+def _protect(order, client, pos_mode, position, *, closing=False, exit_reason=None):
     previous_journal = dict(order.external_stop_request)
     previous_price = order.current_stop_price
     previous_algo_id = str(order.binance_stop_market_order_id or "")
@@ -669,7 +763,19 @@ def _protect(order, client, pos_mode, position, *, closing=False):
     submitted_stop = False
     quantity = abs(finite_decimal(position["pos"]))
     entry = positive(position["avgPx"])
-    tick = positive(_get_instrument_trade_rules(to_inst_id(order.symbol))["tickSz"])
+    rules = _get_instrument_trade_rules(to_inst_id(order.symbol))
+    tick = positive(rules["tickSz"])
+    lot_size = finite_decimal(rules.get("lotSz") or rules.get("marketLotSz") or "0")
+    notional = _risk_notional(entry, quantity, position.get("ctVal", "1"))
+    risk = finite_decimal(order.stop_loss_amount)
+    if risk <= 0:
+        if not closing:
+            _mark_risk_configuration_required(order, reason="missing", notional=notional)
+        return
+    if risk >= notional:
+        if not closing:
+            _mark_risk_configuration_required(order, reason="over_budget", notional=notional)
+        return
     price = amount_stop_price(
         order.side,
         entry,
@@ -687,16 +793,6 @@ def _protect(order, client, pos_mode, position, *, closing=False):
     # The saved floor keeps its trigger reference across restarts and cancellations.
     ticker = _rows(client.get_ticker(to_inst_id(order.symbol)))
     last = positive(ticker[0]["last"])
-    saved_type = order.external_stop_request.get("floor_working_type", "CONTRACT_PRICE")
-    reference = positive(position.get("markPx")) if saved_type == "MARK_PRICE" else last
-    if order.current_stop_price and not closing:
-        if (
-            reference <= order.current_stop_price
-            if order.side == 0
-            else reference >= order.current_stop_price
-        ):
-            close_external_position(order, client, pos_mode, reason="stop_crossed")
-            return
     previous_ids, previous_clients = _previous_stop_identities(order)
     candidates = [
         row
@@ -767,6 +863,14 @@ def _protect(order, client, pos_mode, position, *, closing=False):
         else:
             raise ValueError("原止损正在触发或状态未确认")
     full = [row for row in candidates if _full_stop(row, quantity)]
+    # A stop with an old, larger explicit size cannot safely arbitrate an exit
+    # after the user reduced the position: the exchange may reject it as an
+    # over-sized reduce-only order.  Keep it in ``full`` for replacement and
+    # floor selection, but only an exact-size (or closePosition) stop owns the
+    # crossed/loss-exceeded exit wait below.
+    live_exit_stops = [
+        row for row in full if _stop_quantity_matches(row, quantity, lot_size)
+    ]
     previous_protection_price = previous_price or tighter_price(
         order.side, *(row["slTriggerPx"] for row in full)
     )
@@ -783,10 +887,54 @@ def _protect(order, client, pos_mode, position, *, closing=False):
     reference = (
         positive(position.get("markPx")) if working_type == "MARK_PRICE" else last
     )
-    if reference <= price if order.side == 0 else reference >= price:
-        if not closing:
-            close_external_position(order, client, pos_mode, reason="stop_crossed")
+    crossed = reference <= price if order.side == 0 else reference >= price
+    if not closing and (crossed or exit_reason):
+        if live_exit_stops and not _stop_exit_wait_expired(order):
+            _record_stop_exit_wait(
+                order,
+                reason=exit_reason or "stop_crossed",
+                algo_ids=[row.get("algoId") for row in live_exit_stops],
+            )
+            return
+        if live_exit_stops and _stop_exit_wait_expired(order):
+            # Before the bounded market fallback, cancel the still-live
+            # reduce-only stops and require Binance to acknowledge each
+            # cancellation. This closes the last double-exit race: an old
+            # conditional order must not remain able to fire after the
+            # emergency market close is submitted.
+            algo = BinanceAlgoClient(client)
+            for row in live_exit_stops:
+                algo.cancel_algo_confirmed(
+                    str(row.get("algoId") or ""),
+                    to_inst_id(order.symbol),
+                    action="external_stop_exit_fallback_cancel",
+                )
+            close_external_position(order, client, pos_mode, reason=exit_reason or "stop_crossed")
+            return
+        if full and not live_exit_stops:
+            # An oversized legacy stop cannot safely arbitrate the reduced
+            # position. Remove it before the market fallback so it cannot race
+            # the close or be rejected for exceeding the current quantity.
+            algo = BinanceAlgoClient(client)
+            for row in full:
+                algo.cancel_algo_confirmed(
+                    str(row.get("algoId") or ""),
+                    to_inst_id(order.symbol),
+                    action="external_stop_stale_size_cancel",
+                )
+            close_external_position(order, client, pos_mode, reason=exit_reason or "stop_crossed")
+            return
+        if order.external_stop_request.get("exit_wait_reason") and not _stop_exit_wait_expired(order):
+            _record_stop_exit_wait(
+                order,
+                reason=order.external_stop_request.get("exit_wait_reason") or exit_reason or "stop_crossed",
+                algo_ids=[],
+            )
+            return
+        close_external_position(order, client, pos_mode, reason=exit_reason or "stop_crossed")
         return
+    if not crossed and not exit_reason:
+        _clear_stop_exit_wait(order)
     journal = dict(order.external_stop_request)
     if journal.get("status") == "pending":
         recovered = next(
@@ -862,6 +1010,7 @@ def _protect(order, client, pos_mode, position, *, closing=False):
             row
             for row in full
             if row["algoType"] == "STOP_MARKET"
+            and _stop_quantity_matches(row, quantity, lot_size)
             and positive(row["slTriggerPx"]) == price
             and row.get("workingType") == working_type
             and row.get("priceProtect") is not True
@@ -1061,18 +1210,15 @@ def reconcile_external_order(order, client, pos_mode, position):
         order.save(update_fields=["exchange_size", "open_price", "position_amount"])
         if order.stop_loss_amount <= 0:
             risk = _risk_amount(order.user, order.trading_mode)
-            order.stop_loss_amount = positive(risk)
+            if risk <= 0:
+                _mark_risk_configuration_required(order, reason="missing")
+                return
+            order.stop_loss_amount = risk
             order.save(update_fields=["stop_loss_amount"])
         # Missing/malformed PnL must never be normalized to zero.
         floating_loss = max(-finite_decimal(position.get("rawUpl")), Decimal("0"))
-        if floating_loss > order.stop_loss_amount and not closing:
-            if close_external_position(order, client, pos_mode, reason="loss_exceeded"):
-                return
-            closing = True
-            position = _target(order, client)
-            if position is None:
-                return
-        _protect(order, client, pos_mode, position, closing=closing)
+        exit_reason = "loss_exceeded" if floating_loss > order.stop_loss_amount and not closing else None
+        _protect(order, client, pos_mode, position, closing=closing, exit_reason=exit_reason)
     except Exception as exc:
         _save_error(
             order,

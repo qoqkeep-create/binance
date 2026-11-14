@@ -1343,6 +1343,7 @@ def _has_unresolved_stop_protection(
             Order.STOP_PROTECTION_PENDING,
             Order.STOP_PROTECTION_ALERTED,
             Order.STOP_PROTECTION_EMERGENCY,
+            Order.STOP_PROTECTION_CONFIG_REQUIRED,
         ],
     )
     return _apply_api_key_scope(
@@ -2169,6 +2170,7 @@ class TradeOpenView(APIView):
                             "open_side": open_side,
                             "side_code": side_code,
                             "size": str(size),
+                            "include_fee": bool(data.get("include_fee")),
                             "leverage": max_leverage,
                             "pos_side": use_pos_side or "",
                             "execution_mode": execution_mode,
@@ -2741,6 +2743,11 @@ def reconcile_open_requests(*, trading_mode=TradingMode.ORDINARY):
                     if get_user_binding_generation(
                         binding.user, trading_mode=trading_mode
                     ) != account.generation:
+                        logger.info(
+                            "open request reconcile skipped generation changed user=%s mode=%s",
+                            binding.user_id,
+                            trading_mode,
+                        )
                         continue
                     client = account.create_futures_client()
                     for open_request in requests:
@@ -2884,6 +2891,7 @@ class MakerOpenFallbackView(APIView):
     """Cancel the live GTX order, then market-fill only the confirmed remainder."""
 
     def post(self, request):
+        fallback_write_started = False
         try:
             account, open_request, intent = _maker_request_for_user(
                 request, request.data.get("client_request_id")
@@ -2951,38 +2959,170 @@ class MakerOpenFallbackView(APIView):
                     "maker_order_id": open_request.binance_order_id,
                     "symbol": open_request.symbol,
                 })
-            remaining = requested_size - filled
-            if remaining <= 0:
+            fallback_id = str(intent.get("fallback_client_order_id") or "")
+            # The original Maker size was calculated from the quote at entry
+            # time.  A later market fallback must recalculate the *target*
+            # size from the current quote and the persisted stop-loss amount;
+            # otherwise the same risk budget produces the wrong exposure after
+            # the market moves.  Once persisted, these values are immutable so
+            # a retry after an unknown write cannot change the order payload.
+            persisted_fallback_size = intent.get("fallback_size")
+            persisted_fallback_target = intent.get("fallback_target_size")
+            recovered_fallback_row = None
+            if fallback_id:
+                # A previous process may have submitted the fallback and died
+                # before recording the local receipt.  Resolve the stable
+                # client id first; never recalculate a new size for an order
+                # that may already exist at the exchange.
+                recovered_fallback_row = _load_exchange_order_by_client_order_id(
+                    client,
+                    inst_id=inst_id,
+                    client_order_id=fallback_id,
+                )
+
+            fallback_intent = dict(intent)
+            if recovered_fallback_row is not None:
+                recovered_size = _to_decimal(
+                    recovered_fallback_row.get("sz") or recovered_fallback_row.get("origQty") or "0",
+                    "市价切换数量",
+                )
+                fallback_target = filled + recovered_size
+                fallback_size = recovered_size
+                fallback_intent.update({
+                    "fallback_target_size": format(fallback_target, "f"),
+                    "fallback_size": format(fallback_size, "f"),
+                    "fallback_entry_price": str(recovered_fallback_row.get("avgPx") or ""),
+                    "fallback_open_side": str(recovered_fallback_row.get("side") or intent.get("open_side") or ""),
+                    "fallback_pos_side": str(recovered_fallback_row.get("posSide") or intent.get("pos_side") or ""),
+                })
+            elif persisted_fallback_size is not None:
+                fallback_size = _decimal_or_zero(persisted_fallback_size)
+                if not fallback_size.is_finite() or fallback_size < 0:
+                    raise BinanceApiError("已保存的市价切换数量无效")
+                fallback_target = _to_decimal(
+                    persisted_fallback_target or (filled + fallback_size),
+                    "市价切换目标数量",
+                )
+            elif fallback_id:
+                # Legacy rows written before fallback_size was persisted may
+                # already have an exchange order under this client id.  Keep
+                # the old requested remainder when the id lookup is currently
+                # inconclusive; changing the size under the same id could
+                # turn a transient read failure into a duplicate write.
+                fallback_size = max(Decimal("0"), requested_size - filled)
+                fallback_target = filled + fallback_size
+                fallback_intent.update({
+                    "fallback_target_size": format(fallback_target, "f"),
+                    "fallback_size": format(fallback_size, "f"),
+                    "fallback_open_side": intent.get("open_side") or "",
+                    "fallback_pos_side": intent.get("pos_side") or "",
+                })
+            else:
+                instrument = _extract_instrument(inst_id)
+                ticker = _extract_ticker(inst_id)
+                fallback_entry_price = _to_decimal(str(ticker.get("last") or "0"), "当前市价")
+                fallback_stop_price = _to_decimal(intent["stop_loss_price"], "止损价")
+                fallback_stop_amount = _to_decimal(intent["stop_loss_amount"], "止损金额")
+                standardized_fallback = standardize_open_order_request(
+                    entry_price=fallback_entry_price,
+                    stop_loss_price=fallback_stop_price,
+                    stop_loss_amount=fallback_stop_amount,
+                    instrument=instrument,
+                    order_type="market",
+                )
+                if (
+                    int(standardized_fallback["side_code"]) != int(intent["side_code"])
+                    or str(standardized_fallback["open_side"]).lower() != str(intent["open_side"]).lower()
+                ):
+                    raise BinanceApiError("当前市价已越过止损位，已停止市价切换")
+                fallback_target = _to_decimal(standardized_fallback["size"], "市价切换目标数量")
+                if bool(intent.get("include_fee")):
+                    effective_ratio = (
+                        abs(fallback_entry_price - standardized_fallback["stop_loss_price"])
+                        / fallback_entry_price
+                        + TOTAL_FEE_RATE
+                    )
+                    fallback_target = _to_decimal(
+                        calc_contract_size(
+                            entry_price=format(fallback_entry_price, "f"),
+                            notional_usdt=format(fallback_stop_amount / effective_ratio, "f"),
+                            ct_val=str(instrument.get("ctVal") or "0"),
+                            lot_sz=str(instrument.get("marketLotSz") or instrument.get("lotSz") or "1"),
+                            min_sz=str(instrument.get("marketMinSz") or instrument.get("minSz") or "0"),
+                            min_notional=str(instrument.get("minNotional") or "0"),
+                        ),
+                        "市价切换目标数量",
+                    )
+                fallback_size = max(Decimal("0"), fallback_target - filled)
+                fallback_intent.update({
+                    "fallback_target_size": format(fallback_target, "f"),
+                    "fallback_size": format(fallback_size, "f"),
+                    "fallback_entry_price": format(fallback_entry_price, "f"),
+                    "fallback_stop_loss_price": format(standardized_fallback["stop_loss_price"], "f"),
+                    "fallback_open_side": standardized_fallback["open_side"],
+                    "fallback_pos_side": intent.get("pos_side") or "",
+                })
+
+            # Preserve the original Maker request size for the order card, but
+            # persist the fallback calculation before any exchange write.
+            if fallback_id == "" and fallback_size > 0:
+                fallback_id = _idempotent_client_order_id(
+                    "mf", account.identity, to_symbol(inst_id), open_request.client_request_id + ":fallback"
+                )
+                fallback_intent["fallback_client_order_id"] = fallback_id
+            fallback_intent["maker_filled_size"] = format(filled, "f")
+            record_open_request_execution_intent(open_request, fallback_intent)
+
+            if fallback_size <= 0:
                 order = _find_existing_order_by_open_request(open_request)
                 return ok(message="开仓成功", data={"state": "SUCCEEDED", "position_id": order.id if order else None})
 
-            fallback_id = str(intent.get("fallback_client_order_id") or "")
-            if not fallback_id:
-                fallback_id = _idempotent_client_order_id("mf", account.identity, to_symbol(inst_id), open_request.client_request_id + ":fallback")
-                intent["fallback_client_order_id"] = fallback_id
-                intent["maker_filled_size"] = format(filled, "f")
-                record_open_request_execution_intent(open_request, intent)
+            fallback_open_side = str(
+                fallback_intent.get("fallback_open_side") or fallback_intent.get("open_side") or ""
+            ).strip().lower()
+            fallback_pos_side = str(
+                fallback_intent.get("fallback_pos_side") or fallback_intent.get("pos_side") or ""
+            ).strip() or None
+            maker_order_id = str(open_request.binance_order_id or "")
+            fallback_write_started = recovered_fallback_row is None
             submission = submit_or_recover_exchange_order(
                 client=client,
                 open_request=open_request,
                 inst_id=inst_id,
                 client_order_id=fallback_id,
+                recovered_row=recovered_fallback_row,
                 submit=lambda: client.place_market_order(
                     inst_id=inst_id,
-                    side=str(intent["open_side"]),
-                    size=format(remaining, "f"),
-                    pos_side=str(intent.get("pos_side") or "") or None,
+                    side=fallback_open_side,
+                    size=format(fallback_size, "f"),
+                    pos_side=fallback_pos_side,
                     new_client_order_id=fallback_id,
                 ),
             )
+            # ``submit_or_recover_exchange_order`` normally records a recovered
+            # exchange id on the request.  The request remains the Maker
+            # receipt, however; keeping its original id ensures a retry after
+            # an uncertain fallback checks the GTX order and the stable
+            # fallback client id separately.
+            if str(open_request.binance_order_id or "") != maker_order_id:
+                open_request.binance_order_id = maker_order_id
+                open_request.save(update_fields=["binance_order_id", "updated_at"])
             if not submission.confirmed:
                 return fail("市价切换提交结果未确认，请保留页面并重试", code=409, status=409)
             fallback_row = require_exchange_order_row(submission.payload, action_label="市价开仓")
+            fallback_intent["fallback_order_id"] = str(fallback_row["ordId"])
+            record_open_request_execution_intent(open_request, fallback_intent)
+            if recovered_fallback_row is not None or submission.uncertain_error is not None:
+                validate_recovered_exchange_order(
+                    fallback_row,
+                    {**fallback_intent, "open_side": fallback_open_side, "size": format(fallback_size, "f")},
+                    action_label="市价切换",
+                )
             fallback_execution = confirm_entry_execution(
                 client,
                 inst_id=inst_id,
                 order_id=str(fallback_row["ordId"]),
-                requested_size=remaining,
+                requested_size=fallback_size,
                 initial_row=fallback_row,
             )
             if not fallback_execution.has_fill:
@@ -2992,7 +3132,7 @@ class MakerOpenFallbackView(APIView):
                 trading_mode=request_trading_mode(request),
                 account=account,
                 open_request=open_request,
-                intent=intent,
+                intent=fallback_intent,
                 client=client,
                 execution=fallback_execution,
             )
@@ -3000,9 +3140,15 @@ class MakerOpenFallbackView(APIView):
         except BinanceApiError as exc:
             if getattr(exc, "outcome_unknown", False):
                 raise
+            exchange_order_submitted = _record_open_request_error(open_request, exc) if fallback_write_started else False
+            if exchange_order_submitted:
+                return fail("市价切换提交结果未确认，请保留页面并重试，系统会按原请求恢复", code=409, status=409)
             return fail(_translate_exchange_message(str(exc)), code=409, status=409)
         except Exception:  # noqa: BLE001
             logger.exception("maker fallback failed")
+            exchange_order_submitted = _record_open_request_error(open_request, RuntimeError("市价切换失败")) if fallback_write_started else False
+            if exchange_order_submitted:
+                return fail("市价切换提交结果未确认，请保留页面并重试，系统会按原请求恢复", code=409, status=409)
             return fail("市价切换失败，请核对订单状态后重试", code=409, status=409)
 
 

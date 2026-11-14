@@ -62,6 +62,7 @@ from positions.models import (
     TradeNotificationEvent,
 )
 from positions.operation_logs import record_operation
+from positions.protection_alerts import send_protection_alert
 from trading.execution import UNKNOWN, parse_entry_execution
 from trading.account_cache import position_cache_key
 from trading.locks import user_trading_activity_lock
@@ -1042,7 +1043,10 @@ def _stop_loss_algo_candidates(
 def _stop_loss_algo_matches(row: dict[str, Any], *, stop_price: Decimal, size: Decimal) -> bool:
     algo_size = abs(_parse_decimal(row.get("sz") or "0"))
     algo_stop = _parse_decimal(row.get("slTriggerPx") or "0")
-    size_ok = abs(algo_size - size) <= POSITION_SIZE_TOLERANCE
+    # Binance closePosition=true intentionally omits ``sz`` and always covers
+    # the current position.  Treat it as full-size protection for read-only
+    # reconciliation as well as normal stop convergence.
+    size_ok = bool(row.get("closePosition") is True) or abs(algo_size - size) <= POSITION_SIZE_TOLERANCE
     price_ok = algo_stop > 0 and abs(algo_stop - stop_price) <= POSITION_SIZE_TOLERANCE
     return size_ok and price_ok
 
@@ -2517,8 +2521,6 @@ def _group_protection_orders(
     symbols_by_account: dict[tuple[int, str], set[str]] = {}
     binding_created_at_by_account: dict[tuple[int, str], Any] = {}
     for order in orders:
-        if _uses_manual_protection_management(order):
-            continue
         user_id = int(order.user_id)
         if (user_id, order.trading_mode) not in generations_by_user:
             generations_by_user[(user_id, order.trading_mode)] = get_user_binding_generation(order.user, trading_mode=order.trading_mode)
@@ -2825,6 +2827,8 @@ def _reconcile_single_order_protection(
     order: Order,
     snapshot: ProtectionAccountSnapshot,
 ) -> int:
+    if _uses_manual_protection_management(order):
+        return _reconcile_legacy_manual_protection(order, snapshot)
     repaired = _cancel_disabled_strategy_take_profit(order, snapshot)
     pos_row = _find_position_row(order, snapshot.positions, snapshot.pos_mode)
     exchange_size = _find_position_size(order, snapshot.positions, snapshot.pos_mode)
@@ -2890,6 +2894,78 @@ def _reconcile_single_order_protection(
         if is_binance_rate_limit_error(exc):
             raise
     return repaired
+
+
+def _mark_legacy_manual_protection_review(order: Order, *, reason: str) -> None:
+    message = "历史人工管理持仓缺少有效止损，待用户复核"
+    if reason == "invalid_stop":
+        message = "历史人工管理持仓止损参数无效，待用户复核"
+    changed = (
+        order.stop_protection_status != Order.STOP_PROTECTION_ALERTED
+        or order.stop_protection_error != message
+    )
+    if changed:
+        order.stop_protection_status = Order.STOP_PROTECTION_ALERTED
+        order.stop_protection_error = message
+        order.save(update_fields=["stop_protection_status", "stop_protection_error"])
+        record_operation(
+            order,
+            action="legacy_manual_protection_review",
+            status="failed",
+            message=message,
+            event_key=f"legacy-manual-protection:{order.id}:{reason}",
+        )
+    send_protection_alert(
+        order.user_id,
+        kind=f"legacy-manual-protection:{order.id}:{reason}",
+        title="历史人工管理持仓保护巡检",
+        body=f"{order.symbol} {message}，请确认是否恢复自动止损。",
+    )
+
+
+def _reconcile_legacy_manual_protection(
+    order: Order,
+    snapshot: ProtectionAccountSnapshot,
+) -> int:
+    """Read-only audit for legacy orders that intentionally disabled automation."""
+    position = _find_position_row(order, snapshot.positions, snapshot.pos_mode)
+    exchange_size = _find_position_size(order, snapshot.positions, snapshot.pos_mode)
+    if position is None or exchange_size <= POSITION_SIZE_TOLERANCE:
+        return 0
+    stop_price = order.current_stop_price or order.stop_loss_price
+    current_price = _parse_decimal(
+        (position or {}).get("last") or (position or {}).get("markPx") or "0"
+    )
+    candidates = _stop_loss_algo_candidates(
+        list(snapshot.algo_map.values()),
+        inst_id=to_inst_id(order.symbol),
+        close_side="sell" if order.side == 0 else "buy",
+        pos_side=_resolve_pos_side_from_mode(order.side, snapshot.pos_mode),
+    )
+    if stop_price <= 0:
+        _mark_legacy_manual_protection_review(order, reason="invalid_stop")
+        return 0
+    try:
+        normalized = _normalize_stop_loss_request(
+            order=order,
+            inst_id=to_inst_id(order.symbol),
+            stop_price=stop_price,
+            size=exchange_size,
+            current_price=current_price,
+        )
+    except Exception:
+        _mark_legacy_manual_protection_review(order, reason="invalid_stop")
+        return 0
+    if not any(
+        _stop_loss_algo_matches(
+            row,
+            stop_price=normalized["stop_price"],
+            size=normalized["size"],
+        )
+        for row in candidates
+    ):
+        _mark_legacy_manual_protection_review(order, reason="missing_stop")
+    return 0
 
 
 def reconcile_open_orders_protection(*, trading_mode=TradingMode.ORDINARY, user_id=None) -> int:

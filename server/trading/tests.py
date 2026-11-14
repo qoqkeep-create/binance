@@ -176,6 +176,177 @@ class TradingApiTests(APITestCase):
         request.refresh_from_db()
         self.assertEqual(request.status, TradeOpenRequest.STATUS_FAILED)
 
+    def test_maker_fallback_recalculates_market_size_from_current_quote(self):
+        request = self._create_maker_request()
+        exchange = MagicMock()
+        exchange.get_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "live",
+        }]}
+        exchange.cancel_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "canceled",
+            "fillSz": "0",
+            "accFillSz": "0",
+            "avgPx": "0",
+        }]}
+        exchange.place_market_order.return_value = {"data": [{
+            "ordId": "maker-fallback-order",
+            "state": "filled",
+            "fillSz": "0.5",
+            "accFillSz": "0.5",
+            "avgPx": "110",
+            "side": "buy",
+            "posSide": "long",
+            "sz": "0.5",
+        }]}
+        instrument = {
+            "ctVal": "1", "marketLotSz": "0.1", "marketMinSz": "0.1",
+            "lotSz": "0.1", "minSz": "0.1", "tickSz": "0.1", "triggerProtect": "0",
+        }
+        with (
+            patch("trading.views.BinanceFuturesClient", return_value=exchange),
+            patch("trading.views._extract_instrument", return_value=instrument),
+            patch("trading.views._extract_ticker", return_value={"last": "110"}),
+            patch("trading.views._adopt_maker_fill", return_value=SimpleNamespace(id=99)),
+        ):
+            response = self.client.post(
+                "/v1/trade/maker/fallback",
+                {"client_request_id": request.client_request_id},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        exchange.place_market_order.assert_called_once()
+        self.assertEqual(exchange.place_market_order.call_args.kwargs["size"], "0.5")
+        self.assertEqual(exchange.place_market_order.call_args.kwargs["side"], "buy")
+        request.refresh_from_db()
+        intent = request.request_payload["_execution_intent"]
+        self.assertEqual(intent["fallback_size"], "0.5")
+        self.assertEqual(intent["fallback_target_size"], "0.5")
+
+    def test_maker_fallback_recalculates_only_unfilled_remainder_after_partial_fill(self):
+        request = self._create_maker_request()
+        exchange = MagicMock()
+        exchange.get_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "live",
+        }]}
+        exchange.cancel_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "canceled",
+            "fillSz": "0.2",
+            "accFillSz": "0.2",
+            "avgPx": "100",
+        }]}
+        exchange.place_market_order.return_value = {"data": [{
+            "ordId": "maker-fallback-partial",
+            "state": "filled",
+            "fillSz": "0.3",
+            "accFillSz": "0.3",
+            "avgPx": "110",
+            "side": "buy",
+            "posSide": "long",
+            "sz": "0.3",
+        }]}
+        instrument = {
+            "ctVal": "1", "marketLotSz": "0.1", "marketMinSz": "0.1",
+            "lotSz": "0.1", "minSz": "0.1", "tickSz": "0.1", "triggerProtect": "0",
+        }
+        with (
+            patch("trading.views.BinanceFuturesClient", return_value=exchange),
+            patch("trading.views._extract_instrument", return_value=instrument),
+            patch("trading.views._extract_ticker", return_value={"last": "110"}),
+            patch("trading.views._adopt_maker_fill", return_value=SimpleNamespace(id=100)) as adopt,
+        ):
+            response = self.client.post(
+                "/v1/trade/maker/fallback",
+                {"client_request_id": request.client_request_id},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(exchange.place_market_order.call_args.kwargs["size"], "0.3")
+        self.assertEqual(adopt.call_count, 2)
+
+    def test_maker_fallback_reuses_persisted_client_id_and_size(self):
+        request = self._create_maker_request()
+        intent = request.request_payload["_execution_intent"]
+        intent.update(
+            fallback_client_order_id="stable-maker-fallback",
+            fallback_size="0.3",
+            fallback_target_size="0.5",
+            maker_filled_size="0.2",
+        )
+        request.request_payload["_execution_intent"] = intent
+        request.save(update_fields=["request_payload"])
+        exchange = MagicMock()
+        exchange.get_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "canceled",
+            "fillSz": "0.2",
+            "accFillSz": "0.2",
+            "avgPx": "100",
+        }]}
+        recovered = {
+            "ordId": "maker-fallback-order",
+            "state": "filled",
+            "fillSz": "0.3",
+            "accFillSz": "0.3",
+            "avgPx": "110",
+            "side": "buy",
+            "posSide": "long",
+            "sz": "0.3",
+        }
+        with (
+            patch("trading.views.BinanceFuturesClient", return_value=exchange),
+            patch("trading.views._load_exchange_order_by_client_order_id", return_value=recovered),
+            patch("trading.views._adopt_maker_fill", return_value=SimpleNamespace(id=101)),
+            patch("trading.views._extract_ticker", side_effect=AssertionError("must reuse persisted fallback")),
+        ):
+            response = self.client.post(
+                "/v1/trade/maker/fallback",
+                {"client_request_id": request.client_request_id},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        exchange.place_market_order.assert_not_called()
+        request.refresh_from_db()
+        self.assertEqual(request.binance_order_id, "maker-order-1")
+
+    def test_maker_fallback_stops_when_current_quote_has_crossed_stop(self):
+        request = self._create_maker_request()
+        exchange = MagicMock()
+        exchange.get_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "live",
+        }]}
+        exchange.cancel_order.return_value = {"data": [{
+            "ordId": request.binance_order_id,
+            "state": "canceled",
+            "fillSz": "0",
+            "accFillSz": "0",
+            "avgPx": "0",
+        }]}
+        instrument = {
+            "ctVal": "1", "marketLotSz": "0.1", "marketMinSz": "0.1",
+            "lotSz": "0.1", "minSz": "0.1", "tickSz": "0.1", "triggerProtect": "0",
+        }
+        with (
+            patch("trading.views.BinanceFuturesClient", return_value=exchange),
+            patch("trading.views._extract_instrument", return_value=instrument),
+            patch("trading.views._extract_ticker", return_value={"last": "80"}),
+        ):
+            response = self.client.post(
+                "/v1/trade/maker/fallback",
+                {"client_request_id": request.client_request_id},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        exchange.place_market_order.assert_not_called()
+
     def test_maker_fill_promotes_read_time_external_projection_without_duplicate(self):
         request = self._create_maker_request()
         projected = Order.objects.create(
@@ -3705,6 +3876,12 @@ class TradingApiTests(APITestCase):
         mock_creds.return_value = object()
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
+        mock_client.get_account_config.return_value = {
+            "code": "0",
+            "data": [{"posMode": "long_short_mode"}],
+        }
+        mock_client.get_positions.return_value = {"code": "0", "data": []}
+        mock_client.get_pending_algo_orders.return_value = {"code": "0", "data": []}
 
         Order.objects.create(
             user=self.user,
@@ -3730,8 +3907,64 @@ class TradingApiTests(APITestCase):
         repaired = reconcile_open_orders_protection()
 
         self.assertEqual(repaired, 0)
-        mock_creds.assert_not_called()
-        mock_client_cls.assert_not_called()
+        mock_creds.assert_called_once()
+        mock_client_cls.assert_called_once()
+
+    @patch("trading.services.send_protection_alert")
+    @patch("trading.services.get_user_binance_credentials")
+    @patch("trading.services.BinanceFuturesClient")
+    def test_reconcile_open_orders_alerts_legacy_manual_position_without_stop(
+        self, mock_client_cls, mock_creds, alert
+    ):
+        mock_creds.return_value = object()
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.get_account_config.return_value = {
+            "code": "0",
+            "data": [{"posMode": "long_short_mode"}],
+        }
+        mock_client.get_positions.return_value = {
+            "code": "0",
+            "data": [{
+                "instId": "BTC-USDT-SWAP",
+                "posSide": "short",
+                "pos": "-1",
+                "last": "62437.5",
+                "markPx": "62437.5",
+            }],
+        }
+        mock_client.get_pending_algo_orders.return_value = {"code": "0", "data": []}
+        with patch("trading.services._get_instrument_trade_rules", return_value={
+            "tickSz": Decimal("0.1"),
+            "marketLotSz": Decimal("0.001"),
+            "marketMinSz": Decimal("0.001"),
+        }):
+            Order.objects.create(
+                user=self.user,
+                binance_order_id="manual-tp-sl-live",
+                symbol="BTCUSDT",
+                side=1,
+                open_price=Decimal("62437.5"),
+                initial_stop_price=Decimal("62760"),
+                stop_loss_price=Decimal("62760"),
+                current_stop_price=Decimal("62760"),
+                stop_loss_amount=Decimal("30"),
+                size=Decimal("1"),
+                leverage=10,
+                status=0,
+                strategy_status=Order.STRATEGY_STATUS_CANCELLED,
+                strategy_tp_algo_ids=[],
+                binance_stop_order_id="",
+                binance_stop_market_order_id="",
+                stop_protection_status=Order.STOP_PROTECTION_PENDING,
+                stop_protection_error=MANUAL_TP_SL_MANAGEMENT_ERROR,
+            )
+            repaired = reconcile_open_orders_protection()
+
+        self.assertEqual(repaired, 0)
+        alert.assert_called_once()
+        mock_client.close_position.assert_not_called()
+        mock_client.place_stop_market_order.assert_not_called()
 
     @patch("trading.services.get_user_binance_credentials")
     @patch("trading.services.BinanceFuturesClient")
