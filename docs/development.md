@@ -23,6 +23,8 @@ RUN_SCHEDULER_IN_WEB=false server/.venv/bin/python server/manage.py test \
 
 切网诊断额外采用实际网络源码与本地真实 socket／挂起 HTTP，13 项通过并有旧代码失败对照；无接口变化的黑洞、前台旧 GET 槽位及会话代际问题已补覆盖，详见 [行情与网络](market-data.md#切网短暂断网与前台恢复2026-11-14本地验证)。完整发布和客户端包验收以 [运维](operations.md) 及 [TestFlight](testflight.md) 的实际记录为准；模拟器不等于真实 iPhone 电梯／蜂窝验收。
 
+最后补齐静默 watchdog 同时释放 GET 读池后，同一受影响 iOS 集再次 **67／67、0 失败（29.922 秒）**，日志为 `.integration-runtime/FixedCapitalSmoothRefreshNov14/ios-affected-final.log`。源码 **`31f0625`** 已推送，完整镜像在 **47.80.22.243（首尔服务器）** 的独立 MySQL／Redis 中 **223 项通过**并完成发布；同一提交 Xcode Cloud Test／Archive 均成功，手机包安装与实机结果另行验收。
+
 ## 平仓后保护单清理延迟（2026-11-14，已部署）
 
 只读取证确认 ZEC 空单于北京时间 17:30:45.650 平仓，所属止损／止盈于 17:32:37 才被陈旧订单补偿扫描撤销，延迟约 1 分 52 秒。快速保护对账和策略引擎原先在目标方向空仓时跳过完整成交关闭核对，留下仍活动的本地订单，因而已平仓残留清理任务也无法处理。

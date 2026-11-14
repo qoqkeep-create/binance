@@ -1,5 +1,16 @@
 # 整合环境部署与运维
 
+## 完整同源发布：固定资金、Maker 拒单与客户端恢复（2026-11-14）
+
+北京时间 **19:56:33**，源码 **`31f0625c802797abc3f89661f5959e4c86eb203f`** 已完整部署到 **47.80.22.243（首尔服务器）**，`current` 指向 `/opt/trade-tools-integrated/releases/integrated-20261114-full-31f0625`。api、market、worker、scheduler 统一使用 `tradetools-integrated:integrated-20261114-full-31f0625`，包含前版 `f542783` 的全部保护／平仓清理和本批固定资金规则、Maker 明确拒单重报价后端。
+
+- 完整归档 **361 文件**，SHA-256 `8b5dccff6d363b7deb3dc2d8619d2c619fd42917dba774d51db65d659f4e27ea`；四个 Python 进程各 **347 个运行 Python／requirements 文件**全部与归档匹配。MySQL／Redis 容器、镜像与数据卷保留，运行配置、受限环境文件和 nginx 无变化。
+- 一致性数据库 gzip 备份 **406594135 bytes**，完整解压和 SHA-256 校验通过，位于 `/opt/trade-tools-integrated/backups/integrated-20261114-full-31f0625/`；目录 0700、文件 0600，保留前版与兼容回滚脚本。migration 计划为空，只检查，无数据清理或账号初始化。
+- 本地后端 **887 项**、iOS 受影响单测最终 **67／67**、实际 UI **9 个独立用例**、实际网络源码传输 **13 项**及最后静默 WSS＋GET 联动定向 **1 项**、鸿蒙 **122／122**通过。新镜像在独立 MySQL／Redis、无生产环境／卷、无外网的环境中 **223 项通过**。
+- 切换前后活动持仓、待成交限价和 PENDING／RUNNING／UNKNOWN 命令均为 0。切换后六容器 healthy，公网 HTTPS health 连续三次 database／migrations／scheduler 全 true；只读核对 13 周期、192 个历史窗口和既有通知开关保留。未人工开平仓、划转、撤保护或修改交易数据库。
+
+客户端完整源码已同步推送；同一提交的 Xcode Cloud Test／Archive 均成功，详见 [TestFlight](testflight.md#固定资金开仓反馈与网络恢复2026-11-14)。尚未确认准确构建号、TestFlight 处理／组内分发及手机安装；原有 App 不因后端部署获得居中、刷新和重连改动。旧百分比止损设置请求明确提示更新客户端，旧配置与已有保护保留。实际手机闪烁未完整复现，电梯弱网恢复仍需新包验收。发布证据在本机忽略目录 `.integration-runtime/FixedRulesRecoveryReleaseNov14/`。
+
 ## 完整同源发布：平仓清理与手动仓保护（2026-11-14）
 
 北京时间 **18:16:17**，源码 **`f542783f2f120b8a063a91e7bf19f6f9753dec0e`** 已完整部署到 **47.80.22.243（首尔服务器）**，`current` 指向 `/opt/trade-tools-integrated/releases/integrated-20261114-full-f542783`。包含此前尚未上线的 `e2b9ddc` 手动仓保护／Maker 追单后端及本次平仓清理修复；api、market、worker、scheduler 统一使用 `tradetools-integrated:integrated-20261114-full-f542783`。

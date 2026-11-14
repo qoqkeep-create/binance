@@ -1,5 +1,11 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
+## 固定资金、开仓反馈与网络恢复（2026-11-14）
+
+完整整合源码提交 **`31f0625c802797abc3f89661f5959e4c86eb203f`** 已推送 `codex/integrated-ios`，自动触发 [Xcode Cloud 运行](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/e2cd8ccc-9196-4837-942f-af994350cbb4)。北京时间 **19:53** 的 GitHub 只读核对确认该提交的 [Test 成功](https://github.com/qoqkeep-create/binance/runs/132438483124)、[Archive 成功](https://github.com/qoqkeep-create/binance/runs/132437988258)；两项分别于 19:51:10、19:48:53 完成。
+
+本次客户端包含固定金额止损设置、原生下拉刷新、成功弹窗居中、Maker 持续监控／追单入口和网络恢复。最终受影响模拟器单测 **67／67**、实际 UI **9 个独立用例**通过。尚未核对准确构建号、TestFlight 处理／内部组分发或手机安装；实际 iPhone 滚动闪烁和电梯弱网恢复仍需安装包含该提交的新包验收。后端部署另见 [运维](operations.md)。
+
 <a id="统一委托源码自动构建20261111"></a>
 
 ## 统一委托源码自动构建（2026-11-11）
