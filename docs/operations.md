@@ -1,5 +1,13 @@
 # 整合环境部署与运维
 
+<a id="止损自动平仓恢复部署20261114"></a>
+
+## 止损自动平仓恢复部署（2026-11-14）
+
+源码提交 **`6e3f452780977c3bdc28f28e59f304a5250be422`** 已推送 `codex/integrated-ios`，完整后端归档 **`integrated-20261114-full-6e3f452`** 已发布到 **47.80.22.243（首尔服务器）** 的 `/opt/trade-tools-integrated/releases/integrated-20261114-full-6e3f452`，`current` 已切换。发布前数据库 gzip 备份 **407082977 bytes**，位于 `/opt/trade-tools-integrated/backups/integrated-20261114-full-6e3f452/`。
+
+发布前已核对活动持仓、待成交委托及 PENDING／RUNNING／UNKNOWN 命令均为 0，运行配置与前版一致且无待迁移项。切换后 api、market、worker、scheduler、MySQL、Redis 六个容器均 healthy，运行 Python／requirements 文件哈希与归档一致，公网 `/integrated/v1/health` 返回 database、migrations、scheduler 全部 true。未执行真实开仓、撤单、止损、平仓或资金操作。
+
 <a id="手动仓保护可靠性加固20261113"></a>
 
 ## 手动仓保护链路可靠性加固（2026-11-13，已部署）
