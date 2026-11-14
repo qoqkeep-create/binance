@@ -214,31 +214,31 @@ class ExternalOperationLogTests(TestCase):
         self.assertEqual(TradeNotificationEvent.objects.filter(order=self.order).count(), 1)
         self.assertFalse(self.logs("external_close", "success").exists())
 
-    def test_excess_loss_close_logs_automatic_reason_and_reuses_confirmed_trade_event(self):
+    def test_excess_loss_logs_alert_without_closing(self):
         self.enable_log_feed()
         self.position["rawUpl"] = "-101"
-        self.client.close_position.side_effect = lambda *_a, **_kw: self.close_receipt()
         self.cycle()
-        event = self.logs("external_close_request").get()
-        self.assertEqual(event.actor, "system")
-        self.assertEqual(event.status, "pending")
-        self.assertIn("浮亏已超过止损额度 100", event.message)
-        self.assertEqual(TradeNotificationEvent.objects.filter(order=self.order).count(), 1)
-        self.assertFalse(self.logs("external_close", "success").exists())
-        records = self.confirmed_trade_feed()
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["action"], "stop_loss")
-        self.assertEqual(records[0]["message"], "止损平仓已确认")
+        event = self.logs("external_loss_exceeded").get()
+        self.assertEqual(event.status, "failed")
+        self.assertIn("已超过止损额度 100", event.message)
+        self.assertIn("不会代为平仓", event.message)
+        self.client.close_position.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 0)
+        self.assertFalse(TradeNotificationEvent.objects.filter(order=self.order).exists())
 
-    def test_touched_stop_close_logs_the_trigger_reason(self):
+    def test_touched_stop_logs_alert_without_closing(self):
         self.enable_log_feed()
         self.order.current_stop_price = Decimal("900")
         self.order.save(update_fields=["current_stop_price"])
         self.client.get_ticker.return_value = {"data": [{"last": "900"}]}
-        self.client.close_position.side_effect = lambda *_a, **_kw: self.close_receipt()
         self.cycle()
-        self.assertIn("价格已触及止损保护价 900", self.logs("external_close_request").get().message)
-        self.assertEqual(self.confirmed_trade_feed()[0]["action"], "stop_loss")
+        event = self.logs("external_stop_crossed").get()
+        self.assertIn("价格已触及止损位 900", event.message)
+        self.assertIn("不会代为平仓", event.message)
+        self.client.close_position.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 0)
 
     def test_manual_close_unknown_result_is_not_failed_or_successful(self):
         self.enable_log_feed()

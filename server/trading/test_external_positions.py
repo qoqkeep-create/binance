@@ -388,20 +388,21 @@ class ExternalProtectionTests(TestCase):
         self.assertEqual(self.order.status, 0)
         self.assertEqual(self.order.external_active_key, "slot")
 
-    def test_float_loss_over_budget_closes_even_with_stop_and_broken_algo_query(self):
+    def test_float_loss_over_budget_alerts_without_closing(self):
+        from positions import protection_alerts
+
         self.position["rawUpl"] = "-101"
-        self.client.get_pending_algo_orders.side_effect = RuntimeError(
-            "algo unavailable"
-        )
-        self.client.close_position.side_effect = lambda *a, **kw: self.close_receipt()
-        self.cycle()
-        self.assertEqual(self.order.status, 1)
-        self.assertIsNone(self.order.external_active_key)
-        self.assertIsNone(self.order.pnl)
-        self.client.get_pending_algo_orders.assert_not_called()
-        self.assertEqual(
-            self.client.close_position.call_args.kwargs["max_quantity"], Decimal("1")
-        )
+        with (
+            patch.object(protection_alerts, "_recipient_id", return_value=self.user.id),
+            patch("positions.profit_alerts.send_echobell") as send,
+        ):
+            self.cycle()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 0)
+        self.client.close_position.assert_not_called()
+        send.assert_called_once()
+        # Protection is still maintained: the stop order gets placed.
+        self.assertEqual(len(self.submits), 1)
 
     def test_equality_does_not_trigger_excess_branch(self):
         self.position["rawUpl"] = "-100"
@@ -409,15 +410,22 @@ class ExternalProtectionTests(TestCase):
         self.client.close_position.assert_not_called()
         self.assertEqual(len(self.submits), 1)
 
-    def test_touched_floor_closes_even_before_algo_read(self):
+    def test_touched_floor_alerts_without_closing(self):
+        from positions import protection_alerts
+
         self.order.current_stop_price = Decimal("900")
         self.order.save(update_fields=["current_stop_price"])
         self.client.get_ticker.return_value = {"data": [{"last": "900"}]}
-        self.client.close_position.side_effect = lambda *a, **kw: self.close_receipt()
-        self.cycle()
-        self.assertEqual(self.order.status, 1)
-        self.assertEqual(self.order.external_close_request["reason"], "stop_crossed")
+        with (
+            patch.object(protection_alerts, "_recipient_id", return_value=self.user.id),
+            patch("positions.profit_alerts.send_echobell") as send,
+        ):
+            self.cycle()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 0)
+        self.client.close_position.assert_not_called()
         self.client.get_pending_algo_orders.assert_not_called()
+        send.assert_called_once()
 
     def test_missing_pnl_does_not_act_as_zero(self):
         self.position["rawUpl"] = None

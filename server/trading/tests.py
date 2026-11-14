@@ -11,7 +11,7 @@ from rest_framework.test import APITestCase
 
 from api_bindings.context import TradingAccountContext
 from positions.cleanup import ClosedOrderCleanupResult
-from positions.models import LimitOrder, Order, OrderStrategyLog, OrderStrategySnapshot, TradeNotificationEvent
+from positions.models import LimitOrder, Order, OrderStrategyLog, OrderStrategySnapshot, TradeNotificationEvent, TradeOperationLog
 from trading.constants import ALLOWED_TRADING_SYMBOLS, PINNED_TRADING_SYMBOLS
 from trading.services import (
     MANUAL_TP_SL_MANAGEMENT_ERROR,
@@ -44,7 +44,6 @@ from trading.views import (
     _close_local_order_after_exchange_manual_close,
     _adopt_maker_fill,
     _promote_external_projection,
-    _emergency_close_position,
     _has_unresolved_stop_protection,
     _resolve_entry_stop_protection,
     _pending_order_increases_risk,
@@ -1116,55 +1115,10 @@ class TradingApiTests(APITestCase):
         self.assertEqual(open_request.status, TradeOpenRequest.STATUS_PENDING)
         self.assertIn("结果未确认", open_request.error)
 
-    @patch("trading.views._resolve_pos_side", return_value="long")
-    def test_emergency_close_requires_exchange_position_confirmation(self, _mock_pos_side):
-        client = MagicMock()
-        close_payload = {
-            "data": [
-                {
-                    "ordId": "emergency-close-1",
-                    "avgPx": "89.5",
-                    "state": "filled",
-                    "sCode": "0",
-                }
-            ]
-        }
-        client.close_position.return_value = close_payload
-        client.get_positions.return_value = {"data": []}
-        confirmed, receipt = _emergency_close_position(client, "BTC-USDT-SWAP", 0)
-
-        self.assertTrue(confirmed)
-        self.assertEqual(receipt, close_payload)
-        client.close_position.assert_called_once()
-        self.assertEqual(client.get_positions.call_count, 2)
-        client.get_positions.assert_called_with(
-            "SWAP",
-            "BTC-USDT-SWAP",
-            budget_priority=RequestPriority.CRITICAL,
-        )
-
-    @patch("trading.views._resolve_pos_side", return_value="long")
-    def test_emergency_close_recovers_when_submit_response_is_lost(self, _mock_pos_side):
-        client = MagicMock()
-        client.close_position.side_effect = BinanceApiError(
-            "请求超时",
-            code="-1007",
-            outcome_unknown=True,
-        )
-        client.get_positions.return_value = {"data": []}
-
-        confirmed, receipt = _emergency_close_position(client, "BTC-USDT-SWAP", 0)
-
-        self.assertTrue(confirmed)
-        self.assertIsNone(receipt)
-        client.close_position.assert_called_once()
-
-    @patch("trading.views._emergency_close_position", return_value=(False, None))
-    @patch("trading.views._should_emergency_close_after_stop_loss_fail", return_value=True)
-    def test_entry_stop_protection_marks_emergency_when_close_is_not_confirmed(
+    @patch("trading.views._stop_price_crossed_after_stop_loss_fail", return_value=True)
+    def test_entry_stop_protection_alerts_without_closing_when_price_crossed(
         self,
         _mock_should_close,
-        _mock_close,
     ):
         order = Order.objects.create(
             user=self.user,
@@ -1179,10 +1133,11 @@ class TradingApiTests(APITestCase):
             status=0,
             stop_protection_status=Order.STOP_PROTECTION_PENDING,
         )
+        client = MagicMock()
 
         _, response_error = _resolve_entry_stop_protection(
             order=order,
-            client=MagicMock(),
+            client=client,
             inst_id="BTC-USDT-SWAP",
             side_code=0,
             stop_loss_price=Decimal("90"),
@@ -1193,50 +1148,10 @@ class TradingApiTests(APITestCase):
 
         order.refresh_from_db()
         self.assertEqual(order.stop_protection_status, Order.STOP_PROTECTION_EMERGENCY)
-        self.assertIn("紧急平仓未确认", order.stop_protection_error)
+        self.assertIn("不会代为平仓", order.stop_protection_error)
         self.assertIn("追单开仓后", response_error)
-
-    @patch("trading.views._mark_order_closed_after_emergency")
-    @patch("trading.views._emergency_close_position")
-    @patch("trading.views._should_emergency_close_after_stop_loss_fail", return_value=True)
-    def test_entry_emergency_close_keeps_exchange_receipt_for_settlement(
-        self,
-        _mock_should_close,
-        mock_close,
-        mock_mark_closed,
-    ):
-        order = Order.objects.create(
-            user=self.user,
-            binance_order_id="entry-emergency-receipt",
-            symbol="BTCUSDT",
-            side=0,
-            open_price=Decimal("100"),
-            stop_loss_price=Decimal("90"),
-            stop_loss_amount=Decimal("30"),
-            size=Decimal("1"),
-            leverage=10,
-            status=0,
-            stop_protection_status=Order.STOP_PROTECTION_PENDING,
-        )
-        close_payload = {
-            "data": [{"ordId": "emergency-close-2", "avgPx": "89.25", "state": "filled"}]
-        }
-        mock_close.return_value = (True, close_payload)
-        client = MagicMock()
-
-        _, response_error = _resolve_entry_stop_protection(
-            order=order,
-            client=client,
-            inst_id="BTC-USDT-SWAP",
-            side_code=0,
-            stop_loss_price=Decimal("90"),
-            stop_loss_error=BinanceApiError("stop create failed"),
-            action_label="开仓",
-            pending_message="开仓已成交，止损保护正在后台重试",
-        )
-
-        mock_mark_closed.assert_called_once_with(order, client, close_payload=close_payload)
-        self.assertIn("系统已自动平仓保护", response_error)
+        self.assertEqual(order.status, 0)
+        client.close_position.assert_not_called()
 
     @patch("trading.views.fetch_close_anchor")
     def test_duplicate_check_does_not_close_local_order_after_one_empty_position_read(
@@ -4052,7 +3967,7 @@ class TradingApiTests(APITestCase):
     @patch("trading.services.get_user_binance_credentials")
     @patch("trading.services.BinanceFuturesClient")
     @patch("trading.services.time.sleep", return_value=None)
-    def test_reconcile_stop_trigger_confirms_close_with_symbol_scoped_positions(
+    def test_reconcile_stop_trigger_alerts_without_closing(
         self,
         _mock_sleep,
         mock_client_cls,
@@ -4064,37 +3979,20 @@ class TradingApiTests(APITestCase):
             "code": "0",
             "data": [{"posMode": "long_short_mode"}],
         }
-        mock_client.get_positions.side_effect = [
-            {
-                "code": "0",
-                "data": [
-                    {
-                        "instId": "BTC-USDT-SWAP",
-                        "posSide": "long",
-                        "pos": "1",
-                        "last": "89",
-                        "markPx": "89",
-                    }
-                ],
-            },
-            {"code": "0", "data": []},
-            {"code": "0", "data": []},
-        ]
-        mock_client.get_pending_algo_orders.return_value = {"code": "0", "data": []}
-        mock_client.get_pending_orders.return_value = {"code": "0", "data": []}
-        mock_client.get_user_trades.return_value = {"code": "0", "data": []}
-        mock_client.close_position.return_value = {
+        mock_client.get_positions.return_value = {
             "code": "0",
             "data": [
                 {
-                    "ordId": "emergency-reconcile-close-1",
-                    "avgPx": "89",
-                    "fillSz": "1",
-                    "state": "filled",
-                    "sCode": "0",
+                    "instId": "BTC-USDT-SWAP",
+                    "posSide": "long",
+                    "pos": "1",
+                    "last": "89",
+                    "markPx": "89",
                 }
             ],
         }
+        mock_client.get_pending_algo_orders.return_value = {"code": "0", "data": []}
+        mock_client.get_pending_orders.return_value = {"code": "0", "data": []}
         mock_client_cls.return_value = mock_client
         order = Order.objects.create(
             user=self.user,
@@ -4112,76 +4010,18 @@ class TradingApiTests(APITestCase):
         with self.captureOnCommitCallbacks(execute=True):
             repaired = reconcile_open_orders_protection()
 
-        self.assertEqual(repaired, 1)
-        mock_client.close_position.assert_called_once_with(
-            inst_id="BTC-USDT-SWAP",
-            pos_side="long",
-            expected_side="long",
-        )
-        self.assertEqual(
-            mock_client.get_positions.call_args_list,
-            [
-                call("SWAP", budget_priority=RequestPriority.CRITICAL),
-                call(
-                    "SWAP",
-                    "BTC-USDT-SWAP",
-                    budget_priority=RequestPriority.CRITICAL,
-                ),
-                call(
-                    "SWAP",
-                    "BTC-USDT-SWAP",
-                    budget_priority=RequestPriority.CRITICAL,
-                ),
-            ],
-        )
+        # A crossed stop never triggers a system-initiated market close; it is
+        # logged and alerted while the position stays untouched.
+        self.assertEqual(repaired, 0)
+        mock_client.close_position.assert_not_called()
         order.refresh_from_db()
-        self.assertIn("交易所已确认仓位平清", order.stop_protection_error)
-        self.assertEqual(order.close_binance_order_id, "emergency-reconcile-close-1")
-        self.assertEqual(order.status, 1)
-        self.assertIsNotNone(order.closed_at)
-        self.assertEqual(order.close_price, Decimal("89"))
-        self.assertEqual(order.exchange_size, Decimal("0"))
-        self.assertFalse(order.has_manual_addition)
-        self.assertEqual(order.settlement_status, Order.SETTLEMENT_STATUS_PENDING)
-        event = TradeNotificationEvent.objects.get(order=order)
-        self.assertEqual(event.event_type, TradeNotificationEvent.TYPE_STOP_LOSS)
-
-    @patch("positions.cleanup.cleanup_closed_order_exchange_artifacts", side_effect=RuntimeError("cleanup crashed"))
-    def test_emergency_close_persists_confirmed_close_when_artifact_cleanup_crashes(
-        self,
-        _mock_cleanup,
-    ):
-        from trading.services import finalize_confirmed_emergency_close
-
-        order = Order.objects.create(
-            user=self.user,
-            binance_order_id="emergency-cleanup-failure",
-            binance_stop_order_id="residual-stop",
-            strategy_tp_algo_ids=["residual-tp"],
-            symbol="BTCUSDT",
-            side=0,
-            open_price=Decimal("100"),
-            stop_loss_price=Decimal("90"),
-            stop_loss_amount=Decimal("30"),
-            size=Decimal("1"),
-            leverage=10,
-            status=0,
+        self.assertEqual(order.status, 0)
+        self.assertEqual(order.exchange_size, Decimal("1"))
+        crossed = TradeOperationLog.objects.filter(
+            order=order, action="protection_stop_crossed",
         )
-
-        finalize_confirmed_emergency_close(
-            order,
-            MagicMock(),
-            close_payload={
-                "data": [{"ordId": "emergency-close", "avgPx": "89", "state": "filled"}],
-            },
-            trigger_price=Decimal("90"),
-        )
-
-        order.refresh_from_db()
-        self.assertEqual(order.status, 1)
-        self.assertEqual(order.close_binance_order_id, "emergency-close")
-        self.assertEqual(order.binance_stop_order_id, "residual-stop")
-        self.assertEqual(order.strategy_tp_algo_ids, ["residual-tp"])
+        self.assertTrue(crossed.exists())
+        self.assertIn("不会代为平仓", crossed.first().message)
 
     @patch("common.binance.time.sleep")
     @patch("trading.services.get_user_binance_credentials")

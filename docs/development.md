@@ -1,5 +1,21 @@
 # 开发与验证
 
+## 移除全部系统主动平仓（2026-11-14，本地）
+
+用户手动开仓被系统按原有 `loss_exceeded`／`stop_crossed` 规则自动平仓后，用户明确产品决策：系统只挂止损、维护止损，任何情况下不代替用户主动平仓。移除三条系统主动平仓路径：手动仓浮亏超额平仓与触价紧急平仓（`external_positions.py`，改为操作日志＋Echobell 电话告警，止损继续维护）；软件开仓止损失败触价紧急平仓（`_resolve_entry_stop_protection` 改告警，`_emergency_close_position` 删除）；Web 保护对账触价紧急平仓（`_reconcile_stop_loss_protection` 触价分支改告警后返回，`_emergency_close_unprotected_position`、`finalize_confirmed_emergency_close` 删除）。`_reconcile_stop_loss_protection` 返回值从 `(int, bool)` 简化为 `int`；`_should_emergency_close_after_stop_loss_fail` 更名 `_stop_price_crossed_after_stop_loss_fail`。平仓仅剩用户手动"立即平仓"与交易所侧条件单触发；策略分层止盈属用户选定策略行为，保留。`test_close_direction.py`（专测已删函数）删除；触价／超额／开仓保护相关测试重写为"告警且不平仓"断言。
+
+验证命令与结果（隔离 SQLite／LocMem＋交易所替身，无真实交易）：
+
+```bash
+DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test \
+  trading.test_web_operation_logs trading.test_external_positions \
+  trading.test_external_scheduler --noinput
+# 定向（外部仓告警语义、Web 触价不平仓、开仓保护告警化）全部通过
+
+DEBUG=true DB_ENGINE=sqlite3 server/.venv/bin/python server/manage.py test trading positions mobile --noinput
+# 完整回归计数见 changes.md 提交说明
+```
+
 ## 开仓强制止盈策略、策略不可手动取消（2026-11-13，本地）
 
 软件开仓必须绑定止盈策略且策略不可手动取消。后端：`TradeOpenView`／`LimitOrderCreateView` 对新建请求强制策略快照校验（恢复路径沿用原冻结意图）；`set-active {manual:true}` 拒绝；`StrategyCancelView` 一律拒绝；策略运行中持仓的手动止盈／保本入口拒绝（两者原会取消策略）；`adopt_entry_execution` 策略止盈预挂失败不再静默降级为手动止盈，策略保持运行由 10 秒引擎重试。iOS：开仓必选策略（`strategyValid` 要求有效策略，未选禁用提交）、策略页删除"手动止盈"行与 manual 提交、持仓卡片对策略运行中持仓隐藏手动止盈／保本按钮。鸿蒙：删除"取消自动止盈策略"按钮，手动止盈／保本区块按策略状态门控。

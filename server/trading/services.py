@@ -813,64 +813,6 @@ def _sync_order_exchange_size(
     return True
 
 
-def finalize_confirmed_emergency_close(
-    order: Order,
-    client: BinanceFuturesClient,
-    *,
-    close_payload: Optional[dict] = None,
-    trigger_price: Optional[Decimal] = None,
-) -> None:
-    """Persist the local terminal state after the exchange confirms no position."""
-    order.status = 1
-    order.closed_at = timezone.now()
-    order.stop_protection_status = Order.STOP_PROTECTION_EMERGENCY
-    order.stop_protection_error = "止损保护缺失且价格已触及止损，交易所已确认仓位平清"
-    close_rows = (close_payload or {}).get("data") or []
-    if close_rows and isinstance(close_rows[0], dict):
-        close_row = close_rows[0]
-        order.close_binance_order_id = str(close_row.get("ordId") or "").strip()
-        close_price = _parse_decimal(close_row.get("avgPx") or close_row.get("fillPx") or "0")
-        if close_price > 0:
-            order.close_price = close_price
-    order.settlement_status = Order.SETTLEMENT_STATUS_PENDING
-    order.settled_at = None
-    order.settlement_error = ""
-    order.settlement_retry_count = 0
-    order.settlement_next_retry_at = None
-    order.exchange_size = Decimal("0")
-    order.has_manual_addition = False
-    persisted = persist_confirmed_close_transition(
-        order,
-        notification={
-            "event_type": TradeNotificationEvent.TYPE_STOP_LOSS,
-            "trigger_price": trigger_price or order.current_stop_price or order.stop_loss_price,
-        },
-        update_fields=[
-            "status",
-            "closed_at",
-            "stop_protection_status",
-            "stop_protection_error",
-            "close_binance_order_id",
-            "close_price",
-            "settlement_status",
-            "settled_at",
-            "settlement_error",
-            "settlement_retry_count",
-            "settlement_next_retry_at",
-            "exchange_size",
-            "has_manual_addition",
-        ],
-    )
-    if not persisted:
-        return
-    cleanup_result = best_effort_cleanup_closed_order_exchange_artifacts(
-        order,
-        client,
-        action_prefix="emergency_close_cleanup",
-    )
-    persist_closed_order_cleanup_result(order, cleanup_result)
-
-
 def _load_order_close_trade_rows(
     client: BinanceFuturesClient,
     order: Order,
@@ -2657,77 +2599,6 @@ def _stop_price_crossed(order: Order, current_price: Decimal, stop_price: Decima
     )
 
 
-def _emergency_close_unprotected_position(
-    order: Order,
-    snapshot: ProtectionAccountSnapshot,
-    stop_price: Decimal,
-) -> int:
-    close_error: Optional[Exception] = None
-    close_payload: Optional[dict] = None
-    record_operation(
-        order,
-        action="emergency_close",
-        status="pending",
-        message=f"止损保护不完整且价格已触及止损价 {stop_price.normalize():f}，系统开始市价平仓",
-    )
-    try:
-        close_side = _resolve_pos_side_from_mode(order.side, snapshot.pos_mode)
-        close_payload = snapshot.client.close_position(
-            inst_id=to_inst_id(order.symbol),
-            pos_side=close_side,
-            expected_side="long" if order.side == 0 else "short",
-        )
-    except Exception as exc:  # noqa: BLE001
-        close_error = exc
-
-    try:
-        consecutive_absent = 0
-        for delay in (0.0, 0.25, 0.75, 1.5):
-            if delay:
-                time.sleep(delay)
-            payload = snapshot.client.get_positions(
-                "SWAP",
-                to_inst_id(order.symbol),
-                budget_priority=RequestPriority.CRITICAL,
-            )
-            rows = payload.get("data") or []
-            if _find_position_size(order, rows, snapshot.pos_mode) <= POSITION_SIZE_TOLERANCE:
-                consecutive_absent += 1
-                if consecutive_absent >= 2:
-                    break
-            else:
-                consecutive_absent = 0
-        if consecutive_absent < 2:
-            if close_error:
-                raise close_error
-            raise BinanceApiError("紧急平仓已提交，但交易所仍返回未平仓仓位")
-        finalize_confirmed_emergency_close(
-            order,
-            snapshot.client,
-            close_payload=close_payload,
-            trigger_price=stop_price,
-        )
-        return 1
-    except Exception as exc:  # noqa: BLE001
-        order.stop_protection_status = Order.STOP_PROTECTION_EMERGENCY
-        order.stop_protection_error = (
-            "止损保护未完整，触价市价平仓失败："
-            f"{safe_error_summary(exc, include_type=False)}"
-        )[:500]
-        order.save(update_fields=["stop_protection_status", "stop_protection_error"])
-        definitive_rejection = isinstance(close_error, BinanceApiError) and not close_error.outcome_unknown
-        record_operation(
-            order,
-            action="emergency_close",
-            status="failed" if definitive_rejection else "pending",
-            message=("紧急平仓被拒绝：" if definitive_rejection else "紧急平仓结果待确认：")
-            + safe_error_summary(exc, include_type=False),
-        )
-        if is_binance_rate_limit_error(exc):
-            raise
-        return 0
-
-
 def _reconcile_stop_loss_protection(
     *,
     order: Order,
@@ -2736,7 +2607,7 @@ def _reconcile_stop_loss_protection(
     exchange_size: Decimal,
     current_price: Decimal,
     stop_price: Decimal,
-) -> tuple[int, bool]:
+) -> int:
     algo_rows = list(snapshot.algo_map.values())
     stop_candidates = _stop_loss_algo_candidates(
         algo_rows,
@@ -2753,7 +2624,32 @@ def _reconcile_stop_loss_protection(
         current_price=current_price,
     )
     if not protection_complete and _stop_price_crossed(order, current_price, stop_price):
-        return _emergency_close_unprotected_position(order, snapshot, stop_price), True
+        # The system never closes the user's position. A crossed stop with
+        # incomplete protection is surfaced loudly; placing the stop now would
+        # trigger immediately, so wait for the user and keep alerting.
+        from positions.protection_alerts import send_protection_alert
+
+        stop_label = f"{stop_price.normalize():f}"
+        record_operation(
+            order,
+            action="protection_stop_crossed",
+            status="failed",
+            message=(
+                f"价格已触及止损价 {stop_label} 且止损保护不完整，"
+                "系统不会代为平仓，请立即手动处理仓位"
+            ),
+            event_key=f"protection-stop-crossed:{order.id}:{stop_label}",
+        )
+        send_protection_alert(
+            order.user_id,
+            kind=f"web-stop-crossed:{order.id}",
+            title="持仓已触止损且保护不完整",
+            body=(
+                f"{order.symbol} 价格已触及止损价 {stop_label}，止损保护不完整。"
+                "系统不会代为平仓，请立即手动处理仓位。"
+            ),
+        )
+        return 0
 
     repaired = 0
     if protection_complete:
@@ -2790,10 +2686,10 @@ def _reconcile_stop_loss_protection(
         if order.stop_protection_status != Order.STOP_PROTECTION_COMPLETE:
             _clear_stop_protection_failure(order)
             _mark_stop_loss_protection_recovered(order, strategy_snapshot)
-        return repaired, False
+        return repaired
 
     if not _stop_protection_retry_due(order):
-        return repaired, False
+        return repaired
     try:
         if _rebuild_stop_loss_for_remaining_position(
             snapshot.client,
@@ -2818,7 +2714,7 @@ def _reconcile_stop_loss_protection(
         _record_stop_protection_retry_failure(order, str(exc))
         if is_binance_rate_limit_error(exc):
             raise
-    return repaired, False
+    return repaired
 
 
 def _reconcile_single_order_protection(
@@ -2860,7 +2756,7 @@ def _reconcile_single_order_protection(
             id=order.strategy_snapshot_id,
             order=order,
         ).first()
-    stop_repairs, emergency_handled = _reconcile_stop_loss_protection(
+    stop_repairs = _reconcile_stop_loss_protection(
         order=order,
         snapshot=snapshot,
         strategy_snapshot=strategy_snapshot,
@@ -2869,8 +2765,6 @@ def _reconcile_single_order_protection(
         stop_price=stop_price,
     )
     repaired += stop_repairs
-    if emergency_handled:
-        return repaired
     try:
         if _rebuild_take_profit_for_remaining_position(
             snapshot.client,

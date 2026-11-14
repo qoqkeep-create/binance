@@ -98,7 +98,6 @@ from trading.strategy_views import StrategySaveSerializer
 from trading.services import (
     adopt_entry_execution,
     defer_incomplete_limit_execution,
-    finalize_confirmed_emergency_close as _mark_order_closed_after_emergency,
 )
 from trading.constants import (
     ALLOWED_TRADING_SYMBOLS,
@@ -1311,7 +1310,7 @@ def _is_stop_price_crossed(side_code: int, stop_loss_price: Decimal, current_pri
     return current_price >= stop_loss_price  # short
 
 
-def _should_emergency_close_after_stop_loss_fail(
+def _stop_price_crossed_after_stop_loss_fail(
     inst_id: str,
     side_code: int,
     stop_loss_price: Decimal,
@@ -1325,7 +1324,7 @@ def _should_emergency_close_after_stop_loss_fail(
         return False
     if _is_stop_price_crossed(side_code, stop_loss_price, current_price):
         return True
-    # Trigger-price invalid without crossing confirmation is not enough to auto-close.
+    # Trigger-price invalid without crossing confirmation is not enough to alert.
     return False
 
 
@@ -1360,67 +1359,6 @@ def _decimal_or_zero(raw) -> Decimal:
         return Decimal("0")
 
 
-def _emergency_close_position(
-    client: BinanceFuturesClient,
-    inst_id: str,
-    side_code: int,
-) -> tuple[bool, Optional[dict]]:
-    close_error = None
-    close_payload = None
-    try:
-        pos_side = _resolve_pos_side(
-            client,
-            side_code,
-            budget_priority=RequestPriority.CRITICAL,
-        )
-        close_payload = client.close_position(
-            inst_id=inst_id,
-            pos_side=pos_side,
-            expected_side="long" if side_code == 0 else "short",
-        )
-    except Exception as exc:  # noqa: BLE001
-        close_error = exc
-
-    try:
-        expected_side = "long" if side_code == 0 else "short"
-        consecutive_absent = 0
-        for wait_sec in (0, 0.5, 1):
-            if wait_sec:
-                time.sleep(wait_sec)
-            rows = client.get_positions(
-                "SWAP",
-                inst_id,
-                budget_priority=RequestPriority.CRITICAL,
-            ).get("data") or []
-            still_open = any(
-                str((row or {}).get("instId") or "") == inst_id
-                and str((row or {}).get("posSide") or "") == expected_side
-                and abs(_decimal_or_zero((row or {}).get("pos") or "0")) > 0
-                for row in rows
-            )
-            if not still_open:
-                consecutive_absent += 1
-                if consecutive_absent >= 2:
-                    return True, close_payload
-            else:
-                consecutive_absent = 0
-        logger.error(
-            "emergency close not confirmed inst_id=%s side=%s err=%s",
-            inst_id,
-            expected_side,
-            safe_error_summary(close_error or "position still open", include_type=False),
-        )
-        return False, close_payload
-    except Exception as exc:
-        logger.error(
-            "emergency close failed inst_id=%s side_code=%s err=%s",
-            inst_id,
-            side_code,
-            safe_error_summary(exc),
-        )
-        return False, close_payload
-
-
 def _resolve_entry_stop_protection(
     *,
     order: Order,
@@ -1435,25 +1373,31 @@ def _resolve_entry_stop_protection(
     """Return the success message and an optional terminal response error."""
     if order.binance_stop_market_order_id:
         return pending_message, None
-    if stop_loss_error is not None and _should_emergency_close_after_stop_loss_fail(
+    if stop_loss_error is not None and _stop_price_crossed_after_stop_loss_fail(
         inst_id=inst_id,
         side_code=side_code,
         stop_loss_price=stop_loss_price,
         error=stop_loss_error,
     ):
-        close_confirmed, close_payload = _emergency_close_position(client, inst_id, side_code)
-        if close_confirmed:
-            _mark_order_closed_after_emergency(order, client, close_payload=close_payload)
-            return pending_message, (
-                f"{action_label}后止损未成功挂单且价格已触及止损区间，"
-                "系统已自动平仓保护，请稍后重试"
-            )
+        # The system never closes the user's position. Mark the gap, alert
+        # loudly, and let the user decide; background protection keeps retrying.
         order.stop_protection_status = Order.STOP_PROTECTION_EMERGENCY
-        order.stop_protection_error = "止损触价且紧急平仓未确认，请立即手动处理仓位"
+        order.stop_protection_error = "止损挂单失败且价格已触及止损区间，系统不会代为平仓，请立即手动处理仓位"
         order.save(update_fields=["stop_protection_status", "stop_protection_error"])
+        from positions.protection_alerts import send_protection_alert
+
+        send_protection_alert(
+            order.user_id,
+            kind=f"entry-stop-crossed:{order.id}",
+            title="开仓止损挂单失败且已触价",
+            body=(
+                f"{action_label}后止损未成功挂单，且价格已触及止损区间。"
+                "系统不会代为平仓，请立即手动处理仓位。"
+            ),
+        )
         return pending_message, (
             f"{action_label}后止损未成功挂单且价格已触及止损区间，"
-            "紧急平仓失败，请立即手动处理仓位"
+            "系统不会代为平仓，请立即手动处理仓位"
         )
     return pending_message, None
 
