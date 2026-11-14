@@ -1,10 +1,21 @@
 # 整合环境部署与运维
 
+## 完整同源发布：平仓清理与手动仓保护（2026-11-14）
+
+北京时间 **18:16:17**，源码 **`f542783f2f120b8a063a91e7bf19f6f9753dec0e`** 已完整部署到 **47.80.22.243（首尔服务器）**，`current` 指向 `/opt/trade-tools-integrated/releases/integrated-20261114-full-f542783`。包含此前尚未上线的 `e2b9ddc` 手动仓保护／Maker 追单后端及本次平仓清理修复；api、market、worker、scheduler 统一使用 `tradetools-integrated:integrated-20261114-full-f542783`。
+
+- 归档 **359 文件**，SHA-256 `fffbd62d03cf042b870c33104d37ee536a936aec13fef020377f44984605787b`；四个 Python 进程各 **345 个运行 Python／requirements 文件**与归档完全一致。运行配置无变化，MySQL／Redis 容器 ID、镜像与数据卷保留，环境文件和 nginx 未改变。
+- 一致性数据库 gzip 备份 **406789688 bytes**，完整解压与 SHA-256 校验通过，位于 `/opt/trade-tools-integrated/backups/integrated-20261114-full-f542783/`（目录 0700、备份 0600）；保留旧版 `integrated-20261114-full-6e3f452` 和兼容回滚脚本。本次 migration 计划为空，只执行检查，没有初始化账号或清理数据库。
+- 本地完整 `trading positions mobile` **776 项通过**；新镜像在一次性 MySQL／Redis、无生产环境／数据卷、无外部网络下 **101 项通过**。正式切换前停止旧 worker／scheduler；切换后六容器 healthy，HTTPS health 连续三次 database／migrations／scheduler 全 true。
+- 发布准备时原 ZEC 多仓已由既有系统于 **18:11:29** 确认关闭并清理保护；18:16 切换前后，本地活动仓位、待成交限价及 PENDING／RUNNING／UNKNOWN 命令均为 0。只读核对该绑定账户无 ZEC 持仓、活动条件单或普通挂单。本轮没有人工开平仓、划转、撤保护或改写订单，系统原有自动保护正常运行。
+
+后端已上线；Maker 持续监控弹窗及委托卡按钮仍需新版 iOS 客户端，不能把本次服务器部署记作 TestFlight 上传或手机安装。证据保存在本机忽略目录 `.integration-runtime/ClosedCleanupReleaseNov14/`。
+
 <a id="20261114手动仓保护与maker追单"></a>
 
-## 手动仓保护与 Maker 追单（本地待发布）
+## 手动仓保护与 Maker 追单（后端已部署，客户端待发布）
 
-本轮代码已在隔离数据库和交易所替身中完成后端保护、Maker fallback 与委托卡回归，并通过完整后端及两个 iOS generic simulator build-for-testing。定向后端共 **97 项通过**，完整 `trading positions mobile` 共 **772 项通过、0 失败**。当前未部署；**47.80.22.243（首尔服务器）** 仍运行既有 `integrated-20261114-full-6e3f452`，不得将本轮本地验证写作线上生效。发布前需使用完整同源工作区重新归档、备份、切换并复验健康检查，且不执行真实交易写操作。
+本轮代码已在隔离数据库和交易所替身中完成后端保护、Maker fallback 与委托卡回归，并通过完整后端及两个 iOS generic simulator build-for-testing。定向后端共 **97 项通过**，当批完整 `trading positions mobile` 共 **772 项通过、0 失败**。后端现随 `f542783` 完整发布到 **47.80.22.243（首尔服务器）**，发布与新一轮 776／101 项验证见上方记录；客户端仍需独立打包与安装。
 
 <a id="止损自动平仓恢复部署20261114"></a>
 
@@ -25,7 +36,7 @@
 - 第一版归档 SHA-256 `21d5b276d75eab35a8817401a9018322b7fac9016c636fe11ed8373fe97094e9`，**357 个**后端／部署文件逐项匹配；发布前数据库 gzip 备份 **423189316 bytes**，SHA-256 `d02a8834fa6e560b0650db43a2b5914a6425743c27cf2b80579e9a090c58dc13`，位于 `backups/integrated-20261113-full-3f46db4/`。北京时间 22:26 切换，六容器 healthy、公网健康 ×3 全 true、运行文件哈希匹配、`migrate --check` 通过。
 - 第二版归档 SHA-256 `205ede1356ebd57b955c4c7d963e3ca005c17e0de86976d6e1798acbd8c99a3a`，357 文件逐项匹配；数据库 gzip 备份 **423218145 bytes**，SHA-256 `60f09c32e79a4091af3a5e28cc94a6cdd5612134be1987a0f20ee08d22833634`，位于 `backups/integrated-20261113-full-dd072dd/`。北京时间 22:54 切换，六容器 healthy、公网健康 ×3 全 true、api 容器 344 个运行 Python／requirements 哈希匹配、`migrate --check` 通过（本次无新增 migration）。
 - 线上只读验收：新任务"开仓请求服务端收敛"每 30 秒运行；卡住的请求 13／14 在首版部署后约 1 分钟内被自动核对并关联本地订单 23／24，无需用户打开页面。订单 23（历史成交、仓位已平）30 秒内自动收敛关闭；订单 24 因首版缺少持仓存在性核对成为幻影仓，第二版已根因杜绝新增；24 的幻影止损已不在交易所活动条件单中，真实持仓订单 22 的止损 `4000002119913908`（SELL LONG 5.115 @ 1929.26）只读核实仍在。幻影订单 24 的本地关闭需单独授权，见变更记录。
-- 隔离回归（前一版已部署代码）：定向 **79 项**、完整 `trading positions mobile` **762 项**通过；未执行真实开仓、撤单、止损、平仓、划转或保护单操作（系统自身保护逻辑按既有规则运行）。本机证据在忽略目录 `.integration-runtime/ProtectionReliabilityNov13/`。本轮新增边界修复另见上方“手动仓保护与 Maker 追单”，当前代码已推送，待部署。
+- 隔离回归（前一版已部署代码）：定向 **79 项**、完整 `trading positions mobile` **762 项**通过；未执行真实开仓、撤单、止损、平仓、划转或保护单操作（系统自身保护逻辑按既有规则运行）。本机证据在忽略目录 `.integration-runtime/ProtectionReliabilityNov13/`。后续边界修复另见上方“手动仓保护与 Maker 追单”，已随 `f542783` 完整发布。
 
 <a id="交易经验页头精简20261113"></a>
 
