@@ -660,33 +660,6 @@ def _previous_stop_identities(order):
     return ids - {None, ""}, client_ids - {None, ""}
 
 
-def _alert_stop_crossed(order, *, price_hint):
-    """Surface a crossed stop instead of closing the user's position.
-
-    The system only maintains stop orders; exits are the exchange-side stop
-    trigger or the user's own decision, never a system-initiated market close.
-    """
-    price_label = _log_number(price_hint)
-    record_operation(
-        order,
-        action="external_stop_crossed",
-        status="failed",
-        message=(
-            f"价格已触及止损位 {price_label}，系统不会代为平仓，请立即手动处理"
-        ),
-        event_key=f"external-stop-crossed:{order.id}:{price_label}",
-    )
-    send_protection_alert(
-        order.user_id,
-        kind=f"stop-crossed:{order.id}",
-        title="手动仓价格已触及止损位",
-        body=(
-            f"{order.symbol} 价格已触及止损位 {price_label}。"
-            "系统不会代为平仓，请立即手动处理。"
-        ),
-    )
-
-
 def _protect(order, client, pos_mode, position, *, closing=False):
     previous_journal = dict(order.external_stop_request)
     previous_price = order.current_stop_price
@@ -722,7 +695,7 @@ def _protect(order, client, pos_mode, position, *, closing=False):
             if order.side == 0
             else reference >= order.current_stop_price
         ):
-            _alert_stop_crossed(order, price_hint=order.current_stop_price)
+            close_external_position(order, client, pos_mode, reason="stop_crossed")
             return
     previous_ids, previous_clients = _previous_stop_identities(order)
     candidates = [
@@ -812,7 +785,7 @@ def _protect(order, client, pos_mode, position, *, closing=False):
     )
     if reference <= price if order.side == 0 else reference >= price:
         if not closing:
-            _alert_stop_crossed(order, price_hint=price)
+            close_external_position(order, client, pos_mode, reason="stop_crossed")
         return
     journal = dict(order.external_stop_request)
     if journal.get("status") == "pending":
@@ -1093,30 +1066,12 @@ def reconcile_external_order(order, client, pos_mode, position):
         # Missing/malformed PnL must never be normalized to zero.
         floating_loss = max(-finite_decimal(position.get("rawUpl")), Decimal("0"))
         if floating_loss > order.stop_loss_amount and not closing:
-            # The system never closes the user's position: surface the breach
-            # and keep maintaining the stop order; exits stay the user's call
-            # or the exchange-side stop trigger.
-            loss_label = _log_number(floating_loss)
-            record_operation(
-                order,
-                action="external_loss_exceeded",
-                status="failed",
-                message=(
-                    f"浮亏 {loss_label} USDT 已超过止损额度 "
-                    f"{_log_number(order.stop_loss_amount)} USDT，系统不会代为平仓，请立即手动处理"
-                ),
-                event_key=f"external-loss-exceeded:{order.id}:{int(floating_loss)}",
-            )
-            send_protection_alert(
-                order.user_id,
-                kind=f"loss-exceeded:{order.id}",
-                title="手动仓浮亏超过止损额度",
-                body=(
-                    f"{order.symbol} 浮亏 {loss_label} USDT 已超过止损额度 "
-                    f"{_log_number(order.stop_loss_amount)} USDT。"
-                    "系统不会代为平仓，请立即手动处理。"
-                ),
-            )
+            if close_external_position(order, client, pos_mode, reason="loss_exceeded"):
+                return
+            closing = True
+            position = _target(order, client)
+            if position is None:
+                return
         _protect(order, client, pos_mode, position, closing=closing)
     except Exception as exc:
         _save_error(

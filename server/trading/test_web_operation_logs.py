@@ -11,6 +11,7 @@ from positions.models import Order, TradeOperationLog
 from trading.services import (
     ProtectionAccountSnapshot,
     _converge_stop_loss_order,
+    _emergency_close_unprotected_position,
     _reconcile_stop_loss_protection,
     _record_stop_protection_retry_failure,
 )
@@ -76,17 +77,17 @@ class WebOperationLogTests(APITestCase):
         self.confirm_protection()
         self.assertEqual(list(self.logs("stop_protection").values_list("status", flat=True)), ["pending", "success"])
 
-    def test_crossed_stop_logs_alert_and_never_closes(self):
-        result = _reconcile_stop_loss_protection(
-            order=self.order, snapshot=self.snapshot, strategy_snapshot=None,
-            exchange_size=Decimal("1"), current_price=Decimal("89"), stop_price=Decimal("90"),
-        )
-        self.assertEqual(result, 0)
-        self.exchange.close_position.assert_not_called()
-        self.assertEqual(self.logs("protection_stop_crossed").count(), 1)
-        self.assertIn("failed", [log.status for log in self.logs("protection_stop_crossed")])
-        self.order.refresh_from_db()
-        self.assertEqual(self.order.status, 0)
+    @patch("trading.services.time.sleep")
+    def test_emergency_rejection_and_unknown_outcome_are_not_reported_as_closed(self, _sleep):
+        for unknown, expected in ((False, "failed"), (True, "pending")):
+            with self.subTest(unknown=unknown):
+                self.exchange.close_position.side_effect = BinanceApiError("test refusal or timeout", outcome_unknown=unknown)
+                result = _emergency_close_unprotected_position(self.order, self.snapshot, Decimal("90"))
+                self.assertEqual(result, 0)
+                self.assertEqual(self.logs("emergency_close").last().status, expected)
+                self.order.refresh_from_db()
+                self.assertEqual(self.order.status, 0)
+        self.assertFalse(self.logs("emergency_close").filter(status="success").exists())
 
     def test_log_database_failure_does_not_rollback_protection_state(self):
         with transaction.atomic(), patch(
