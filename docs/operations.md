@@ -1,5 +1,26 @@
 # 整合环境部署与运维
 
+## 日常快速服务端发布（默认推荐）
+
+日常只改 Python 服务端时，使用仓库内的快速发布入口：
+
+```bash
+cd /Users/apple/work/TradeTools-Binance-iOS
+python3 deploy/integrated/quick_deploy.py
+```
+
+它只上传当前已提交源码，构建新的共享应用镜像，并切换 `api`、`market`、`worker`、`scheduler` 四个容器。流程会保留发布锁、当前容器健康、活动命令／持仓只读门禁、`migrate --check`、MySQL／Redis 容器不替换、四服务健康检查和一次 HTTPS health；不会执行数据库备份、隔离 MySQL／Redis 回归、`migrate`、`bootstrap_mobile`、生产数据清理或自动重发交易命令。构建会优先使用旧应用镜像作为 Docker cache，已经存在同名镜像时直接复用。
+
+快速流程失败时只恢复旧的四个应用容器，不恢复数据库。旧 release 和旧镜像会保留，便于代码回退；没有数据库备份，因此不适合新增或修改 migration、交易生命周期、资金划转、保护单和数据库结构。此类变更改用既有完整发布流程，执行数据库备份和隔离回归：快速部署是速度优先的日常路径，完整发布是重大变更路径。
+
+先查看将要发布的归档而不连接服务器：
+
+```bash
+python3 deploy/integrated/quick_deploy.py --dry-run
+```
+
+脚本要求工作区干净且改动已经提交，目标默认是 **47.80.22.243（首尔服务器）**。该入口不使用 `deploy/integrated/release.sh`，后者属于首次初始化流程，会启动 MySQL／Redis、执行迁移和 bootstrap。
+
 ## 完整同源发布：固定资金、Maker 拒单与客户端恢复（2026-11-14）
 
 北京时间 **19:56:33**，源码 **`31f0625c802797abc3f89661f5959e4c86eb203f`** 已完整部署到 **47.80.22.243（首尔服务器）**，`current` 指向 `/opt/trade-tools-integrated/releases/integrated-20261114-full-31f0625`。api、market、worker、scheduler 统一使用 `tradetools-integrated:integrated-20261114-full-31f0625`，包含前版 `f542783` 的全部保护／平仓清理和本批固定资金规则、Maker 明确拒单重报价后端。
