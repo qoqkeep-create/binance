@@ -6,6 +6,8 @@
 
 隔离 SQLite／LocMem、交易所替身：`trading.test_balance_cap trading.test_capital_wallet` **110 项通过（18.646 秒）**；`accounts.test_fixed_stop_loss trading.test_lead_mode` **27 项通过（17.727 秒）**。覆盖新上限分币边界、两条独立补入、旧计划失效及旧流水不重发；本轮未执行真实划转。最终 iOS Release 模拟器 build、Django `check` 和 `makemigrations --check --dry-run` 通过。完整回归与发布证据保存在忽略目录 `.integration-runtime/CapitalCap3000Nov22/`；本地和服务器验收分别记录。
 
+完整 `accounts trading positions mobile` 使用既有禁外网运行器在隔离 SQLite／LocMem 中执行，**889 项通过、0 失败（249.630 秒）**，日志为 `backend-full-isolated.log`。第一轮普通运行遇到既有用例等待公共行情连接而提前停止，只执行了 542 项，不作为完整套件通过的证据。47.80.22.243（首尔服务器）的同源镜像在独立内网 MySQL／Redis、独立环境和测试数据目录中 **249 项全部通过**，包含并发、委托、事件投递及资金／保护回归；未使用生产数据库、生产凭证或外部网络。
+
 ## API 绑定连接地址（2026-11-21）
 
 绑定请求使用 `/v1/api/bind`，由当前 `AppRuntime` 服务器地址拼接整合前缀。Release/TestFlight 的服务器列表已隔离本地 `127.0.0.1` 地址，避免旧 Debug 的 `selectedAPIOrigin` 让真机请求自身 localhost。当前整合入口为 `https://47.80.22.243/integrated/`；“设置 → 切换服务器 → 测试网络响应”可验证设备到入口的连接。服务器收到请求后再校验 Binance Futures API，权限或白名单错误会返回业务错误，不会表现为客户端无法连接服务器。

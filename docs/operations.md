@@ -1,5 +1,17 @@
 # 整合环境部署与运维
 
+## 合约余额上限 3000 USDT 完整发布（2026-11-22）
+
+北京时间 **09:48:05**，完整源码 **`1c1b0d641508a346e9991be5d028612b608c94bf`** 已发布到 **47.80.22.243（首尔服务器）**；`current` 指向 `/opt/trade-tools-integrated/releases/integrated-20261122-full-1c1b0d6`。api／market／worker／scheduler 共用该版本镜像，四个运行容器实际读取的 `FUTURES_RETENTION_CAP` 均为 **3000**。现有客户端重新读取资金预检即可采用新上限与补足目标；iOS 说明调整仍需后续客户端新包，本轮没有上传 TestFlight。
+
+- 完整归档 363 个文件，SHA-256 `8a24bd138f724df4d369e8bdfb439bed304550e694bd54172764b49a37ade60f`；四个应用服务各 347 个 Python／requirements 文件与归档全部一致。
+- 一致性数据库 gzip 备份 **416841393 bytes**，完整解压及 SHA-256 校验通过；备份、原镜像和 `rollback.sh` 保留在 `/opt/trade-tools-integrated/backups/integrated-20261122-full-1c1b0d6/`。备份目录 0700、文件 0600，无新增迁移，仅执行迁移检查。
+- 本地禁外网 SQLite／LocMem 完整 `accounts trading positions mobile` **889 项通过**；新镜像在独立 MySQL／Redis、内部无外网测试网络中 **249 项通过**，未使用生产数据库、凭证或数据卷。
+- 切换前后本地数据库活动仓位、待成交限价和 PENDING／RUNNING／UNKNOWN 命令均为 0。六个容器 healthy；MySQL／Redis 容器 ID、镜像及数据卷保持原样，运行环境和含 `/calc/` 的 Nginx 配置哈希无变化。
+- 公网 health 连续三次 database／migrations／scheduler 全 true；`/plan/` 和 `/calc/` 均返回 200。13 个行情周期、192 个历史缓存窗口及既有通知开关保留。本轮没有人工开平仓、划转、撤保护或数据库清理。
+
+证据位于忽略目录 `.integration-runtime/CapitalCap3000Nov22/`。全部工作区改动已本地提交，未推送 GitHub；独立 macOS 项目不在本次源码或部署范围内。
+
 ## 房贷税费计算器静态页（2026-11-19 部署并更新布局）
 
 - 访问地址：`https://47.80.22.243（首尔服务器）/calc/`。页面为单文件静态计算器（住房税费、柴房评估、卖方净拿反推、买方一次性准备明细），无数据库；通过一个仅监听 `127.0.0.1:8791` 的 Python 标准库服务共享一份 JSON 状态，多人同时打开时最后写入生效。
