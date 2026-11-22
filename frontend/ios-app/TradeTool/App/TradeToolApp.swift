@@ -464,6 +464,9 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
   private actor WebParityFixtureRequests {
     private var counts: [String: Int] = [:]
     private var registrationEnabled = false
+    private var closeKeys: Set<String> = []
+    private var closePositions: Set<String> = []
+    private var closeRequests = 0
     func next(_ path: String) -> Int {
       counts[path, default: 0] += 1
       return counts[path, default: 0]
@@ -472,6 +475,14 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       if let enabled { registrationEnabled = enabled }
       return registrationEnabled
     }
+    func recordUnknownClose(key: String, positionID: String) -> [String: Int] {
+      closeRequests += 1
+      closeKeys.insert(key)
+      closePositions.insert(positionID)
+      return ["chartCloseRequests": closeRequests, "chartCloseUniqueKeys": closeKeys.count,
+        "chartCloseUniquePositions": closePositions.count, "chartClosePositionID": Int(positionID) ?? -1,
+        "chartCloseKeyValid": UUID(uuidString: key) == nil ? 0 : 1]
+    }
   }
 
   /// Isolated visual states with no network transport. Writes only update explicit local previews or operator state.
@@ -479,6 +490,20 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
     private let requests = WebParityFixtureRequests()
     static var empty: Bool { ProcessInfo.processInfo.arguments.contains("--fixture-empty") }
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+      if ProcessInfo.processInfo.arguments.contains("--fixture-chart-holding-probe") {
+        await MainActor.run {
+          let state = WebParityScrollProbeState.shared
+          state.values["chartHoldingProbeArmed"] = 1
+          if ![HTTPMethod.get, .head].contains(request.method) {
+            state.values["chartWriteAttempts", default: 0] += 1
+          }
+          if request.path == "/v1/strategy/log" {
+            state.values["chartStrategyReads", default: 0] += 1
+            state.values["chartStrategyPositionID"] = request.queryItems.first { $0.name == "position_id" }
+              .flatMap { $0.value.flatMap(Int.init) } ?? -1
+          }
+        }
+      }
       let continuity = ProcessInfo.processInfo.arguments.contains("--fixture-scroll-continuity")
       let observedRead = (continuity || ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay"))
         && WebParityScrollProbeState.key(request.path) != nil
@@ -500,6 +525,22 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         && ProcessInfo.processInfo.arguments.contains("--fixture-registration-operator")
       // Explicit, transport-free UI fixtures. Entry commands return synthetic
       // data only when enabled; all other writes reach the rejection below.
+      if request.method == .post, request.path == "/api/commands",
+        ProcessInfo.processInfo.arguments.contains("--fixture-chart-close-unknown") {
+        let body = try JSONDecoder().decode(JSONValue.self, from: request.body ?? Data())
+        if body.value("action") == "position-close" {
+          let positionID = body["payload"]?.value("position_id", fallback: "") ?? ""
+          guard let key = request.headers["Idempotency-Key"], UUID(uuidString: key) != nil,
+            ["101", "102"].contains(positionID) else {
+            throw APIError.business(code: "VISUAL_FIXTURE", message: "本地平仓模拟意图无效")
+          }
+          let counters = await requests.recordUnknownClose(key: key, positionID: positionID)
+          await MainActor.run { WebParityScrollProbeState.shared.values.merge(counters) { _, new in new } }
+          let result: JSONValue = .object(["id": .string("fixture-position-close-" + positionID),
+            "status": .string("UNKNOWN"), "result": .object(["message": .string("本地模拟：平仓结果待核对")])])
+          return try JSONDecoder().decode(Response.self, from: JSONEncoder().encode(result))
+        }
+      }
       if request.method == .post, request.path == "/api/commands",
         ProcessInfo.processInfo.arguments.contains("--fixture-limit-submit") {
         let body = try JSONDecoder().decode(JSONValue.self, from: request.body ?? Data())
@@ -851,6 +892,17 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         second["current_price"] = .string("2600.50")
         second["pnl"] = .string("-3.50")
         second["side"] = .number(1)
+        value = .array([first, .object(second)])
+      }
+      if request.path == "/v1/position/list",
+        ProcessInfo.processInfo.arguments.contains("--fixture-chart-hedged"),
+        let first = value.rows.first {
+        var second = first.fields
+        second["id"] = .number(102)
+        second["side"] = .number(1)
+        second["open_price"] = .string("65000")
+        second["stop_loss_price"] = .string("65100")
+        second["market_stop_price"] = .string("65100")
         value = .array([first, .object(second)])
       }
       if request.path == "/v1/position/list",
@@ -1273,7 +1325,8 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       .overlay(alignment: .bottomTrailing) {
         if ProcessInfo.processInfo.arguments.contains("--fixture-scroll-continuity")
-          || ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay") {
+          || ProcessInfo.processInfo.arguments.contains("--fixture-refresh-delay")
+          || ProcessInfo.processInfo.arguments.contains("--fixture-chart-holding-probe") {
           WebParityScrollProbe().frame(width: 1, height: 1).allowsHitTesting(false)
         }
       }
@@ -1296,6 +1349,14 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         }
       }
       .task {
+        if ProcessInfo.processInfo.arguments.contains("--fixture-chart-close-unknown") {
+          // Only this explicit transport-free fake account is reset between UI runs.
+          // Reopening the dialog in the same process keeps its UNKNOWN intent.
+          let prefix = "integrated.position-close.\(container.baseURL.absoluteString)._web_visual_fixture:"
+          for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+            UserDefaults.standard.removeObject(forKey: key)
+          }
+        }
         if ProcessInfo.processInfo.arguments.contains("--fixture-entry-ready") {
           UserDefaults.standard.set(ProcessInfo.processInfo.arguments.contains("--fixture-maker-entry"),
             forKey: ChartOrderExecutionPreferences.marketEntryMaker)

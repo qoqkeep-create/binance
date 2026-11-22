@@ -4031,3 +4031,71 @@ private actor ChartPositionLifecycleAPI: APIClient {
         throw APIError.timeout
     }
 }
+
+final class ChartHoldingActionTests: XCTestCase {
+    private func row(_ changes: [String: JSONValue] = [:]) -> JSONValue {
+        .object(["id": .number(101), "symbol": .string("BTCUSDT"), "side": .number(0),
+            "status": .number(0), "exchange_size": .string("0.1")]
+            .merging(changes, uniquingKeysWith: { _, next in next }))
+    }
+
+    func testHoldingSelectionTargetsOneActiveSideOfTheCurrentSymbol() {
+        let long = row()
+        let short = row(["id": .number(102), "side": .number(1)])
+        let unrelated = row(["id": .number(103), "symbol": .string("ETHUSDT")])
+        let closed = row(["id": .number(104), "status": .number(1)])
+        let zero = row(["id": .number(105), "exchange_size": .string("0")])
+        let unknown = row(["id": .number(106), "exchange_size": .null])
+        let rows = [long, short, unrelated, closed, zero, unknown]
+        XCTAssertEqual(ChartHeldPositionSelection.rows(in: rows, symbol: "btcusdt"), [long, short])
+        XCTAssertEqual(ChartHeldPositionSelection.selected(in: rows, symbol: "BTCUSDT", selectedID: "102"), short)
+        XCTAssertEqual(ChartHeldPositionSelection.selected(in: rows, symbol: "BTCUSDT", selectedID: ""), long)
+    }
+
+    func testFrozenPositionCannotChangeSideSymbolOrIdentityAtConfirmation() {
+        let frozen = row()
+        XCTAssertTrue(ChartHeldPositionSelection.matches(frozen, row()))
+        XCTAssertFalse(ChartHeldPositionSelection.matches(frozen, nil))
+        XCTAssertFalse(ChartHeldPositionSelection.matches(frozen, row(["id": .number(102)])))
+        XCTAssertFalse(ChartHeldPositionSelection.matches(frozen, row(["side": .number(1)])))
+        XCTAssertFalse(ChartHeldPositionSelection.matches(frozen, row(["symbol": .string("ETHUSDT")])))
+    }
+
+    func testUnknownCloseIntentRestoresTheSameKeyAndOriginalPayloadID() throws {
+        let suite = "ChartHoldingActionTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let storageKey = try XCTUnwrap(PositionCloseIntent.storageKey(server: "https://example.invalid/", scope: "user:ordinary:1", position: row()))
+        let original = PositionCloseIntent(positionID: .number(101), key: UUID().uuidString)
+        original.save(defaults: defaults, storageKey: storageKey)
+        // A new modal instance reads the saved identity; it must not create a new UUID.
+        let restored = try XCTUnwrap(PositionCloseIntent.load(defaults: defaults, storageKey: storageKey, positionID: .number(101)))
+        XCTAssertEqual(restored, original)
+        XCTAssertEqual(restored.positionID, .number(101))
+        XCTAssertNil(PositionCloseIntent.load(defaults: defaults, storageKey: storageKey, positionID: .number(102)))
+    }
+
+    func testCloseIntentNamespaceSeparatesAccountModeServerAndPosition() throws {
+        let original = try XCTUnwrap(PositionCloseIntent.storageKey(server: "https://one.invalid/", scope: "user:ordinary:1", position: row()))
+        let variants = [
+            PositionCloseIntent.storageKey(server: "https://two.invalid/", scope: "user:ordinary:1", position: row()),
+            PositionCloseIntent.storageKey(server: "https://one.invalid/", scope: "other:ordinary:1", position: row()),
+            PositionCloseIntent.storageKey(server: "https://one.invalid/", scope: "user:lead:1", position: row()),
+            PositionCloseIntent.storageKey(server: "https://one.invalid/", scope: "user:ordinary:2", position: row()),
+            PositionCloseIntent.storageKey(server: "https://one.invalid/", scope: "user:ordinary:1", position: row(["id": .number(102)])),
+            PositionCloseIntent.storageKey(server: "https://one.invalid/", scope: "user:ordinary:1", position: row(["side": .number(1)])),
+        ]
+        for key in variants { XCTAssertNotEqual(key, original) }
+    }
+
+    func testCorruptCloseIntentCannotSupplyAnotherRequestIdentity() throws {
+        let suite = "ChartHoldingActionTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let storageKey = "isolated-close"
+        PositionCloseIntent(positionID: .number(101), key: "invalid-key").save(defaults: defaults, storageKey: storageKey)
+        XCTAssertNil(PositionCloseIntent.load(defaults: defaults, storageKey: storageKey, positionID: .number(101)))
+        defaults.set(Data("invalid-json".utf8), forKey: storageKey)
+        XCTAssertNil(PositionCloseIntent.load(defaults: defaults, storageKey: storageKey, positionID: .number(101)))
+    }
+}

@@ -239,7 +239,10 @@ struct USDTTradeView: View {
   var chartPositionsReady = true
   var chartPositionsError = ""
   var chartPositionRows: [JSONValue] = []
+  var onChartPositionChange: (() -> Void)? = nil
   @State private var heldPositionID = ""
+  @State private var heldOperation: WebPositionOperation?
+  @State private var heldOperationScope = ""
   var onShowPositions: ((PositionPage) -> Void)? = nil
   @StateObject private var positions = USDTChartPositionsModel()
   @State private var positionDestination: PositionPageRequest?
@@ -389,6 +392,9 @@ struct USDTTradeView: View {
           confirm = false; confirmationDraft = nil
           confirmedLimitDraft = nil
           onChartLimitSubmission?(nil)
+        } else if positionsReady {
+          submitted = false; entryNeedsReconcile = false; entryCommandID = ""
+          requestIdentity = UUID().uuidString
         }
       }
       .onChange(of: store.scope) { _, _ in
@@ -400,6 +406,7 @@ struct USDTTradeView: View {
         onChartLimitSubmission?(nil)
         requestIdentity = UUID().uuidString
         strategyID = store.activeStrategy?.value("id") ?? ""
+        heldOperation = nil; heldOperationScope = ""; heldPositionID = ""
       }
       .onChange(of: includeFee) { _, _ in resetDraft() }
       .onChange(of: risk) { _, _ in resetDraft() }
@@ -420,7 +427,15 @@ struct USDTTradeView: View {
           orderType = "limit"
         }
       }
-      .onChange(of: symbol) { _, _ in resetDraft() }
+      .onChange(of: symbol) { _, _ in
+        resetDraft(); heldOperation = nil; heldOperationScope = ""; heldPositionID = ""
+      }
+      .onChange(of: heldPositionID) { _, _ in heldOperation = nil }
+      .onChange(of: heldRows, initial: true) { _, rows in
+        if !rows.contains(where: { $0.value("id") == heldPositionID }) {
+          heldPositionID = rows.first?.value("id") ?? ""
+        }
+      }
       .onChange(of: stop) { _, _ in resetDraft() }
       .onChange(of: limit) { _, _ in resetDraft() }
       .onChange(of: orderType) { _, _ in resetDraft() }
@@ -443,6 +458,19 @@ struct USDTTradeView: View {
       }
       .navigationDestination(item: $positionDestination) { destination in
         USDTPositionsView(navigationRequest: destination)
+      }
+      .webModal(item: $heldOperation, motion: .fade) { operation in
+        USDTPositionControls(position: operation.position, action: operation.action,
+          ownerScope: heldOperationScope, canExecute: {
+            heldOperationScope == store.scope && scenePhase == .active && store.isBound
+              && positionsReady && !busy && ChartHeldPositionSelection.matches(operation.position, heldRow)
+          }) { message in
+            guard heldOperationScope == store.scope else { return }
+            heldOperation = nil
+            container.toastCenter.success(message)
+            onChartPositionChange?()
+            Task { await store.refreshPositions() }
+          }.id(operation.id)
       }
       .largeTradingSheet(isPresented: $showSymbols) {
         MarketSearchView(dashboardViewModel: dashboard, selectedSymbol: symbol) { symbol in
@@ -938,7 +966,19 @@ struct USDTTradeView: View {
   }
 
   private var heldRow: JSONValue? {
-    chartPositionRows.first { $0.value("id") == heldPositionID } ?? chartPositionRows.first
+    ChartHeldPositionSelection.selected(in: chartPositionRows, symbol: symbol, selectedID: heldPositionID)
+  }
+  private var heldRows: [JSONValue] {
+    ChartHeldPositionSelection.rows(in: chartPositionRows, symbol: symbol)
+  }
+  private var holdingActionDisabled: Bool {
+    busy || confirm || heldOperation != nil || !store.isBound || !positionsReady || heldRow == nil
+  }
+  private func showHeldOperation(_ action: String) {
+    guard heldOperation == nil, store.isBound, !busy, let row = heldRow else { return }
+    guard action != "close" || positionsReady else { return }
+    heldOperationScope = store.scope
+    heldOperation = WebPositionOperation(position: row, action: action)
   }
   private func heldAmount(_ key: String, unit: String = "", maximumFractionDigits: Int? = nil) -> String {
     guard let amount = heldRow?[key]?.decimal, !amount.isNaN else { return "-" }
@@ -954,8 +994,8 @@ struct USDTTradeView: View {
   }
   private var heldTakeProfit: String {
     guard let row = heldRow else { return "-" }
-    if row["manual_take_profit_set"]?.flag == true { return heldAmount("manual_take_profit_price") }
     if row.value("strategy_status") == "1" { return row.value("strategy_name", fallback: "策略止盈") }
+    if row["manual_take_profit_set"]?.flag == true { return heldAmount("manual_take_profit_price") }
     return "手动止盈"
   }
   private var heldFee: String {
@@ -964,12 +1004,12 @@ struct USDTTradeView: View {
   }
   private var chartTicket: some View {
     VStack(spacing: 14) {
-      if chartPositionRows.count > 1 {
+      if heldRows.count > 1 {
         Picker("持仓方向", selection: $heldPositionID) {
-          ForEach(Array(chartPositionRows.enumerated()), id: \.offset) { _, row in
+          ForEach(Array(heldRows.enumerated()), id: \.offset) { _, row in
             Text(row.value("side") == "0" ? "多单" : "空单").tag(row.value("id"))
           }
-        }.pickerStyle(.segmented)
+        }.pickerStyle(.segmented).accessibilityIdentifier("chart-ticket.position-side")
       }
       Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
         GridRow(alignment: .top) {
@@ -1010,11 +1050,16 @@ struct USDTTradeView: View {
             chartMetricValue("手续费", hasPosition ? heldFee : inputValid ? estimatedFee + " U" : "-").frame(minHeight: 28, alignment: .leading)
           }.frame(maxWidth: .infinity, alignment: .leading)
           VStack(alignment: .leading, spacing: 5) {
-            chartMetricLabel("止盈").frame(height: 24, alignment: .leading)
             if hasPosition {
-              takeProfitSelectionLabel
+              Button { showHeldOperation("strategyLog") } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                  chartMetricLabel("策略").frame(height: 24, alignment: .leading)
+                  takeProfitSelectionLabel
+                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+              }.buttonStyle(.plain).disabled(heldRow == nil || busy || heldOperation != nil)
                 .accessibilityIdentifier("chart-ticket.strategy")
             } else {
+              chartMetricLabel("止盈").frame(height: 24, alignment: .leading)
               NavigationLink {
                 USDTStrategiesView(returnAfterSelection: true, onSelection: selectStrategy)
               } label: {
@@ -1027,21 +1072,29 @@ struct USDTTradeView: View {
       }.monospacedDigit().padding(.horizontal, 10).padding(.vertical, 12)
         .background(WebTheme.color(0xF3F5F7, 0x202731), in: RoundedRectangle(cornerRadius: 10))
       HStack(spacing: 12) {
-        WebOrderTypeSelector(selection: Binding(get: { orderType }, set: { value in
-          orderType = value; onChartOrderTypeChange?(value)
-        })).frame(width: 112).accessibilityIdentifier("chart-ticket.order-type")
-          .disabled(hasPosition || busy || submitted || confirm)
-        Button(action: advanceEntry) {
+        if hasPosition {
+          Button("查看持仓") { showPositionPage(.positions) }
+            .buttonStyle(WebButtonStyle(kind: .secondary, height: 44, radius: 8, fontSize: 14))
+            .frame(width: 112).disabled(busy || heldOperation != nil)
+            .accessibilityIdentifier("chart-ticket.positions")
+        } else {
+          WebOrderTypeSelector(selection: Binding(get: { orderType }, set: { value in
+            orderType = value; onChartOrderTypeChange?(value)
+          })).frame(width: 112).accessibilityIdentifier("chart-ticket.order-type")
+            .disabled(busy || submitted || confirm)
+        }
+        Button {
+          if hasPosition { showHeldOperation("close") } else { advanceEntry() }
+        } label: {
           HStack(spacing: 6) {
-          Text(entryButtonText)
+          Text(hasPosition ? "立即平仓" : entryButtonText)
             .font(.system(size: inputValid || hasPosition ? 16 : 12, weight: .semibold))
             .lineLimit(1).minimumScaleFactor(0.75)
-          if hasPosition { Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)) }
           }.frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(hasPosition ? BinanceTheme.onAccent : inputValid ? BinanceTheme.onTradeAction : Color.white)
-            .background(hasPosition ? BinanceTheme.accent : inputValid ? chartActionColor : ChartTradingPalette.color(.positive, for: colorScheme),
+            .foregroundStyle(hasPosition ? Color.white : inputValid ? BinanceTheme.onTradeAction : Color.white)
+            .background(hasPosition ? WebTheme.danger : inputValid ? chartActionColor : ChartTradingPalette.color(.positive, for: colorScheme),
               in: RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(ChartTicketActionStyle()).disabled(entryDisabled)
+        }.buttonStyle(ChartTicketActionStyle()).disabled(hasPosition ? holdingActionDisabled : entryDisabled)
           .accessibilityIdentifier("chart-ticket.submit")
       }
     }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
@@ -1858,6 +1911,50 @@ struct WebPositionOperation: Identifiable {
   var usesNativeSheet: Bool { false }
 }
 
+enum ChartHeldPositionSelection {
+  static func rows(in rows: [JSONValue], symbol: String) -> [JSONValue] {
+    ChartPositionLine.positions(in: rows, symbol: symbol).filter { row in
+      !row.value("id", fallback: "").isEmpty && ["0", "1"].contains(row.value("side"))
+        && (PositionEntryFeePresentation.finiteDecimal(row["exchange_size"] ?? row["size"]) ?? 0) > 0
+    }
+  }
+
+  static func selected(in rows: [JSONValue], symbol: String, selectedID: String) -> JSONValue? {
+    let active = self.rows(in: rows, symbol: symbol)
+    return active.first { $0.value("id") == selectedID } ?? active.first
+  }
+
+  static func matches(_ frozen: JSONValue, _ current: JSONValue?) -> Bool {
+    guard let current else { return false }
+    return ["id", "symbol", "side"].allSatisfy { frozen.value($0) == current.value($0) }
+  }
+}
+
+/// Retains only command identity, never credentials or a mutable trade payload.
+/// Reopening a close confirmation must reconcile the same unknown command.
+struct PositionCloseIntent: Codable, Equatable {
+  let positionID: JSONValue
+  let key: String
+
+  static func storageKey(server: String, scope: String, position: JSONValue) -> String? {
+    let id = position.value("id", fallback: "")
+    guard !id.isEmpty, ["0", "1"].contains(position.value("side")) else { return nil }
+    return "integrated.position-close.\(server).\(scope).\(position.value("symbol")).\(position.value("side")).\(id)"
+  }
+
+  static func load(defaults: UserDefaults, storageKey: String, positionID: JSONValue) -> Self? {
+    guard let data = defaults.data(forKey: storageKey),
+      let value = try? JSONDecoder().decode(Self.self, from: data),
+      value.positionID.text == positionID.text, UUID(uuidString: value.key) != nil else { return nil }
+    return value
+  }
+
+  func save(defaults: UserDefaults, storageKey: String) {
+    guard let data = try? JSONEncoder().encode(self) else { return }
+    defaults.set(data, forKey: storageKey)
+  }
+}
+
 struct USDTCommandButton: View {
   @EnvironmentObject private var store: USDTStore
   @EnvironmentObject private var container: AppContainer
@@ -1953,9 +2050,12 @@ struct USDTCommandsView: View {
 
 private struct USDTPositionControls: View {
   @EnvironmentObject private var store: USDTStore
+  @EnvironmentObject private var container: AppContainer
   @Environment(\.webDismiss) private var dismiss
   let position: JSONValue
   let action: String
+  var ownerScope: String? = nil
+  var canExecute: (() -> Bool)? = nil
   let completed: (String) -> Void
   @State private var price = ""
   @State private var orderType = "market"
@@ -1972,6 +2072,14 @@ private struct USDTPositionControls: View {
   private var running: Bool { position.value("strategy_status") == "1" }
   private var fee: Decimal { abs(position["estimated_total_fee"]?.decimal ?? 0) }
   private var pnl: Decimal { position["pnl"]?.decimal ?? 0 }
+  private var closeIntentStorageKey: String? {
+    guard action == "close", !strategyScope.isEmpty else { return nil }
+    return PositionCloseIntent.storageKey(server: container.baseURL.absoluteString,
+      scope: strategyScope, position: position)
+  }
+  private var canStart: Bool {
+    store.scope == (ownerScope ?? strategyScope) && (pending || (canExecute?() ?? true))
+  }
   private var subtitle: String {
     position.value("symbol") + " · " + (position.value("side") == "0" ? "多单" : "空单")
   }
@@ -2077,6 +2185,9 @@ private struct USDTPositionControls: View {
               }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
             }.frame(maxHeight: 400).background(
               WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
+            Button("关闭") { dismiss() }
+              .buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
+              .accessibilityIdentifier("position-strategy.close")
           } else {
             (Text("预估收益 ")
               + Text(DisplayNumber.text(position.value("pnl")) + " USDT").foregroundColor(
@@ -2085,28 +2196,43 @@ private struct USDTPositionControls: View {
               ).foregroundStyle(WebTheme.secondary)
             HStack(spacing: 12) {
               Button("取消") { dismiss() }.buttonStyle(WebButtonStyle(kind: .secondary, radius: 14))
+                .disabled(busy).accessibilityIdentifier("position-close.cancel")
               Button(busy ? "处理中..." : pending ? "查询结果" : "确认") { execute("position-close") }
-                .buttonStyle(WebButtonStyle(radius: 14)).disabled(busy)
+                .buttonStyle(WebButtonStyle(radius: 14)).disabled(busy || !canStart)
+                .accessibilityIdentifier("position-close.confirm")
             }
           }
           USDTNotice(text: notice)
         }
       }
-    }.task {
-      strategyScope = store.scope
+    }.webModalDismissDisabled(busy).task {
+      let scope = ownerScope ?? store.scope
+      guard scope == store.scope else { dismiss(); return }
+      strategyScope = scope
+      if let storageKey = closeIntentStorageKey,
+         let saved = PositionCloseIntent.load(defaults: .standard, storageKey: storageKey,
+           positionID: position["id"] ?? .null) {
+        key = saved.key; pending = true; pendingAction = "position-close"
+        pendingPayload = ["position_id": saved.positionID]
+      }
       price =
         position["manual_take_profit_set"]?.flag == true
         ? position.value("manual_take_profit_price") : ""
       orderType = position.value("manual_take_profit_order_type") == "limit" ? "limit" : "market"
       if action == "strategyLog" || (action == "strategy" && running) {
         do {
-          logs = try await store.get(
+          let loaded = try await store.get(
             "/v1/strategy/log", query: [.init(name: "position_id", value: position.value("id"))])
+          guard scope == store.scope, !Task.isCancelled else { return }
+          logs = loaded
         } catch {
+          guard scope == store.scope, !Task.isCancelled else { return }
           notice = error.localizedDescription
           logs = .object([:])
         }
       }
+    }.onChange(of: store.scope) { _, scope in
+      if scope != strategyScope { dismiss() }
     }
   }
   private var title: String {
@@ -2116,7 +2242,7 @@ private struct USDTPositionControls: View {
         ?? "持仓"
   }
   private func execute(_ action: String, extra: [String: JSONValue] = [:]) {
-    guard !busy else { return }
+    guard !busy, canStart else { return }
     let scope = store.scope
     if action == "strategy-rebind" {
       guard scope == strategyScope,
@@ -2133,16 +2259,23 @@ private struct USDTPositionControls: View {
     Task {
       defer { busy = false }
       do {
-        guard scope == store.scope, !Task.isCancelled else { return }
+        guard scope == store.scope, scope == strategyScope, !Task.isCancelled,
+          pending || (canExecute?() ?? true) else { return }
         pending = true
+        if action == "position-close", let storageKey = closeIntentStorageKey {
+          PositionCloseIntent(positionID: pendingPayload["position_id"] ?? .null, key: key)
+            .save(defaults: .standard, storageKey: storageKey)
+        }
         let result = try await store.command(pendingAction, payload: pendingPayload, key: key)
         guard scope == store.scope else { return }
         let message = store.commandMessage(result)
         if result.value("status") == "SUCCEEDED" {
+          if let storageKey = closeIntentStorageKey { UserDefaults.standard.removeObject(forKey: storageKey) }
           completed(message)
         } else {
           notice = message
           if result.value("status") == "FAILED" {
+            if let storageKey = closeIntentStorageKey { UserDefaults.standard.removeObject(forKey: storageKey) }
             key = UUID().uuidString
             pending = false
           }

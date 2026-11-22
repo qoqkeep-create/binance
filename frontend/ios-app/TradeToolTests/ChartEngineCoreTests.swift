@@ -8873,7 +8873,7 @@ final class ChartPositionContextTests: XCTestCase {
     }
 
     @MainActor
-    func testPositionLabelsAreCompactSolidWhiteTextAndLeaveAxisToMetal() throws {
+    func testPositionLabelsUseTintedFillColoredOutlineAndLeaveAxisToMetal() throws {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "market_stop_price": .string("60"), "stop_loss_amount": .string("10")])
         let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 0, upperBound: 200,
@@ -8901,16 +8901,24 @@ final class ChartPositionContextTests: XCTestCase {
                     for (index, centerY) in [150, 210].enumerated() {
                         let red = index == 1 || quote < 100
                         let fill = pixel(Int(12 * scale), Int(Double(centerY) * scale))
-                        XCTAssertTrue(isColor(fill, red: red), "Label interior must have an opaque direction color in either theme")
                         XCTAssertEqual(fill.3, 255)
-                        var whiteGlyphs = 0
-                        for y in Int(Double(centerY - 8) * scale)..<Int(Double(centerY + 8) * scale) {
-                            for x in Int(18 * scale)..<Int(86 * scale) {
+                        if scheme == .light {
+                            XCTAssertGreaterThan(min(fill.0, fill.1, fill.2), 180, "Use a pale fill on light charts")
+                        } else {
+                            XCTAssertLessThan(max(fill.0, fill.1, fill.2), 110, "Use a muted fill on dark charts")
+                        }
+                        let border = pixel(Int(10 * scale), Int(Double(centerY) * scale))
+                        XCTAssertTrue(isColor(border, red: red), "The outline keeps the line's direction color")
+                        var coloredGlyphs = 0
+                        let right = index == 0 ? 44.0 : 84.0
+                        for y in Int(Double(centerY - 6) * scale)..<Int(Double(centerY + 6) * scale) {
+                            guard abs(Double(y) / scale - Double(centerY)) > 1.5 else { continue }
+                            for x in Int(16 * scale)..<Int(right * scale) {
                                 let p = pixel(x, y)
-                                if min(p.0, p.1, p.2) > 235 && p.3 > 240 { whiteGlyphs += 1 }
+                                if isColor(p, red: red) { coloredGlyphs += 1 }
                             }
                         }
-                        XCTAssertGreaterThan(whiteGlyphs, 3, "Position label glyphs must be white")
+                        XCTAssertGreaterThan(coloredGlyphs, 3, "Direction-colored text remains legible on the pale fill")
                         var gutterColorPixels = 0
                         var farEdgeColorPixels = 0
                         for y in Int(Double(centerY - 1) * scale)...Int(Double(centerY + 1) * scale) {
@@ -8961,7 +8969,7 @@ final class ChartPositionContextTests: XCTestCase {
     }
 
     @MainActor
-    func testTakeProfitLabelUsesTheSameCompactFilledGeometryAsStopLoss() throws {
+    func testTakeProfitLabelUsesTheSameCompactTintedGeometryAsStopLoss() throws {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "stop_loss_price": .string("90"), "stop_loss_amount": .string("10"),
             "market_stop_set": .bool(false),
@@ -9027,7 +9035,10 @@ final class ChartPositionContextTests: XCTestCase {
                 let image = try renderPositionLines(lines, projection: projection, scheme: scheme, scale: scale, profitLoss: value)
                 let offset = (Int(frames[0].midY * scale) * image.width + Int((frames[0].minX + 2) * scale)) * 4
                 XCTAssertEqual(image.pixels[offset + 3], 255, "The independent profit badge must stay opaque and visible")
-                XCTAssertGreaterThan(Int(image.pixels[offset + 1]), Int(image.pixels[offset]) + 60)
+                XCTAssertGreaterThan(Int(image.pixels[offset + 1]), Int(image.pixels[offset]))
+                let border = (Int(frames[0].midY * scale) * image.width + Int(frames[0].minX * scale)) * 4
+                XCTAssertGreaterThan(Int(image.pixels[border + 1]), Int(image.pixels[border]) + 60,
+                    "The independently positioned profit badge has a green outline")
             }
         }
     }

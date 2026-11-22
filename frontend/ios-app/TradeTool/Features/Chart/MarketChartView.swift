@@ -127,6 +127,7 @@ private struct MarketChartDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var nativeOrderType = "market"
     @StateObject private var positions = USDTChartPositionsModel()
+    @State private var positionMonitorRevision = 0
     @State private var showsLeverage = false
     @State private var selectedStopPrice: Double?
     @State private var showsIntervalSettings = false
@@ -214,6 +215,7 @@ private struct MarketChartDetailView: View {
                     chartPositionsReady: positions.isReady(scope: usdt.scope),
                     chartPositionsError: positions.error,
                     chartPositionRows: heldPositions,
+                    onChartPositionChange: { positionMonitorRevision &+= 1 },
                     onShowPositions: onShowPositions)
                     .id(usdt.scope)
             }
@@ -239,7 +241,7 @@ private struct MarketChartDetailView: View {
         .task(id: "\(usdt.scope):\(viewModel.market.symbol)") {
             await usdt.loadDefaultLeverage(for: viewModel.market.symbol)
         }
-        .task(id: "\(usdt.scope):\(usdt.isBound):\(scenePhase)") {
+        .task(id: "\(usdt.scope):\(usdt.isBound):\(scenePhase):\(positionMonitorRevision)") {
             guard scenePhase == .active else {
                 if usdt.isBound { positions.pause() } else { positions.reset() }
                 return

@@ -3164,7 +3164,7 @@ final class WebParityUITests: XCTestCase {
     app.buttons["pairs.select.BTCUSDT"].tap()
     let ticket = app.buttons["chart-ticket.submit"]
     XCTAssertTrue(ticket.waitForExistence(timeout: 10))
-    let holding = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "正在持仓中"), object: ticket)
+    let holding = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "立即平仓"), object: ticket)
     XCTAssertEqual(XCTWaiter.wait(for: [holding], timeout: 5), .completed)
     XCTAssertTrue(ticket.isEnabled)
     XCTAssertEqual(app.staticTexts["chart-ticket.仓位"].label, "1000.00 U")
@@ -3210,7 +3210,7 @@ final class WebParityUITests: XCTestCase {
     XCTAssertFalse(app.buttons["market-chart-settings"].exists)
     XCTAssertTrue(app.buttons["market-chart-indicator-settings-shortcut"].isHittable)
     XCTAssertEqual(app.buttons["market-chart-favorite"].label, "自选")
-    ticket.tap()
+    app.buttons["chart-ticket.positions"].tap()
     XCTAssertTrue(app.scrollViews["positions.list"].waitForExistence(timeout: 5))
     app.buttons["position.chart.101"].tap()
     XCTAssertTrue(app.buttons["market-chart-symbols"].waitForExistence(timeout: 5))
@@ -3219,9 +3219,133 @@ final class WebParityUITests: XCTestCase {
     app.buttons["position.chart.101"].tap()
     XCTAssertTrue(ticket.waitForExistence(timeout: 10))
     XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "label == %@", "正在持仓中"), object: ticket)], timeout: 5), .completed)
+      predicate: NSPredicate(format: "label == %@", "立即平仓"), object: ticket)], timeout: 5), .completed)
     XCTAssertFalse(app.buttons["chart-ticket.risk-settings"].exists)
     capture("chart-held-data-dark")
+  }
+
+  func testChartHoldingActionsOpenCloseConfirmationAndStrategyLogs() {
+    for options in [[], ["--fixture-dark"]] {
+      launch("market", ["--fixture-chart-position", "--fixture-chart-holding-probe"] + options)
+      app.buttons["搜索币种、币对或合约"].tap()
+      app.buttons["pairs.select.BTCUSDT"].tap()
+      let close = app.buttons["chart-ticket.submit"]
+      XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "label == %@", "立即平仓"), object: close)], timeout: 10), .completed)
+      let positions = app.buttons["chart-ticket.positions"]
+      XCTAssertEqual(positions.label, "查看持仓")
+      XCTAssertTrue(positions.isHittable)
+      XCTAssertTrue(close.isEnabled)
+      XCTAssertFalse(app.descendants(matching: .any)["chart-ticket.order-type"].exists)
+      XCTAssertTrue(app.otherElements["fixture.scrollProbe"].waitForExistence(timeout: 5))
+      XCTAssertEqual(scrollProbe()["chartHoldingProbeArmed"], 1)
+      XCTAssertEqual(scrollProbe()["chartWriteAttempts", default: 0], 0)
+      let suffix = options.isEmpty ? "light" : "dark"
+      capture("chart-holding-actions-" + suffix)
+
+      close.tap()
+      let cancel = app.buttons["position-close.cancel"]
+      let confirm = app.buttons["position-close.confirm"]
+      XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["BTCUSDT · 多单"].exists)
+      XCTAssertTrue(app.frame.contains(cancel.frame))
+      XCTAssertTrue(app.frame.contains(confirm.frame))
+      capture("chart-holding-close-confirmation-" + suffix)
+      cancel.tap()
+      XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "exists == false"), object: cancel)], timeout: 5), .completed)
+      XCTAssertEqual(scrollProbe()["chartHoldingProbeArmed"], 1)
+      XCTAssertEqual(scrollProbe()["chartWriteAttempts", default: 0], 0,
+        "Opening and cancelling close must remain read-only")
+
+      // The heading and the strategy name are both part of the same action.
+      app.buttons["chart-ticket.strategy"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.16)).tap()
+      XCTAssertTrue(app.staticTexts["策略和执行日志"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["策略名称：30-20-50"].exists)
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "L1：当 RR≥1")).firstMatch.exists)
+      XCTAssertTrue(app.staticTexts["执行日志："].exists)
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "已执行 L1 止盈")).firstMatch.waitForExistence(timeout: 5))
+      capture("chart-holding-strategy-details-" + suffix)
+      app.buttons["position-strategy.close"].tap()
+      XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        self.scrollProbe()["chartStrategyPositionID"] == 101
+      }, object: nil)], timeout: 3), .completed)
+      XCTAssertEqual(scrollProbe()["chartWriteAttempts", default: 0], 0)
+      positions.tap()
+      XCTAssertTrue(app.scrollViews["positions.list"].waitForExistence(timeout: 5))
+      XCTAssertEqual(scrollProbe()["chartWriteAttempts", default: 0], 0)
+      capture("chart-holding-positions-navigation-" + suffix)
+    }
+  }
+
+  func testChartHoldingHedgeSelectionTargetsTheSelectedPosition() {
+    launch("market", ["--fixture-chart-position", "--fixture-chart-hedged", "--fixture-chart-holding-probe"])
+    app.buttons["搜索币种、币对或合约"].tap()
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    let side = app.segmentedControls["chart-ticket.position-side"]
+    XCTAssertTrue(side.waitForExistence(timeout: 10))
+    side.buttons["空单"].tap()
+    XCTAssertTrue(side.buttons["空单"].isSelected)
+    XCTAssertEqual(app.staticTexts["chart-ticket.开仓价"].label, "65000.00")
+
+    app.buttons["chart-ticket.submit"].tap()
+    let cancel = app.buttons["position-close.cancel"]
+    XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["BTCUSDT · 空单"].exists)
+    capture("chart-holding-hedged-close-target")
+    cancel.tap()
+    app.buttons["chart-ticket.strategy"].tap()
+    XCTAssertTrue(app.staticTexts["策略和执行日志"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "已执行 L1 止盈")).firstMatch.waitForExistence(timeout: 5))
+    capture("chart-holding-hedged-strategy-target")
+    app.buttons["position-strategy.close"].tap()
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      self.scrollProbe()["chartStrategyPositionID"] == 102
+    }, object: nil)], timeout: 3), .completed)
+    XCTAssertEqual(scrollProbe()["chartWriteAttempts", default: 0], 0)
+  }
+
+  func testChartHoldingUnknownCloseReopensWithTheSameIntent() {
+    launch("market", ["--fixture-chart-position", "--fixture-chart-holding-probe", "--fixture-chart-close-unknown"])
+    app.buttons["搜索币种、币对或合约"].tap()
+    app.buttons["pairs.select.BTCUSDT"].tap()
+    let close = app.buttons["chart-ticket.submit"]
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == %@", "立即平仓"), object: close)], timeout: 10), .completed)
+    let confirm = app.buttons["position-close.confirm"]
+    let cancel = app.buttons["position-close.cancel"]
+    close.tap()
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+    XCTAssertEqual(confirm.label, "确认")
+    confirm.tap()
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == %@", "查询结果"), object: confirm)], timeout: 5), .completed)
+    capture("chart-holding-close-unknown-pending")
+    cancel.tap()
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      self.scrollProbe()["chartCloseRequests"] == 1
+    }, object: nil)], timeout: 3), .completed)
+    XCTAssertEqual(scrollProbe()["chartCloseUniqueKeys"], 1)
+    XCTAssertEqual(scrollProbe()["chartClosePositionID"], 101)
+    XCTAssertEqual(scrollProbe()["chartWriteAttempts"], 1)
+
+    close.tap()
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == %@", "查询结果"), object: confirm)], timeout: 5), .completed,
+      "Reopening an UNKNOWN close must restore its pending intent")
+    confirm.tap()
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == %@", "查询结果"), object: confirm)], timeout: 5), .completed)
+    capture("chart-holding-close-unknown-resumed")
+    cancel.tap()
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      self.scrollProbe()["chartCloseRequests"] == 2
+    }, object: nil)], timeout: 3), .completed)
+    XCTAssertEqual(scrollProbe()["chartCloseUniqueKeys"], 1, "Query the existing close; do not create a new idempotency key")
+    XCTAssertEqual(scrollProbe()["chartCloseUniquePositions"], 1)
+    XCTAssertEqual(scrollProbe()["chartClosePositionID"], 101)
+    XCTAssertEqual(scrollProbe()["chartCloseKeyValid"], 1)
+    XCTAssertEqual(scrollProbe()["chartWriteAttempts"], 2, "Only this opt-in test makes two local simulated command requests")
   }
 
   func testChartCurrentPriceProfitLabelsSurviveForegroundReturn() {

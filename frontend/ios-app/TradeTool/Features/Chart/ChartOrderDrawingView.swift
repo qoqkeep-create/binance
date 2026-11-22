@@ -383,7 +383,7 @@ struct ChartPositionLinesOverlay: View {
                             path.addLine(to: CGPoint(x: projection.plotRight, y: y))
                         }.stroke(color(line), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                         ChartPriceLineLabel(title: line.title, price: line.detail,
-                            color: color(line), width: label.width, filled: true, compact: true)
+                            color: color(line), width: label.width, compact: true)
                             .position(x: label.centerX, y: y)
                             .accessibilityIdentifier("position-line." + line.id)
                             .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))
@@ -394,7 +394,7 @@ struct ChartPositionLinesOverlay: View {
                        avoiding: Self.labelFrames(lines: lines, projection: projection)) {
                     ChartPriceLineLabel(title: "", price: profitLoss.text,
                         color: profitLoss.isLoss ? WebTheme.danger : WebTheme.success,
-                        width: frame.width, filled: true, compact: true, compactHeight: frame.height)
+                        width: frame.width, compact: true, compactHeight: frame.height)
                         .position(x: frame.midX, y: frame.midY)
                         .accessibilityIdentifier("position-profit-loss")
                         .accessibilityLabel(profitLoss.isLoss ? "浮亏" : "浮盈")
@@ -429,12 +429,12 @@ struct ChartPriceLineLabelLayout {
 }
 
 private struct ChartPriceLineLabel: View {
+    @Environment(\.colorScheme) private var colorScheme
     let title: String
     let price: String
     let color: Color
     let width: Double
     var draggable = false
-    var filled = false
     var compact = false
     var compactHeight: Double = 20
 
@@ -447,11 +447,19 @@ private struct ChartPriceLineLabel: View {
             if !price.isEmpty { Text(price).monospacedDigit().truncationMode(.middle) }
         }.font(.system(size: compact ? 9 : 10, weight: .medium)).lineLimit(1)
             .minimumScaleFactor(compact ? 1 : 0.6)
-            .foregroundStyle(filled ? Color.white : color).padding(.horizontal, compact ? 5 : 7)
+            .foregroundStyle(color)
+            .brightness(colorScheme == .light ? -0.35 : 0.15)
+            .padding(.horizontal, compact ? 5 : 7)
             .frame(width: width, height: compact ? compactHeight : 24)
-            .background(filled ? color : BinanceTheme.background.opacity(0.98), in: RoundedRectangle(cornerRadius: 4))
+            .background {
+                RoundedRectangle(cornerRadius: 4).fill(BinanceTheme.background)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(color.opacity(colorScheme == .light ? 0.12 : 0.16))
+                    }
+            }
             .overlay {
-                if !filled { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.8), lineWidth: 0.5) }
+                RoundedRectangle(cornerRadius: 4).strokeBorder(color, lineWidth: 0.75)
             }
             .accessibilityElement(children: .ignore).accessibilityLabel(title).accessibilityValue(price)
     }
@@ -595,7 +603,7 @@ struct ChartOrderDrawingOverlay: View {
             )
 
             ChartPriceLineLabel(title: title, price: "", color: color,
-                width: label.width, draggable: drawing.isEditable, filled: true, compact: true)
+                width: label.width, draggable: drawing.isEditable, compact: true)
                 .position(x: label.centerX - projection.plotLeft, y: 18 + labelY - y)
         }
         .frame(width: plotWidth, height: 36)
