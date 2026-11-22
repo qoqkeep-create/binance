@@ -15,6 +15,7 @@ final class AuthStore: ObservableObject {
     private let toastCenter: AppToastCenter
     private let notificationCenter: NotificationCenter
     private var unauthorizedObserver: NSObjectProtocol?
+    private var restoreTask: Task<Void, Never>?
 
     init(
         service: any AuthenticationService,
@@ -42,6 +43,7 @@ final class AuthStore: ObservableObject {
                 unauthorizedObserver
             )
         }
+        restoreTask?.cancel()
     }
 
     var session: AuthSession? {
@@ -52,13 +54,26 @@ final class AuthStore: ObservableObject {
     }
 
     func restore() async {
+        restoreTask?.cancel()
         do {
-            if let session = try service.storedSession() {
-                state = .signedIn(
-                    (try? await service.refresh(session)) ?? session
-                )
-            } else {
+            guard let session = try service.storedSession() else {
                 state = .signedOut
+                return
+            }
+
+            // Do not make the first screen depend on the network. A valid
+            // Keychain session is enough to enter the app; validation can
+            // finish in the background and later requests will still expire
+            // an actually invalid session through the normal 401 path.
+            state = .signedIn(session)
+            let service = self.service
+            restoreTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let refreshed = try? await service.refresh(session),
+                      !Task.isCancelled else { return }
+                // A logout or a new login supersedes this cold-launch refresh.
+                guard self.session?.accessToken == session.accessToken else { return }
+                self.state = .signedIn(refreshed)
             }
         } catch {
             state = .signedOut
@@ -157,6 +172,8 @@ final class AuthStore: ObservableObject {
             return
         }
 
+        restoreTask?.cancel()
+        restoreTask = nil
         notificationCenter.post(name: .apiReadContextChanged, object: nil)
         state = .signedOut
         toastCenter.success("已退出登录")
@@ -171,6 +188,8 @@ final class AuthStore: ObservableObject {
             return
         }
 
+        restoreTask?.cancel()
+        restoreTask = nil
         notificationCenter.post(name: .apiReadContextChanged, object: nil)
         try? service.clearStoredSession()
         state = .signedOut

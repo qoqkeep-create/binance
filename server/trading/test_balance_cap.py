@@ -91,7 +91,7 @@ class BalanceCapTests(TestCase):
             "withdrawOrderId": "old-withdrawal", "coin": "USDT", "amount": "589.96",
             "status": 6, "transferType": 1, "id": "old-receipt",
         }]
-        self.client.get_balance.return_value = _balance("1405.280079")
+        self.client.get_balance.return_value = _balance("3405.280079")
         state = balance_cap.refresh_capital_precheck(self.user, self.client)
         sweep.refresh_from_db()
         self.assertEqual(sweep.status, CapitalSweep.STATUS_COMPLETED)
@@ -123,6 +123,9 @@ class BalanceCapTests(TestCase):
                     state = balance_cap.refresh_capital_precheck(self.user, self.client)
                 sweep.refresh_from_db()
                 self.assertEqual(sweep.status, CapitalSweep.STATUS_SPOT_PENDING)
+                self.assertEqual(sweep.target_balance, Decimal("1000"),
+                                 "Submitted legacy transfers retain their frozen target after the cap changes")
+                self.assertEqual(sweep.amount, Decimal("50"))
                 self.assertIn(direction, state["pending_collection"]["completed_steps"])
                 self.assertIsNone(sweep.master_attempted_at)
         self.client.transfer_from_funding.assert_not_called()
@@ -165,7 +168,7 @@ class BalanceCapTests(TestCase):
     def test_accepted_withdrawal_is_confirmed_immediately_if_history_is_visible(self):
         self._mark_master_account()
         self._configure_collect_account("originalDestination")
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.withdraw_to_binance_address.return_value = "new-receipt"
         self.client.get_withdraw_history.side_effect = lambda **kwargs: [{
             "withdrawOrderId": kwargs["withdraw_order_id"], "coin": "USDT", "amount": "100",
@@ -178,15 +181,15 @@ class BalanceCapTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
 
     def test_collection_cap_is_fixed_and_independent_of_stop_loss(self):
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         for amount in ("50", "120", "200"):
             with self.subTest(stop_loss=amount):
                 self.user.stop_loss_amount = Decimal(amount)
                 self.user.save(update_fields=["stop_loss_amount"])
-                self.assertEqual(balance_cap.retention_threshold(self.user), Decimal("1000"))
+                self.assertEqual(balance_cap.retention_threshold(self.user), Decimal("3000"))
                 state = balance_cap.refresh_capital_precheck(self.user, self.client)
                 self.assertEqual(Decimal(state["futures_collect"]), Decimal("100"))
-                self.assertEqual(Decimal(state["upper_limit"]), Decimal("1000"))
+                self.assertEqual(Decimal(state["upper_limit"]), Decimal("3000"))
         self.client.transfer_between_spot_and_futures.assert_not_called()
 
     def test_fixed_cap_collects_cent_and_sub_dollar_futures_excess(self):
@@ -195,7 +198,8 @@ class BalanceCapTests(TestCase):
         # Wallet residuals below 1 USDT are ignored; futures excess uses cents.
         self.client.get_funding_usdt_free_balance.return_value = "0.99"
         self.client.get_spot_usdt_free_balance.return_value = "0.99"
-        for futures, excess in (("1000", "0.00"), ("1000.01", "0.01"), ("1000.50", "0.50")):
+        for futures, excess in (("1000", "0.00"), ("2000", "0.00"), ("2999.99", "0.00"),
+                                ("3000", "0.00"), ("3000.01", "0.01"), ("3000.50", "0.50")):
             with self.subTest(futures=futures):
                 self.client.get_balance.return_value = _balance(futures)
                 self.spot_delta = Decimal("0")
@@ -204,7 +208,7 @@ class BalanceCapTests(TestCase):
                 state = balance_cap.refresh_capital_precheck(self.user, self.client)
                 self.assertEqual(Decimal(state["futures_collect"]), Decimal(excess))
                 self.assertEqual(Decimal(state["collection_total"]), Decimal(excess))
-                self.assertEqual(Decimal(state["target_balance"]), Decimal("1000"))
+                self.assertEqual(Decimal(state["target_balance"]), min(Decimal(futures), Decimal("3000")))
                 self.assertEqual(state["status"], "ready" if excess == "0.00" else "normalization_required")
                 if excess == "0.00":
                     self.client.transfer_between_spot_and_futures.assert_not_called()
@@ -219,9 +223,9 @@ class BalanceCapTests(TestCase):
         self.assertEqual(CapitalSweep.objects.count(), 2)
 
     def test_changed_preview_amount_requires_another_confirmation(self):
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         preview = balance_cap.refresh_capital_precheck(self.user, self.client)
-        self.client.get_balance.return_value = _balance("1405.280079")
+        self.client.get_balance.return_value = _balance("3405.280079")
         state = balance_cap.normalize_capital(
             self.user, self.client, "normalization_required", expected_plan=preview["plan_token"],
         )
@@ -270,7 +274,7 @@ class BalanceCapTests(TestCase):
             amount=Decimal("500"), target_balance=Decimal("500"), futures_amount=Decimal("500"),
             status=CapitalSweep.STATUS_FUTURES_PENDING,
         )
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         state = balance_cap.refresh_capital_precheck(self.user, self.client)
         self.assertTrue(state["plan_changed"])
         self.assertEqual(state["futures_collect"], "100.00")
@@ -286,7 +290,7 @@ class BalanceCapTests(TestCase):
             futures_tran_id="confirmed", futures_attempted_at=timezone.now() - timedelta(seconds=61),
             status=CapitalSweep.STATUS_SPOT_PENDING,
         )
-        self.client.get_balance.return_value = _balance("1000")
+        self.client.get_balance.return_value = _balance("3000")
         state = balance_cap.normalize_capital(self.user, self.client, "collection_pending", collection_id=sweep.id)
         self.assertTrue(state["plan_changed"])
         sweep.refresh_from_db()
@@ -295,7 +299,7 @@ class BalanceCapTests(TestCase):
         self.client.transfer_spot_to_master.assert_not_called()
 
     def test_empty_internal_receipt_does_not_advance_to_master(self):
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.transfer_between_spot_and_futures.return_value = ""
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required")
         self.assertEqual(state["status"], "collection_pending")
@@ -323,7 +327,7 @@ class BalanceCapTests(TestCase):
         self.assertEqual(below_trigger["refill_trigger"], "300.0")
         self.assertEqual(below_trigger["recommended_topup"], "1")
         self.assertEqual(below_trigger["minimum_topup"], "0.01")
-        self.assertEqual(below_trigger["maximum_topup"], "700.01")
+        self.assertEqual(below_trigger["maximum_topup"], "2700.01")
 
     def test_real_position_skips_wallet_checks(self):
         self.client.get_positions.return_value = {"data": [{"symbol": "BTCUSDT"}]}
@@ -378,7 +382,7 @@ class BalanceCapTests(TestCase):
         self.assertEqual(state["minimum_topup"], "50.00")
 
     def test_excess_and_shortfall_details(self):
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         excess = self.precheck()
         self.assertEqual((excess["status"], excess["transfer_amount"]), ("normalization_required", "100.00"))
         self.client.get_balance.return_value = _balance("250")
@@ -389,12 +393,12 @@ class BalanceCapTests(TestCase):
         self.assertEqual(shortfall["internal_available"], "40.00")
         self.assertEqual(shortfall["remaining_after_transfer"], "10.00")
         self.assertEqual(shortfall["minimum_topup"], "10.00")
-        self.assertEqual(shortfall["maximum_topup"], "710.00")
+        self.assertEqual(shortfall["maximum_topup"], "2710.00")
         self.assertEqual(shortfall["recommended_topup"], "10")
 
     def test_unknown_account_type_blocks_excess_transfers(self):
         self.client.probe_account_type.return_value = "unknown"
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         with self.assertRaisesMessage(ValueError, "无法确认 Binance 账户类型"):
             balance_cap.normalize_capital(self.user, self.client, "normalization_required")
         self.client.transfer_from_funding.assert_not_called()
@@ -411,13 +415,13 @@ class BalanceCapTests(TestCase):
             balance_cap.account_type_for_client(self.client)
 
     def test_futures_balance_inside_open_range_is_ready(self):
-        self.client.get_balance.return_value = _balance("999.99")
+        self.client.get_balance.return_value = _balance("2999.99")
         state = self.precheck()
         self.assertEqual(state["status"], "ready")
-        self.assertEqual(state["upper_limit"], "1000")
+        self.assertEqual(state["upper_limit"], "3000")
 
     def test_sub_cent_excess_above_retention_cap_is_not_collectible(self):
-        self.client.get_balance.return_value = _balance("1000.004")
+        self.client.get_balance.return_value = _balance("3000.004")
 
         state = self.precheck()
 
@@ -425,13 +429,13 @@ class BalanceCapTests(TestCase):
         self.assertEqual(state["futures_collect"], "0.00")
 
     def test_collectible_excess_rounds_down_without_crossing_retention_cap(self):
-        self.client.get_balance.return_value = _balance("1000.019")
+        self.client.get_balance.return_value = _balance("3000.019")
 
         state = self.precheck()
 
         self.assertEqual(state["status"], "normalization_required")
         self.assertEqual(state["futures_collect"], "0.01")
-        self.assertEqual(state["target_balance"], "1000.009")
+        self.assertEqual(state["target_balance"], "3000.009")
 
     def test_stale_spot_pending_sweep_replans_futures_refill_before_collection(self):
         self.user.stop_loss_amount = Decimal("100")
@@ -472,7 +476,7 @@ class BalanceCapTests(TestCase):
             spot_refill_amount=Decimal("150"),
             status=CapitalSweep.STATUS_SPOT_REFILL_PENDING,
         )
-        self.client.get_balance.return_value = _balance("950")
+        self.client.get_balance.return_value = _balance("2950")
         self.client.get_spot_usdt_free_balance.return_value = "200"
 
         state = balance_cap.normalize_capital(
@@ -506,12 +510,12 @@ class BalanceCapTests(TestCase):
         self.client.get_balance.return_value = _balance("299.99635842")
         state = self.precheck()
         self.assertEqual(state["status"], "shortfall")
-        self.assertEqual(state["target"], "1000")
+        self.assertEqual(state["target"], "3000")
         self.assertEqual(state["minimum_open_balance"], "300.0")
         self.assertEqual(state["shortfall"], "0.01")
 
     def test_normalize_excess_completes_all_transfer_steps_in_one_request(self):
-        self.client.get_balance.side_effect = [_balance("1100"), _balance("1100"), _balance("1000")]
+        self.client.get_balance.side_effect = [_balance("3100"), _balance("3100"), _balance("3000")]
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required")
         self.client.transfer_between_spot_and_futures.assert_called_once_with("100.00", to_futures=False)
         self.client.transfer_spot_to_master.assert_called_once_with("100.00", ccy="USDT")
@@ -527,20 +531,20 @@ class BalanceCapTests(TestCase):
         self.assertIn("合约账户转出：100.00 USDT", mail.outbox[0].body)
         self.assertIn("资金账户转出：0.00 USDT", mail.outbox[0].body)
         self.assertIn("原现货账户归集：0.00 USDT", mail.outbox[0].body)
-        self.assertIn("合约账户保留目标：1000.00 USDT", mail.outbox[0].body)
+        self.assertIn("合约账户保留目标：3000.00 USDT", mail.outbox[0].body)
         self.assertIn(f"系统归集编号：{sweep.id}", mail.outbox[0].body)
         self.assertIn("不使用提现 API", mail.outbox[0].body)
         self.client.get_spot_futures_transfer_history.assert_not_called()
 
         self.client.get_balance.reset_mock()
         self.client.get_balance.side_effect = None
-        self.client.get_balance.return_value = _balance("1000")
+        self.client.get_balance.return_value = _balance("3000")
         repeated = balance_cap.capital_precheck(self.user, self.client, purpose="manual_sweep")
         self.assertEqual((repeated["status"], repeated["reason"]), ("ready", "normalization_completed"))
         self.client.get_balance.assert_called_once()
 
         self.client.get_balance.side_effect = None
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.assertEqual(self.precheck()["status"], "normalization_required")
 
     def test_recent_completed_sweep_does_not_hide_remaining_spot_balance(self):
@@ -550,7 +554,7 @@ class BalanceCapTests(TestCase):
             target_balance=Decimal("1000"),
             status=CapitalSweep.STATUS_COMPLETED,
         )
-        self.client.get_balance.return_value = _balance("1000")
+        self.client.get_balance.return_value = _balance("3000")
         self.client.get_spot_usdt_free_balance.return_value = "312.70"
 
         state = balance_cap.capital_precheck(self.user, self.client, purpose="manual_sweep")
@@ -573,7 +577,7 @@ class BalanceCapTests(TestCase):
             status=CapitalSweep.STATUS_FAILED,
             error="test failure",
         )
-        self.client.get_balance.return_value = _balance("1000")
+        self.client.get_balance.return_value = _balance("3000")
 
         state = balance_cap.capital_precheck(self.user, self.client, purpose="manual_sweep")
 
@@ -581,7 +585,7 @@ class BalanceCapTests(TestCase):
         self.assertNotIn("collection_id", state)
 
     def test_excess_requires_all_excess_to_be_available(self):
-        self.client.get_balance.return_value = _balance("1100", "40")
+        self.client.get_balance.return_value = _balance("3100", "40")
         with self.assertRaisesMessage(ValueError, "可用余额不足"):
             balance_cap.normalize_capital(self.user, self.client, "normalization_required")
         self.client.transfer_between_spot_and_futures.assert_not_called()
@@ -640,11 +644,11 @@ class BalanceCapTests(TestCase):
 
     def test_uncertain_futures_transfer_surfaces_pending_collection_without_blocking_entry(self):
         # 待确认流水只在预检结果里透出供账户页确认，绝不能阻塞开仓判定。
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.transfer_between_spot_and_futures.side_effect = RuntimeError("timeout")
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required")
         self.assertEqual(state["status"], "collection_pending")
-        self.client.get_balance.return_value = _balance("1000")
+        self.client.get_balance.return_value = _balance("3000")
         recheck = self.precheck()
         self.assertEqual(recheck["status"], "ready")
         self.assertEqual(recheck["pending_collection"]["status"], "collection_pending")
@@ -658,7 +662,7 @@ class BalanceCapTests(TestCase):
             futures_amount=Decimal("100"),
             status=CapitalSweep.STATUS_SPOT_PENDING,
         )
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         recheck = self.precheck()
         self.assertEqual(recheck["status"], "normalization_required")
         self.assertIn("pending_collection", recheck)
@@ -799,7 +803,7 @@ class BalanceCapTests(TestCase):
         self.assertEqual(CapitalSweep.objects.get(user=self.user).status, CapitalSweep.STATUS_COMPLETED)
 
     def test_uncertain_futures_transfer_recovers_only_from_exchange_history(self):
-        self.client.get_balance.side_effect = [_balance("1100"), _balance("1100"), _balance("1000")]
+        self.client.get_balance.side_effect = [_balance("3100"), _balance("3100"), _balance("3000")]
         self.client.transfer_between_spot_and_futures.side_effect = RuntimeError("timeout")
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required", purpose="manual_sweep")
         self.assertEqual(state["status"], "collection_pending")
@@ -807,7 +811,7 @@ class BalanceCapTests(TestCase):
             {"asset": "USDT", "type": 2, "amount": "100", "status": "CONFIRMED", "tranId": 456}
         ]
         self.client.get_balance.side_effect = None
-        self.client.get_balance.return_value = _balance("1000")
+        self.client.get_balance.return_value = _balance("3000")
         self.client.get_spot_usdt_free_balance.return_value = "100"
         state = balance_cap.normalize_capital(self.user, self.client, "collection_pending")
         self.assertEqual(state["status"], "ready")
@@ -915,7 +919,7 @@ class BalanceCapTests(TestCase):
         self.assertEqual(CapitalSweep.objects.get(user=self.user).funding_refill_tran_id, "902")
 
     def test_shared_rate_limit_pauses_sub_to_master_without_replanning(self):
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.transfer_spot_to_master.side_effect = BinanceApiError(
             "Binance 请求预算保护中",
             code="LOCAL_RATE_BUDGET",
@@ -938,7 +942,7 @@ class BalanceCapTests(TestCase):
     def test_shared_rate_limit_pauses_master_withdrawal_without_history_query(self):
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.withdraw_to_binance_address.side_effect = BinanceApiError(
             "Binance 请求预算保护中",
             code="LOCAL_RATE_BUDGET",
@@ -1017,7 +1021,7 @@ class BalanceCapTests(TestCase):
         self.assertIsNone(sweep.active_slot)
 
     def test_uncertain_master_transfer_recovers_from_history_without_repeating(self):
-        self.client.get_balance.side_effect = [_balance("1100"), _balance("1100"), _balance("1000")]
+        self.client.get_balance.side_effect = [_balance("3100"), _balance("3100"), _balance("3000")]
         self.client.transfer_spot_to_master.side_effect = RuntimeError("timeout")
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required")
         self.assertEqual(state["status"], "collection_pending")
@@ -1155,7 +1159,7 @@ class BalanceCapTests(TestCase):
         )
 
     def test_deterministic_sub_to_master_rejection_terminates_and_replans(self):
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.transfer_spot_to_master.side_effect = BinanceApiError(
             "permission denied",
             code="-1002",
@@ -1176,7 +1180,7 @@ class BalanceCapTests(TestCase):
         self.assertIn("permission denied", sweep.error)
 
     def test_waits_for_spot_ledger_then_continues_same_sweep(self):
-        self.client.get_balance.side_effect = [_balance("1100"), _balance("1000")]
+        self.client.get_balance.side_effect = [_balance("3100"), _balance("3000")]
         self.client.get_spot_usdt_free_balance.side_effect = ["0", "0", "100", "100"]
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required")
         self.assertEqual(state["status"], "collection_pending")
@@ -1192,9 +1196,9 @@ class BalanceCapTests(TestCase):
 
     def test_uncertain_funding_transfer_recovers_from_history_without_repeating(self):
         self.client.get_balance.side_effect = [
-            _balance("1000"),
-            _balance("1000"),
-            _balance("1000"),
+            _balance("3000"),
+            _balance("3000"),
+            _balance("3000"),
         ]
         self.client.get_funding_usdt_free_balance.side_effect = ["20", "0"]
         self.client.get_spot_usdt_free_balance.side_effect = ["10", "30", "30"]
@@ -1220,9 +1224,9 @@ class BalanceCapTests(TestCase):
 
     def test_collects_funding_and_spot_after_refilling_futures_target(self):
         self.client.get_balance.side_effect = [
-            _balance("999.99635842"),
-            _balance("999.99635842"),
-            _balance("999.99635842"),
+            _balance("2999.99635842"),
+            _balance("2999.99635842"),
+            _balance("2999.99635842"),
         ]
         self.client.get_funding_usdt_free_balance.side_effect = ["10", "10", "0"]
         self.client.get_spot_usdt_free_balance.side_effect = ["290", "300"]
@@ -1256,7 +1260,7 @@ class BalanceCapTests(TestCase):
         self.assertIsNone(sweep.active_slot)
 
     def test_manual_sweep_collects_wallet_balance_when_futures_is_already_in_range(self):
-        self.client.get_balance.return_value = _balance("850")
+        self.client.get_balance.return_value = _balance("2850")
         self.client.get_spot_usdt_free_balance.return_value = "400"
 
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required", purpose="manual_sweep")
@@ -1266,7 +1270,7 @@ class BalanceCapTests(TestCase):
         self.assertEqual(state["status"], "ready")
 
     def test_manual_sweep_refills_to_fixed_cap_then_collects_only_remainder(self):
-        self.client.get_balance.side_effect = [_balance("850"), _balance("1000")]
+        self.client.get_balance.side_effect = [_balance("2850"), _balance("3000")]
         self.client.get_spot_usdt_free_balance.side_effect = ["200", "50", "0"]
 
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required", purpose="manual_sweep")
@@ -1276,7 +1280,7 @@ class BalanceCapTests(TestCase):
         self.assertEqual(state["status"], "ready")
         sweep = CapitalSweep.objects.get(user=self.user)
         self.assertEqual(sweep.api_key_fingerprint, self.api_key_fingerprint)
-        self.assertEqual(sweep.target_balance, Decimal("1000"))
+        self.assertEqual(sweep.target_balance, Decimal("3000"))
         self.assertEqual(sweep.spot_amount, Decimal("50"))
 
     def test_manual_sweep_button_is_available_for_partial_refill_even_without_outbound_amount(self):
@@ -1296,13 +1300,13 @@ class BalanceCapTests(TestCase):
         self.assertEqual(normalized["status"], "ready")
 
     def test_entry_is_ready_from_risk_minimum_to_fixed_cap(self):
-        for futures in ("300", "650", "1000"):
+        for futures in ("300", "650", "1000", "2000", "2999.99", "3000"):
             with self.subTest(futures=futures):
                 self.client.get_balance.return_value = _balance(futures)
                 state = self.precheck()
                 self.assertEqual(state["status"], "ready")
                 self.assertEqual(state["minimum_open_balance"], "300.0")
-                self.assertEqual(state["maximum_futures_balance"], "1000")
+                self.assertEqual(state["maximum_futures_balance"], "3000")
 
     def test_entry_requires_account_page_collection_when_futures_is_below_minimum_but_wallets_can_refill(self):
         self.client.get_balance.return_value = _balance("250")
@@ -1379,7 +1383,7 @@ class BalanceCapTests(TestCase):
     def test_master_account_sweeps_excess_to_configured_collect_account(self):
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.side_effect = [_balance("1100"), _balance("1100"), _balance("1005"), _balance("1005")]
+        self.client.get_balance.side_effect = [_balance("3100"), _balance("3100"), _balance("3005"), _balance("3005")]
         self.client.withdraw_to_binance_address.return_value = "withdraw-1"
 
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required")
@@ -1417,7 +1421,7 @@ class BalanceCapTests(TestCase):
         # 对账必须按容差匹配，否则已成功到账的内部转账会被误判卡死。
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.side_effect = [_balance("1100"), _balance("1100"), _balance("1005"), _balance("1005")]
+        self.client.get_balance.side_effect = [_balance("3100"), _balance("3100"), _balance("3005"), _balance("3005")]
         self.client.withdraw_to_binance_address.return_value = "withdraw-1"
 
         state = balance_cap.normalize_capital(self.user, self.client, "normalization_required")
@@ -1442,10 +1446,10 @@ class BalanceCapTests(TestCase):
         self._mark_master_account()
         self._configure_collect_account("originalDestination")
         self.client.get_balance.side_effect = [
-            _balance("1100"),
-            _balance("1100"),
-            _balance("1005"),
-            _balance("1005"),
+            _balance("3100"),
+            _balance("3100"),
+            _balance("3005"),
+            _balance("3005"),
         ]
         self.client.withdraw_to_binance_address.return_value = "withdraw-1"
 
@@ -1488,7 +1492,7 @@ class BalanceCapTests(TestCase):
 
     def test_master_account_without_collect_account_blocks_sweep_before_transfers(self):
         self._mark_master_account()
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
 
         with self.assertRaisesMessage(ValueError, "充值网络和地址"):
             balance_cap.normalize_capital(self.user, self.client, "normalization_required")
@@ -1501,7 +1505,7 @@ class BalanceCapTests(TestCase):
         self.user.capital_collect_account = "TQx9d8qM7exampleAddress"
         self.user.capital_collect_network = "SOL"
         self.user.save(update_fields=["capital_collect_account", "capital_collect_network"])
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
 
         with self.assertRaisesMessage(ValueError, "充值网络和地址"):
             balance_cap.normalize_capital(self.user, self.client, "normalization_required")
@@ -1514,11 +1518,11 @@ class BalanceCapTests(TestCase):
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
         self.client.get_balance.side_effect = [
-            _balance("1100"),
-            _balance("1100"),
-            _balance("1100"),
-            _balance("1100"),
-            _balance("1005"),
+            _balance("3100"),
+            _balance("3100"),
+            _balance("3100"),
+            _balance("3100"),
+            _balance("3005"),
         ]
         self.client.withdraw_to_binance_address.side_effect = RuntimeError("timeout")
         # 首次确认时历史查询本身失败：结果未知，保持 pending 不重试。
@@ -1543,7 +1547,7 @@ class BalanceCapTests(TestCase):
     def test_master_reconciliation_treats_exact_onchain_withdrawal_as_terminal(self):
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.side_effect = [_balance("1100"), _balance("1100"), _balance("1005"), _balance("1005")]
+        self.client.get_balance.side_effect = [_balance("3100"), _balance("3100"), _balance("3005"), _balance("3005")]
         self.client.withdraw_to_binance_address.side_effect = RuntimeError("timeout")
         # 首次确认时历史查询本身失败：结果未知，保持 pending 不重试。
         self.client.get_withdraw_history.side_effect = RuntimeError("history unavailable")
@@ -1570,7 +1574,7 @@ class BalanceCapTests(TestCase):
         # 空历史不能证明提现请求失败；宁可等待人工核验，也不能重复转出。
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.withdraw_to_binance_address.side_effect = RuntimeError("timeout")
         # 首次确认时历史查询本身失败：结果未知，保持 pending 不重试。
         self.client.get_withdraw_history.side_effect = RuntimeError("history unavailable")
@@ -1594,7 +1598,7 @@ class BalanceCapTests(TestCase):
     def test_http_5xx_withdrawal_result_never_allows_automatic_resubmit(self):
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.withdraw_to_binance_address.side_effect = BinanceApiError(
             "Binance 请求失败 (http: 503)",
             code="503",
@@ -1626,7 +1630,7 @@ class BalanceCapTests(TestCase):
     def test_master_missing_withdraw_history_stays_pending_during_visibility_grace(self):
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.withdraw_to_binance_address.side_effect = RuntimeError("timeout")
         self.client.get_withdraw_history.side_effect = RuntimeError("history unavailable")
 
@@ -1646,7 +1650,7 @@ class BalanceCapTests(TestCase):
     def test_master_internal_transfer_failure_surfaces_exchange_reason(self):
         self._mark_master_account()
         self._configure_collect_account("TQx9d8qM7exampleAddress")
-        self.client.get_balance.return_value = _balance("1100")
+        self.client.get_balance.return_value = _balance("3100")
         self.client.withdraw_to_binance_address.side_effect = BinanceApiError(
             "You don't have permission to withdraw", code="-8020"
         )
@@ -1709,7 +1713,7 @@ class BalanceCapTests(TestCase):
             master_attempted_at=timezone.now(),
             master_withdraw_order_id="frozen-order",
         )
-        self.client.get_balance.return_value = _balance("1000")
+        self.client.get_balance.return_value = _balance("3000")
 
         state = balance_cap.normalize_capital(self.user, self.client, "collection_pending")
 

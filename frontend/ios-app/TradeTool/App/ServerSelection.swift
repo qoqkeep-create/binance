@@ -24,11 +24,19 @@ struct ServerSelectionStore {
     let configuredURL: URL
 
     var servers: [AppServer] {
+#if DEBUG
         let publicServers = [AppServer.seoul, .original]
         if publicServers.contains(where: { $0.url == configuredURL }) {
             return publicServers
         }
         return publicServers + [AppServer(name: "开发服务器", url: configuredURL)]
+#else
+        // A production/TestFlight build must never inherit the local
+        // 127.0.0.1 development origin from a previous debug installation.
+        // The phone's localhost is the phone itself, so API binding would
+        // otherwise fail before the request reaches the integrated server.
+        return [AppServer(name: "整合服务器", url: configuredURL)]
+#endif
     }
 
     var current: AppServer {

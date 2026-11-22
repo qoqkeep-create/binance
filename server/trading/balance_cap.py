@@ -40,7 +40,7 @@ from users.models import User
 
 logger = logging.getLogger(__name__)
 
-FUTURES_RETENTION_CAP = Decimal("1000")
+FUTURES_RETENTION_CAP = Decimal("3000")
 REFILL_TRIGGER_MULTIPLIER = Decimal("1.5")
 DUST_AMOUNT = Decimal("0.01")
 # 低于该值的钱包余额视为已清空：不参与规划、不尝试划转（币安对小额划转有最小限额，
@@ -1547,7 +1547,7 @@ def capital_shortfall_reminder_preview(user: User, client: BinanceFuturesClient)
         f"当前账户总余额：{format(total, 'f')} USDT\n"
         f"开仓最低要求：{format(minimum, 'f')} USDT（止损额的 1.5 倍）\n"
         f"至少需要补充：{shortfall_fields['minimum_topup']} USDT\n"
-        f"最多可补充：{shortfall_fields['maximum_topup']} USDT（补至固定保留上限 1000 USDT）\n"
+        f"最多可补充：{shortfall_fields['maximum_topup']} USDT（补至固定保留上限 {maximum:f} USDT）\n"
         f"建议向该交易账户的资金账户转入：{format(recommended, 'f')} USDT。\n"
         "建议金额已向上取整，确保到账后达到开仓最低线；补资金额不要超过最多可补充金额。"
     )

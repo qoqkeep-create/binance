@@ -13,7 +13,8 @@ actor MobileSessionRefresher {
         if let pending { return try await pending.value }
         guard let original = try store.load() else { throw APIError.unauthorized(message: "请重新登录") }
         let task = Task<String, Error> {
-            let request = APIRequest<JSONValue>(path: "/api/auth/refresh", method: .post)
+            let request = APIRequest<JSONValue>(path: "/api/auth/refresh", method: .post,
+                timeoutInterval: 8)
             let (data, response) = try await network.data(for: request.makeURLRequest(baseURL: baseURL))
             guard let response = response as? HTTPURLResponse, response.statusCode == 200,
                   let envelope = try? JSONDecoder().decode(APIEnvelope<JSONValue>.self, from: data),

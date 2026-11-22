@@ -1,5 +1,19 @@
 # 开发与验证
 
+## 合约余额上限 3000 USDT（2026-11-22）
+
+共享 `FUTURES_RETENTION_CAP` 调整为 `Decimal("3000")`，普通／带单预检、归集、钱包补入及补资提醒共用该值。带单提示与补资邮件从实际阈值生成金额；iOS 划转说明移除写死的旧 1000 金额，数值仍来自服务端计划。既有订单保护、已提交流水及止损额不迁移。
+
+隔离 SQLite／LocMem、交易所替身：`trading.test_balance_cap trading.test_capital_wallet` **110 项通过（18.646 秒）**；`accounts.test_fixed_stop_loss trading.test_lead_mode` **27 项通过（17.727 秒）**。覆盖新上限分币边界、两条独立补入、旧计划失效及旧流水不重发；本轮未执行真实划转。最终 iOS Release 模拟器 build、Django `check` 和 `makemigrations --check --dry-run` 通过。完整回归与发布证据保存在忽略目录 `.integration-runtime/CapitalCap3000Nov22/`；本地和服务器验收分别记录。
+
+## API 绑定连接地址（2026-11-21）
+
+绑定请求使用 `/v1/api/bind`，由当前 `AppRuntime` 服务器地址拼接整合前缀。Release/TestFlight 的服务器列表已隔离本地 `127.0.0.1` 地址，避免旧 Debug 的 `selectedAPIOrigin` 让真机请求自身 localhost。当前整合入口为 `https://47.80.22.243/integrated/`；“设置 → 切换服务器 → 测试网络响应”可验证设备到入口的连接。服务器收到请求后再校验 Binance Futures API，权限或白名单错误会返回业务错误，不会表现为客户端无法连接服务器。
+
+## iOS 冷启动会话恢复（2026-11-15）
+
+有本地 Keychain 会话时，启动先显示缓存会话对应的主界面，`/api/auth/me` 在后台验证，避免网络或代理异常把 `RootView` 固定在启动页。后台验证最多等待 8 秒；退出和会话过期会取消它，并拒绝旧 token 的迟到结果。回归测试位于 `ServerSwitchingTests.testRestoreShowsCachedSessionBeforeNetworkValidationCompletes`，`ServerSwitchingTests` 共 9 项通过；本地 Debug iOS Simulator `build-for-testing` 通过。该结果不替代真实 iPhone、TestFlight 或实际代理网络验收。
+
 ## 固定资金规则、刷新及开仓反馈（2026-11-14）
 
 止损 GET／POST 与余额脱钩，金额为 50～200 USDT（含边界、Decimal 最多两位小数），普通／带单各自保存；原百分比请求明确拒绝并提示更新客户端。合约归集上限与补足目标统一为 1000，开仓最低线仍为止损额的 1.5 倍，旧订单及历史配置不批量改写。新增预检及替身执行回归覆盖 `1000→0`、`1000.01→0.01`、`1000.50→0.50`。

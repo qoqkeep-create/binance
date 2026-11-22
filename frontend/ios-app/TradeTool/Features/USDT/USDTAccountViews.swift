@@ -644,7 +644,7 @@ struct USDTCapitalView: View {
             }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
           }
           if direction != "to_spot" {
-            Text("按合约距固定保留上限 1000 USDT 的差额补入，最多使用所选账户的可用余额。")
+            Text("按合约距保留上限的差额补入，最多使用所选账户的可用余额。")
               .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
           }
         } else {

@@ -127,6 +127,21 @@ final class ServerSwitchingTests: XCTestCase {
         XCTAssertTrue(service.cleared)
     }
 
+    @MainActor
+    func testRestoreShowsCachedSessionBeforeNetworkValidationCompletes() async throws {
+        let validationStarted = expectation(description: "Cached-session validation started")
+        let service = DelayedAuthenticationService(onRefresh: {
+            validationStarted.fulfill()
+        })
+        let auth = AuthStore(service: service, toastCenter: AppToastCenter(), notificationCenter: NotificationCenter())
+
+        let restore = Task { await auth.restore() }
+        await fulfillment(of: [validationStarted], timeout: 1)
+
+        XCTAssertNotNil(auth.session, "A cached session must leave the launch screen while validation is pending")
+        restore.cancel()
+    }
+
     private func selectionStore() -> ServerSelectionStore {
         ServerSelectionStore(defaults: defaults, configuredURL: AppServer.original.url)
     }
@@ -195,6 +210,30 @@ private final class StubAuthenticationService: AuthenticationService {
     func storedSession() throws -> AuthSession? { session }
     func refresh(_ session: AuthSession) async throws -> AuthSession { session }
     func clearStoredSession() throws { cleared = true }
+    func login(account: String, password: String) async throws -> AuthSession { session }
+    func register(account: String, password: String) async throws -> AuthSession { session }
+    func logout() async {}
+}
+
+private final class DelayedAuthenticationService: AuthenticationService {
+    private let session = AuthSession(
+        accessToken: "cached-token",
+        user: AuthUser(id: "cached-user", email: "cached@example.com", displayName: "Cached",
+                       canViewReferenceNotifications: false)
+    )
+    private let onRefresh: () -> Void
+
+    init(onRefresh: @escaping () -> Void) {
+        self.onRefresh = onRefresh
+    }
+
+    func storedSession() throws -> AuthSession? { session }
+    func refresh(_ session: AuthSession) async throws -> AuthSession {
+        onRefresh()
+        try await Task.sleep(for: .seconds(30))
+        return session
+    }
+    func clearStoredSession() throws {}
     func login(account: String, password: String) async throws -> AuthSession { session }
     func register(account: String, password: String) async throws -> AuthSession { session }
     func logout() async {}

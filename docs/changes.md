@@ -1,5 +1,23 @@
 # 变更与验收记录
 
+## 2026-11-22：合约余额上限调整为 3000 USDT
+
+按最终要求，将普通／带单首仓资金上限、合约保留上限和补足目标从 1000 调整为 **3000 USDT**。普通归集只处理合约超过 3000 的部分，低于上限的补入仍限于来源钱包可用额。止损额范围 50～200、首仓下限 1.5 倍止损额和资金确认／回执恢复规则沿用现有实现。
+
+资金定向隔离测试 **110 项通过**，固定止损及带单回归 **27 项通过**。覆盖 1000／2000／2999.99／3000 无合约超额、3000.01／3000.50 仅转超额、旧 1000 预检计划要求重新确认、已提交和已完成旧流水按原金额恢复且不重复转账。iOS Release 模拟器构建、Django check 和 migration 漂移检查通过，无新增迁移。部署结果另行记录在[运维](operations.md)。
+
+## 2026-11-21：API 绑定连接地址修复
+
+确认 iOS 绑定 API 时显示“无法连接服务器”的主要原因是 `ServerSelectionStore` 读取了旧的 `selectedAPIOrigin`，真机可能继续使用开发地址 `http://127.0.0.1:8787/`。该地址指向手机自身，绑定请求无法到达服务器。线上整合入口 `https://47.80.22.243/integrated/v1/api/bind` 当前可达；服务器到 Binance 的绑定校验链路也正常，API Key 权限错误会返回具体业务提示。
+
+Release/TestFlight 构建现在只提供构建配置指定的整合服务器，不再接受旧的本地服务器选择；Debug 仍保留本地开发服务器。当前安装包可在“设置 → 切换服务器”选择“整合服务器”，确认地址为 `https://47.80.22.243/integrated/` 后测试网络。iOS Debug Simulator `build-for-testing` 通过；本轮 XCTest 执行受 CoreSimulator 设备创建错误中断，非代码测试失败。
+
+## 2026-11-15：iOS 冷启动会话恢复不再阻塞
+
+确认启动画面卡住与独立 macOS 客户端无关：macOS 客户端位于同级目录 `/Users/apple/work/TradeTools-Binance-Mac/`，不属于本项目。回归来自 `31f0625` 接入的只读网络恢复链路。存在 Keychain 会话时，`AuthStore.restore()` 原先必须等待 `/api/auth/me` 完成；网络不可达、代理切换或设备保存了不可达的服务器选择时，`RootView` 会一直处于 `.restoring`。
+
+iOS 现在先使用缓存会话进入主界面，再后台校验用户；退出或会话过期会取消后台校验，并以 token 代际检查防止旧响应覆盖新登录。`/api/auth/me` 的后台校验超时限制为 8 秒。新增挂起网络校验回归，`ServerSwitchingTests` 9 项全部通过，Debug iOS Simulator `build-for-testing` 通过；真实 iPhone / TestFlight 新包仍需单独验收。
+
 ## 2026-11-14：新增快速服务端发布路径
 
 为日常后端改动新增 `deploy/integrated/quick_deploy.py`。它从已提交工作区打包服务端，复用旧应用镜像的 Docker cache，只切换四个 Python 服务；默认跳过数据库备份、隔离 MySQL／Redis 测试、自动 migration、bootstrap 和生产数据操作。仍保留发布锁、活动命令门禁、`migrate --check`、基础设施容器不替换、应用健康检查和一次 HTTPS health；失败只恢复旧应用容器，不恢复数据库。重大交易／资金／保护／migration 变更继续使用完整发布流程。

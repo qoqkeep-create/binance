@@ -66,7 +66,7 @@ class LeadTradingAdapter:
         message = (
             f"带单组合资金不足，至少需补充 {shortfall} USDT，请在币安“我的带单”页面划入"
             if balance < lower else
-            f"带单组合余额超过固定上限 1000 USDT，请在币安“我的带单”页面转出 {excess:f} USDT 后再开仓"
+            f"带单组合余额超过固定上限 {upper:f} USDT，请在币安“我的带单”页面转出 {excess:f} USDT 后再开仓"
         )
         return {"status": "shortfall" if balance < lower else "normalization_required",
                 "trading_mode": "lead", "message": message, "shortfall": str(shortfall),

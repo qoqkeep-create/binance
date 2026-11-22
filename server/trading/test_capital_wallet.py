@@ -8,7 +8,7 @@ from django.test import TestCase
 
 from api_bindings.models import ApiBinding
 from api_bindings.services import build_api_key_fingerprint
-from trading import capital_wallet
+from trading import balance_cap, capital_wallet
 from trading.models import CapitalSweep
 from users.models import User
 
@@ -27,7 +27,7 @@ class CapitalWalletTests(TestCase):
         self.exchange.get_positions.return_value = {"data": []}
         self.exchange.get_pending_orders.return_value = {"data": []}
         self.exchange.get_pending_algo_orders.return_value = {"data": []}
-        self.exchange.get_balance.return_value = {"data": [{"details": [{"eq": "1200", "availEq": "1200"}]}]}
+        self.exchange.get_balance.return_value = {"data": [{"details": [{"eq": "3200", "availEq": "3200"}]}]}
         self.exchange.get_funding_usdt_free_balance.return_value = "50"
         self.exchange.get_spot_usdt_free_balance.return_value = "80"
         self.exchange.probe_account_type.return_value = "sub"
@@ -68,7 +68,7 @@ class CapitalWalletTests(TestCase):
         for action, method in [("funding_to_futures", "transfer_from_funding"),
                                ("spot_to_futures", "transfer_between_spot_and_futures")]:
             with self.subTest(action=action):
-                self.exchange.get_balance.return_value["data"][0]["details"][0]["eq"] = "980"
+                self.exchange.get_balance.return_value["data"][0]["details"][0]["eq"] = "2980"
                 self.assertEqual(self.preview(action)["operation_amount"], "20.00")
                 self.execute(action)
                 self.assertEqual(getattr(self.exchange, method).call_args.args, ("20.00",))
@@ -99,6 +99,44 @@ class CapitalWalletTests(TestCase):
         self.assertTrue(result["plan_changed"])
         self.assertEqual(CapitalSweep.objects.count(), 0)
         self.exchange.transfer_between_spot_and_futures.assert_not_called()
+
+    def test_old_cap_preview_requires_new_confirmation_without_transferring(self):
+        self.exchange.get_balance.return_value = {"data": [{"details": [{"eq": "1100", "availEq": "1100"}]}]}
+        self.exchange.get_funding_usdt_free_balance.return_value = "0"
+        self.exchange.get_spot_usdt_free_balance.return_value = "0"
+        with patch.object(balance_cap, "FUTURES_RETENTION_CAP", Decimal("1000")):
+            old_preview = self.preview()
+        self.assertEqual(old_preview["futures_collect"], "100.00")
+
+        result = self.execute(preview=old_preview)
+
+        self.assertTrue(result["plan_changed"])
+        self.assertEqual(result["maximum_futures_balance"], "3000")
+        self.assertEqual(result["futures_collect"], "0.00")
+        self.assertFalse(CapitalSweep.objects.exists())
+        self.exchange.transfer_between_spot_and_futures.assert_not_called()
+        self.exchange.transfer_funding_to_spot.assert_not_called()
+        self.exchange.transfer_spot_to_master.assert_not_called()
+
+    def test_completed_old_cap_request_replays_original_amount_and_target(self):
+        request_id = uuid4()
+        old = CapitalSweep.objects.create(
+            user=self.user, api_key_fingerprint=self.fingerprint,
+            operation="to_spot", request_id=request_id,
+            amount=0, futures_amount=100, target_balance=1000,
+            status=CapitalSweep.STATUS_COMPLETED,
+        )
+
+        result = self.execute(request_id=request_id, preview={"plan_token": "old-confirmed-plan"})
+
+        self.assertEqual(result["collection_id"], old.pk)
+        self.assertEqual(Decimal(result["target"]), Decimal("1000"))
+        self.assertEqual(Decimal(result["futures_collect"]), Decimal("100"))
+        self.assertEqual(result["maximum_futures_balance"], "3000")
+        self.exchange.get_balance.assert_not_called()
+        self.exchange.transfer_between_spot_and_futures.assert_not_called()
+        self.exchange.transfer_funding_to_spot.assert_not_called()
+        self.exchange.transfer_spot_to_master.assert_not_called()
 
     def test_unknown_first_transfer_is_queried_and_never_replayed(self):
         self.exchange.transfer_between_spot_and_futures.side_effect = TimeoutError()
@@ -132,7 +170,7 @@ class CapitalWalletTests(TestCase):
                 getattr(self.exchange, method).return_value = {"data": []}
 
     def test_dust_and_exact_cap_have_no_futures_transfer(self):
-        self.exchange.get_balance.return_value["data"][0]["details"][0]["eq"] = "1000"
+        self.exchange.get_balance.return_value["data"][0]["details"][0]["eq"] = "3000"
         self.exchange.get_funding_usdt_free_balance.return_value = "0.99"
         self.assertEqual(self.preview()["status"], "ready")
         self.assertEqual(self.preview()["operation_amount"], "0.00")
@@ -141,7 +179,8 @@ class CapitalWalletTests(TestCase):
         self.user.stop_loss_amount = Decimal("50")
         self.user.save(update_fields=["stop_loss_amount"])
         self.exchange.get_funding_usdt_free_balance.return_value = "0.99"
-        for futures, excess in (("1000", "0.00"), ("1000.01", "0.01"), ("1000.50", "0.50")):
+        for futures, excess in (("1000", "0.00"), ("2000", "0.00"), ("2999.99", "0.00"),
+                                ("3000", "0.00"), ("3000.01", "0.01"), ("3000.50", "0.50")):
             with self.subTest(futures=futures):
                 self.exchange.get_balance.return_value = {"data": [{"details": [{"eq": futures, "availEq": futures}]}]}
                 self.exchange.transfer_between_spot_and_futures.reset_mock()
@@ -155,7 +194,7 @@ class CapitalWalletTests(TestCase):
                 else:
                     self.assertEqual(result["reason"], "normalization_completed")
                     self.exchange.transfer_between_spot_and_futures.assert_called_once_with(excess, to_futures=False)
-                    self.assertEqual(Decimal(result["target"]), Decimal("1000"))
+                    self.assertEqual(Decimal(result["target"]), Decimal("3000"))
         self.exchange.transfer_funding_to_spot.assert_not_called()
         self.exchange.transfer_spot_to_master.assert_not_called()
         self.assertEqual(CapitalSweep.objects.count(), 2)

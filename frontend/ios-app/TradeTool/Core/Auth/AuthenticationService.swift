@@ -30,7 +30,8 @@ struct APIAuthenticationService: AuthenticationService {
         let user = try await apiClient.send(
             APIRequest<AuthUser>(
                 path: "/api/auth/me",
-                showsErrorToast: false
+                showsErrorToast: false,
+                timeoutInterval: 8
             )
         )
         let refreshed = AuthSession(
