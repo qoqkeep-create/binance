@@ -303,8 +303,16 @@ final class USDTChartPositionsModel: ObservableObject {
     private var loading = false
     private var monitorID = UUID()
 
-    func reset() {
+    /// A temporary inactive scene does not establish that a known position closed.
+    /// Invalidate its read, but require a fresh confirmation before allowing entry.
+    func pause() {
         requestID = UUID(); loading = false
+        monitorID = UUID()
+        ready = false
+    }
+
+    func reset() {
+        pause()
         owner = ""; rows = []; ready = false; error = ""
     }
 
@@ -318,13 +326,18 @@ final class USDTChartPositionsModel: ObservableObject {
     func refresh(_ store: USDTStore) async {
         let scope = store.scope
         if owner != scope { reset(); owner = scope }
+        guard store.isBound else {
+            requestID = UUID(); loading = false
+            rows = []; ready = true; error = ""
+            return
+        }
         guard !loading else { return }
-        guard store.isBound else { rows = []; ready = true; error = ""; return }
         let id = UUID(); requestID = id; loading = true
         defer { if requestID == id { loading = false } }
         do {
             let result = try await store.get("/v1/position/list")
-            guard requestID == id, scope == store.scope, !Task.isCancelled else { return }
+            guard case .array = result else { throw APIError.invalidResponse }
+            guard requestID == id, scope == store.scope, store.isBound, !Task.isCancelled else { return }
             rows = result.rows; ready = true; error = ""
         } catch is CancellationError { }
         catch {
@@ -336,11 +349,13 @@ final class USDTChartPositionsModel: ObservableObject {
 
     func monitor(_ store: USDTStore) async {
         let scope = store.scope
+        if owner != scope { reset(); owner = scope }
+        pause()
         let id = UUID(); monitorID = id
-        reset(); owner = scope
-        defer { if monitorID == id { reset() } }
-        while !Task.isCancelled && scope == store.scope {
+        defer { if monitorID == id { pause() } }
+        while !Task.isCancelled && scope == store.scope && monitorID == id {
             await refresh(store)
+            guard !Task.isCancelled, scope == store.scope, monitorID == id else { return }
             do { try await Task.sleep(for: .seconds(10)) } catch { return }
         }
     }

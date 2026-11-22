@@ -240,7 +240,10 @@ private struct MarketChartDetailView: View {
             await usdt.loadDefaultLeverage(for: viewModel.market.symbol)
         }
         .task(id: "\(usdt.scope):\(usdt.isBound):\(scenePhase)") {
-            guard scenePhase == .active else { positions.reset(); return }
+            guard scenePhase == .active else {
+                if usdt.isBound { positions.pause() } else { positions.reset() }
+                return
+            }
             await positions.monitor(usdt)
         }
         .onChange(of: usdt.liveRevision) { _, _ in
@@ -249,6 +252,7 @@ private struct MarketChartDetailView: View {
         }
         .onDisappear {
             selectedStopPrice = nil
+            positions.reset()
             viewModel.stop()
             onStop?()
         }
@@ -390,8 +394,7 @@ private struct MarketChartDetailView: View {
             )
 
             if viewModel.chartDataFrame != nil, let projection = chartPriceProjection, !heldPositions.isEmpty {
-                ChartPositionLinesOverlay(lines: ChartPositionLine.lines(in: heldPositions,
-                    symbol: viewModel.market.symbol, currentPrice: Decimal(string: priceString(viewModel.currentPrice))), projection: projection)
+                ChartPositionLinesOverlay(lines: positionLines, projection: projection, profitLoss: positionProfitLoss)
             }
 
             if viewModel.chartDataFrame != nil, let projection = chartPriceProjection, heldPositions.isEmpty,
@@ -415,16 +418,28 @@ private struct MarketChartDetailView: View {
 
     private var positionMarkerExclusions: [CGRect] {
         guard let projection = chartPriceProjection else { return [] }
-        return ChartPositionLinesOverlay.labelFrames(lines: ChartPositionLine.lines(in: heldPositions,
-            symbol: viewModel.market.symbol), projection: projection)
+        return ChartPositionLinesOverlay.labelFrames(lines: positionLines, projection: projection, profitLoss: positionProfitLoss)
+    }
+
+    private var displayedChartPrice: Decimal? {
+        guard let frame = viewModel.chartDataFrame,
+              let price = frame.candles.liveTail?.closePrice ?? frame.candles.history.candles.last?.closePrice,
+              price.isFinite, price > 0 else { return nil }
+        return Decimal(string: String(price), locale: Locale(identifier: "en_US_POSIX"))
+    }
+
+    private var positionLines: [ChartPositionLine] {
+        ChartPositionLine.lines(in: heldPositions, symbol: viewModel.market.symbol, currentPrice: displayedChartPrice)
+    }
+
+    private var positionProfitLoss: ChartPositionProfitLoss? {
+        ChartPositionProfitLoss.make(in: heldPositions, symbol: viewModel.market.symbol, currentPrice: displayedChartPrice)
     }
 
     private var axisPriceLabels: [ChartAxisPriceLabel] {
         if !heldPositions.isEmpty {
             let neutral = ChartColor.rgb(NativeTradingMode.current == "lead" ? 0x58B9EF : 0xF0B90B)
-            return ChartPositionLine.lines(in: heldPositions, symbol: viewModel.market.symbol,
-                currentPrice: Decimal(string: priceString(viewModel.currentPrice)))
-                .map { line in
+            return positionLines.map { line in
                     ChartAxisPriceLabel(id: line.id, price: NSDecimalNumber(decimal: line.price).doubleValue,
                         text: DisplayNumber.text(line.price), color: line.color(neutral: neutral))
                 }

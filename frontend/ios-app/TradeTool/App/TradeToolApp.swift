@@ -808,14 +808,18 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
       }
       if request.path == "/v1/position/list",
         ProcessInfo.processInfo.arguments.contains("--fixture-chart-position") {
+        if ProcessInfo.processInfo.arguments.contains("--fixture-chart-position-delay"),
+           await requests.next("chart-position-read") > 1 {
+          try await Task.sleep(for: .seconds(5))
+        }
         value = .array(value.rows.map { row in
           var fields = row.fields
           fields["exchange_size"] = .string("0.1")
-          fields["open_price"] = .string("64400")
+          fields["open_price"] = .string(ProcessInfo.processInfo.arguments.contains("--fixture-chart-loss") ? "65000" : "64400")
           fields["market_stop_set"] = .bool(true)
           fields["market_stop_price"] = .string("64100")
           fields["manual_take_profit_set"] = .bool(true)
-          fields["manual_take_profit_price"] = .string("64750")
+          fields["manual_take_profit_price"] = .string(ProcessInfo.processInfo.arguments.contains("--fixture-chart-loss") ? "65200" : "64750")
           fields["manual_take_profit_order_type"] = .string("limit")
           fields["entry_fee_status"] = .string("confirmed")
           fields["entry_realized_fee"] = .string("0.5")

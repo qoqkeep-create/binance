@@ -8837,17 +8837,20 @@ final class ChartPositionContextTests: XCTestCase {
     func testHedgedPositionsHaveDistinctLabelsAndIdentifiers() {
         let lines = ChartPositionLine.lines(in: [row(), row(["id": .number(102), "side": .number(1)])], symbol: "BTCUSDT")
         XCTAssertEqual(Set(lines.map(\.id)).count, 4)
-        XCTAssertEqual(lines.map(\.title), ["多 · 开仓", "多 · 止损", "空 · 开仓", "空 · 止损"])
+        XCTAssertEqual(lines.map(\.title), ["开仓", "多 · 止损", "开仓", "空 · 止损"])
     }
 
     func testPositionLabelsShowLiveProfitAndFrozenNegativeRisk() throws {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "stop_loss_amount": .string("10")])
         let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 105)
-        XCTAssertEqual(lines[0].detail, "+10 U")
+        XCTAssertEqual(lines[0].title, "开仓")
+        XCTAssertEqual(lines[0].detail, "")
+        XCTAssertEqual(ChartPositionProfitLoss.make(in: [position], symbol: "BTCUSDT", currentPrice: 105)?.text, "+10 U")
         XCTAssertEqual(lines[1].detail, "-10 U")
         let loss = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 97)
-        XCTAssertEqual(loss[0].detail, "-6 U")
+        XCTAssertEqual(loss[0].detail, "")
+        XCTAssertEqual(ChartPositionProfitLoss.make(in: [position], symbol: "BTCUSDT", currentPrice: 97)?.text, "-6 U")
         XCTAssertEqual(loss[1].detail, "-10 U")
     }
 
@@ -8855,10 +8858,15 @@ final class ChartPositionContextTests: XCTestCase {
         let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
             "stop_loss_amount": .string("10.55")])
         let profit = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: Decimal(string: "105.617")!)
-        XCTAssertEqual(profit[0].detail, "+11.2 U")
+        XCTAssertEqual(profit[0].detail, "")
+        XCTAssertEqual(ChartPositionProfitLoss.make(in: [position], symbol: "BTCUSDT",
+            currentPrice: Decimal(string: "105.617")!)?.text, "+11.2 U")
         XCTAssertEqual(profit[1].detail, "-10.6 U")
         let loss = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: Decimal(string: "99.999")!)
-        XCTAssertEqual(loss[0].detail, "0 U")
+        let lossAmount = try XCTUnwrap(ChartPositionProfitLoss.make(in: [position], symbol: "BTCUSDT",
+            currentPrice: Decimal(string: "99.999")!))
+        XCTAssertEqual(lossAmount.text, "0 U")
+        XCTAssertTrue(lossAmount.isLoss)
         XCTAssertLessThan(try XCTUnwrap(loss[0].profit), 0, "The raw Decimal sign still controls color when rounded text is zero")
         let wholeRisk = row(["stop_loss_amount": .string("10.04")])
         XCTAssertEqual(ChartPositionLine.lines(in: [wholeRisk], symbol: "BTCUSDT")[1].detail, "-10 U")
@@ -8876,7 +8884,7 @@ final class ChartPositionContextTests: XCTestCase {
                     let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: quote)
                     let frames = ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection)
                     XCTAssertEqual(frames.count, 2)
-                    XCTAssertEqual(frames.map(\.width), [80, 80])
+                    XCTAssertEqual(frames.map(\.width), [40, 80])
                     XCTAssertEqual(frames.map(\.height), [20, 20])
                     XCTAssertEqual(frames.map(\.minX), [10, 10])
                     let image = try renderPositionLines(lines, projection: projection, scheme: scheme, scale: scale)
@@ -8963,14 +8971,15 @@ final class ChartPositionContextTests: XCTestCase {
         let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT")
         let frames = ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection)
         XCTAssertEqual(lines.map(\.kind), [.entry, .stopLoss, .takeProfit])
-        XCTAssertEqual(frames.map(\.width), [80, 80, 80])
+        XCTAssertEqual(frames.map(\.width), [40, 80, 80])
         XCTAssertEqual(frames.map(\.height), [20, 20, 20])
     }
 
     @MainActor
     private func renderPositionLines(_ lines: [ChartPositionLine], projection: ChartPriceProjection,
-                                     scheme: ColorScheme, scale: Double) throws -> (width: Int, pixels: [UInt8]) {
-        let renderer = ImageRenderer(content: ChartPositionLinesOverlay(lines: lines, projection: projection)
+                                     scheme: ColorScheme, scale: Double,
+                                     profitLoss: ChartPositionProfitLoss? = nil) throws -> (width: Int, pixels: [UInt8]) {
+        let renderer = ImageRenderer(content: ChartPositionLinesOverlay(lines: lines, projection: projection, profitLoss: profitLoss)
             .frame(width: 360, height: 320).environment(\.colorScheme, scheme))
         renderer.scale = scale
         let image = try XCTUnwrap(renderer.cgImage)
@@ -8982,6 +8991,65 @@ final class ChartPositionContextTests: XCTestCase {
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
         return (image.width, pixels)
+    }
+
+    func testCurrentPriceProfitIncludesBothSidesAndRejectsIncompleteValuation() throws {
+        let long = row(["open_price": .string("100"), "exchange_size": .string("2")])
+        let short = row(["id": .number(102), "side": .number(1),
+            "open_price": .string("110"), "exchange_size": .string("1")])
+        let other = row(["symbol": .string("ETHUSDT")])
+        let value = try XCTUnwrap(ChartPositionProfitLoss.make(in: [long, short, other], symbol: "btcusdt", currentPrice: 105))
+        XCTAssertEqual(value.amount, 15)
+        XCTAssertEqual(value.price, 105)
+        XCTAssertEqual(value.text, "+15 U")
+        XCTAssertFalse(value.isLoss)
+        XCTAssertNil(ChartPositionProfitLoss.make(in: [], symbol: "BTCUSDT", currentPrice: 105))
+        XCTAssertNil(ChartPositionProfitLoss.make(in: [long], symbol: "BTCUSDT", currentPrice: nil))
+        let invalid = row(["id": .number(103), "open_price": .string("NaN")])
+        XCTAssertNil(ChartPositionProfitLoss.make(in: [long, invalid], symbol: "BTCUSDT", currentPrice: 105),
+            "Do not show a partial total when a matching position cannot be valued")
+    }
+
+    func testCurrentPriceProfitSurvivesEntryLeavingTheViewport() throws {
+        let position = row(["open_price": .string("100"), "exchange_size": .string("2"),
+            "stop_loss_price": .string("90"), "market_stop_set": .bool(false)])
+        let lines = ChartPositionLine.lines(in: [position], symbol: "BTCUSDT", currentPrice: 109)
+        let value = try XCTUnwrap(ChartPositionProfitLoss.make(in: [position], symbol: "BTCUSDT", currentPrice: 109))
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 108, upperBound: 112,
+            plotLeft: 4, plotTop: 0, plotRight: 302, plotBottom: 300))
+        XCTAssertTrue(ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection).isEmpty)
+        let frames = ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection, profitLoss: value)
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertEqual(frames[0].midY, 225)
+        XCTAssertEqual(value.text, "+18 U")
+        for scheme in [ColorScheme.light, .dark] {
+            for scale in [2.0, 3.0] {
+                let image = try renderPositionLines(lines, projection: projection, scheme: scheme, scale: scale, profitLoss: value)
+                let offset = (Int(frames[0].midY * scale) * image.width + Int((frames[0].minX + 2) * scale)) * 4
+                XCTAssertEqual(image.pixels[offset + 3], 255, "The independent profit badge must stay opaque and visible")
+                XCTAssertGreaterThan(Int(image.pixels[offset + 1]), Int(image.pixels[offset]) + 60)
+            }
+        }
+    }
+
+    func testCurrentPriceProfitMatchesMetalClampAndAvoidsEntryCaption() throws {
+        let projection = try XCTUnwrap(ChartPriceProjection(lowerBound: 50, upperBound: 250,
+            plotLeft: 4, plotTop: 30, plotRight: 302, plotBottom: 330))
+        let lines = [ChartPositionLine(id: "entry", kind: .entry, price: 150, title: "开仓")]
+        let entry = try XCTUnwrap(ChartPositionLinesOverlay.labelFrames(lines: lines, projection: projection).first)
+        let value = ChartPositionProfitLoss(price: 150, amount: 0)
+        let label = try XCTUnwrap(ChartPositionLinesOverlay.profitLabelFrame(value, projection: projection, avoiding: [entry]))
+        XCTAssertEqual(label.midY, 180)
+        XCTAssertFalse(label.intersects(entry), "At entry, both the entry caption and zero profit remain readable")
+        XCTAssertLessThanOrEqual(label.maxX, projection.plotRight)
+        for (price, center) in [(Decimal(300), 38.0), (Decimal(1), 322.0)] {
+            let clamped = try XCTUnwrap(ChartPositionLinesOverlay.profitLabelFrame(
+                ChartPositionProfitLoss(price: price, amount: -2), projection: projection))
+            XCTAssertEqual(clamped.midY, center)
+            XCTAssertEqual(clamped.height, 16)
+            XCTAssertGreaterThanOrEqual(clamped.minY, projection.plotTop)
+            XCTAssertLessThanOrEqual(clamped.maxY, projection.plotBottom)
+        }
     }
 
     @MainActor

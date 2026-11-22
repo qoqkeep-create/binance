@@ -1,5 +1,15 @@
 # 开发与验证
 
+## 持仓线保留与当前价格盈亏（2026-11-22，本地）
+
+真实 `USDTChartPositionsModel` 对照在监控启停、异常载荷及解绑晚回包三处确定失败，修复后 `ChartPositionLifecycleTests` host **10 项通过**；真实覆盖层源码对照中开仓价离屏后浮盈仍为 `+18 U`，但可见标签／绘制像素为 0，独立当前价格盈亏框修复后 **4 项通过**、恢复为 1 个标签／5080 像素，同时覆盖上下夹边、零盈亏避让和正常视口。命令为忽略目录内 `Lifecycle/run.py` 与 `Render/run_probe.py`，旧源和红绿日志保留。
+
+`TradeTool`／Debug-Seoul、独立 iPhone 18 Pro／iOS 27.2 模拟器原生 **59 项通过、0 失败**，包含 `ChartPositionContextTests`、`ChartPositionLifecycleTests`、`ChartPositionEntryMarkerTests`、订单覆盖层、开仓门控和共享读取；`UnitFinal.xcresult` 保存结果。使用实际原生图表及无网络 DEBUG 仓位数据，检查盈利浅色、亏损深色、切回前台期间持仓读取延迟，以及原开仓／止损／止盈线和杠杆入口；不提交真实交易或保护写入。
+
+实际 UI **2 个独立用例通过**：原有持仓／杠杆入口用例在 `UI.xcresult`，新增 `testChartCurrentPriceProfitLabelsSurviveForegroundReturn` 最终在 `UIFinal.xcresult` 通过。后者故意将首次之后的持仓读取延迟 5 秒，系统回前台动画结束后立即检查盈亏框仍存在，盈利浅色和亏损深色均通过；四张完整界面截图已导出并查看，位于 `FinalScreenshots/`。首轮截图抓到系统激活动画，未用作最终前台界面证据，已用等待动画结束的截图替换。
+
+证据位于忽略目录 `.integration-runtime/PositionOverlayNov22/`。独立只读审查确认缓存仓位仅用于显示，`ready=false` 仍禁止新开仓，scope／绑定与请求代次隔离保留；此为本机和模拟器验证，不替代真实手机持仓／成交验收。
+
 ## iOS 前台网络与图表恢复（2026-11-22，本地）
 
 真实传输／模型反馈确认两处恢复缺陷：缓存 offline 路径阻止前台重连；前台图表完整快照被随后的 ready／长返 stale-cover 再次取消。修复将路径重采限定在前台恢复，并仅复用同轮仍在途的完整快照，保留 ack 后校对、正常后续重连、账户／周期隔离和原 20 秒恢复截止。认证刷新因 cookie 轮换继续合并处理；资金／交易写入不参与恢复重放。

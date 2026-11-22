@@ -238,10 +238,7 @@ struct ChartPositionLine: Identifiable, Equatable {
                 return value
             }
             func detail(_ kind: Kind) -> String {
-                if kind == .entry {
-                    guard let profit else { return "-" }
-                    return DisplayNumber.amount(profit, maximumFractionDigits: 1, signed: true) + " U"
-                }
+                if kind == .entry { return "" }
                 if kind == .stopLoss {
                     return row["stop_loss_amount"]?.decimal.map {
                         DisplayNumber.amount(-abs($0), maximumFractionDigits: 1) + " U"
@@ -264,7 +261,7 @@ struct ChartPositionLine: Identifiable, Equatable {
             var result: [Self] = []
             func append(_ kind: Kind, _ price: Decimal?, _ title: String) {
                 if let price { result.append(Self(id: prefix + "." + kind.rawValue,
-                    kind: kind, price: price, title: side + title, detail: detail(kind),
+                    kind: kind, price: price, title: kind == .entry ? title : side + title, detail: detail(kind),
                     profit: kind == .entry ? profit : nil)) }
             }
             append(.entry, valid("open_price"), "开仓")
@@ -286,6 +283,30 @@ struct ChartPositionLine: Identifiable, Equatable {
         case .stopLoss: .rgb(0xF6465D)
         case .takeProfit: .rgb(0x0ECB81)
         }
+    }
+}
+
+/// Uses the displayed chart price so the amount and the Metal current-price line agree.
+struct ChartPositionProfitLoss: Equatable {
+    let price: Decimal
+    let amount: Decimal
+
+    var text: String { DisplayNumber.amount(amount, maximumFractionDigits: 1, signed: true) + " U" }
+    var isLoss: Bool { amount < 0 }
+
+    static func make(in rows: [JSONValue], symbol: String, currentPrice: Decimal?) -> Self? {
+        guard let currentPrice, !currentPrice.isNaN, currentPrice > 0 else { return nil }
+        let positions = ChartPositionLine.positions(in: rows, symbol: symbol)
+        guard !positions.isEmpty else { return nil }
+        var amount = Decimal.zero
+        for row in positions {
+            guard let value = PositionLiveValuation(row: row,
+                quote: PositionMarketQuote(price: currentPrice, eventTime: 0)),
+                  !value.profit.isNaN else { return nil }
+            amount += value.profit
+        }
+        guard !amount.isNaN else { return nil }
+        return Self(price: currentPrice, amount: amount)
     }
 }
 
@@ -312,19 +333,41 @@ enum ChartPositionEntryMarkers {
 struct ChartPositionLinesOverlay: View {
     let lines: [ChartPositionLine]
     let projection: ChartPriceProjection
+    var profitLoss: ChartPositionProfitLoss? = nil
 
-    static func labelFrames(lines: [ChartPositionLine], projection: ChartPriceProjection) -> [CGRect] {
-        return lines.compactMap { line in
+    static func labelFrames(lines: [ChartPositionLine], projection: ChartPriceProjection,
+                            profitLoss: ChartPositionProfitLoss? = nil) -> [CGRect] {
+        var frames = lines.compactMap { line -> CGRect? in
             guard let y = projection.screenY(for: NSDecimalNumber(decimal: line.price).doubleValue),
                   y >= projection.plotTop, y <= projection.plotBottom else { return nil }
             let label = labelLayout(for: line, projection: projection)
             let height = 20.0
             return CGRect(x: label.centerX - label.width / 2, y: y - height / 2, width: label.width, height: height)
         }
+        if let profitLoss, let frame = profitLabelFrame(profitLoss, projection: projection, avoiding: frames) {
+            frames.append(frame)
+        }
+        return frames
+    }
+
+    static func profitLabelFrame(_ value: ChartPositionProfitLoss, projection: ChartPriceProjection,
+                                 avoiding frames: [CGRect] = []) -> CGRect? {
+        guard let projectedY = projection.screenY(for: NSDecimalNumber(decimal: value.price).doubleValue) else { return nil }
+        // Match Metal's 16 pt current-price marker, including its offscreen clamp.
+        let height = min(16, projection.plotBottom - projection.plotTop)
+        let centerY = min(projection.plotBottom - height / 2, max(projection.plotTop + height / 2, projectedY))
+        let inset = min(6, (projection.plotRight - projection.plotLeft) / 4)
+        let left = projection.plotLeft + inset, right = projection.plotRight - inset
+        let width = min(80, right - left)
+        let occupied = frames.filter { $0.maxY > centerY - height / 2 - 2 && $0.minY < centerY + height / 2 + 2 }
+        // At entry or a protection price, keep both captions readable on the same line.
+        let nextX = occupied.map { Double($0.maxX) }.max().map { $0 + 4 } ?? left
+        let x = min(max(left, nextX), right - min(40, width))
+        return CGRect(x: x, y: centerY - height / 2, width: min(width, right - x), height: height)
     }
 
     private static func labelLayout(for line: ChartPositionLine, projection: ChartPriceProjection) -> ChartPriceLineLabelLayout {
-        ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: 80)
+        ChartPriceLineLabelLayout(projection: projection, texts: [], fixedWidth: line.kind == .entry ? 40 : 80)
     }
 
     var body: some View {
@@ -345,6 +388,17 @@ struct ChartPositionLinesOverlay: View {
                             .accessibilityIdentifier("position-line." + line.id)
                             .accessibilityLabel(line.title).accessibilityValue(DisplayNumber.text(line.price))
                     }
+                }
+                if let profitLoss,
+                   let frame = Self.profitLabelFrame(profitLoss, projection: projection,
+                       avoiding: Self.labelFrames(lines: lines, projection: projection)) {
+                    ChartPriceLineLabel(title: "", price: profitLoss.text,
+                        color: profitLoss.isLoss ? WebTheme.danger : WebTheme.success,
+                        width: frame.width, filled: true, compact: true, compactHeight: frame.height)
+                        .position(x: frame.midX, y: frame.midY)
+                        .accessibilityIdentifier("position-profit-loss")
+                        .accessibilityLabel(profitLoss.isLoss ? "浮亏" : "浮盈")
+                        .accessibilityValue(profitLoss.text)
                 }
             }
         }.clipped().allowsHitTesting(false)
@@ -382,6 +436,7 @@ private struct ChartPriceLineLabel: View {
     var draggable = false
     var filled = false
     var compact = false
+    var compactHeight: Double = 20
 
     var body: some View {
         HStack(spacing: compact ? 3 : 5) {
@@ -393,7 +448,7 @@ private struct ChartPriceLineLabel: View {
         }.font(.system(size: compact ? 9 : 10, weight: .medium)).lineLimit(1)
             .minimumScaleFactor(compact ? 1 : 0.6)
             .foregroundStyle(filled ? Color.white : color).padding(.horizontal, compact ? 5 : 7)
-            .frame(width: width, height: compact ? 20 : 24)
+            .frame(width: width, height: compact ? compactHeight : 24)
             .background(filled ? color : BinanceTheme.background.opacity(0.98), in: RoundedRectangle(cornerRadius: 4))
             .overlay {
                 if !filled { RoundedRectangle(cornerRadius: 4).stroke(color.opacity(0.8), lineWidth: 0.5) }

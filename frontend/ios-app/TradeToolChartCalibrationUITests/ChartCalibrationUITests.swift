@@ -3179,6 +3179,8 @@ final class WebParityUITests: XCTestCase {
     capture("chart-held-data")
     XCTAssertEqual(app.sheets.count, 0)
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.entry"].exists)
+    XCTAssertEqual(app.descendants(matching: .any)["position-line.101.0.entry"].label, "开仓")
+    XCTAssertTrue(app.descendants(matching: .any)["position-profit-loss"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.stopLoss"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["position-line.101.0.takeProfit"].exists)
     app.buttons["market-chart-leverage"].tap()
@@ -3220,6 +3222,35 @@ final class WebParityUITests: XCTestCase {
       predicate: NSPredicate(format: "label == %@", "正在持仓中"), object: ticket)], timeout: 5), .completed)
     XCTAssertFalse(app.buttons["chart-ticket.risk-settings"].exists)
     capture("chart-held-data-dark")
+  }
+
+  func testChartCurrentPriceProfitLabelsSurviveForegroundReturn() {
+    for (options, label, name) in [
+      ([String](), "浮盈", "profit-light"),
+      (["--fixture-chart-loss", "--fixture-dark"], "浮亏", "loss-dark")
+    ] {
+      launch("market", ["--fixture-chart-position", "--fixture-chart-position-delay"] + options)
+      app.buttons["搜索币种、币对或合约"].tap()
+      app.buttons["pairs.select.BTCUSDT"].tap()
+      let amount = app.descendants(matching: .any)["position-profit-loss"]
+      XCTAssertTrue(amount.waitForExistence(timeout: 10))
+      XCTAssertEqual(amount.label, label)
+      let value = amount.value as? String ?? ""
+      XCTAssertTrue(value.hasPrefix(label == "浮盈" ? "+" : "-"))
+      let plot = app.descendants(matching: .any)["market-chart-plot"].firstMatch
+      XCTAssertGreaterThanOrEqual(amount.frame.minX, plot.frame.minX)
+      XCTAssertLessThanOrEqual(amount.frame.maxX, plot.frame.maxX)
+      capture("chart-current-" + name)
+      XCUIDevice.shared.press(.home)
+      app.activate()
+      XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+      // Let SpringBoard's activation animation finish while the 5s read remains pending.
+      Thread.sleep(forTimeInterval: 1)
+      XCTAssertTrue(app.buttons["market-chart-back"].isHittable)
+      XCTAssertTrue(amount.exists, "Keep the known position visible while its delayed foreground read is pending")
+      XCTAssertEqual(amount.label, label)
+      capture("chart-current-" + name + "-returned")
+    }
   }
 
   private func assertEntryConfirmationFitsWindow(file: StaticString = #filePath, line: UInt = #line) {

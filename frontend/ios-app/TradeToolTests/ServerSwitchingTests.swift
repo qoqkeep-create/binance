@@ -3837,3 +3837,197 @@ final class OrderCardPresentationTests: XCTestCase {
         XCTAssertEqual(value.orderAmountText, "--")
     }
 }
+
+@MainActor
+final class ChartPositionLifecycleTests: XCTestCase {
+    private func make(_ api: ChartPositionLifecycleAPI) -> (USDTStore, USDTChartPositionsModel) {
+        let store = USDTStore(api: api)
+        store.prepareSession(userID: "chart-position-lifecycle")
+        store.binding = .object(["id": .number(1)])
+        return (store, USDTChartPositionsModel())
+    }
+
+    private func waitForRows(_ expected: Int, _ model: USDTChartPositionsModel) async throws {
+        for _ in 0..<1_000 {
+            if model.rows.count == expected { return }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        XCTFail("Expected \(expected) chart position rows")
+    }
+
+    func testSameScopeMonitorRestartRetainsKnownRowsDuringSlowRefresh() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        await model.refresh(store)
+        let monitor = Task { await model.monitor(store) }
+        try await api.waitForCount(2)
+        XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1,
+            "A resumed read must not erase a known position before a fresh response arrives")
+        XCTAssertFalse(model.isReady(scope: store.scope))
+        monitor.cancel()
+        await api.finish(2, with: .failure(.connectionFailed))
+        await monitor.value
+    }
+
+    func testCancelledMonitorRetainsKnownRowsButRequiresReconfirmation() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        let monitor = Task { await model.monitor(store) }
+        try await waitForRows(1, model)
+        monitor.cancel()
+        await monitor.value
+        XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1)
+        XCTAssertFalse(model.isReady(scope: store.scope))
+    }
+
+    func testMalformedResponseCannotConfirmAnEmptyPosition() async throws {
+        for value in [JSONValue.null, .object([:]), .string("invalid")] {
+            let api = ChartPositionLifecycleAPI()
+            let (store, model) = make(api)
+            await model.refresh(store)
+            await api.setReply(2, .success(value))
+            await model.refresh(store)
+            XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1)
+            XCTAssertFalse(model.isReady(scope: store.scope))
+            XCTAssertFalse(model.error.isEmpty)
+        }
+    }
+
+    func testTransportFailureRetainsKnownRowsButRequiresReconfirmation() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        await model.refresh(store)
+        await api.setReply(2, .failure(.connectionFailed))
+        await model.refresh(store)
+        XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1)
+        XCTAssertFalse(model.isReady(scope: store.scope))
+    }
+
+    func testConfirmedEmptyResponseRemovesClosedPosition() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        await model.refresh(store)
+        await api.setReply(2, .success(.array([])))
+        await model.refresh(store)
+        XCTAssertTrue(model.positions(for: "BTCUSDT", scope: store.scope).isEmpty)
+        XCTAssertTrue(model.isReady(scope: store.scope))
+    }
+
+    func testUnbindingDuringReadClearsRowsAndRejectsItsDelayedReply() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        await model.refresh(store)
+        let oldRead = Task { await model.refresh(store) }
+        try await api.waitForCount(2)
+        store.binding = .null
+        await model.refresh(store)
+        XCTAssertTrue(model.rows.isEmpty)
+        XCTAssertTrue(model.isReady(scope: store.scope))
+        await api.finish(2, with: .success(.array([ChartPositionLifecycleAPI.row])))
+        await oldRead.value
+        XCTAssertTrue(model.rows.isEmpty, "An unbound account cannot regain an old position snapshot")
+    }
+
+    func testAccountChangeAndResetRejectDelayedReplies() async throws {
+        for changesAccount in [false, true] {
+            let api = ChartPositionLifecycleAPI()
+            let (store, model) = make(api)
+            await model.refresh(store)
+            let oldRead = Task { await model.refresh(store) }
+            try await api.waitForCount(2)
+            if changesAccount { store.invalidate() } else { model.reset() }
+            await api.finish(2, with: .success(.array([ChartPositionLifecycleAPI.row])))
+            await oldRead.value
+            XCTAssertTrue(model.positions(for: "BTCUSDT", scope: store.scope).isEmpty)
+            XCTAssertFalse(model.isReady(scope: store.scope))
+        }
+    }
+
+    func testPauseRetainsRowsAndRejectsItsDelayedEmptyReply() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        await model.refresh(store)
+        let oldRead = Task { await model.refresh(store) }
+        try await api.waitForCount(2)
+        model.pause()
+        XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1)
+        XCTAssertFalse(model.isReady(scope: store.scope))
+        await api.finish(2, with: .success(.array([])))
+        await oldRead.value
+        XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1)
+        XCTAssertFalse(model.isReady(scope: store.scope))
+        await api.setReply(3, .success(.array([])))
+        await model.refresh(store)
+        XCTAssertTrue(model.rows.isEmpty)
+        XCTAssertTrue(model.isReady(scope: store.scope))
+    }
+
+    func testCancelledReadCannotReplaceKnownRows() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        await model.refresh(store)
+        let read = Task { await model.refresh(store) }
+        try await api.waitForCount(2)
+        read.cancel()
+        await api.finish(2, with: .success(.array([])))
+        await read.value
+        XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1)
+    }
+
+    func testOldMonitorCompletionCannotClearOrPauseReplacementMonitor() async throws {
+        let api = ChartPositionLifecycleAPI()
+        let (store, model) = make(api)
+        await model.refresh(store)
+        let oldMonitor = Task { await model.monitor(store) }
+        try await api.waitForCount(2)
+        model.pause()
+        let monitor = Task { await model.monitor(store) }
+        try await api.waitForCount(3)
+        oldMonitor.cancel()
+        await api.finish(2, with: .success(.array([])))
+        await oldMonitor.value
+        XCTAssertEqual(model.positions(for: "BTCUSDT", scope: store.scope).count, 1)
+        XCTAssertFalse(model.isReady(scope: store.scope))
+        await api.finish(3, with: .success(.array([])))
+        try await waitForRows(0, model)
+        XCTAssertTrue(model.isReady(scope: store.scope),
+            "The obsolete monitor must not invalidate the replacement's pending read")
+        monitor.cancel()
+        await monitor.value
+    }
+}
+
+private actor ChartPositionLifecycleAPI: APIClient {
+    static let row: JSONValue = .object(["id": .number(101), "symbol": .string("BTCUSDT"),
+        "side": .number(0), "exchange_size": .string("0.1"), "open_price": .string("68000"),
+        "status": .number(0)])
+    private(set) var reads = 0
+    private var replies: [Int: Result<JSONValue, APIError>] = [1: .success(.array([row]))]
+    private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
+
+    func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
+        guard request.path == "/v1/position/list" else { throw APIError.invalidResponse }
+        reads += 1
+        if let reply = replies.removeValue(forKey: reads) { return try reply.get() as! Response }
+        let id = reads
+        return try await withCheckedThrowingContinuation { pending[id] = $0 } as! Response
+    }
+
+    func setReply(_ read: Int, _ value: Result<JSONValue, APIError>) { replies[read] = value }
+
+    func finish(_ read: Int, with value: Result<JSONValue, APIError>) {
+        guard let continuation = pending.removeValue(forKey: read) else { return }
+        switch value {
+        case .success(let value): continuation.resume(returning: value)
+        case .failure(let error): continuation.resume(throwing: error)
+        }
+    }
+
+    func waitForCount(_ count: Int) async throws {
+        for _ in 0..<1_000 {
+            if reads >= count { return }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        throw APIError.timeout
+    }
+}
