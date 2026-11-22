@@ -1,5 +1,21 @@
 # 开发与验证
 
+## iOS 前台网络与图表恢复（2026-11-22，本地）
+
+真实传输／模型反馈确认两处恢复缺陷：缓存 offline 路径阻止前台重连；前台图表完整快照被随后的 ready／长返 stale-cover 再次取消。修复将路径重采限定在前台恢复，并仅复用同轮仍在途的完整快照，保留 ack 后校对、正常后续重连、账户／周期隔离和原 20 秒恢复截止。认证刷新因 cookie 轮换继续合并处理；资金／交易写入不参与恢复重放。
+
+网络实际源码 host 命令 `python3 .integration-runtime/ForegroundRecoveryNov22/run_network.py`：**17 项通过、0 失败（24.227 秒）**；四个新增用例覆盖旧 offline、初次 healthy 不取消新 GET、真实 offline／旧回调隔离和旧 ready 不能跨连接发布。旧网络源码及单独移除 ready 身份检查均有确定失败对照。图表回归命令 `python3 frontend/ios-app/scripts/test_chart_recovery.py .integration-runtime/ForegroundRecoveryNov22/Pages`：**90 项通过、0 失败（27.201 秒）**，含 9 项新增前台恢复及既有管线回归；保留了重复取消、Root 回调反序及长返握手窗口的失败对照。既有 TTL 测试改在当前 5m 数据桶内固定缓存时钟，隔离“11 秒过期”与“跨 K 线桶”两种条件，不改变生产缓存逻辑或原断言。
+
+最终 `TradeTool`／Debug-Seoul 原生模拟器受影响集合 **136 项通过、0 失败（53.837 秒）**，覆盖网络、HTTP、前台图表、服务器／会话切换、共享读取、资料取消及列表复用；使用 `xcodebuild test`、上述独立模拟器、`-parallel-testing-enabled NO`、临时模拟器签名，结果为 `iOSReleaseGate.xcresult`。资金页面状态 host 另 **8 项通过**。忽略目录中的 `verification.json` 汇总最终日志及源码哈希比对，网络／图表／资金 host 的输入均与最终源码一致；只读独立审查、`git diff --check` 和未追踪文件检查通过。
+
+验证证据均位于忽略目录 `.integration-runtime/ForegroundRecoveryNov22/`。原预览模拟器出现小组件容器安装错误后，使用独立的 `TradeTools Foreground Recovery Nov22`／iPhone 18 Pro／iOS 27.2 验证；没有为此改变生产签名配置。首轮原生测试中一次 750 ms 握手等待超时，单项原样重跑 0.215 秒通过；最终用例同步检查新监测和连接已启动，最终握手预算 1.5 秒，并仍要求恰好两次连接，防止重试掩盖延迟。该预算是回归窗口，不是手机网络性能承诺。未执行真实交易／资金操作；本轮只做本地提交，没有部署、推送、TestFlight 或真机网络验收。
+
+## 划转账户与金额卡片预览（2026-11-22，用户已确认）
+
+iOS 划转三种方向共用上下两行账户卡、向下箭头及独立金额／红字原因卡，底部移除合计金额行。使用生产 `USDTCapitalView` 和 DEBUG 内存预检数据，从“我的 → 归集余额”实际打开原生 sheet；预览没有提交资金写入请求。
+
+`TradeTool Chart Calibration`／Debug-Seoul 在独立 iPhone 18 Pro／iOS 27.2 模拟器构建通过；`WebParityUITests.testCapitalWalletRouteCardsPreview` **1 项通过、0 失败**，包含三种方向、深色、持仓阻断及合约达到 3000 上限的六张截图，全部导出并查看。实际资金页面读取／页签／提交身份逻辑的 host 回归 **8 项通过**。证据位于忽略目录 `.integration-runtime/CapitalWalletPreviewNov22/`，最终截图在其 `Preview/` 中。用户已看图确认效果，纳入本轮本地提交；没有部署、推送、TestFlight 或真机验收。
+
 ## 合约余额上限 3000 USDT（2026-11-22）
 
 共享 `FUTURES_RETENTION_CAP` 调整为 `Decimal("3000")`，普通／带单预检、归集、钱包补入及补资提醒共用该值。带单提示与补资邮件从实际阈值生成金额；iOS 划转说明移除写死的旧 1000 金额，数值仍来自服务端计划。既有订单保护、已提交流水及止损额不迁移。

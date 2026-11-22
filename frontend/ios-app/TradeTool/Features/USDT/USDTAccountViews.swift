@@ -597,56 +597,15 @@ struct USDTCapitalView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         if tab == .move {
-          VStack(alignment: .leading, spacing: 8) {
+          VStack(alignment: .leading, spacing: 10) {
             HStack {
-              Text("划转方向").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
+              Text("划转账户").font(.system(size: 13, weight: .medium)).foregroundStyle(WebTheme.secondary)
               Spacer()
               refreshButton
             }
-            Menu {
-              Picker("划转方向", selection: $direction) {
-                Text("合约、资金 → 现货").tag("to_spot")
-                Text("资金 → 合约").tag("funding_to_futures")
-                Text("现货 → 合约").tag("spot_to_futures")
-              }
-            } label: {
-              HStack(spacing: 12) {
-                Text(direction == "to_spot" ? "合约、资金 → 现货"
-                  : direction == "funding_to_futures" ? "资金 → 合约" : "现货 → 合约")
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
-                  .foregroundStyle(WebTheme.muted)
-              }.font(.system(size: 15, weight: .medium)).foregroundStyle(WebTheme.text)
-                .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: 48)
-                .contentShape(RoundedRectangle(cornerRadius: 12))
-            }.buttonStyle(.plain)
-              .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-              .overlay { RoundedRectangle(cornerRadius: 12).stroke(WebTheme.border, lineWidth: 1) }
-              .disabled(busy || pending || submitted).accessibilityIdentifier("capital.direction")
-              .accessibilityLabel("划转方向")
-              .accessibilityValue(direction == "to_spot" ? "合约、资金 → 现货"
-                : direction == "funding_to_futures" ? "资金 → 合约" : "现货 → 合约")
-              .transaction { $0.animation = nil }
+            transferRouteCard
           }
-          walletCard
-          VStack(alignment: .leading, spacing: 10) {
-            Text(direction == "to_spot" ? "本次划转明细" : "补入合约")
-              .font(.system(size: 15, weight: .semibold))
-            VStack(spacing: 16) {
-              if direction == "to_spot" {
-                moneyRow("合约超出保留额", key: "futures_collect")
-                moneyRow("资金账户可划转", key: "funding_collect")
-              } else {
-                moneyRow(direction == "funding_to_futures" ? "资金账户可用" : "现货账户可用",
-                  key: direction == "funding_to_futures" ? "funding_available" : "spot_available")
-                moneyRow("距合约保留上限", value: gap)
-              }
-            }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-          }
-          if direction != "to_spot" {
-            Text("按合约距保留上限的差额补入，最多使用所选账户的可用余额。")
-              .font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5)
-          }
+          transferAmountCard
         } else {
           VStack(spacing: 18) {
             moneyRow("现货账户", key: "spot_available")
@@ -690,7 +649,10 @@ struct USDTCapitalView: View {
         }
         if busy || loading { HStack(spacing: 8) { ProgressView(); Text(busy ? "正在提交，请稍候…" : "正在读取资金状态…") }.font(.system(size: 13)).foregroundStyle(WebTheme.secondary) }
         if completed { Label("本次操作已完成", systemImage: "checkmark.circle.fill").foregroundStyle(WebTheme.success).font(.system(size: 15, weight: .semibold)).accessibilityIdentifier("capital.completed") }
-        if !notice.isEmpty { Text(notice).font(.system(size: 13)).foregroundStyle(WebTheme.secondary).lineSpacing(5).accessibilityIdentifier("capital.notice") }
+        if tab == .transfer && !notice.isEmpty {
+          Text(notice).font(.system(size: 13)).foregroundStyle(WebTheme.danger)
+            .lineSpacing(5).accessibilityIdentifier("capital.notice")
+        }
         if tab == .transfer && !busy && !loading && preview.value("status") == "ready" && !completed {
           Text("暂无可转出的现货资金")
             .font(.system(size: 14)).foregroundStyle(WebTheme.muted)
@@ -700,12 +662,7 @@ struct USDTCapitalView: View {
   }
   private var walletFooter: some View {
     VStack(spacing: 12) {
-      if tab != .transfer || legacyPending {
-        moneyRow(legacyPending ? "原归集转出金额" : direction == "to_spot" ? "合计划转到现货" : "本次转入合约",
-          key: legacyPending ? "transfer_amount" : "operation_amount", emphasis: true)
-          .accessibilityElement(children: .combine).accessibilityIdentifier("capital.total")
-      }
-      Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == .transfer ? "转账" : "确定划转") {
+      Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == .transfer ? "转账" : "确认划转") {
         if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
       }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || loading || (!completed && !legacyPending && !canSubmit))
         .accessibilityIdentifier("capital.submit")
@@ -718,21 +675,105 @@ struct USDTCapitalView: View {
       .disabled(busy || loading || pending || submitted)
       .accessibilityLabel("刷新金额").accessibilityIdentifier("capital.refresh")
   }
-  private var gap: String {
-    guard let maximum = preview["maximum_futures_balance"]?.decimal,
-      let futures = preview["futures_balance"]?.decimal else { return "--" }
-    return NSDecimalNumber(decimal: max(0, maximum - futures)).stringValue
+  private var sourceName: String {
+    direction == "to_spot" ? "合约、资金" : direction == "funding_to_futures" ? "资金" : "现货"
   }
-  private var walletCard: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      HStack { Label("合约账户", systemImage: "chart.line.uptrend.xyaxis").font(.system(size: 16, weight: .semibold)); Spacer(); Text("USDT").font(.system(size: 13)).foregroundStyle(WebTheme.muted) }
-      Text(formatted(preview.value("futures_balance"))).font(.system(size: 32, weight: .bold)).monospacedDigit()
-        .lineLimit(1).minimumScaleFactor(0.6)
-        .accessibilityIdentifier("capital.futuresBalance")
-      Divider().overlay(WebTheme.border)
-      moneyRow("保留上限 · 止损额 × 5", key: "maximum_futures_balance")
-    }.padding(20).background(WebTheme.brand.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-      .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.brand.opacity(0.2), lineWidth: 1) }
+  private var destinationName: String { direction == "to_spot" ? "现货" : "合约" }
+  private var sourceBalance: String {
+    if direction == "to_spot" {
+      guard let futures = preview["futures_balance"]?.decimal,
+        let funding = preview["funding_available"]?.decimal else { return "--" }
+      return NSDecimalNumber(decimal: futures + funding).stringValue
+    }
+    return preview.value(direction == "funding_to_futures" ? "funding_available" : "spot_available")
+  }
+  private var destinationBalance: String {
+    preview.value(direction == "to_spot" ? "spot_available" : "futures_balance")
+  }
+  private var unavailableReason: String? {
+    guard !loading, !busy, !completed else { return nil }
+    if !notice.isEmpty { return notice }
+    if preview == .null { return nil }
+    guard !pending, !completed else { return nil }
+    if preview.value("status") == "blocked" { return "当前账户状态不支持划转，请刷新后重试。" }
+    guard preview.value("operation") == direction,
+      let amount = preview["operation_amount"]?.decimal else { return "暂时无法读取资金状态，请刷新后重试。" }
+    guard amount <= 0 else { return nil }
+    if direction != "to_spot",
+      let maximum = preview["maximum_futures_balance"]?.decimal,
+      let futures = preview["futures_balance"]?.decimal, futures >= maximum {
+      return "合约余额已达到保留上限，无需转入。"
+    }
+    if direction == "to_spot" { return "合约余额未超过保留上限，资金账户暂无可划转余额。" }
+    return "\(sourceName)账户暂无可划转余额。"
+  }
+  private var transferRouteCard: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Menu {
+        Picker("划转方向", selection: $direction) {
+          Text("合约、资金 → 现货").tag("to_spot")
+          Text("资金 → 合约").tag("funding_to_futures")
+          Text("现货 → 合约").tag("spot_to_futures")
+        }
+      } label: {
+        HStack(spacing: 12) {
+          HStack(spacing: 6) {
+            Text(sourceName).accessibilityIdentifier("capital.route.sourceName")
+            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+              .foregroundStyle(WebTheme.muted)
+          }.font(.system(size: 16, weight: .medium))
+          Spacer(minLength: 8)
+          routeBalance(sourceBalance, identifier: "capital.route.sourceBalance")
+        }.foregroundStyle(WebTheme.text).frame(minHeight: 44).contentShape(Rectangle())
+      }.buttonStyle(.plain).disabled(busy || pending || submitted)
+        .accessibilityIdentifier("capital.direction").accessibilityLabel("划转方向")
+        .accessibilityValue("\(sourceName) → \(destinationName)")
+        .transaction { $0.animation = nil }
+      HStack(spacing: 10) {
+        Image(systemName: "arrow.down").font(.system(size: 16, weight: .medium))
+          .frame(width: 30, height: 30)
+          .foregroundStyle(WebTheme.secondary)
+          .background(WebTheme.input, in: Circle())
+        Text("划转").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+      }.accessibilityHidden(true)
+      HStack(spacing: 12) {
+        Text(destinationName).font(.system(size: 16, weight: .medium))
+          .accessibilityIdentifier("capital.route.destinationName")
+        Spacer(minLength: 8)
+        routeBalance(destinationBalance, identifier: "capital.route.destinationBalance",
+          isFutures: direction != "to_spot")
+      }.frame(minHeight: 44)
+    }.padding(20).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+      .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
+  }
+  private func routeBalance(_ value: String, identifier: String, isFutures: Bool = false) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 5) {
+      Text(formatted(value)).font(.system(size: 17, weight: .semibold)).monospacedDigit()
+        .accessibilityIdentifier(isFutures ? "capital.futuresBalance" : identifier + ".amount")
+      Text("USDT").font(.system(size: 11, weight: .medium)).foregroundStyle(WebTheme.muted)
+    }.lineLimit(1).minimumScaleFactor(0.65)
+      .accessibilityElement(children: .contain).accessibilityIdentifier(identifier)
+      .accessibilityValue(formatted(value) + " USDT")
+  }
+  private var transferAmountCard: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text(unavailableReason == nil ? "划转金额" : "不可划转")
+        .font(.system(size: 14, weight: .medium)).foregroundStyle(WebTheme.secondary)
+      if let reason = unavailableReason {
+        Text(reason).font(.system(size: 14)).foregroundStyle(WebTheme.danger)
+          .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("capital.unavailableReason")
+      } else {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+          Text(formatted(preview.value(legacyPending ? "transfer_amount" : "operation_amount")))
+            .font(.system(size: 36, weight: .semibold)).monospacedDigit()
+            .lineLimit(1).minimumScaleFactor(0.6).accessibilityIdentifier("capital.amount")
+          Text("USDT").font(.system(size: 14, weight: .medium)).foregroundStyle(WebTheme.secondary)
+        }
+      }
+    }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+      .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+      .overlay { RoundedRectangle(cornerRadius: 16).stroke(WebTheme.border, lineWidth: 1) }
   }
   private func moneyRow(_ label: String, key: String, emphasis: Bool = false) -> some View {
     moneyRow(label, value: preview.value(key), emphasis: emphasis)

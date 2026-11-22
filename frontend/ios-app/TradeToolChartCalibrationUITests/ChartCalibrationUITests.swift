@@ -4598,15 +4598,13 @@ extension WebParityUITests {
       XCTAssertTrue(open.waitForExistence(timeout: 10))
       open.tap()
       XCTAssertTrue(app.buttons["capital.close"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["合约超出保留额"].exists)
-      XCTAssertTrue(app.staticTexts["资金账户可划转"].exists)
-      XCTAssertEqual(app.staticTexts["capital.futuresBalance"].label, "100.00")
+      XCTAssertEqual(app.buttons["capital.direction"].value as? String, "合约、资金 → 现货")
+      XCTAssertEqual(app.staticTexts["capital.route.destinationName"].label, "现货")
+      XCTAssertTrue(app.staticTexts["capital.amount"].exists)
       XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "合约余额超过止损额")).firstMatch.exists)
       XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
-      let total = app.descendants(matching: .any)["capital.total"].firstMatch
-      let totalVisible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: total)
-      XCTAssertEqual(XCTWaiter.wait(for: [totalVisible], timeout: 3), .completed,
-        "The fixed footer total must remain visible above the confirm button")
+      XCTAssertEqual(app.buttons["capital.submit"].label, "确认划转")
+      XCTAssertFalse(app.descendants(matching: .any)["capital.total"].exists)
       capture(options.isEmpty ? "capital-wallet-light" : "capital-wallet-dark")
       app.segmentedControls["capital.tabs"].buttons["转账"].tap()
       XCTAssertTrue(app.staticTexts["现货账户"].waitForExistence(timeout: 5))
@@ -4635,12 +4633,15 @@ extension WebParityUITests {
     XCTAssertTrue(direction.waitForExistence(timeout: 10))
     direction.tap()
     app.buttons["资金 → 合约"].tap()
-    XCTAssertTrue(app.staticTexts["本次转入合约"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["capital.amount"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["capital.direction"].value as? String, "资金 → 合约")
+    XCTAssertEqual(app.staticTexts["capital.route.destinationName"].label, "合约")
     XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
     capture("capital-funding-refill")
     direction.tap()
     app.buttons["现货 → 合约"].tap()
-    XCTAssertTrue(app.staticTexts["现货账户可用"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["capital.route.destinationName"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["capital.direction"].value as? String, "现货 → 合约")
   }
 
   func testCapitalCollectionAccountAndModeEntry() {
@@ -4691,11 +4692,11 @@ extension WebParityUITests {
 
   func testCapitalWalletBlockedAndEmptyStates() {
     launch("capital", ["--fixture-capital-blocked"])
-    XCTAssertTrue(app.staticTexts["capital.notice"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["capital.unavailableReason"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["capital.submit"].isEnabled)
     capture("capital-wallet-blocked")
     launch("capital", ["--fixture-capital-empty"])
-    XCTAssertTrue(app.staticTexts["当前方向暂无可划转金额"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["capital.unavailableReason"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["capital.submit"].isEnabled)
     capture("capital-wallet-empty")
     launch("capital", ["--fixture-capital-legacy"])
@@ -4706,6 +4707,65 @@ extension WebParityUITests {
     legacy.tap()
     XCTAssertTrue(app.staticTexts["调整账户资金"].waitForExistence(timeout: 5))
     capture("capital-legacy-recovery")
+  }
+
+  func testCapitalWalletRouteCardsPreview() {
+    func openWallet(_ options: [String] = []) {
+      launch("profile", options)
+      let open = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "归集余额")).firstMatch
+      XCTAssertTrue(open.waitForExistence(timeout: 10))
+      open.tap()
+      XCTAssertTrue(app.buttons["capital.close"].waitForExistence(timeout: 5))
+    }
+    openWallet()
+    XCTAssertTrue(app.staticTexts["capital.amount"].waitForExistence(timeout: 10))
+    XCTAssertEqual(app.buttons["capital.direction"].value as? String, "合约、资金 → 现货")
+    XCTAssertEqual(app.staticTexts["capital.route.destinationName"].label, "现货")
+    XCTAssertEqual(app.buttons["capital.submit"].label, "确认划转")
+    XCTAssertFalse(app.descendants(matching: .any)["capital.total"].exists)
+    capture("capital-route-outward-light")
+
+    openWallet(["--fixture-capital-refill"])
+    let direction = app.buttons["capital.direction"]
+    XCTAssertTrue(direction.waitForExistence(timeout: 10))
+    direction.tap()
+    app.buttons["资金 → 合约"].tap()
+    XCTAssertTrue(app.staticTexts["capital.amount"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["capital.direction"].value as? String, "资金 → 合约")
+    XCTAssertEqual(app.staticTexts["capital.route.destinationName"].label, "合约")
+    XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
+    capture("capital-route-funding-light")
+    direction.tap()
+    app.buttons["现货 → 合约"].tap()
+    XCTAssertTrue(app.staticTexts["capital.amount"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["capital.direction"].value as? String, "现货 → 合约")
+    XCTAssertEqual(app.staticTexts["capital.route.destinationName"].label, "合约")
+    XCTAssertTrue(app.buttons["capital.submit"].isEnabled)
+    capture("capital-route-spot-light")
+
+    openWallet(["--fixture-capital-refill", "--fixture-dark"])
+    XCTAssertTrue(app.buttons["capital.direction"].waitForExistence(timeout: 10))
+    app.buttons["capital.direction"].tap()
+    app.buttons["资金 → 合约"].tap()
+    XCTAssertTrue(app.staticTexts["capital.amount"].waitForExistence(timeout: 5))
+    capture("capital-route-funding-dark")
+
+    openWallet(["--fixture-capital-blocked"])
+    let reason = app.staticTexts["capital.unavailableReason"]
+    XCTAssertTrue(reason.waitForExistence(timeout: 10))
+    XCTAssertTrue(reason.label.contains("持仓"))
+    XCTAssertFalse(app.staticTexts["capital.amount"].exists)
+    XCTAssertFalse(app.buttons["capital.submit"].isEnabled)
+    capture("capital-route-blocked-light")
+
+    openWallet(["--fixture-capital-limit"])
+    XCTAssertTrue(app.buttons["capital.direction"].waitForExistence(timeout: 10))
+    app.buttons["capital.direction"].tap()
+    app.buttons["现货 → 合约"].tap()
+    XCTAssertTrue(app.staticTexts["capital.unavailableReason"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["capital.amount"].exists)
+    XCTAssertFalse(app.buttons["capital.submit"].isEnabled)
+    capture("capital-route-limit-light")
   }
 }
 

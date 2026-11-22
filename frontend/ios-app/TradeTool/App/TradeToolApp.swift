@@ -651,13 +651,26 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         let action = body["action"]?.text ?? "to_spot"
         let refill = ProcessInfo.processInfo.arguments.contains("--fixture-capital-refill")
         let emptyWallet = ProcessInfo.processInfo.arguments.contains("--fixture-capital-empty")
-        let amount = emptyWallet ? "0" : action == "to_spot" ? (refill ? "40" : "70") : action == "transfer" ? "80" : (refill ? "40" : "0")
+        let atLimit = ProcessInfo.processInfo.arguments.contains("--fixture-capital-limit")
+        let futures = Decimal(emptyWallet || atLimit ? 3000 : refill ? 1000 : 3200)
+        let funding = emptyWallet ? Decimal(string: "0.99")! : Decimal(string: "1288.5")!
+        let spot = emptyWallet ? Decimal.zero : Decimal(680)
+        let futuresCollect = max(futures - 3000, 0)
+        let fundingCollect = funding >= 1 ? funding : 0
+        let fundingRefill = min(max(3000 - futures, 0), fundingCollect)
+        let spotRefill = min(max(3000 - futures, 0), spot)
+        let amount = action == "to_spot" ? futuresCollect + fundingCollect
+          : action == "transfer" ? spot : action == "funding_to_futures" ? fundingRefill : spotRefill
+        func decimalText(_ amount: Decimal) -> JSONValue { .string(NSDecimalNumber(decimal: amount).stringValue) }
         value = .object([
-          "operation": .string(action), "status": .string(amount == "0" ? "ready" : "normalization_required"),
-          "plan_token": .string("visual-wallet-read-only"), "futures_balance": .string(refill ? "10" : "100"),
-          "maximum_futures_balance": .string("50"), "spot_available": .string("80"),
-          "funding_available": .string(refill ? "40" : "20"), "operation_amount": .string(amount),
-          "futures_collect": .string(emptyWallet || refill ? "0" : "50"), "funding_collect": .string(emptyWallet ? "0" : refill ? "40" : "20"),
+          "operation": .string(action), "status": .string(amount == 0 ? "ready" : "normalization_required"),
+          "plan_token": .string("visual-wallet-read-only"), "futures_balance": decimalText(futures),
+          "maximum_futures_balance": .string("3000"), "spot_available": decimalText(spot),
+          "funding_available": decimalText(funding), "operation_amount": decimalText(amount),
+          "futures_collect": decimalText(action == "to_spot" ? futuresCollect : 0),
+          "funding_collect": decimalText(action == "to_spot" ? fundingCollect : 0),
+          "funding_to_futures": decimalText(action == "funding_to_futures" ? fundingRefill : 0),
+          "spot_to_futures": decimalText(action == "spot_to_futures" ? spotRefill : 0),
           "account_type": .string("master"), "destination_address": .string("0x123456789012345678901234567890123456BEEF"),
           "destination_network": .string("BSC"),
         ])

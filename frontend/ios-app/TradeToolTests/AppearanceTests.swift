@@ -617,6 +617,31 @@ private final class LatencySocketPeer: @unchecked Sendable {
 
 @MainActor
 final class NetworkRecoveryTests: XCTestCase {
+  private final class ForegroundPaths: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuations: [AsyncStream<RealtimeNetworkPath>.Continuation] = []
+    private var current = RealtimeNetworkPath(available: true, signature: "test-wifi")
+    private var yieldsInitial = true
+    var monitorCount: Int { lock.lock(); defer { lock.unlock() }; return continuations.count }
+    func makeStream() -> AsyncStream<RealtimeNetworkPath> {
+      let pair = AsyncStream<RealtimeNetworkPath>.makeStream()
+      lock.lock(); defer { lock.unlock() }
+      continuations.append(pair.continuation)
+      if yieldsInitial { pair.continuation.yield(current) }
+      return pair.stream
+    }
+    func change(_ available: Bool, _ signature: String, notify: Bool = true) {
+      lock.lock(); defer { lock.unlock() }
+      current = RealtimeNetworkPath(available: available, signature: signature)
+      if notify { continuations.last?.yield(current) }
+    }
+    func holdInitialSnapshot() { lock.lock(); yieldsInitial = false; lock.unlock() }
+    func sendToOldMonitor(_ available: Bool, _ signature: String) {
+      lock.lock(); defer { lock.unlock() }
+      continuations.first?.yield(RealtimeNetworkPath(available: available, signature: signature))
+    }
+  }
+
   private final class Paths: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: AsyncStream<RealtimeNetworkPath>.Continuation?
@@ -630,6 +655,180 @@ final class NetworkRecoveryTests: XCTestCase {
       lock.lock(); let continuation = continuation; lock.unlock()
       continuation?.yield(RealtimeNetworkPath(available: available, signature: signature))
     }
+  }
+
+  func testForegroundReplacesStaleOfflinePathWithCurrentSnapshot() async throws {
+    let listening = expectation(description: "Foreground snapshot peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let paths = ForegroundPaths()
+    let events = NotificationCenter()
+    RecoveryHTTPProtocol.reset(parked: 0)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [RecoveryHTTPProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let api = URLSessionAPIClient(baseURL: URL(string: "https://network-recovery.invalid")!, session: session,
+      notificationCenter: events, readRecovery: APIReadRecovery(notificationCenter: events))
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, notificationCenter: events, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-foreground-snapshot" })
+    defer { client.disconnect() }
+    let first = expectation(description: "Initial foreground socket")
+    let recovered = expectation(description: "Fresh foreground snapshot reconnects promptly")
+    var count = 0
+    let observation = client.$state.filter { $0 == .connected }.sink { _ in
+      count += 1
+      if count == 1 { first.fulfill() }
+      if count == 2 { recovered.fulfill() }
+    }
+    defer { observation.cancel() }
+    client.connect()
+    await fulfillment(of: [first], timeout: 3)
+    paths.change(false, "test-background-offline")
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(client.state, .disconnected)
+    // Suspension may delay the old monitor's callback. A new monitor observes
+    // current connectivity immediately instead of retaining its offline cache.
+    paths.change(true, "test-foreground-online", notify: false)
+    client.reconnect(refreshReads: true)
+    XCTAssertEqual(paths.monitorCount, 2)
+    XCTAssertEqual(client.state, .connecting, "Foreground must start a new handshake immediately without waiting for a stale path or backoff")
+    let result = await XCTWaiter.fulfillment(of: [recovered], timeout: 1.5)
+    XCTAssertEqual(result, .completed)
+    XCTAssertEqual(paths.monitorCount, 2)
+    XCTAssertEqual(peer.connectionCount, 2)
+    let value = try await api.send(APIRequest<JSONValue>(path: "/fresh-foreground-read", responseMode: .plain, showsErrorToast: false))
+    XCTAssertEqual(value["ok"], .bool(true))
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/fresh-foreground-read"), 1)
+  }
+
+  func testForegroundInitialHealthySnapshotPreservesNewReadAndSubscriptions() async throws {
+    let listening = expectation(description: "Foreground healthy peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let paths = ForegroundPaths()
+    let events = NotificationCenter()
+    RecoveryHTTPProtocol.reset(parked: 1)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [RecoveryHTTPProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let api = URLSessionAPIClient(baseURL: URL(string: "https://network-recovery.invalid")!, session: session,
+      notificationCenter: events, readRecovery: APIReadRecovery(notificationCenter: events))
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, notificationCenter: events, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-foreground-healthy" })
+    defer { client.disconnect() }
+    let first = expectation(description: "Initial healthy socket")
+    let recovered = expectation(description: "Blackholed socket replaced on foreground")
+    var count = 0
+    let observation = client.$state.filter { $0 == .connected }.sink { _ in
+      count += 1
+      if count == 1 { first.fulfill() }
+      if count == 2 { recovered.fulfill() }
+    }
+    defer { observation.cancel() }
+    client.subscribe([.marketTicker(symbols: ["HOLDUSDT"])])
+    client.connect()
+    await fulfillment(of: [first], timeout: 3)
+    peer.blackholeCurrentConnections()
+    paths.holdInitialSnapshot()
+    client.reconnect(refreshReads: true)
+    let read = Task {
+      try await api.send(APIRequest<JSONValue>(path: "/new-foreground-read", responseMode: .plain, showsErrorToast: false))
+    }
+    defer { read.cancel() }
+    let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while RecoveryHTTPProtocol.count("/new-foreground-read") == 0, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/new-foreground-read"), 1)
+    paths.change(true, "test-foreground-online")
+    paths.sendToOldMonitor(false, "test-obsolete-offline")
+    await fulfillment(of: [recovered], timeout: 0.75)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(client.state, .connected)
+    XCTAssertEqual(paths.monitorCount, 2)
+    XCTAssertEqual(peer.connectionCount, 2, "The first healthy snapshot must preserve the replacement socket")
+    XCTAssertEqual(peer.tickerSymbols, ["HOLDUSDT"])
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/new-foreground-read"), 1)
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/new-foreground-read", stopped: true), 0,
+      "The first healthy snapshot must preserve the GET started after foreground recovery")
+    RecoveryHTTPProtocol.finishPending("/new-foreground-read")
+    let value = try await read.value
+    XCTAssertEqual(value["ok"], .bool(true))
+  }
+
+  func testForegroundFreshOfflineSnapshotRejectsReadsAndIgnoresOldOnlineCallback() async throws {
+    let paths = ForegroundPaths()
+    let events = NotificationCenter()
+    RecoveryHTTPProtocol.reset(parked: 0)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [RecoveryHTTPProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let api = URLSessionAPIClient(baseURL: URL(string: "https://network-recovery.invalid")!, session: session,
+      notificationCenter: events, readRecovery: APIReadRecovery(notificationCenter: events))
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:1")!, session: session,
+      notificationCenter: events, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-foreground-offline" })
+    defer { client.disconnect() }
+    client.connect()
+    try await Task.sleep(for: .milliseconds(30))
+    paths.change(false, "test-current-offline", notify: false)
+    client.reconnect(refreshReads: true)
+    try await Task.sleep(for: .milliseconds(30))
+    paths.sendToOldMonitor(true, "test-obsolete-online")
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(client.state, .disconnected)
+    XCTAssertEqual(paths.monitorCount, 2)
+    let started = ContinuousClock.now
+    do {
+      _ = try await api.send(APIRequest<JSONValue>(path: "/offline-foreground-read", responseMode: .plain, showsErrorToast: false))
+      XCTFail("Fresh offline connectivity must reject the GET")
+    } catch {
+      guard case .networkUnavailable = APIError.map(error) else { return XCTFail("Expected offline read") }
+    }
+    XCTAssertLessThan(started.duration(to: .now), .milliseconds(250))
+    XCTAssertEqual(RecoveryHTTPProtocol.count("/offline-foreground-read"), 0)
+  }
+
+  func testForegroundReplacementDoesNotPublishPreviousSocketReady() async throws {
+    let listening = expectation(description: "Ready generation peer listening")
+    let peer = try LatencySocketPeer(ready: listening, pings: [])
+    peer.start()
+    defer { peer.stop() }
+    await fulfillment(of: [listening], timeout: 3)
+    let paths = ForegroundPaths()
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    let client = RealtimeClient(baseURL: URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))")!,
+      session: session, networkPaths: { paths.makeStream() }, tokenProvider: { "isolated-ready-generation" })
+    defer { client.disconnect() }
+    let replacement = expectation(description: "Replacement ready")
+    var readyCount = 0
+    let messages = client.events()
+    let consumer = Task {
+      for await message in messages where message.type == "ready" { readyCount += 1 }
+    }
+    defer { consumer.cancel() }
+    var replaced = false
+    let observation = client.$state.filter { $0 == .connected }.sink { _ in
+      if replaced { replacement.fulfill() }
+      else {
+        replaced = true
+        Task { client.reconnect(refreshReads: true) }
+      }
+    }
+    defer { observation.cancel() }
+    client.subscribe([.marketTicker(symbols: ["HOLDUSDT"])])
+    client.connect()
+    await fulfillment(of: [replacement], timeout: 1.5)
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(peer.connectionCount, 2)
+    XCTAssertEqual(readyCount, 1, "A suspended old ready handler must not publish into the replacement session")
   }
 
   func testNetworkHandoverReplacesBlackholedSocketAndRestoresSubscriptionsWithoutLatencyUI() async throws {

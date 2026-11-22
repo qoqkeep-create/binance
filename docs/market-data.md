@@ -2,6 +2,16 @@
 
 整合环境使用 Python 采集和推送，SwiftUI / Metal 显示。接口和当前性能样本见 [整合说明](INTEGRATION.md)。
 
+## 后台返回前台的网络与快照恢复（2026-11-22，本地验证）
+
+本轮用实际 `RealtimeClient` 和 loopback WebSocket 复现：后台留下 offline 路径快照、旧监测回调尚未送达时，即使当前路径已经 online，`reconnect(refreshReads: true)` 仍沿用缓存 false，不建立新连接，也将 HTTP 读取标为不可用；750 ms 回归窗口内保持断开。前台专用恢复现在重启网络监测并失效旧流的代次，立即允许尝试连接，再接纳新监测的当前快照。初次 healthy 快照保留前台刚建立的 socket／GET；确实 offline 则立即释放连接并拒绝新读取。普通接口切换仍沿用原监测，不因重连重复建立 monitor。
+
+图表真实模型另复现同轮重复下载：`resumeFromBackground` 已开始完整快照，随后的 socket `ready` 又调用 `beginRealtimeEpoch`，取消约 200 ms 已在途的读取并发起第三次历史请求，短返也进入整屏恢复提示。现在以 chart session／epoch 保留本轮尚未安装的在途完整快照，首次 ready 继续该下载；订阅 ack 后的原有校对保留。已完成或失败的快照、切周期、再次进入后台和后续真正重连仍走正常新代次；覆盖 Root 与图表两个前台回调的相反顺序。长返恢复期间继续保持 restoring，防止晚到的 connecting 和排队的 stale-cover 任务再次取消快照；原 20 秒恢复截止不延长。旧 socket 的 ready 在同步状态观察者重入及等待订阅发送后都核对 task 身份，不能发布到替代连接。
+
+实际网络源码 host 回归 **17 项通过、0 失败（24.227 秒）**，包含 4 项新增前台恢复、原切网／静默黑洞、HTTP 读池和资金／交易 POST 不取消重发。图表模型／管线 host 回归 **90 项通过、0 失败（27.201 秒）**，含 9 项新增前台用例；旧网络、旧模型及移除 ready 身份检查的对照都有明确失败。证据在忽略目录 `.integration-runtime/ForegroundRecoveryNov22/`，命令及客户端构建结果见 [开发验证](development.md)。
+
+认证单独检查确认 `/api/auth/refresh` 会轮换 cookie，现有共享刷新继续保留，前台恢复不盲目取消或重放它；等待已开始的刷新仍按原请求超时处理。本轮没有认证／后端／独立 Mac 项目改动。以上只证明受控场景的缺陷及修复，不代表用户手机唯一根因或实机网络时延；真实 iPhone 后台挂起、代理和蜂窝恢复仍待新版客户端验收。
+
 ## 切网、短暂断网与前台恢复（2026-11-14，本地验证）
 
 本次按 [来源索引](sources.md) 只读对照原 USDC 的 `Core/Networking/RealtimeClient.swift` 与 `APIClient.swift`。两边原有 WebSocket 握手请求均为 15 秒，失败退避均为 1、2、4、8、16、30 秒；不能仅凭体验认定 USDC 有另一套更快的退避算法。整合版的实际缺口是：`NWPathMonitor` 原先随行情页延迟徽标启停，路径变化只重置延迟数字而不更换连接；离开行情页后也没有独立连接恢复信号。HTTP 使用默认 `URLSession`，读取默认超时 30 秒，持仓共享读取及列表读取会合并进仍挂起的旧请求；原前台回调只重建 WebSocket，未释放该 HTTP 槽位。

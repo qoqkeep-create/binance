@@ -407,6 +407,10 @@ final class RealtimeClient: ObservableObject {
     }
 
     func reconnect(refreshReads: Bool = false) {
+        // A suspended monitor may retain an offline snapshot until its queued
+        // callback resumes. Foreground recovery needs the current path, and the
+        // old stream must not override that new snapshot later.
+        if refreshReads { stopNetworkMonitoring() }
         shouldStayConnected = true
         startNetworkMonitoring()
         if refreshReads {
@@ -635,7 +639,7 @@ final class RealtimeClient: ObservableObject {
                 guard socketTask === task else {
                     return
                 }
-                try await handle(message)
+                try await handle(message, from: task)
             }
         } catch {
             handleTransportEnd(task: task, error: error)
@@ -643,7 +647,8 @@ final class RealtimeClient: ObservableObject {
     }
 
     private func handle(
-        _ message: URLSessionWebSocketTask.Message
+        _ message: URLSessionWebSocketTask.Message,
+        from task: URLSessionWebSocketTask
     ) async throws {
         let data: Data
 
@@ -672,6 +677,7 @@ final class RealtimeClient: ObservableObject {
         switch serverMessage.type {
         case "ready":
             state = .connected
+            guard socketTask === task else { return }
             reconnectAttempt = 0
             if case let .array(values) = serverMessage.data?["capabilities"] {
                 serverCapabilities = Set(values.compactMap { value in
@@ -687,6 +693,7 @@ final class RealtimeClient: ObservableObject {
             let initialSubscriptions = enqueueSubscriptionChange(
                 type: "subscribe", subscriptions: Array(subscriptions.values))
             await initialSubscriptions?.value
+            guard socketTask === task else { return }
             publish(serverMessage)
 
         case "pong":

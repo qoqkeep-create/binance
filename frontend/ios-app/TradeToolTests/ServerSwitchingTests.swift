@@ -1070,7 +1070,9 @@ final class MarketFastPathTests: XCTestCase {
     func testIntervalCacheTTLIsNotExtendedByRepeatedSwitching() async throws {
         let api = GatedChartHistoryAPI()
         await api.openGate()
-        var clock = Date()
+        // Keep TTL expiry separate from the independently tested candle boundary.
+        let bucket = floor(Date().timeIntervalSince1970 / 300) * 300
+        var clock = Date(timeIntervalSince1970: bucket + 60)
         let model = makeChart(api, cacheTimeProvider: { clock })
         model.start()
         defer { model.stop() }
@@ -1754,6 +1756,243 @@ final class MarketFastPathTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertEqual(model.recoveryState, .idle)
         XCTAssertNil(model.chartDataFrame)
+    }
+
+    func testForegroundRecoveryReadyPreservesTheDownloadingSnapshot() async throws {
+        let cancelled = expectation(description: "Foreground history survives its reconnect handshake")
+        cancelled.isInverted = true
+        let api = GatedChartHistoryAPI(onCancelled: { cancelled.fulfill() })
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        let previous = try XCTUnwrap(model.chartDataFrame)
+        await api.closeGate()
+        model.suspendForBackground()
+        model.realtimeConnectionChanged(.connecting)
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        await model.receive(ready())
+        await fulfillment(of: [cancelled], timeout: 0.15)
+        let reads = await api.reads
+        XCTAssertEqual(reads, 2, "The foreground ready must reuse the snapshot already downloading")
+        XCTAssertEqual(model.recoveryState, .idle, "A short return keeps the existing chart presentation")
+        XCTAssertEqual(model.chartDataFrame?.epoch, previous.epoch)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 102 }
+        XCTAssertNotEqual(model.chartDataFrame?.epoch, previous.epoch)
+    }
+
+    func testForegroundRecoveryReadyAfterFailedSnapshotRetries() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        await api.finishRead(2, error: APIError.connectionFailed)
+        try await waitUntil { model.recoveryState.failureMessage != nil }
+        await model.receive(ready())
+        try await waitForReads(3, api)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 103 }
+    }
+
+    func testForegroundRecoveryKeepsShortReturnPresentationWhenRootReconnectsAfterResume() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        model.realtimeConnectionChanged(.connecting)
+        await model.receive(ready())
+        let reads = await api.reads
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(model.recoveryState, .idle,
+            "Root and child scene callbacks can run in either order")
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 102 }
+    }
+
+    func testForegroundRecoveryReadyAfterCompletedSnapshotStartsANewRead() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        await api.finishRead(2)
+        try await waitUntil { model.candles.first?.closePrice == 102 }
+        let foregroundEpoch = model.chartDataFrame?.epoch
+        await model.receive(ready())
+        try await waitForReads(3, api)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 103 }
+        XCTAssertNotEqual(model.chartDataFrame?.epoch, foregroundEpoch,
+            "A completed read cannot reserve an indefinitely later connection handshake")
+    }
+
+    func testForegroundRecoveryKeepsLongReturnLoadingAndDeadlineWhenRootReconnectsAfterResume() async throws {
+        for timesOut in [false, true] {
+            var clock = Date()
+            let deadline = GatedChartRecoveryWait()
+            let api = GatedChartHistoryAPI()
+            await api.openGate()
+            let model = makeChart(api, cacheTimeProvider: { clock },
+                recoveryWait: { try await deadline.wait($0) })
+            model.start()
+            await model.receive(ready())
+            try await waitUntil { model.chartDataFrame != nil }
+            await deadline.waitForCount(1)
+            _ = try presentChart(model)
+            await api.closeGate()
+            model.suspendForBackground()
+            clock.addTimeInterval(1_800)
+            await model.resumeFromBackground()
+            try await waitForReads(2, api)
+            await deadline.waitForCount(2)
+            model.realtimeConnectionChanged(.connecting)
+            // The root's socket handshake yields to queued scene callbacks.
+            try await Task.sleep(for: .milliseconds(30))
+            XCTAssertEqual(model.recoveryState, .restoring)
+            await model.receive(ready())
+            XCTAssertEqual(model.recoveryState, .restoring,
+                "A long return keeps its loading cover across the root's later reconnect")
+            try await Task.sleep(for: .milliseconds(30))
+            let reads = await api.reads
+            let deadlines = await deadline.durations
+            XCTAssertEqual(reads, 2, "The stale-cover callback cannot replace the foreground snapshot")
+            XCTAssertEqual(deadlines, [.seconds(20), .seconds(20)],
+                "Ready must preserve the existing recovery deadline")
+            if timesOut {
+                await deadline.fire(2)
+                try await waitUntil { model.recoveryState.failureMessage != nil }
+                XCTAssertEqual(model.lastError, "K线加载超时，请重试")
+            } else {
+                await api.openGate()
+                try await waitUntil { model.candles.first?.closePrice == 102 }
+                XCTAssertEqual(model.recoveryState, .restoring)
+                _ = try presentChart(model)
+                XCTAssertEqual(model.recoveryState, .idle)
+            }
+            model.stop()
+            await api.openGate()
+            await deadline.fireAll()
+        }
+    }
+
+    func testForegroundRecoveryPreservesAckReconciliationAndTheNextRealReconnect() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        await model.receive(ready())
+        await model.receive(ack(symbol: "BTCUSDT", interval: "1h"))
+        await model.receive(liveKline(sequence: 1, close: 108))
+        await api.finishRead(2)
+        try await waitUntil { model.candles.first?.closePrice == 102 }
+        let foregroundEpoch = try XCTUnwrap(model.chartDataFrame?.epoch)
+        model.chartFirstFramePresented(epoch: foregroundEpoch, at: ProcessInfo.processInfo.systemUptime)
+        try await waitForReads(3, api)
+        await model.receive(ready())
+        try await waitForReads(4, api)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 104 }
+        XCTAssertNotEqual(model.chartDataFrame?.epoch, foregroundEpoch,
+            "The reservation is consumed once; the next connection replaces its obsolete snapshot")
+    }
+
+    func testForegroundRecoveryReadyBeforeResumeAndLaterReconnectCreateSeparateEpochs() async throws {
+        let api = GatedChartHistoryAPI()
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.receive(ready())
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        await model.receive(ready())
+        try await waitForReads(3, api)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 103 }
+    }
+
+    func testForegroundRecoveryDoesNotReuseSnapshotAcrossAnIntervalChange() async throws {
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        model.selectInterval(.fiveMinutes)
+        try await waitForReads(3, api)
+        await model.receive(ready())
+        try await waitForReads(4, api)
+        await api.finishRead(2)
+        await api.finishRead(3)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertNil(model.chartDataFrame)
+        await api.openGate()
+        try await waitUntil { model.chartDataFrame?.stream.interval == "5m" }
+        XCTAssertEqual(model.candles.first?.closePrice, 104)
+    }
+
+    func testForegroundRecoverySuspendsAgainWithoutReusingCancelledSnapshot() async throws {
+        let api = GatedChartHistoryAPI(ignoresCancellation: true)
+        await api.openGate()
+        let model = makeChart(api)
+        model.start()
+        defer { model.stop() }
+        await model.receive(ready())
+        try await waitUntil { model.chartDataFrame != nil }
+        let original = model.chartDataFrame?.epoch
+        await api.closeGate()
+        model.suspendForBackground()
+        await model.resumeFromBackground()
+        try await waitForReads(2, api)
+        model.suspendForBackground()
+        await model.receive(ready())
+        await api.finishRead(2)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(model.chartDataFrame?.epoch, original)
+        await model.resumeFromBackground()
+        try await waitForReads(3, api)
+        await api.openGate()
+        try await waitUntil { model.candles.first?.closePrice == 103 }
     }
 
     func testForegroundWithoutSocketReconnectWaitsForACompleteSnapshot() async throws {

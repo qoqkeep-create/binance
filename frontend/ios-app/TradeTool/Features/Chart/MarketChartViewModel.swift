@@ -117,6 +117,12 @@ final class MarketChartViewModel: ObservableObject {
     private var hasRealtimeConnection = false
     private var hasReceivedReadyHandshake = false
     private var isSuspendedForBackground = false
+    private var receivedReadyWhileSuspended = false
+    private struct ForegroundSnapshotReservation {
+        let sessionID: UUID
+        let epoch: KlineStreamEpoch
+    }
+    private var foregroundSnapshotReservation: ForegroundSnapshotReservation?
     private var connectionObservation: AnyCancellable?
     private var unavailableSince: Date?
     private var isRealtimeDisconnected = false
@@ -288,6 +294,8 @@ final class MarketChartViewModel: ObservableObject {
         hasRealtimeConnection = false
         hasReceivedReadyHandshake = false
         isSuspendedForBackground = false
+        receivedReadyWhileSuspended = false
+        foregroundSnapshotReservation = nil
         chartIndicatorUpdateTask?.cancel()
         chartIndicatorUpdateTask = nil
         pendingChartPriceUpdate = nil
@@ -305,6 +313,8 @@ final class MarketChartViewModel: ObservableObject {
     func suspendForBackground() {
         guard realtimeTask != nil, !isSuspendedForBackground else { return }
         isSuspendedForBackground = true
+        receivedReadyWhileSuspended = false
+        foregroundSnapshotReservation = nil
         finishLoadDiagnostics(outcome: "cancelled")
         if unavailableSince == nil { unavailableSince = cacheTimeProvider() }
         cancelRecoveryDeadline()
@@ -337,7 +347,8 @@ final class MarketChartViewModel: ObservableObject {
         } ?? Self.staleChartInterval
         // A short return updates the existing frame in place. Only the stale
         // branch shows the recovery animation above the retained chart.
-        await beginRealtimeEpoch(showLoading: elapsed >= Self.staleChartInterval)
+        await beginRealtimeEpoch(showLoading: elapsed >= Self.staleChartInterval,
+            reservingForegroundSnapshot: !receivedReadyWhileSuspended)
     }
 
     func realtimeConnectionChanged(_ state: RealtimeConnectionState) {
@@ -346,7 +357,8 @@ final class MarketChartViewModel: ObservableObject {
         isRealtimeDisconnected = true
         if unavailableSince == nil { unavailableSince = cacheTimeProvider() }
         guard !isSuspendedForBackground else { return }
-        recoveryState = .disconnected
+        recoveryState = awaitsRecoveryPresentation && foregroundSnapshotReservation != nil
+            ? .restoring : .disconnected
         startRecoveryDiagnosticsIfNeeded()
         scheduleStaleChartCover()
     }
@@ -947,7 +959,27 @@ final class MarketChartViewModel: ObservableObject {
             }
             loadDiagnostics?.record("socket_ready")
             isRealtimeDisconnected = false
-            guard !isSuspendedForBackground else { hasRealtimeConnection = true; return }
+            guard !isSuspendedForBackground else {
+                hasRealtimeConnection = true
+                receivedReadyWhileSuspended = true
+                foregroundSnapshotReservation = nil
+                return
+            }
+            let foregroundSnapshot = foregroundSnapshotReservation
+            foregroundSnapshotReservation = nil
+            if let foregroundSnapshot,
+               foregroundSnapshot.sessionID == chartPipelineSessionID,
+               foregroundSnapshot.epoch == chartPipelineEpoch,
+               chartDataFrame?.epoch != foregroundSnapshot.epoch,
+               intervalTask != nil, activeHistoryLimit == 1_500, !recoveryRequiresRetry {
+                // Foreground restoration already created this epoch and began
+                // its full snapshot. Keep that download through this handshake;
+                // the subscription ack still schedules its normal follow-up.
+                hasRealtimeConnection = true
+                hasReceivedReadyHandshake = true
+                recoveryState = awaitsRecoveryPresentation ? .restoring : .idle
+                return
+            }
             if hasRealtimeConnection {
                 // The first history request and the first socket handshake
                 // start together. Replacing its epoch here briefly hides the
@@ -1178,6 +1210,7 @@ final class MarketChartViewModel: ObservableObject {
         for interval: MarketKlineInterval,
         restoring cached: CachedInterval? = nil
     ) {
+        foregroundSnapshotReservation = nil
         cancelRecoveryDeadline()
         resetHistoryPresentationGate()
         cacheRestoreTask?.cancel()
@@ -1334,7 +1367,9 @@ final class MarketChartViewModel: ObservableObject {
         }
     }
 
-    private func beginRealtimeEpoch(showLoading: Bool = true) async {
+    private func beginRealtimeEpoch(showLoading: Bool = true,
+                                    reservingForegroundSnapshot: Bool = false) async {
+        foregroundSnapshotReservation = nil
         invalidateIntervalCache()
         cacheRestoreTask?.cancel()
         cacheRestoreTask = nil
@@ -1358,6 +1393,10 @@ final class MarketChartViewModel: ObservableObject {
             generation: chartPipelineGeneration
         )
         chartPipelineEpoch = epoch
+        if reservingForegroundSnapshot {
+            foregroundSnapshotReservation = ForegroundSnapshotReservation(
+                sessionID: chartPipelineSessionID, epoch: epoch)
+        }
         diagnosticEpoch = epoch
         if showLoading {
             beginRecoveryPresentation()
