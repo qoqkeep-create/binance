@@ -69,6 +69,22 @@ class ExternalPositionApiTests(APITestCase):
         self.assertEqual(row["position_origin"], "exchange_external")
         self.assertFalse(row["can_bind_strategy"])
 
+    def test_open_position_exposes_margin_from_exchange_or_leverage_projection(self):
+        response = self.client.get("/v1/position/list")
+        self.assertEqual(response.status_code, 200)
+        row = response.data["data"][0]
+        # 1 contract × 105 mark price / 10x leverage when the exchange row
+        # does not provide a positive margin field.
+        self.assertEqual(row["position_amount"], "105")
+        self.assertEqual(row["margin"], "10.5")
+
+        self.exchange.get_positions.return_value = {
+            "data": [self.position_row("long", "1", "100", "5") | {"margin": "12.3456"}]
+        }
+        cache.clear()
+        response = self.client.get("/v1/position/list")
+        self.assertEqual(response.data["data"][0]["margin"], "12.3456")
+
     @patch("positions.views.user_trading_activity_lock")
     @patch("positions.views.get_user_trading_account")
     def test_manual_position_without_local_order_is_discovered_during_list_read(self, account, lock):

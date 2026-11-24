@@ -12,14 +12,10 @@
 
 证据位于忽略目录 `.integration-runtime/CapitalCap3000Nov22/`。全部工作区改动已本地提交，未推送 GitHub；独立 macOS 项目不在本次源码或部署范围内。
 
-## 房贷税费计算器静态页（2026-11-19 部署并更新布局）
+## 房贷税费计算器已下线（2026-11-23）
 
-- 访问地址：`https://47.80.22.243（首尔服务器）/calc/`。页面为单文件静态计算器（住房税费、柴房评估、卖方净拿反推、买方一次性准备明细），无数据库；通过一个仅监听 `127.0.0.1:8791` 的 Python 标准库服务共享一份 JSON 状态，多人同时打开时最后写入生效。
-- 服务器文件：`/opt/trade-tools-calc/`（`index.html` 当前 md5 `c6786dc5a48d997c53e85dd3fce086a8`，2026-11-19 三次更新：柴房税费按承担方计入结果卡与一次性准备，净拿反推含柴房卖方承担；此前二次更新为手机端承担按钮移至标题右侧；`sync_server.py` md5 `bfca2334686b692d02b8b4d24d2e87b0`、`state.json` 权限 0600）。本地源文件在 `~/work/房贷税费计算器/`。
--  systemd 服务：`tradetools-calc-sync`（`Restart=always`、`MemoryMax=128M`、`CPUQuota=25%`），Nginx 在 `/etc/nginx/snippets/tradetools-integrated.conf` 中新增 `location /calc/` 反代到 `127.0.0.1:8791`，`limit_except GET POST` 拒绝其余方法。
-- 部署前备份：`/opt/trade-tools-integrated/backups/calc-deploy-20261119/`（nginx snippet 改前 md5 `6c2a080f…`；11-19 布局更新另存旧 `index.html` md5 `8196058c…`）。
-- 验证：外网 `/calc/?cb=` 拉取 md5 与本地一致；`/calc/state` 读写正常；`/plan/` 与 `/integrated/v1/health` 回归 200；api/market/worker/scheduler、MySQL、Redis 容器未触碰。
-- 回滚：删除 snippet 中 `/calc/` 两段后 `nginx -t && systemctl reload nginx`，`systemctl disable --now tradetools-calc-sync` 并删除单元与 `/opt/trade-tools-calc/`；或用备份目录中的旧 `index.html` 覆盖回原路径。
+- 应用户要求，房贷税费计算器（2026-11-19 部署的 `/calc/` 静态页与共享状态同步服务）已全部下线：服务器端删除 `tradetools-calc-sync` systemd 单元与 `/opt/trade-tools-calc/`、备份目录 `/opt/trade-tools-integrated/backups/calc-deploy-20261119/`，Nginx snippet 摘除 `/calc/` 两段后 `nginx -t` 通过并 reload；公网验证 `/calc/` 返回 404，`/plan/` 与 `/integrated/v1/health` 回归 200，交易容器与 8791 端口无残留。
+- 摘除前 snippet 快照保留在服务器 `/root/snippet-before-calc-removal.conf`；本地项目目录 `~/work/房贷税费计算器/` 已移入用户废纸篓。此前文档中任何 `/calc/` 记录均为 2026-11-23 之前的历史状态。
 
 ## 日常快速服务端发布（默认推荐）
 

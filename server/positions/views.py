@@ -2294,6 +2294,7 @@ def _serialize_open_position(
         "exchange_size": format(pos, "f"),
         "has_manual_addition": has_manual_addition,
         "position_amount": format(financials.position_amount, "f"),
+        "margin": format(financials.margin, "f"),
         "pnl": format(financials.unrealized_pnl, "f"),
         "pnl_ratio": format(financials.pnl_ratio, "f"),
         "open_price": format(financials.average_price, "f"),

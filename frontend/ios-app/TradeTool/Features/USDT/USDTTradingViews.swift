@@ -44,6 +44,32 @@ enum PositionEntryFeePresentation {
 }
 
 enum PositionCardPresentation {
+  static func marginText(_ row: JSONValue) -> String {
+    let margin = PositionEntryFeePresentation.finiteDecimal(row["margin"])
+      ?? {
+        guard let amount = PositionEntryFeePresentation.finiteDecimal(row["position_amount"]), amount > 0,
+          let leverage = PositionEntryFeePresentation.finiteDecimal(row["leverage"]), leverage > 0 else { return nil }
+        return amount / leverage
+      }()
+    guard let margin, margin >= 0, !margin.isNaN else { return "--" }
+    return DisplayNumber.amount(margin, maximumFractionDigits: 2) + " U"
+  }
+
+  static func leverageDisplayText(_ row: JSONValue) -> String {
+    guard let leverage = PositionEntryFeePresentation.finiteDecimal(row["leverage"]), leverage >= 1 else {
+      return "--"
+    }
+    var value = DisplayNumber.text(leverage)
+    if let separator = value.firstIndex(of: ".") {
+      let fractionStart = value.index(after: separator)
+      let integer = String(value[..<separator])
+      var fraction = String(value[fractionStart...])
+      while fraction.last == "0" { fraction.removeLast() }
+      value = fraction.isEmpty ? integer : integer + "." + fraction
+    }
+    return "x" + value
+  }
+
   static func leverageText(_ row: JSONValue) -> String? {
     guard let leverage = PositionEntryFeePresentation.finiteDecimal(row["leverage"]), leverage > 1 else {
       return nil
@@ -1674,6 +1700,10 @@ struct USDTPositionsView: View {
         }
         inline(
           "市价止损：", row["market_stop_set"]?.flag == true ? DisplayNumber.text(row.value("market_stop_price")) : "未设置")
+        HStack(spacing: 16) {
+          inline("保证金：", PositionCardPresentation.marginText(row))
+          inline("杠杆：", PositionCardPresentation.leverageDisplayText(row))
+        }
         HStack(spacing: 6) {
           inline(
             "市价止盈：",

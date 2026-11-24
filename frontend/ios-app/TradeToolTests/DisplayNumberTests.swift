@@ -283,6 +283,17 @@ final class PositionCardPresentationTests: XCTestCase {
     XCTAssertEqual(PositionCardPresentation.leverageText(row(["leverage": .string("10.5")])), "x10.5")
   }
 
+  func testPositionCardShowsMarginAndLeverageAfterMarketStop() {
+    let position = row(["position_amount": .string("1050"), "leverage": .string("10"),
+      "margin": .string("100.125")])
+    XCTAssertEqual(PositionCardPresentation.marginText(position), "100.13 U")
+    XCTAssertEqual(PositionCardPresentation.leverageDisplayText(position), "x10")
+
+    let fallback = row(["position_amount": .string("1050"), "leverage": .string("10"), "margin": .null])
+    XCTAssertEqual(PositionCardPresentation.marginText(fallback), "105 U")
+    XCTAssertEqual(PositionCardPresentation.leverageDisplayText(row(["leverage": .string("1")])), "x1")
+  }
+
   func testExplicitZeroRemainingDoesNotFallBackToInitialQuantity() {
     XCTAssertEqual(cardFee(row([
       "entry_fee_status": .string("confirmed"), "entry_realized_fee": .string("-0.3"),

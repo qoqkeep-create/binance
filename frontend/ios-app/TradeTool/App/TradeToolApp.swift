@@ -999,6 +999,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
             "symbol": "BTCUSDT",
             "side": 0,
             "leverage": 10,
+            "margin": "100.00",
             "stop_loss_amount": "10",
             "position_amount": "1000.00",
             "pnl": "25.00",
