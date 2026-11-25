@@ -10,6 +10,7 @@ from common.binance import BinanceApiError
 from positions.models import Order, TradeOperationLog
 from trading.services import (
     ProtectionAccountSnapshot,
+    _adopt_tighter_exchange_stop,
     _converge_stop_loss_order,
     _emergency_close_unprotected_position,
     _reconcile_stop_loss_protection,
@@ -76,6 +77,79 @@ class WebOperationLogTests(APITestCase):
         self.assertEqual(self.logs("stop_protection").get().status, "pending")
         self.confirm_protection()
         self.assertEqual(list(self.logs("stop_protection").values_list("status", flat=True)), ["pending", "success"])
+
+    def test_reconciliation_adopts_tighter_exchange_stop_before_rebuilding(self):
+        self.order.binance_stop_market_order_id = "manual-forwarded-old"
+        self.order.stop_loss_order_created_at = None
+        self.order.save(update_fields=["binance_stop_market_order_id", "stop_loss_order_created_at"])
+        forwarded = {
+            "algoId": "manual-forwarded-new",
+            "instId": "BTC-USDT-SWAP",
+            "algoType": "STOP_MARKET",
+            "side": "sell",
+            "posSide": "long",
+            "state": "live",
+            "sz": "1",
+            "slTriggerPx": "95",
+        }
+        self.snapshot.algo_map = {"manual-forwarded-new": forwarded}
+
+        with patch("trading.services._place_stop_loss_protection_verified") as place:
+            repaired, emergency = _reconcile_stop_loss_protection(
+                order=self.order,
+                snapshot=self.snapshot,
+                strategy_snapshot=None,
+                exchange_size=Decimal("1"),
+                current_price=Decimal("100"),
+                stop_price=Decimal("90"),
+            )
+
+        self.assertFalse(emergency)
+        self.assertEqual(repaired, 0)
+        place.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.current_stop_price, Decimal("95"))
+        self.assertEqual(self.order.stop_loss_price, Decimal("95"))
+        self.assertEqual(self.order.binance_stop_market_order_id, "manual-forwarded-new")
+
+    def test_reconciliation_adopts_tighter_short_stop_and_ignores_looser_rows(self):
+        self.order.side = 1
+        self.order.initial_stop_price = Decimal("110")
+        self.order.current_stop_price = Decimal("110")
+        self.order.stop_loss_price = Decimal("110")
+        self.order.binance_stop_market_order_id = "manual-forwarded-short"
+        self.order.save(update_fields=[
+            "side", "initial_stop_price", "current_stop_price", "stop_loss_price",
+            "binance_stop_market_order_id",
+        ])
+        candidates = [
+            {
+                "algoId": "looser-short",
+                "algoType": "STOP_MARKET",
+                "state": "live",
+                "sz": "1",
+                "slTriggerPx": "115",
+            },
+            {
+                "algoId": "manual-forwarded-short",
+                "algoType": "STOP_MARKET",
+                "state": "live",
+                "sz": "1",
+                "slTriggerPx": "105",
+            },
+        ]
+        adopted = _adopt_tighter_exchange_stop(
+            self.order,
+            candidates,
+            local_stop=Decimal("110"),
+            exchange_size=Decimal("1"),
+        )
+        self.assertIsNotNone(adopted)
+        self.assertEqual(adopted[0], Decimal("105"))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.current_stop_price, Decimal("105"))
+        self.assertEqual(self.order.stop_loss_price, Decimal("105"))
+        self.assertEqual(self.order.initial_stop_price, Decimal("110"))
 
     @patch("trading.services.time.sleep")
     def test_emergency_rejection_and_unknown_outcome_are_not_reported_as_closed(self, _sleep):

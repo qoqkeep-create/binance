@@ -1051,6 +1051,63 @@ def _stop_loss_algo_matches(row: dict[str, Any], *, stop_price: Decimal, size: D
     return size_ok and price_ok
 
 
+def _adopt_tighter_exchange_stop(
+    order: Order,
+    stop_candidates: list[dict[str, Any]],
+    *,
+    local_stop: Decimal,
+    exchange_size: Decimal,
+) -> Optional[tuple[Decimal, dict[str, Any]]]:
+    """Persist a stricter live exchange stop before protection reconciliation.
+
+    Binance lets a user cancel and recreate a conditional order while the local
+    order still points at the original algo id and trigger.  Treat a matching
+    full-size STOP_MARKET with a more protective trigger as the source of truth,
+    preserving ``initial_stop_price`` as the original risk baseline.
+    """
+    if local_stop <= 0 or exchange_size <= 0:
+        return None
+    full_stops: list[tuple[Decimal, dict[str, Any]]] = []
+    for row in stop_candidates:
+        if str(row.get("algoType") or "") != "STOP_MARKET":
+            continue
+        trigger = _parse_decimal(row.get("slTriggerPx") or "0")
+        if trigger <= 0 or not _stop_loss_algo_matches(
+            row, stop_price=trigger, size=exchange_size
+        ):
+            continue
+        full_stops.append((trigger, row))
+    if not full_stops:
+        return None
+    trigger, row = (
+        max(full_stops, key=lambda item: item[0])
+        if order.side == 0
+        else min(full_stops, key=lambda item: item[0])
+    )
+    tighter = (
+        trigger > local_stop + POSITION_SIZE_TOLERANCE
+        if order.side == 0
+        else trigger < local_stop - POSITION_SIZE_TOLERANCE
+    )
+    if not tighter:
+        return None
+    algo_id = str(row.get("algoId") or "")
+    update_fields: list[str] = []
+    if order.current_stop_price != trigger:
+        order.current_stop_price = trigger
+        update_fields.append("current_stop_price")
+    if order.stop_loss_price != trigger:
+        order.stop_loss_price = trigger
+        update_fields.append("stop_loss_price")
+    if algo_id and str(order.binance_stop_market_order_id or "") != algo_id:
+        order.binance_stop_market_order_id = algo_id
+        order.stop_loss_order_created_at = timezone.now()
+        update_fields.extend(["binance_stop_market_order_id", "stop_loss_order_created_at"])
+    if update_fields:
+        order.save(update_fields=list(dict.fromkeys(update_fields)))
+    return trigger, row
+
+
 def _cancel_stop_loss_candidates(
     client: BinanceFuturesClient,
     *,
@@ -1216,6 +1273,14 @@ def _converge_stop_loss_order(
         close_side=close_side,
         pos_side=pos_side,
     )
+    adopted = _adopt_tighter_exchange_stop(
+        order,
+        candidates,
+        local_stop=target_stop,
+        exchange_size=target_size,
+    )
+    if adopted:
+        target_stop, _ = adopted
     primary_candidates = [row for row in candidates if str(row.get("algoType") or "") == "STOP"]
     market_candidates = [row for row in candidates if str(row.get("algoType") or "") == "STOP_MARKET"]
     correct_market = [row for row in market_candidates if _stop_loss_algo_matches(row, stop_price=target_stop, size=target_size)]
@@ -2628,9 +2693,17 @@ def _protection_is_complete(
     exchange_size: Decimal,
     current_price: Decimal,
 ) -> bool:
+    adopted = _adopt_tighter_exchange_stop(
+        order,
+        stop_candidates,
+        local_stop=stop_price,
+        exchange_size=exchange_size,
+    )
+    visible_row = snapshot.algo_map.get(str(order.binance_stop_market_order_id))
+    if adopted:
+        stop_price, visible_row = adopted
     if not order.binance_stop_market_order_id:
         return False
-    visible_row = snapshot.algo_map.get(str(order.binance_stop_market_order_id))
     if visible_row:
         normalized_stop = _normalize_stop_loss_request(
             order=order,
@@ -2757,6 +2830,10 @@ def _reconcile_stop_loss_protection(
         exchange_size=exchange_size,
         current_price=current_price,
     )
+    # A manual exchange edit may have been adopted during the completeness
+    # check. Carry that durable trigger into logs, crossed-price checks and any
+    # follow-up repair in this same reconciliation pass.
+    stop_price = order.current_stop_price or order.stop_loss_price or stop_price
     if not protection_complete and _stop_price_crossed(order, current_price, stop_price):
         return _emergency_close_unprotected_position(order, snapshot, stop_price), True
 

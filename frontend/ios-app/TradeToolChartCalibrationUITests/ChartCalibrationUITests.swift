@@ -5035,10 +5035,11 @@ extension WebParityUITests {
       let card = app.otherElements["position.card.101"]
       XCTAssertTrue(header.waitForExistence(timeout: 5))
       XCTAssertTrue(card.waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["保证金："].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["100 U"].exists)
-      XCTAssertTrue(app.staticTexts["杠杆："].exists)
-      XCTAssertTrue(app.staticTexts["x10"].exists)
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "保证金："))
+        .firstMatch.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "100 U")).firstMatch.exists)
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "杠杆：")).firstMatch.exists)
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "x10")).firstMatch.exists)
       capture(options.isEmpty ? "positions-header-spacing" : "positions-header-spacing-dark")
       XCTAssertEqual(header.frame.minY, reference.minY, accuracy: 1,
         "The position header must begin at the same top safe-area edge as signals")

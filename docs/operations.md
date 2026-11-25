@@ -1,5 +1,11 @@
 # 整合环境部署与运维
 
+## 信号提醒数据清理（2026-11-25）
+
+按用户要求，在 **47.80.22.243（首尔服务器）** 暂停 scheduler／worker 后清理旧信号链路：删除 `tradingview_message` 全部 72 条、`market_analysis_signal` 0 条、`strategy.signal` App 通知事件 364 条及其 813 条投递记录（级联删除共 1177 行）。交易开平仓通知、浮盈提醒和保证金提醒未删除；清理前的四张信号相关表备份位于服务器受限目录 `/opt/trade-tools-integrated/backups/signal-cleanup-20261125/signal-tables.sql.gz`，权限 600 且 gzip 校验通过。
+
+清理后复核信号消息、分析信号、`strategy.signal` 事件和投递均为 0；api、market、worker、scheduler、MySQL、Redis 恢复 healthy，`/integrated/v1/health` 返回 database／migrations／scheduler 全 true。旧趋势扫描代码仍保留，后续构建新信号系统时应替换其扫描与入库链路。
+
 ## 合约余额上限 3000 USDT 完整发布（2026-11-22）
 
 北京时间 **09:48:05**，完整源码 **`1c1b0d641508a346e9991be5d028612b608c94bf`** 已发布到 **47.80.22.243（首尔服务器）**；`current` 指向 `/opt/trade-tools-integrated/releases/integrated-20261122-full-1c1b0d6`。api／market／worker／scheduler 共用该版本镜像，四个运行容器实际读取的 `FUTURES_RETENTION_CAP` 均为 **3000**。现有客户端重新读取资金预检即可采用新上限与补足目标；iOS 说明调整仍需后续客户端新包，本轮没有上传 TestFlight。
