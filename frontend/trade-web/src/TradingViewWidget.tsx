@@ -52,8 +52,11 @@ const studies = [
     overlay: true,
     inputs: { in_0: 10, in_1: 6 },
   },
-  "STD;MACD",
-  "StochasticRSI@tv-basicstudies",
+  // Keep pane studies as full descriptors. The legacy embed accepts string
+  // aliases for simple layouts, but drops those panes when they follow the
+  // object-based overlay studies above.
+  { id: "STD;MACD", overlay: false, inputs: {} },
+  { id: "StochasticRSI@tv-basicstudies", overlay: false, inputs: {} },
 ];
 
 function perpetualSymbol(symbol: string) {

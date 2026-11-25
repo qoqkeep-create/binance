@@ -22,6 +22,9 @@ if (!source.includes("options.interval !== selectedInterval || options.timeFrame
 if (!source.includes('"STD;MACD"') || !source.includes('"StochasticRSI@tv-basicstudies"')) {
   throw new Error("TradingView MACD and StochRSI studies must be configured");
 }
+if (!source.includes('{ id: "STD;MACD", overlay: false, inputs: {} }') || !source.includes('{ id: "StochasticRSI@tv-basicstudies", overlay: false, inputs: {} }')) {
+  throw new Error("TradingView pane studies must use object descriptors to survive mixed study layouts");
+}
 if (!source.includes('backgroundColor: "#0c0d0f"') || !source.includes("hide_top_toolbar: true")) {
   throw new Error("TradingView chart must keep the Web dark background and native settings controls");
 }
