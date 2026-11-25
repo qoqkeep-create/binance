@@ -16,6 +16,18 @@ if (loader.length < 10000 || !loader.includes("www.tradingview-widget.com")) {
 if (source.includes("widgets.tradingview-widget.com") || source.includes("tv-advanced-chart")) {
   throw new Error("TradingView chart must not depend on the Web Component loader");
 }
+if (!source.includes("options.interval !== selectedInterval || options.timeFrame !== preference.timeFrame")) {
+  throw new Error("TradingView chart must wait for synchronized preferences before mounting");
+}
+if (!source.includes('"MACD@tv-basicstudies"') || !source.includes('"StochasticRSI@tv-basicstudies"')) {
+  throw new Error("TradingView MACD and StochRSI studies must be configured");
+}
+if (!source.includes('backgroundColor: "#0c0d0f"') || !source.includes("aria-label=\"图表设置\"")) {
+  throw new Error("TradingView chart must expose the Web dark background and settings control");
+}
+if (source.includes("CompactIndicatorStrip")) {
+  throw new Error("TradingView should own the MACD and StochRSI panes");
+}
 if (source.includes("local-kline-chart") || source.includes("<svg")) {
   throw new Error("Web K-line main chart must remain TradingView-only");
 }

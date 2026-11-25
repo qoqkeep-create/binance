@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, RefreshCw } from "lucide-react";
+import { ArrowUpRight, RefreshCw, Settings } from "lucide-react";
 import { useAccount, usePreference } from "./AccountProvider";
-import CompactIndicatorStrip from "./CompactIndicatorStrip";
 
 // Serve TradingView's official legacy loader from the integrated static
 // package. The loader still creates an iframe on TradingView's official host,
@@ -47,6 +46,8 @@ const studies = [
     id: "Supertrend@tv-basicstudies",
     inputs: { atrLength: 10, multiplier: 6 },
   },
+  "MACD@tv-basicstudies",
+  "StochasticRSI@tv-basicstudies",
 ];
 
 function perpetualSymbol(symbol: string) {
@@ -88,6 +89,8 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
     calendar: false,
     studies,
     support_host: "https://www.tradingview.com",
+    backgroundColor: "#0c0d0f",
+    gridColor: "rgba(161, 165, 174, 0.08)",
   });
   return script;
 }
@@ -96,10 +99,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
   const { hydrating } = useAccount();
   const [preference, setPreference] = usePreference("chart", defaultChartPreference, validChartPreference);
   const containerRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [indicatorHeight, setIndicatorHeight] = useState(108);
-  const [crosshairTime, setCrosshairTime] = useState<number | null>(null);
-  const [crosshairRatio, setCrosshairRatio] = useState<number | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [options, setOptions] = useState<ChartOptions>({ interval: initialInterval, attempt: 0 });
   const [status, setStatus] = useState<ChartStatus>("loading");
   const selectedInterval = canonicalInterval(preference.interval);
@@ -116,7 +116,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || hydrating) return;
+    if (!container || hydrating || options.interval !== selectedInterval || options.timeFrame !== preference.timeFrame) return;
 
     container.replaceChildren();
     const widgetHost = document.createElement("div");
@@ -174,18 +174,6 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
 
   const chartUrl = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(perpetualSymbol(symbol))}`;
 
-  function updateStageCrosshair(event: ReactPointerEvent<HTMLDivElement>) {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const bounds = stage.getBoundingClientRect();
-    setCrosshairRatio(Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width))));
-  }
-
-  function clearStageCrosshair() {
-    setCrosshairRatio(null);
-    setCrosshairTime(null);
-  }
-
   return (
     <>
       {actionsContainer && !readOnly && createPortal(
@@ -194,7 +182,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
         </button>,
         actionsContainer,
       )}
-      <div ref={stageRef} className="tradingview-stage" onPointerMove={updateStageCrosshair} onPointerLeave={clearStageCrosshair} style={{ "--compact-indicators-height": `${indicatorHeight}px` } as CSSProperties}>
+      <div className="tradingview-stage" style={{ "--compact-indicators-height": "0px" } as CSSProperties}>
         <div className="chart-local-toolbar">
           <span className="chart-local-toolbar-label">周期</span>
           <div className="chart-local-intervals" role="group" aria-label="K线周期">
@@ -210,7 +198,15 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
           </div>
         )}
         <div ref={containerRef} className="tradingview-widget tradingview-widget-container" />
-        <CompactIndicatorStrip symbol={symbol} interval={selectedInterval} onHeightChange={setIndicatorHeight} crosshairTime={crosshairTime} crosshairRatio={crosshairRatio} onCrosshairTimeChange={setCrosshairTime} />
+        <div className="chart-settings">
+          <button className="chart-settings-trigger" type="button" aria-label="图表设置" aria-expanded={settingsOpen} title="图表设置" onClick={() => setSettingsOpen((open) => !open)}>
+            <Settings size={14} aria-hidden="true" />
+          </button>
+          {settingsOpen && <div className="chart-settings-menu" role="menu">
+            <button type="button" role="menuitem" onClick={() => { setSettingsOpen(false); reloadChart(); }}>重新连接图表</button>
+            <span role="status">TradingView 指标</span>
+          </div>}
+        </div>
       </div>
     </>
   );

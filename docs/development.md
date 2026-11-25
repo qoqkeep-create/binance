@@ -1,5 +1,11 @@
 # 开发与验证
 
+## Web TradingView 原生附图与首次挂载修复（2026-11-26）
+
+TradingView 主图现在同时创建 `MACD@tv-basicstudies` 和 `StochasticRSI@tv-basicstudies`，移除页面自建 SVG 附图。右下角增加图表设置入口，提供 TradingView 图表重新连接操作。图表主背景使用 Web 暗色画布 `#0c0d0f`，并保留页面自建六周期栏。
+
+首次加载弹窗的原因是账号设置完成时，图表先使用旧的 `options` 挂载，随后又按云端周期和时间范围重建。`TradingViewWidget` 现在等待 `options` 与当前偏好同步后才创建 iframe，避免中断正在连接的第一次 TradingView 会话。`tests/tradingViewWidget.test.mjs` 覆盖偏好同步门槛、原生 MACD／StochRSI 和 TradingView-only 主图。
+
 ## Web TradingView legacy iframe 加载修复（2026-11-26）
 
 原始 `trade-web` 使用 TradingView 官方 legacy Advanced Chart iframe。整合版曾改用 `widgets.tradingview-widget.com` 的 Web Component，增加了模块加载和自定义元素初始化链路，当前浏览器网络下会在图表内部显示 `Something went wrong`。现将 TradingView 官方 legacy loader 原样放入 `public/vendor/tradingview-advanced-chart.js`，由本站加载后继续生成 TradingView 官方 iframe，页面自建周期栏和自建 MACD／StochRSI 不变。切换周期或交易对时只重建一个官方 iframe，不再重建 Web Component 和外部 module loader。

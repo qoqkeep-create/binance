@@ -1,5 +1,11 @@
 # 整合环境部署与运维
 
+## Web TradingView 原生附图与首次加载修复（2026-11-26，北京时间）
+
+本次 Web 静态包将 MACD／StochRSI 恢复为 TradingView 原生 studies，主图右下角增加图表设置入口，背景使用 Web 暗色画布。首次挂载增加偏好同步门槛，避免 TradingView iframe 在账号设置回填期间被重复卸载而出现“重新连接”弹窗。
+
+静态 release **`trade-web-20261126-tv-native-studies`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。页面、本站 loader、JS/CSS 和 `/integrated/v1/health` 已复核。
+
 ## Web TradingView legacy iframe 修复发布（2026-11-26，北京时间）
 
 原始 Web 版本使用 TradingView 官方 legacy Advanced Chart iframe。整合版在最近一次图表恢复中切换到 `widgets.tradingview-widget.com` Web Component，浏览器需要额外加载 module loader 和内部嵌入页，部分网络会在图表内部返回 `Something went wrong`。本次将官方 legacy loader 原样随静态包提供，由本站加载并继续连接 TradingView 官方 iframe，保留自建六周期栏、底部 MACD／StochRSI 和 TradingView 画线能力。后端、行情接口、账号体系和交易逻辑未改。

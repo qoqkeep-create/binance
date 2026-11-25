@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-26：Web TradingView 原生附图与首次挂载修复
+
+MACD／StochRSI 恢复为 TradingView 原生 studies，移除页面自建附图渲染。K 线区域右下角增加图表设置按钮，TradingView 背景使用 Web 暗色画布。首次创建 iframe 前等待周期偏好和时间范围同步，避免账号设置回填造成第一次图表连接被中断。
+
+Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
 ## 2026-11-26：Web TradingView 加载链路恢复为 legacy iframe
 
 原始 `trade-web` 使用 TradingView legacy iframe，整合版后来改成 `widgets.tradingview-widget.com` Web Component。后者新增 module loader 和自定义元素初始化链路，当前浏览器网络下更容易在 TradingView 内部显示 `Something went wrong`。现将官方 legacy loader 原样放入本站静态包，由本站加载并生成 TradingView 官方 iframe，主图继续使用 TradingView，页面自建周期栏、底部附图和现有后端数据对接保持不变。
