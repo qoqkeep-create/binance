@@ -122,6 +122,14 @@ button { color: inherit; border: 0; cursor: pointer; }
 }
 .chart-widget-error p { color: var(--text); font-size: 14px; }
 .market-retry { background: transparent; color: var(--accent-strong); text-decoration: underline; }
+.tradingview-widget.is-hidden { display: none; }
+.local-kline-chart { position: absolute; inset: 0 0 var(--compact-indicators-height); z-index: 2; overflow: hidden; background: var(--bg-deep); color: var(--muted); }
+.local-kline-chart svg { display: block; width: 100%; height: 100%; }
+.local-kline-grid line { stroke: var(--line); stroke-width: .7; stroke-dasharray: 3 4; }
+.local-kline-grid text, .local-kline-time { fill: var(--muted-dark); font: 9px var(--font-ui); }
+.local-kline-badge { position: absolute; z-index: 3; top: 12px; left: 16px; display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font: 9px var(--font-ui); }
+.local-kline-badge .live-dot { position: static; width: 5px; height: 5px; }
+.local-kline-message { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font: 12px var(--font-ui); }
 
 .chart-restore {
   flex: none;
