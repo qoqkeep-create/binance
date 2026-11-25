@@ -4,7 +4,7 @@
 
 TradingView iframe 底部增加 24px 控件留白，MACD 底部操作和官方设置齿轮保持在图表工作区内。原右上角盘面速览展开按钮移动到周期栏最右侧，继续使用原有展开／收起状态。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
 
-静态 release **`trade-web-20261126-chart-controls-b252b49`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希与本地构建一致，健康检查通过。
+静态 release **`trade-web-20261126-chart-controls-282787f`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希与本地构建一致，健康检查通过。
 
 ## 2026-11-26：Web TradingView 图表边界与周期栏修复
 
