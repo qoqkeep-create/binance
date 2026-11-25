@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：Web K 线加载回退修复
+
+线上部分网络无法加载 TradingView widget，导致主图一直黑屏。`TradingViewWidget` 现在从整合 K 线接口加载本地 SVG 蜡烛图，外部 widget 超时或失败时自动回退，Compact MACD/StochRSI 继续使用整合 K 线。前端 `npm test`、`npm run build` 通过，静态 release `trade-web-20261126-kline-fix` 已发布到 47.80.22.243（首尔服务器）。
+
 ## 2026-11-26：Web 首次线上发布
 
 当前完整工作区已发布到 **47.80.22.243（首尔服务器）**：后端 release `integrated-20261125-aff69f5`、Web 静态 release `trade-web-20261125-aff69f5`。`web.0001_initial` migration 已应用，六个容器 healthy，Nginx `/integrated/market/` 静态路由和 SPA 回退通过验证。

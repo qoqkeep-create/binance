@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web K 线回退修复发布（2026-11-26，北京时间）
+
+线上发现外部 TradingView widget 在部分网络下长期停留在“正在连接”，主图黑屏但行情 API 正常。Web 前端已增加整合 `/api/market/klines` 的本地 K 线 SVG 回退，外部 widget 未在 5 秒内就绪时自动切换。静态 release `trade-web-20261126-kline-fix` 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`；后端和 Nginx 未重新切换。用户刷新线上页面后即可使用本地 K 线。
+
 ## Web 与同源后端完整发布（2026-11-26，北京时间）
 
 按用户授权，将当前完整工作区发布到 **47.80.22.243（首尔服务器）**。后端源码提交为 **`aff69f5`**，运行 release 为 `/opt/trade-tools-integrated/releases/integrated-20261125-aff69f5`，`current` 已切换；api、market、worker、scheduler 使用同一镜像 `tradetools-integrated:integrated-20261125-aff69f5`。`web.0001_initial` 已应用，MySQL／Redis 容器和数据卷未替换。
