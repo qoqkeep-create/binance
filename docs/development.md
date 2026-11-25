@@ -4,7 +4,7 @@
 
 普通／带单止损金额的服务端、iOS 和鸿蒙校验统一为 **50～300 USDT**；合约保留、补足、首仓及资金钱包规划统一使用 **5000 USDT** 上限。没有新增 migration，也没有批量改写已有止损配置、订单保护或已提交资金流水；前端仍从服务端计划读取实际资金阈值。
 
-隔离 SQLite／LocMem 与交易所替身下，`accounts.test_fixed_stop_loss trading.test_balance_cap trading.test_capital_wallet trading.test_lead_mode` **137 项通过**，覆盖止损两端及超限拒绝、5000 上限的分币边界、普通／带单首仓预检、钱包补入和旧计划兼容。未执行真实开仓、划转、归集或保护单操作；本次仅保留本地改动，尚未部署到 47.80.22.243（首尔服务器）、上传 TestFlight 或进行实机验收。
+隔离 SQLite／LocMem 与交易所替身下，`accounts.test_fixed_stop_loss trading.test_balance_cap trading.test_capital_wallet trading.test_lead_mode` **137 项通过**，覆盖止损两端及超限拒绝、5000 上限的分币边界、普通／带单首仓预检、钱包补入和旧计划兼容。Django `check`、`makemigrations --check --dry-run`、Harmony 工程检查（14 配置、147 导入、55 资源）、Web `npm test`／`npm run build` 以及 iOS `TradeTool` Debug 模拟器编译均通过。未执行真实开仓、划转、归集或保护单操作；本次仅保留本地改动，尚未部署到 47.80.22.243（首尔服务器）、上传 TestFlight 或进行实机验收。
 
 ## Web 前端整合回归（2026-11-25，本地）
 

@@ -10,8 +10,8 @@ backend in `../../server`:
 
 Run locally with an ASGI Django server on port 8000, then run `npm install` and
 `npm run dev`. The Vite proxy handles `/api` and `/ws`. Production builds use
-`/market/`; the runtime resolves the `/integrated/` prefix when deployed beside
-the integrated API.
+relative asset paths and can be served at `/integrated/market/`; the runtime
+resolves the `/integrated/` prefix when deployed beside the integrated API.
 
 `npm test` runs deterministic analysis, preference, and request lifecycle tests;
 `npm run build` creates a static bundle with relative asset paths so it can be
