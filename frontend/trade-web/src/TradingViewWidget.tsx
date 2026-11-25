@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUpRight, RefreshCw } from "lucide-react";
 import { useAccount, usePreference } from "./AccountProvider";
@@ -107,7 +107,7 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
   return script;
 }
 
-export default function TradingViewWidget({ symbol, actionsContainer, onSymbolChange: _onSymbolChange, readOnly = false }: { symbol: string; actionsContainer: HTMLElement | null; onSymbolChange?: (symbol: string) => void; readOnly?: boolean }) {
+export default function TradingViewWidget({ symbol, actionsContainer, insightToggle, onSymbolChange: _onSymbolChange, readOnly = false }: { symbol: string; actionsContainer: HTMLElement | null; insightToggle?: ReactNode; onSymbolChange?: (symbol: string) => void; readOnly?: boolean }) {
   const { hydrating } = useAccount();
   const [preference, setPreference] = usePreference("chart", defaultChartPreference, validChartPreference);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -199,6 +199,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
           <div className="chart-local-intervals" role="group" aria-label="K线周期">
             {localIntervals.map((item) => <button key={item.value} type="button" title={item.label} aria-pressed={selectedInterval === item.value} className={selectedInterval === item.value ? "active" : ""} onClick={() => setPreference({ interval: item.value, timeFrame: item.timeFrame })}>{item.shortLabel}</button>)}
           </div>
+          {insightToggle && <div className="chart-local-toolbar-actions">{insightToggle}</div>}
         </div>
         {status === "loading" && <div className="chart-widget-loading" role="status"><RefreshCw size={14} className="spin" /> 正在连接 TradingView…</div>}
         {(status === "slow" || status === "error") && (

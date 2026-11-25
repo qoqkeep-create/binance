@@ -31,6 +31,9 @@ if (!source.includes('backgroundColor: "#0c0d0f"') || !source.includes("hide_top
 if (!source.includes('...(interval === "D" ? {} : { range: timeFrame || "2d" })')) {
   throw new Error("TradingView daily charts must omit the incompatible range parameter");
 }
+if (!source.includes("insightToggle") || !source.includes("chart-local-toolbar-actions")) {
+  throw new Error("Chart expansion control must live in the chart toolbar");
+}
 if (source.includes("chart-settings") || source.includes("图表设置")) {
   throw new Error("Chart settings must remain TradingView-owned");
 }
@@ -44,7 +47,7 @@ if (source.includes("local-kline-chart") || source.includes("<svg")) {
 const strip = readFileSync(fileURLToPath(new URL("../src/CompactIndicatorStrip.tsx", import.meta.url)), "utf8");
 const styles = readFileSync(fileURLToPath(new URL("../src/compact-indicators.css", import.meta.url)), "utf8");
 const mainStyles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
-for (const marker of [".workspace {", "overflow: hidden", "height: 0", ".statusbar { position: relative", "font: 13px var(--font-ui)"]) {
+for (const marker of [".workspace {", "overflow: hidden", "height: 0", "--chart-bottom-clearance: 24px", ".statusbar { position: relative", "font: 13px var(--font-ui)"]) {
   if (!mainStyles.includes(marker)) throw new Error(`Chart layout boundary is missing ${marker}`);
 }
 for (const marker of ["crosshairTime", "onCrosshairTimeChange", "compact-crosshair-line"]) {
