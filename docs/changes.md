@@ -1,10 +1,16 @@
 # 变更与验收记录
 
+## 2026-11-26：Web 首次线上发布
+
+当前完整工作区已发布到 **47.80.22.243（首尔服务器）**：后端 release `integrated-20261125-aff69f5`、Web 静态 release `trade-web-20261125-aff69f5`。`web.0001_initial` migration 已应用，六个容器 healthy，Nginx `/integrated/market/` 静态路由和 SPA 回退通过验证。
+
+线上入口：[https://47.80.22.243/integrated/market/](https://47.80.22.243/integrated/market/)。页面、JS/CSS、`/integrated/v1/health` 均通过；未认证行情 API 的 401 边界通过。未执行真实交易、资金或保护单操作。
+
 ## 2026-11-25：Web 前端与 Django 行情整合（本地）
 
 复制 `/Users/apple/work/trade-web` 到 `frontend/trade-web/`，保留现有 React/Vite 界面和指标逻辑；认证改用整合 Django 的 JWT access token、HttpOnly refresh cookie，页面偏好改用新增 `web.0001_initial` 的 `/api/web/settings`。行情列表、K 线和分析助手统一读取 `market_stream` 的 `/api/market/*`，实时数据使用 `/ws/v1` 的浏览器 subprotocol 鉴权；原 Flask SQLite 账户和浏览器直连 Binance 均不再作为运行路径。
 
-本地验证：Web `npm test`（5 组确定性测试）和 `npm run build` 通过；Django `check`、`makemigrations --check`、Web settings／浏览器 WSS 鉴权／移动认证定向测试通过。尚未部署 Web 静态产物、未进行 TestFlight、实机或真实交易／资金操作。
+本地验证：Web `npm test`（5 组确定性测试）和 `npm run build` 通过；Django `check`、`makemigrations --check`、Web settings／浏览器 WSS 鉴权／移动认证定向测试通过。随后已按 [2026-11-26 线上发布](#2026-11-26web-首次线上发布) 部署 Web 静态产物；仍未进行 TestFlight、实机或真实交易／资金操作。
 
 ## 2026-11-25：手动前移止损保持交易所最新保护位
 

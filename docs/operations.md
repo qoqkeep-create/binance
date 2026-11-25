@@ -1,5 +1,13 @@
 # 整合环境部署与运维
 
+## Web 与同源后端完整发布（2026-11-26，北京时间）
+
+按用户授权，将当前完整工作区发布到 **47.80.22.243（首尔服务器）**。后端源码提交为 **`aff69f5`**，运行 release 为 `/opt/trade-tools-integrated/releases/integrated-20261125-aff69f5`，`current` 已切换；api、market、worker、scheduler 使用同一镜像 `tradetools-integrated:integrated-20261125-aff69f5`。`web.0001_initial` 已应用，MySQL／Redis 容器和数据卷未替换。
+
+Web 静态产物为 **`trade-web-20261125-aff69f5`**，目录 `/opt/trade-tools-integrated/web/trade-web-20261125-aff69f5`，原子软链 `/opt/trade-tools-integrated/web/integrated/market` 已切换。Nginx 已加入 `/integrated/market/` SPA 路由并通过 `nginx -t`、reload；数据库备份位于 `/opt/trade-tools-integrated/backups/integrated-20261125-aff69f5/database.sql.gz`，权限 600，沿用发布前完成的备份。
+
+线上验收通过：`/integrated/market/`、SPA 深层路径、JS/CSS 资源均返回 200；`/integrated/v1/health` 返回 database／migrations／scheduler 全 true；未认证 `/integrated/api/market/tickers` 返回预期 401；浏览器已打开线上登录页并确认首屏。线上地址为 **https://47.80.22.243/integrated/market/**。没有执行真实开仓、平仓、划转、归集或保护单操作；登录后的真实账号行情／WSS 仍需用户验收。
+
 ## 信号提醒数据清理（2026-11-25）
 
 按用户要求，在 **47.80.22.243（首尔服务器）** 暂停 scheduler／worker 后清理旧信号链路：删除 `tradingview_message` 全部 72 条、`market_analysis_signal` 0 条、`strategy.signal` App 通知事件 364 条及其 813 条投递记录（级联删除共 1177 行）。交易开平仓通知、浮盈提醒和保证金提醒未删除；清理前的四张信号相关表备份位于服务器受限目录 `/opt/trade-tools-integrated/backups/signal-cleanup-20261125/signal-tables.sql.gz`，权限 600 且 gzip 校验通过。
@@ -45,6 +53,8 @@ python3 deploy/integrated/quick_deploy.py --dry-run
 ```
 
 脚本要求工作区干净且改动已经提交，目标默认是 **47.80.22.243（首尔服务器）**。该入口不使用 `deploy/integrated/release.sh`，后者属于首次初始化流程，会启动 MySQL／Redis、执行迁移和 bootstrap。
+
+Web 静态产物不由 `quick_deploy.py` 构建或上传。发布 Web 时先在本地 `frontend/trade-web/` 执行 `npm ci && npm run build`，将 `dist/` 上传到 `/opt/trade-tools-integrated/web/trade-web-<release>/`，再原子切换 `/opt/trade-tools-integrated/web/integrated/market`，最后安装同一 release 的 Nginx snippet、执行 `nginx -t` 和 reload；静态目录与后端 release 分开保留，便于独立回退。
 
 ## 完整同源发布：固定资金、Maker 拒单与客户端恢复（2026-11-14）
 

@@ -4,11 +4,13 @@
 
 普通／带单止损金额的服务端、iOS 和鸿蒙校验统一为 **50～300 USDT**；合约保留、补足、首仓及资金钱包规划统一使用 **5000 USDT** 上限。没有新增 migration，也没有批量改写已有止损配置、订单保护或已提交资金流水；前端仍从服务端计划读取实际资金阈值。
 
-隔离 SQLite／LocMem 与交易所替身下，`accounts.test_fixed_stop_loss trading.test_balance_cap trading.test_capital_wallet trading.test_lead_mode` **137 项通过**，覆盖止损两端及超限拒绝、5000 上限的分币边界、普通／带单首仓预检、钱包补入和旧计划兼容。Django `check`、`makemigrations --check --dry-run`、Harmony 工程检查（14 配置、147 导入、55 资源）、Web `npm test`／`npm run build` 以及 iOS `TradeTool` Debug 模拟器编译均通过。未执行真实开仓、划转、归集或保护单操作；本次仅保留本地改动，尚未部署到 47.80.22.243（首尔服务器）、上传 TestFlight 或进行实机验收。
+隔离 SQLite／LocMem 与交易所替身下，`accounts.test_fixed_stop_loss trading.test_balance_cap trading.test_capital_wallet trading.test_lead_mode` **137 项通过**，覆盖止损两端及超限拒绝、5000 上限的分币边界、普通／带单首仓预检、钱包补入和旧计划兼容。Django `check`、`makemigrations --check --dry-run`、Harmony 工程检查（14 配置、147 导入、55 资源）、Web `npm test`／`npm run build` 以及 iOS `TradeTool` Debug 模拟器编译均通过。后端与 Web 已随 `aff69f5` 发布到 47.80.22.243（首尔服务器）；未执行真实开仓、划转、归集或保护单操作，iOS TestFlight／实机仍单独验收。
 
 ## Web 前端整合回归（2026-11-25，本地）
 
 `frontend/trade-web/` 使用 Node 依赖安装后执行 `npm test` 和 `npm run build`；确定性测试覆盖指标、快照、偏好合并和网络重试，构建使用 Vite 相对资源 base，部署路径为 `/integrated/market/`。Django 侧执行 `DEBUG=True DB_ENGINE=sqlite3 .venv/bin/python manage.py check`、`makemigrations --check`，并定向运行 `web`、`market_stream.test_fast_path.BrowserWebSocketAuthTests`、`mobile.tests.MobileAuthTests`。结果均通过；测试使用 SQLite／替身，没有部署、真实账户交易或资金动作。
+
+发布后在线检查确认页面、SPA 深层路径和 JS/CSS 资源 200，`/integrated/v1/health` healthy；登录后的真实账号数据与 WSS 事件尚未由用户验收。
 
 ## 信号提醒清理核对（2026-11-25）
 
