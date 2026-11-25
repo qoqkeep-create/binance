@@ -43,6 +43,10 @@ if (source.includes("local-kline-chart") || source.includes("<svg")) {
 
 const strip = readFileSync(fileURLToPath(new URL("../src/CompactIndicatorStrip.tsx", import.meta.url)), "utf8");
 const styles = readFileSync(fileURLToPath(new URL("../src/compact-indicators.css", import.meta.url)), "utf8");
+const mainStyles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+for (const marker of [".workspace {", "overflow: hidden", "height: 0", ".statusbar { position: relative", "font: 13px var(--font-ui)"]) {
+  if (!mainStyles.includes(marker)) throw new Error(`Chart layout boundary is missing ${marker}`);
+}
 for (const marker of ["crosshairTime", "onCrosshairTimeChange", "compact-crosshair-line"]) {
   if (!strip.includes(marker) && !styles.includes(marker)) throw new Error(`Indicator strip is missing ${marker}`);
 }
