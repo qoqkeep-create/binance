@@ -6,6 +6,8 @@
 
 清理后复核信号消息、分析信号、`strategy.signal` 事件和投递均为 0；api、market、worker、scheduler、MySQL、Redis 恢复 healthy，`/integrated/v1/health` 返回 database／migrations／scheduler 全 true。旧趋势扫描代码仍保留，后续构建新信号系统时应替换其扫描与入库链路。
 
+同一工作区的止损前移修复、持仓保证金／杠杆字段及测试配套随后以 **`integrated-quick-6156709`** 发布到 **47.80.22.243（首尔服务器）**；四个应用容器使用同一镜像，MySQL／Redis 未替换，活动命令门禁为 0，公网 health 的 database／migrations／scheduler 均为 true。Nginx 路由内容未改，仅清理了线上模板末尾多余空行，改前快照位于 `/opt/trade-tools-integrated/backups/nginx-template-newline-20251125/`。
+
 ## 合约余额上限 3000 USDT 完整发布（2026-11-22）
 
 北京时间 **09:48:05**，完整源码 **`1c1b0d641508a346e9991be5d028612b608c94bf`** 已发布到 **47.80.22.243（首尔服务器）**；`current` 指向 `/opt/trade-tools-integrated/releases/integrated-20261122-full-1c1b0d6`。api／market／worker／scheduler 共用该版本镜像，四个运行容器实际读取的 `FUTURES_RETENTION_CAP` 均为 **3000**。现有客户端重新读取资金预检即可采用新上限与补足目标；iOS 说明调整仍需后续客户端新包，本轮没有上传 TestFlight。
