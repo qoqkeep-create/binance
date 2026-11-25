@@ -70,8 +70,9 @@ interface ChartOptions {
 }
 
 type ChartStatus = "loading" | "ready" | "slow" | "error";
+type ChartTheme = "dark" | "light";
 
-function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: ChartOptions, readOnly: boolean) {
+function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: ChartOptions, readOnly: boolean, theme: ChartTheme) {
   const script = document.createElement("script");
   script.type = "text/javascript";
   script.async = true;
@@ -81,7 +82,7 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
     symbol: perpetualSymbol(symbol),
     interval,
     timezone: "Asia/Shanghai",
-    theme: "dark",
+    theme,
     style: "1",
     locale: "zh_CN",
     enable_publishing: false,
@@ -95,10 +96,11 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
     details: false,
     hotlist: false,
     calendar: false,
+    enabled_features: ["main_series_scale_menu", "show_chart_property_page"],
     studies,
     support_host: "https://www.tradingview.com",
-    backgroundColor: "#0c0d0f",
-    gridColor: "rgba(161, 165, 174, 0.08)",
+    backgroundColor: theme === "light" ? "#eef0f3" : "#0c0d0f",
+    gridColor: theme === "light" ? "rgba(52, 57, 64, 0.10)" : "rgba(161, 165, 174, 0.08)",
     // The legacy embed rejects a daily interval when range is also supplied.
     // Daily charts use TradingView's native default history window.
     ...(interval === "D" ? {} : { range: timeFrame || "2d" }),
@@ -107,13 +109,14 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
   return script;
 }
 
-export default function TradingViewWidget({ symbol, actionsContainer, insightToggle, onSymbolChange: _onSymbolChange, readOnly = false }: { symbol: string; actionsContainer: HTMLElement | null; insightToggle?: ReactNode; onSymbolChange?: (symbol: string) => void; readOnly?: boolean }) {
+export default function TradingViewWidget({ symbol, actionsContainer, insightToggle, theme = "dark", onSymbolChange: _onSymbolChange, readOnly = false }: { symbol: string; actionsContainer: HTMLElement | null; insightToggle?: ReactNode; theme?: ChartTheme; onSymbolChange?: (symbol: string) => void; readOnly?: boolean }) {
   const { hydrating } = useAccount();
   const [preference, setPreference] = usePreference("chart", defaultChartPreference, validChartPreference);
   const containerRef = useRef<HTMLDivElement>(null);
   const [options, setOptions] = useState<ChartOptions>({ interval: initialInterval, attempt: 0 });
   const [status, setStatus] = useState<ChartStatus>("loading");
   const selectedInterval = canonicalInterval(preference.interval);
+  const chartSurface = theme === "light" ? "#eef0f3" : "#0c0d0f";
 
   useEffect(() => {
     if (options.interval === selectedInterval && options.timeFrame === preference.timeFrame) return;
@@ -133,7 +136,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
     const widgetHost = document.createElement("div");
     widgetHost.className = "tradingview-widget-container__widget";
     container.append(widgetHost);
-    const script = createWidgetScript(symbol, options, readOnly);
+    const script = createWidgetScript(symbol, options, readOnly, theme);
     setStatus("loading");
     let settled = false;
     const slowTimer = window.setTimeout(() => {
@@ -172,7 +175,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
       script.onerror = null;
       container.replaceChildren();
     };
-  }, [hydrating, options, readOnly, symbol]);
+  }, [hydrating, options, readOnly, symbol, theme]);
 
   function reloadChart() {
     setOptions((previous) => ({ ...previous, attempt: previous.attempt + 1 }));
@@ -193,7 +196,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
         </button>,
         actionsContainer,
       )}
-      <div className="tradingview-stage" style={{ "--compact-indicators-height": "0px" } as CSSProperties}>
+      <div className="tradingview-stage" data-chart-theme={theme} style={{ "--compact-indicators-height": "0px", "--chart-surface": chartSurface } as CSSProperties}>
         <div className="chart-local-toolbar">
           <span className="chart-local-toolbar-label">周期</span>
           <div className="chart-local-intervals" role="group" aria-label="K线周期">

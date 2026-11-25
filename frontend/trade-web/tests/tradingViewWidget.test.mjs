@@ -25,8 +25,11 @@ if (!source.includes('"STD;MACD"') || !source.includes('"StochasticRSI@tv-basics
 if (!source.includes('{ id: "STD;MACD", overlay: false, inputs: {} }') || !source.includes('{ id: "StochasticRSI@tv-basicstudies", overlay: false, inputs: {} }')) {
   throw new Error("TradingView pane studies must use object descriptors to survive mixed study layouts");
 }
-if (!source.includes('backgroundColor: "#0c0d0f"') || !source.includes("hide_top_toolbar: true")) {
+if (!source.includes('theme === "light" ? "#eef0f3" : "#0c0d0f"') || !source.includes('data-chart-theme={theme}') || !source.includes('"--chart-surface": chartSurface') || !source.includes("hide_top_toolbar: true")) {
   throw new Error("TradingView chart must keep the Web dark background and native settings controls");
+}
+if (!source.includes('"main_series_scale_menu"') || !source.includes('"show_chart_property_page"')) {
+  throw new Error("TradingView official chart settings features must stay enabled");
 }
 if (!source.includes('...(interval === "D" ? {} : { range: timeFrame || "2d" })')) {
   throw new Error("TradingView daily charts must omit the incompatible range parameter");
@@ -47,7 +50,7 @@ if (source.includes("local-kline-chart") || source.includes("<svg")) {
 const strip = readFileSync(fileURLToPath(new URL("../src/CompactIndicatorStrip.tsx", import.meta.url)), "utf8");
 const styles = readFileSync(fileURLToPath(new URL("../src/compact-indicators.css", import.meta.url)), "utf8");
 const mainStyles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
-for (const marker of [".workspace {", "overflow: hidden", "height: 0", "--chart-bottom-clearance: 24px", ".statusbar { position: relative", "font: 13px var(--font-ui)"]) {
+for (const marker of [".workspace {", "overflow: hidden", "height: 0", "--chart-bottom-clearance: 24px", "--chart-surface: var(--bg-deep)", "background: var(--chart-surface)", ".statusbar { position: relative", "font: 13px var(--font-ui)"]) {
   if (!mainStyles.includes(marker)) throw new Error(`Chart layout boundary is missing ${marker}`);
 }
 for (const marker of ["crosshairTime", "onCrosshairTimeChange", "compact-crosshair-line"]) {
