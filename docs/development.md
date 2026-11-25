@@ -1,5 +1,9 @@
 # 开发与验证
 
+## Web TradingView 底部控件与图表展开入口修复（2026-11-26）
+
+TradingView iframe 使用 `--chart-bottom-clearance: 24px` 保留底部控件区，MACD 的底部操作和官方设置入口不会贴近或进入全局状态栏。盘面速览展开按钮由 `TerminalApp` 作为 `insightToggle` 传入 `TradingViewWidget`，渲染在周期栏最右侧，状态和无障碍标签沿用原实现。
+
 ## Web TradingView 图表边界与周期栏修复（2026-11-26）
 
 全局状态栏与图表工作区使用独立的 flex 边界。`workspace`、`chart-workspace` 和 `tradingview-stage` 均限制溢出，stage 使用 `height: 0` 加 flex 剩余空间计算，确保 TradingView iframe 的底边停在状态栏上方。周期栏按钮调整为 13px，最小宽度 46px、高度 31px。契约测试锁定状态栏层级、stage 高度和周期字号。
