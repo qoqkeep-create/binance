@@ -191,7 +191,7 @@ class LeadAccountIsolationTests(APITestCase):
     def test_lead_capital_thresholds_and_existing_position_behavior(self, balance):
         adapter = LeadTradingAdapter()
         empty = ExchangeActivitySnapshot((), (), ())
-        for amount, expected in (("149.99", "shortfall"), ("150", "ready"), ("499.99", "ready"), ("500", "ready"), ("500.01", "ready"), ("1000", "ready"), ("1000.01", "ready"), ("2000", "ready"), ("2999.99", "ready"), ("3000", "ready"), ("3000.01", "normalization_required")):
+        for amount, expected in (("149.99", "shortfall"), ("150", "ready"), ("499.99", "ready"), ("500", "ready"), ("500.01", "ready"), ("1000", "ready"), ("1000.01", "ready"), ("2000", "ready"), ("4999.99", "ready"), ("5000", "ready"), ("5000.01", "normalization_required")):
             with self.subTest(amount=amount):
                 balance.return_value = (amount, amount)
                 self.assertEqual(adapter.capital_precheck(self.user, Mock(), activity_snapshot=empty)["status"], expected)

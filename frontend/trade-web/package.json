@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "test": "node tests/run-analysis-tests.mjs",
-    "build": "tsc -b && vite build --base=/market/",
+    "build": "tsc -b && vite build --base=./",
     "preview": "vite preview"
   },
   "dependencies": {

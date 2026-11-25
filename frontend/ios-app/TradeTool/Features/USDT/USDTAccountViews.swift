@@ -386,7 +386,7 @@ struct USDTStopLossView: View {
             HStack {
               Text("单笔止损金额").font(.system(size: 14)).foregroundStyle(WebTheme.secondary)
               Spacer()
-              Text("50～200 USDT").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+              Text("50～300 USDT").font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
             }
             VStack(alignment: .leading, spacing: 4) {
               HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -399,20 +399,20 @@ struct USDTStopLossView: View {
             }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(
               WebTheme.input, in: RoundedRectangle(cornerRadius: 14))
             Slider(value: Binding(get: { NSDecimalNumber(decimal: amount).doubleValue },
-              set: { amount = Decimal(Int($0.rounded())) }), in: 50...200, step: 1)
+              set: { amount = Decimal(Int($0.rounded())) }), in: 50...300, step: 1)
               .tint(WebTheme.brand).disabled(loading)
               .accessibilityLabel("单笔止损金额").accessibilityValue("\(money(target)) USDT")
               .accessibilityIdentifier("stop-loss.amount-slider")
             HStack {
               Text("50 USDT")
               Spacer()
-              Text("200 USDT")
+              Text("300 USDT")
             }.font(.system(size: 12)).foregroundStyle(WebTheme.muted)
             Text("当前止损额：\(money(value["current_amount"]?.decimal ?? 0)) USDT")
               .font(.system(size: 12)).foregroundStyle(WebTheme.secondary)
           }
           VStack(alignment: .leading, spacing: 8) {
-            Text("1. 止损金额固定在 50～200 USDT 之间设置")
+            Text("1. 止损金额固定在 50～300 USDT 之间设置")
             Text("2. 设置金额不根据账户余额计算，也不随余额变动")
             Text("3. 确认后止损额立即生效（测试阶段暂不启用调高冷却）")
           }.font(.system(size: 12)).foregroundStyle(WebTheme.muted).lineSpacing(4)
@@ -464,7 +464,7 @@ struct USDTStopLossView: View {
         withTransaction(transaction) {
           value = response
           let current = value["current_amount"]?.decimal ?? 0
-          amount = min(200, max(50, current))
+          amount = min(300, max(50, current))
           loading = false
         }
       } catch { notice = error.localizedDescription; loading = false }

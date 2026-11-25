@@ -8,12 +8,12 @@ from api_bindings.services import get_user_binance_credentials
 from common.binance import BinanceApiError, BinanceFuturesClient, get_usdt_total_equity
 
 MIN_STOP_LOSS_AMOUNT = Decimal("50")
-MAX_STOP_LOSS_AMOUNT = Decimal("200")
+MAX_STOP_LOSS_AMOUNT = Decimal("300")
 
 
 def validate_stop_loss_amount(amount: Decimal) -> Decimal:
     if not amount.is_finite() or not MIN_STOP_LOSS_AMOUNT <= amount <= MAX_STOP_LOSS_AMOUNT:
-        raise ValueError("止损金额须在 50～200 USDT 之间")
+        raise ValueError("止损金额须在 50～300 USDT 之间")
     return amount
 
 

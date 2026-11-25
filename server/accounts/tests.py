@@ -224,11 +224,11 @@ class AccountInfoTests(APITestCase):
 
     @patch("accounts.views.get_user_trade_balance", return_value=Decimal("1000"))
     def test_increasing_stop_loss_takes_effect_immediately_during_testing(self, _mock_balance):
-        resp = self.client.post("/v1/account/stop-loss", {"amount": "200"}, format="json")
+        resp = self.client.post("/v1/account/stop-loss", {"amount": "300"}, format="json")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data["message"], "止损金额已立即生效")
         self.user.refresh_from_db()
-        self.assertEqual(self.user.stop_loss_amount, Decimal("200"))
+        self.assertEqual(self.user.stop_loss_amount, Decimal("300"))
         self.assertIsNone(self.user.pending_stop_loss_amount)
         self.assertIsNone(self.user.pending_stop_loss_effective_at)
 

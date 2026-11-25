@@ -17,7 +17,7 @@ class FixedStopLossTests(APITestCase):
         response = self.client.get("/v1/account/stop-loss")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Decimal(response.data["data"]["current_amount"]), Decimal("120"))
-        for amount in ("50", "127.25", "200"):
+        for amount in ("50", "127.25", "300"):
             with self.subTest(amount=amount):
                 response = self.client.post("/v1/account/stop-loss", {"amount": amount}, format="json")
                 self.assertEqual(response.status_code, 200, response.data)
@@ -26,7 +26,7 @@ class FixedStopLossTests(APITestCase):
         balance.assert_not_called()
 
     def test_outside_fixed_range_and_percentage_inputs_are_rejected(self):
-        for payload in ({"amount": "49.99"}, {"amount": "200.01"}, {"amount": "NaN"}, {"percentage": 10}):
+        for payload in ({"amount": "49.99"}, {"amount": "300.01"}, {"amount": "NaN"}, {"percentage": 10}):
             with self.subTest(payload=payload):
                 response = self.client.post("/v1/account/stop-loss", payload, format="json")
                 self.assertEqual(response.status_code, 400)

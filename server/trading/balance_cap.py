@@ -40,7 +40,7 @@ from users.models import User
 
 logger = logging.getLogger(__name__)
 
-FUTURES_RETENTION_CAP = Decimal("3000")
+FUTURES_RETENTION_CAP = Decimal("5000")
 REFILL_TRIGGER_MULTIPLIER = Decimal("1.5")
 DUST_AMOUNT = Decimal("0.01")
 # 低于该值的钱包余额视为已清空：不参与规划、不尝试划转（币安对小额划转有最小限额，

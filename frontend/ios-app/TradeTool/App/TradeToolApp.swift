@@ -693,20 +693,20 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
         let refill = ProcessInfo.processInfo.arguments.contains("--fixture-capital-refill")
         let emptyWallet = ProcessInfo.processInfo.arguments.contains("--fixture-capital-empty")
         let atLimit = ProcessInfo.processInfo.arguments.contains("--fixture-capital-limit")
-        let futures = Decimal(emptyWallet || atLimit ? 3000 : refill ? 1000 : 3200)
+        let futures = Decimal(emptyWallet || atLimit ? 5000 : refill ? 1000 : 5200)
         let funding = emptyWallet ? Decimal(string: "0.99")! : Decimal(string: "1288.5")!
         let spot = emptyWallet ? Decimal.zero : Decimal(680)
-        let futuresCollect = max(futures - 3000, 0)
+        let futuresCollect = max(futures - 5000, 0)
         let fundingCollect = funding >= 1 ? funding : 0
-        let fundingRefill = min(max(3000 - futures, 0), fundingCollect)
-        let spotRefill = min(max(3000 - futures, 0), spot)
+        let fundingRefill = min(max(5000 - futures, 0), fundingCollect)
+        let spotRefill = min(max(5000 - futures, 0), spot)
         let amount = action == "to_spot" ? futuresCollect + fundingCollect
           : action == "transfer" ? spot : action == "funding_to_futures" ? fundingRefill : spotRefill
         func decimalText(_ amount: Decimal) -> JSONValue { .string(NSDecimalNumber(decimal: amount).stringValue) }
         value = .object([
           "operation": .string(action), "status": .string(amount == 0 ? "ready" : "normalization_required"),
           "plan_token": .string("visual-wallet-read-only"), "futures_balance": decimalText(futures),
-          "maximum_futures_balance": .string("3000"), "spot_available": decimalText(spot),
+          "maximum_futures_balance": .string("5000"), "spot_available": decimalText(spot),
           "funding_available": decimalText(funding), "operation_amount": decimalText(amount),
           "futures_collect": decimalText(action == "to_spot" ? futuresCollect : 0),
           "funding_collect": decimalText(action == "to_spot" ? fundingCollect : 0),
@@ -1167,7 +1167,7 @@ private struct ChartCalibrationFixtureAPIClient: APIClient {
           "total_balance": null,
           "current_amount": "10",
           "minimum_amount": "50",
-          "maximum_amount": "200",
+          "maximum_amount": "300",
           "pending_amount": null
         },
         "/v1/trade/capital/remind": {

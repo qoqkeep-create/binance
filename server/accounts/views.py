@@ -111,13 +111,13 @@ def _single_line_log_value(value) -> str:
 
 class StopLossUpdateSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
-        max_digits=20, decimal_places=2, min_value=Decimal("50"), max_value=Decimal("200"),
-        error_messages={"min_value": "止损金额须在 50～200 USDT 之间", "max_value": "止损金额须在 50～200 USDT 之间"},
+        max_digits=20, decimal_places=2, min_value=Decimal("50"), max_value=Decimal("300"),
+        error_messages={"min_value": "止损金额须在 50～300 USDT 之间", "max_value": "止损金额须在 50～300 USDT 之间"},
     )
 
     def to_internal_value(self, data):
         if isinstance(data, dict) and "percentage" in data:
-            raise serializers.ValidationError({"amount": ["止损设置已改为固定金额，请更新客户端并提交 50～200 USDT 的 amount"]})
+            raise serializers.ValidationError({"amount": ["止损设置已改为固定金额，请更新客户端并提交 50～300 USDT 的 amount"]})
         return super().to_internal_value(data)
 
 

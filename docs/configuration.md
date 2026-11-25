@@ -11,7 +11,7 @@
 
 ## Web 前端（2026-11-25）
 
-`frontend/trade-web/` 默认使用同源 `/api` 与 `/ws`。Vite 开发服务器将这两个前缀代理到本机 Django `127.0.0.1:8000`；生产静态页面使用 `/market/`，运行时会从页面路径自动识别 `/integrated/market/` 并请求 `/integrated/api`、`/integrated/ws/v1`。如需显式覆盖，可设置 `VITE_API_BASE_URL`（API 根）和 `VITE_WS_URL`（完整 WSS 地址）。Web 不配置 Binance 浏览器直连地址，行情由 `market_stream` 提供。
+`frontend/trade-web/` 默认使用同源 `/api` 与 `/ws`。Vite 开发服务器将这两个前缀代理到本机 Django `127.0.0.1:8000`；生产静态页面发布到 `/integrated/market/`，构建使用相对资源路径，运行时会自动请求 `/integrated/api`、`/integrated/ws/v1`。如需显式覆盖，可设置 `VITE_API_BASE_URL`（API 根）和 `VITE_WS_URL`（完整 WSS 地址）。Web 不配置 Binance 浏览器直连地址，行情由 `market_stream` 提供。
 
 ## 关键参数
 

@@ -105,7 +105,7 @@ export struct AccountFormPage {
   }
   private stopTarget(): string { try { return new Decimal(this.stopAmount).fixed(2); } catch (_) { return '--'; } }
   private updateStop(): void {
-    if (!/^\d+(\.\d{1,2})?$/.test(this.stopAmount) || new Decimal(this.stopAmount).compare(new Decimal('50')) < 0 || new Decimal(this.stopAmount).compare(new Decimal('200')) > 0) { this.message = '请输入50至200 USDT之间的金额，最多两位小数'; return; }
+    if (!/^\d+(\.\d{1,2})?$/.test(this.stopAmount) || new Decimal(this.stopAmount).compare(new Decimal('50')) < 0 || new Decimal(this.stopAmount).compare(new Decimal('300')) > 0) { this.message = '请输入50至300 USDT之间的金额，最多两位小数'; return; }
     const payload = DataValue.object({ amount: this.stopAmount });
     confirmAction('调整止损金额', '固定止损金额：' + this.stopTarget() + ' USDT，确认后立即生效，不根据账户余额计算。', async () => { await this.write('/v1/account/stop-loss', payload); });
   }
@@ -145,7 +145,7 @@ export struct AccountFormPage {
               Metric({ label: '生效时间', value: dateText(this.data.value('pending_effective_at')) })
               ActionButton({ label: '取消待生效调整', secondary: true, interactive: !this.busy, action: () => { confirmAction('取消调整', '确认取消尚未生效的止损金额调整？', async () => { await this.write('/v1/account/stop-loss/cancel', DataValue.object()); }); } })
             }
-            Field({ label: '固定止损金额（50～200 USDT）', value: $stopAmount, numeric: true })
+            Field({ label: '固定止损金额（50～300 USDT）', value: $stopAmount, numeric: true })
             Metric({ label: '预计止损金额', value: this.stopTarget() + ' USDT', color: GOLD })
             ActionButton({ label: '确认调整', interactive: !this.busy && this.stopTarget() !== '--', action: () => this.updateStop() })
           }

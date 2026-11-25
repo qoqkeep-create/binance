@@ -14,4 +14,5 @@ Run locally with an ASGI Django server on port 8000, then run `npm install` and
 the integrated API.
 
 `npm test` runs deterministic analysis, preference, and request lifecycle tests;
-`npm run build` creates the static bundle.
+`npm run build` creates a static bundle with relative asset paths so it can be
+served below `/integrated/market/`.
