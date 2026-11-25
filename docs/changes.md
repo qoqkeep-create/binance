@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-26：Web TradingView 日线切换错误修复
+
+定位到 TradingView legacy embed 的日线参数限制。`interval: "D"` 同时携带 `range: "1y"` 会触发图表错误弹窗，移除日线的 `range` 后由 TradingView 使用原生历史窗口。对照页面中 `D/1y` 与 `1D/1y` 均复现错误，省略 `range` 的 `D` 与 `1D` 均正常显示主图、MACD 和 StochRSI。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
+静态 release **`trade-web-20261126-tv-daily-range-6fdd457`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希与本地构建一致，健康检查通过。
+
 ## 2026-11-26：Web TradingView 原生附图默认加载修复
 
 定位到 legacy embed 在对象形式的 MA Ribbon／Supertrend study 后，使用字符串别名声明 MACD 和 StochRSI 时会丢弃两个附图。两个 pane study 已改为完整对象描述并固定 `overlay: false`，TradingView 默认加载 MACD 和 Stoch RSI。对照探针中字符串配置不显示附图，对象配置同时显示两个附图；Web `npm test`、`npm run build` 和 `git diff --check` 通过。

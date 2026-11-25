@@ -1,5 +1,9 @@
 # 开发与验证
 
+## Web TradingView 日线切换错误修复（2026-11-26）
+
+legacy embed 对日线 `interval: "D"` 不接受同时存在的 `range` 参数。原实现把页面偏好的 `timeFrame: "1y"` 直接传成 `range: "1y"`，因此每次切换 1D 都打开 TradingView 错误弹窗。现在日线省略 `range`，分钟和小时周期继续传递页面时间范围。`tests/tradingViewWidget.test.mjs` 锁定该配置，D／1D 对照探针验证无 `range` 时正常加载。
+
 ## Web TradingView 原生附图默认加载修复（2026-11-26）
 
 legacy embed 对 `studies` 的混合解析是本次缺失附图的根因。对象形式的 MA Ribbon／Supertrend 后面，字符串形式的 `STD;MACD` 和 `StochasticRSI@tv-basicstudies` 会被忽略；改成 `{ id, overlay: false, inputs: {} }` 后，两个 TradingView 原生 pane 均稳定出现。`tests/tradingViewWidget.test.mjs` 锁定对象描述，双图对照探针覆盖字符串／对象差异。
