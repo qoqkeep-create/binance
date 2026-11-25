@@ -2,7 +2,7 @@
 
 ## Web TradingView 原生附图与首次挂载修复（2026-11-26）
 
-TradingView 主图现在同时创建 `MACD@tv-basicstudies` 和 `StochasticRSI@tv-basicstudies`，移除页面自建 SVG 附图。右下角增加图表设置入口，提供 TradingView 图表重新连接操作。图表主背景使用 Web 暗色画布 `#0c0d0f`，并保留页面自建六周期栏。
+TradingView 主图现在使用一个 `STD;MA%Ribbon` study 聚合 EMA 21／55／144，并使用 `STD;Supertrend`、`STD;MACD` 和 `StochasticRSI@tv-basicstudies` 显示主图与两个原生附图。页面不再渲染自建设置按钮，右下角保留 TradingView iframe 自带的官方设置齿轮。图表主背景使用 Web 暗色画布 `#0c0d0f`，并保留页面自建六周期栏。
 
 首次加载弹窗的原因是账号设置完成时，图表先使用旧的 `options` 挂载，随后又按云端周期和时间范围重建。`TradingViewWidget` 现在等待 `options` 与当前偏好同步后才创建 iframe，避免中断正在连接的第一次 TradingView 会话。`tests/tradingViewWidget.test.mjs` 覆盖偏好同步门槛、原生 MACD／StochRSI 和 TradingView-only 主图。
 
@@ -14,7 +14,7 @@ TradingView 主图现在同时创建 `MACD@tv-basicstudies` 和 `StochasticRSI@t
 
 ## Web 周期栏、EMA 配色与附图联动（2026-11-26）
 
-`TradingViewWidget` 隐藏 TradingView 顶部工具栏并提供页面自建六周期按钮，周期值同步现有账户 `chart` preference。`CompactIndicatorStrip` 提供 MACD／StochRSI 自建附图、拖拽／键盘高度调整和 stage 横向十字线联动。官方 Web Component 对 MA Ribbon study 不接受 plot color overrides，当前保留 TradingView 默认 EMA 配色；若必须指定三色，需要引入具备 `studies_overrides` 的授权 Charting Library。`tests/indicatorLayout.test.mjs` 覆盖附图高度交互契约，原有 TradingView-only 和指标回归继续保留。
+`TradingViewWidget` 隐藏 TradingView 顶部工具栏并提供页面自建六周期按钮，周期值同步现有账户 `chart` preference。MACD 和 Stoch RSI 由 TradingView 原生 pane 管理，附图设置、隐藏、删除和高度拖拽均使用其官方入口。公共 legacy widget 不接受 MA Ribbon 的初始 plot 颜色覆盖，因此保留 TradingView 官方默认配色；EMA 颜色若必须固定为指定三色，需要具备 `studies_overrides` 的授权 Charting Library。`tests/indicatorLayout.test.mjs` 保留历史附图高度契约，当前生产组件不再挂载 `CompactIndicatorStrip`。
 
 ## Web TradingView-only K 线修复（2026-11-26，历史版本）
 

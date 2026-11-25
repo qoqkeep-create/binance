@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, RefreshCw, Settings } from "lucide-react";
+import { ArrowUpRight, RefreshCw } from "lucide-react";
 import { useAccount, usePreference } from "./AccountProvider";
 
 // Serve TradingView's official legacy loader from the integrated static
@@ -29,24 +29,30 @@ function validChartPreference(value: unknown): value is ChartPreference {
   return typeof chart.interval === "string" && /^(?:[1-9][0-9]{0,4}[SMHDW]?|[DWM])$/.test(chart.interval)
     && (chart.timeFrame === undefined || /^(?:all|[1-9][0-9]{0,3}[smhdwMyY])$/.test(chart.timeFrame));
 }
+// Keep all default studies in TradingView. MA Ribbon is a single study with
+// the three requested EMA lengths, so the chart does not create three separate
+// indicator entries. The legacy embed accepts the standard-study IDs below,
+// including the native MACD and Stoch RSI panes.
 const studies = [
   {
-    id: "MAExp@tv-basicstudies",
-    inputs: { length: 21 },
+    id: "STD;MA%Ribbon",
+    overlay: true,
+    inputs: {
+      in_1: "EMA",
+      in_3: 21,
+      in_5: "EMA",
+      in_7: 55,
+      in_9: "EMA",
+      in_11: 144,
+      in_12: false,
+    },
   },
   {
-    id: "MAExp@tv-basicstudies",
-    inputs: { length: 55 },
+    id: "STD;Supertrend",
+    overlay: true,
+    inputs: { in_0: 10, in_1: 6 },
   },
-  {
-    id: "MAExp@tv-basicstudies",
-    inputs: { length: 144 },
-  },
-  {
-    id: "Supertrend@tv-basicstudies",
-    inputs: { atrLength: 10, multiplier: 6 },
-  },
-  "MACD@tv-basicstudies",
+  "STD;MACD",
   "StochasticRSI@tv-basicstudies",
 ];
 
@@ -99,7 +105,6 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
   const { hydrating } = useAccount();
   const [preference, setPreference] = usePreference("chart", defaultChartPreference, validChartPreference);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [options, setOptions] = useState<ChartOptions>({ interval: initialInterval, attempt: 0 });
   const [status, setStatus] = useState<ChartStatus>("loading");
   const selectedInterval = canonicalInterval(preference.interval);
@@ -198,15 +203,6 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
           </div>
         )}
         <div ref={containerRef} className="tradingview-widget tradingview-widget-container" />
-        <div className="chart-settings">
-          <button className="chart-settings-trigger" type="button" aria-label="图表设置" aria-expanded={settingsOpen} title="图表设置" onClick={() => setSettingsOpen((open) => !open)}>
-            <Settings size={14} aria-hidden="true" />
-          </button>
-          {settingsOpen && <div className="chart-settings-menu" role="menu">
-            <button type="button" role="menuitem" onClick={() => { setSettingsOpen(false); reloadChart(); }}>重新连接图表</button>
-            <span role="status">TradingView 指标</span>
-          </div>}
-        </div>
       </div>
     </>
   );

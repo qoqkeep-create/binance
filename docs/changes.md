@@ -2,7 +2,7 @@
 
 ## 2026-11-26：Web TradingView 原生附图与首次挂载修复
 
-MACD／StochRSI 恢复为 TradingView 原生 studies，移除页面自建附图渲染。K 线区域右下角增加图表设置按钮，TradingView 背景使用 Web 暗色画布。首次创建 iframe 前等待周期偏好和时间范围同步，避免账号设置回填造成第一次图表连接被中断。
+TradingView 主图使用一个 MA Ribbon study 聚合 EMA 21／55／144，并预置 Supertrend、MACD 和 StochRSI 原生 studies。移除页面自建设置按钮和自建附图渲染，K 线区域保留 TradingView 官方右下角设置齿轮，背景使用 Web 暗色画布。首次创建 iframe 前等待周期偏好和时间范围同步，避免账号设置回填造成第一次图表连接被中断。
 
 Web `npm test`、`npm run build` 和 `git diff --check` 通过。
 
