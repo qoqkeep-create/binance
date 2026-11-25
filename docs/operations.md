@@ -2,9 +2,9 @@
 
 ## Web TradingView 原生附图与首次加载修复（2026-11-26，北京时间）
 
-本次 Web 静态包将 EMA 21／55／144 聚合到 TradingView MA Ribbon，并预置 Supertrend、MACD 和 StochRSI 原生 studies。页面不再覆盖设置入口，主图右下角保留 TradingView 官方设置齿轮，背景使用 Web 暗色画布。首次挂载增加偏好同步门槛，避免 TradingView iframe 在账号设置回填期间被重复卸载而出现“重新连接”弹窗。
+本次 Web 静态包将 EMA 21／55／144 聚合到 TradingView MA Ribbon，并预置 Supertrend、MACD 和 StochRSI 原生 studies。针对附图默认缺失，MACD／StochRSI 改为 legacy embed 可稳定解析的对象描述并固定为独立 pane。页面不再覆盖设置入口，主图右下角保留 TradingView 官方设置齿轮，背景使用 Web 暗色画布。首次挂载增加偏好同步门槛，避免 TradingView iframe 在账号设置回填期间被重复卸载而出现“重新连接”弹窗。
 
-静态 release **`trade-web-20261126-tv-official-settings-8945830`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。线上 HTML、JS/CSS、本站 loader 和 `/integrated/v1/health` 已复核，静态产物哈希与本地构建一致；未认证页面可打开登录页，登录后由 TradingView iframe 显示主图与原生 studies。
+静态 release **`trade-web-20261126-tv-native-panes-634e2db`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。线上 HTML、JS/CSS、本站 loader 和 `/integrated/v1/health` 已复核，静态产物哈希与本地构建一致。
 
 ## Web TradingView legacy iframe 修复发布（2026-11-26，北京时间）
 

@@ -1,5 +1,10 @@
 # 开发与验证
 
+## Web TradingView 原生附图默认加载修复（2026-11-26）
+
+legacy embed 对 `studies` 的混合解析是本次缺失附图的根因。对象形式的 MA Ribbon／Supertrend 后面，字符串形式的 `STD;MACD` 和 `StochasticRSI@tv-basicstudies` 会被忽略；改成 `{ id, overlay: false, inputs: {} }` 后，两个 TradingView 原生 pane 均稳定出现。`tests/tradingViewWidget.test.mjs` 锁定对象描述，双图对照探针覆盖字符串／对象差异。
+
+## Web TradingView 原生附图与首次挂载修复（2026-11-26）
 ## Web TradingView 原生附图与首次挂载修复（2026-11-26）
 
 TradingView 主图现在使用一个 `STD;MA%Ribbon` study 聚合 EMA 21／55／144，并使用 `STD;Supertrend`、`STD;MACD` 和 `StochasticRSI@tv-basicstudies` 显示主图与两个原生附图。页面不再渲染自建设置按钮，右下角保留 TradingView iframe 自带的官方设置齿轮。图表主背景使用 Web 暗色画布 `#0c0d0f`，并保留页面自建六周期栏。

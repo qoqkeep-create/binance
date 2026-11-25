@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-26：Web TradingView 原生附图默认加载修复
+
+定位到 legacy embed 在对象形式的 MA Ribbon／Supertrend study 后，使用字符串别名声明 MACD 和 StochRSI 时会丢弃两个附图。两个 pane study 已改为完整对象描述并固定 `overlay: false`，TradingView 默认加载 MACD 和 Stoch RSI。对照探针中字符串配置不显示附图，对象配置同时显示两个附图；Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
+静态 release **`trade-web-20261126-tv-native-panes-634e2db`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源与本地构建哈希一致，健康检查通过。
+
 ## 2026-11-26：Web TradingView 原生附图与首次挂载修复
 
 TradingView 主图使用一个 MA Ribbon study 聚合 EMA 21／55／144，并预置 Supertrend、MACD 和 StochRSI 原生 studies。移除页面自建设置按钮和自建附图渲染，K 线区域保留 TradingView 官方右下角设置齿轮，背景使用 Web 暗色画布。首次创建 iframe 前等待周期偏好和时间范围同步，避免账号设置回填造成第一次图表连接被中断。
