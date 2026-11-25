@@ -2,9 +2,9 @@
 
 ## 2026-11-26：Web TradingView 加载链路恢复为 legacy iframe
 
-原始 `trade-web` 使用 `https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js`，整合版后来改成 `widgets.tradingview-widget.com` Web Component。后者新增 module loader 和自定义元素初始化链路，当前浏览器网络下更容易在 TradingView 内部显示 `Something went wrong`。现恢复原始 legacy iframe，主图继续使用 TradingView，页面自建周期栏、底部附图和现有后端数据对接保持不变。
+原始 `trade-web` 使用 TradingView legacy iframe，整合版后来改成 `widgets.tradingview-widget.com` Web Component。后者新增 module loader 和自定义元素初始化链路，当前浏览器网络下更容易在 TradingView 内部显示 `Something went wrong`。现将官方 legacy loader 原样放入本站静态包，由本站加载并生成 TradingView 官方 iframe，主图继续使用 TradingView，页面自建周期栏、底部附图和现有后端数据对接保持不变。
 
-本地 Web `npm test`、`npm run build` 和 `git diff --check` 通过。线上静态 release 已切换到 **47.80.22.243（首尔服务器）**，TradingView 仍受访问者网络到 `s3.tradingview.com` 的连通性影响。
+本地 Web `npm test`、`npm run build` 和 `git diff --check` 通过。最小浏览器探针已生成 TradingView iframe、Binance BTCUSDT 15 分钟 K 线、EMA 21／55／144 和画线工具。线上静态 release 已切换到 **47.80.22.243（首尔服务器）**，TradingView iframe 仍要求访问者浏览器允许 `www.tradingview-widget.com`。
 
 ## 2026-11-26：Web 自建周期栏与附图交互
 

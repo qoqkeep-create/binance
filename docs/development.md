@@ -2,9 +2,9 @@
 
 ## Web TradingView legacy iframe 加载修复（2026-11-26）
 
-原始 `trade-web` 使用 TradingView 官方 legacy Advanced Chart iframe。整合版曾改用 `widgets.tradingview-widget.com` 的 Web Component，增加了模块加载和自定义元素初始化链路，当前浏览器网络下会在图表内部显示 `Something went wrong`。现恢复 `https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js`，主图仍完全由 TradingView 绘制，页面自建周期栏和自建 MACD／StochRSI 不变。切换周期或交易对时只重建一个官方 iframe，不再重建 Web Component 和外部 module loader。
+原始 `trade-web` 使用 TradingView 官方 legacy Advanced Chart iframe。整合版曾改用 `widgets.tradingview-widget.com` 的 Web Component，增加了模块加载和自定义元素初始化链路，当前浏览器网络下会在图表内部显示 `Something went wrong`。现将 TradingView 官方 legacy loader 原样放入 `public/vendor/tradingview-advanced-chart.js`，由本站加载后继续生成 TradingView 官方 iframe，页面自建周期栏和自建 MACD／StochRSI 不变。切换周期或交易对时只重建一个官方 iframe，不再重建 Web Component 和外部 module loader。
 
-`tests/tradingViewWidget.test.mjs` 锁定 legacy embed 地址、TradingView-only 主图和 21／55／144 EMA 输入。Web `npm test` 和 `npm run build` 已通过。TradingView 外部资源仍依赖访问者浏览器到 `s3.tradingview.com` 的网络连通性，网络本身被拦截时页面会显示重试入口。
+`tests/tradingViewWidget.test.mjs` 锁定本站 loader、官方容器 class、TradingView-only 主图和 21／55／144 EMA 输入。Web `npm test` 和 `npm run build` 已通过。图表 iframe 仍连接 TradingView 官方域名，浏览器需要允许 `www.tradingview-widget.com`。
 
 ## Web 周期栏、EMA 配色与附图联动（2026-11-26）
 

@@ -2,9 +2,9 @@
 
 ## Web TradingView legacy iframe 修复发布（2026-11-26，北京时间）
 
-原始 Web 版本使用 TradingView 官方 legacy Advanced Chart iframe。整合版在最近一次图表恢复中切换到 `widgets.tradingview-widget.com` Web Component，浏览器需要额外加载 module loader 和内部嵌入页，部分网络会在图表内部返回 `Something went wrong`。本次将主图恢复为 `https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js`，保留自建六周期栏、底部 MACD／StochRSI 和 TradingView 画线能力。后端、行情接口、账号体系和交易逻辑未改。
+原始 Web 版本使用 TradingView 官方 legacy Advanced Chart iframe。整合版在最近一次图表恢复中切换到 `widgets.tradingview-widget.com` Web Component，浏览器需要额外加载 module loader 和内部嵌入页，部分网络会在图表内部返回 `Something went wrong`。本次将官方 legacy loader 原样随静态包提供，由本站加载并继续连接 TradingView 官方 iframe，保留自建六周期栏、底部 MACD／StochRSI 和 TradingView 画线能力。后端、行情接口、账号体系和交易逻辑未改。
 
-静态 release **`trade-web-20261126-tv-legacy`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。公网页面、JS/CSS 资源和 `/integrated/v1/health` 已复核，浏览器是否能显示图表仍取决于访问者到 TradingView `s3.tradingview.com` 的网络连通性。
+静态 release **`trade-web-20261126-tv-selfhost`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。公网页面、JS/CSS 资源、本站 loader 和 `/integrated/v1/health` 已复核，浏览器需要允许 TradingView iframe 域名 `www.tradingview-widget.com`。
 
 ## Web 图表控件与附图联动发布（2026-11-26，北京时间）
 

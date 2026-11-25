@@ -5,10 +5,10 @@ import { ArrowUpRight, RefreshCw } from "lucide-react";
 import { useAccount, usePreference } from "./AccountProvider";
 import CompactIndicatorStrip from "./CompactIndicatorStrip";
 
-// The legacy Advanced Chart embed is the path used by the original web
-// terminal. It injects one iframe and avoids the extra module loader used by
-// the newer Web Component bundle.
-const widgetScript = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+// Serve TradingView's official legacy loader from the integrated static
+// package. The loader still creates an iframe on TradingView's official host,
+// while the browser no longer needs to fetch the bootstrap script from s3.
+const widgetScript = "vendor/tradingview-advanced-chart.js";
 const initialInterval = "15";
 interface ChartPreference { interval: string; timeFrame?: string }
 const defaultChartPreference: ChartPreference = { interval: initialInterval, timeFrame: "2d" };
@@ -209,7 +209,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, onSymbolCh
             <a href={chartUrl} target="_blank" rel="noreferrer">在 TradingView 打开 <ArrowUpRight size={13} aria-hidden="true" /></a>
           </div>
         )}
-        <div ref={containerRef} className="tradingview-widget" />
+        <div ref={containerRef} className="tradingview-widget tradingview-widget-container" />
         <CompactIndicatorStrip symbol={symbol} interval={selectedInterval} onHeightChange={setIndicatorHeight} crosshairTime={crosshairTime} crosshairRatio={crosshairRatio} onCrosshairTimeChange={setCrosshairTime} />
       </div>
     </>
