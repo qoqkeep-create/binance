@@ -28,6 +28,9 @@ if (!source.includes('{ id: "STD;MACD", overlay: false, inputs: {} }') || !sourc
 if (!source.includes('backgroundColor: "#0c0d0f"') || !source.includes("hide_top_toolbar: true")) {
   throw new Error("TradingView chart must keep the Web dark background and native settings controls");
 }
+if (!source.includes('...(interval === "D" ? {} : { range: timeFrame || "2d" })')) {
+  throw new Error("TradingView daily charts must omit the incompatible range parameter");
+}
 if (source.includes("chart-settings") || source.includes("图表设置")) {
   throw new Error("Chart settings must remain TradingView-owned");
 }

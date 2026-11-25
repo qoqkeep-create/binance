@@ -76,11 +76,10 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
   script.type = "text/javascript";
   script.async = true;
   script.src = attempt ? `${widgetScript}?retry=${attempt}` : widgetScript;
-  script.text = JSON.stringify({
+  const chartConfig = {
     autosize: true,
     symbol: perpetualSymbol(symbol),
     interval,
-    range: timeFrame || (interval === "D" ? "1y" : "2d"),
     timezone: "Asia/Shanghai",
     theme: "dark",
     style: "1",
@@ -100,7 +99,11 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
     support_host: "https://www.tradingview.com",
     backgroundColor: "#0c0d0f",
     gridColor: "rgba(161, 165, 174, 0.08)",
-  });
+    // The legacy embed rejects a daily interval when range is also supplied.
+    // Daily charts use TradingView's native default history window.
+    ...(interval === "D" ? {} : { range: timeFrame || "2d" }),
+  };
+  script.text = JSON.stringify(chartConfig);
   return script;
 }
 
