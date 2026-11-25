@@ -14,8 +14,8 @@ from market_stream.models import MarketCandle, MarketSymbol
 log = logging.getLogger(__name__)
 FIELD_MAP = dict(zip(PRICE_FIELDS, ("open_price", "high_price", "low_price", "close_price", "volume", "quote_volume")))
 RETENTION_DAYS = {"1m": 7, "3m": 7, "5m": 14, "15m": 30, "30m": 60, "1h": 90, "2h": 120,
-                  "4h": 180, "8h": 365, "16h": 730, "1d": 365, "3d": 2190, "1w": 3650}
-HOURLY_AGGREGATED_INTERVALS = {"2h", "8h", "16h", "3d", "1w"}
+                  "4h": 180, "8h": 365, "12h": 730, "16h": 730, "1d": 365, "3d": 2190, "1w": 3650}
+HOURLY_AGGREGATED_INTERVALS = {"2h", "8h", "12h", "16h", "3d", "1w"}
 # Every HTTP page is capped at 1500. Older history has a separate boundary key;
 # materializing 3000 here only doubled cold reads and cache serialization work.
 HOT_WINDOW_SIZE = {interval: 1500 for interval in INTERVAL_MS}

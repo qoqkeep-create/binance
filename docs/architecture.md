@@ -15,6 +15,7 @@
 | Redis | 热数据、PubSub、账户 lease、请求预算和心跳 |
 | MySQL | 项目内独立 MySQL 8.4 服务、命名卷、`tradetools_integrated` schema 和受限用户 |
 | iOS | SwiftUI 页面、Metal 图表、Keychain 会话、HTTP 与 WSS |
+| Web | `frontend/trade-web` React/Vite 终端；页面保持来源项目布局，使用 Django JWT、`/api/market/*`、`/api/web/settings` 和 `/ws/v1` |
 | HarmonyOS | 独立 ArkTS／ArkUI 工程、Canvas、Asset Store、同一 HTTP／WSS；已编译未签名 HAP，签名／真机待验 |
 
 六个 Compose 服务及资源约束见 [整合 Compose](../compose.integrated.yaml)，均使用项目默认网络；MySQL / Redis 不发布宿主端口。47.80.22.243（首尔服务器）的宿主 Nginx 仅代理整合前缀，旧 Java 环境已退役，运行结构与迁移验证见 [运维](operations.md)。
@@ -29,6 +30,7 @@
 | `trading` / `positions` | 开仓请求、保护、策略、成交、对账和结算 |
 | `market_stream` | 整合行情存储、聚合、采集、持久化后台补全任务与 WSS；历史 HTTP 只读本地快照，见 [行情](market-data.md) |
 | `mobile` | 原生协议适配、命令、账户事件和用户隔离 |
+| `web` | Web 页面偏好（OneToOne、版本号和乐观并发），不保存交易或行情状态 |
 | `market_analysis` | 既有内部趋势扫描 |
 | `common` | Binance REST、共享预算、加密、健康及告警 |
 

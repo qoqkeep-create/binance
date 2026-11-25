@@ -1,6 +1,6 @@
 # TradeTools-Binance-iOS
 
-独立维护的 Python / Django 后端与 SwiftUI / Metal 原生 iOS 工程，另含共用后端的鸿蒙客户端。iOS 显示名称为 **Binance Tools**，导航为行情、持仓、信号、我的；带单模式隐藏信号。品牌与认证见 [说明](docs/ios-authentication.md)。
+独立维护的 Python / Django 后端、React/Vite Web 前端、SwiftUI / Metal 原生 iOS 工程，另含共用后端的鸿蒙客户端。iOS 显示名称为 **Binance Tools**，导航为行情、持仓、信号、我的；带单模式隐藏信号。品牌与认证见 [说明](docs/ios-authentication.md)。
 
 本机项目根目录为 `/Users/apple/work/TradeTools-Binance-iOS`，与原 USDT 项目 `TradeTools-Binance`、原 USDC 项目 `tradetools-usdc` 并列。源码、构建和部署配置均在本工程内，原项目只用于历史查询。
 
@@ -11,6 +11,7 @@ TradeTools-Binance-iOS/
 ├── README.md                     # 项目入口
 ├── server/                       # Django HTTP / WSS、交易、资金、行情与调度
 ├── frontend/
+│   ├── trade-web/                # React/Vite Web 终端，复用 Django 账号与行情
 │   ├── ios-app/                  # SwiftUI / Metal、Widget、Xcode 工程与测试
 │   └── harmony-app/              # ArkTS / ArkUI 鸿蒙客户端与测试
 ├── deploy/integrated/            # 镜像、配置模板、初始化与发布

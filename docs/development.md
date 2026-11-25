@@ -1,5 +1,9 @@
 # 开发与验证
 
+## Web 前端整合回归（2026-11-25，本地）
+
+`frontend/trade-web/` 使用 Node 依赖安装后执行 `npm test` 和 `npm run build`；确定性测试覆盖指标、快照、偏好合并和网络重试，构建使用 Vite `/market/` base。Django 侧执行 `DEBUG=True DB_ENGINE=sqlite3 .venv/bin/python manage.py check`、`makemigrations --check`，并定向运行 `web`、`market_stream.test_fast_path.BrowserWebSocketAuthTests`、`mobile.tests.MobileAuthTests`。结果均通过；测试使用 SQLite／替身，没有部署、真实账户交易或资金动作。
+
 ## 信号提醒清理核对（2026-11-25）
 
 生产数据清理使用 **47.80.22.243（首尔服务器）** 的 Django ORM 事务和独立信号表备份完成；没有改动交易、仓位、资金或风险提醒表。清理前后计数、备份 gzip 校验和容器／health 复核记录见[运维](operations.md#信号提醒数据清理2026-11-25)与[变更](changes.md#2026-11-25清理现有信号提醒数据)。

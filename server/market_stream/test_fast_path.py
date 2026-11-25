@@ -25,6 +25,40 @@ def candle(at=0, *, closed=False):
     return {**row, "closed": closed, "eventTime": at + 1000}
 
 
+class BrowserWebSocketAuthTests(SimpleTestCase):
+    def test_bearer_subprotocol_extracts_jwt_without_accepting_arbitrary_protocols(self):
+        from market_stream.websocket import _browser_subprotocol, _subprotocol_token
+
+        token = "header.payload.signature"
+        headers = {b"sec-websocket-protocol": f"chat, bearer.{token}".encode("ascii")}
+        self.assertEqual(_browser_subprotocol(headers), f"bearer.{token}")
+        self.assertEqual(_subprotocol_token(headers), token)
+        self.assertIsNone(_browser_subprotocol({b"sec-websocket-protocol": b"bearer.bad"}))
+
+    @patch("market_stream.websocket.close_old_connections")
+    @patch("market_stream.websocket.JWTAuthentication")
+    def test_authenticate_converts_valid_bearer_subprotocol_to_jwt_header(self, auth_class, _close):
+        from market_stream.websocket import authenticate
+
+        token = "header.payload.signature"
+        auth = auth_class.return_value
+        auth.get_raw_token.return_value = token.encode("ascii")
+        auth.get_validated_token.return_value = {"exp": 123}
+        auth.get_user.return_value = SimpleNamespace(pk=7)
+        result = authenticate({b"sec-websocket-protocol": f"bearer.{token}".encode("ascii")})
+        self.assertEqual(result, ("7", 123))
+        auth.get_raw_token.assert_called_once_with(f"Bearer {token}".encode("ascii"))
+
+    @patch("market_stream.websocket.close_old_connections")
+    @patch("market_stream.websocket.JWTAuthentication")
+    def test_authenticate_rejects_malformed_bearer_subprotocol(self, auth_class, _close):
+        from market_stream.websocket import authenticate
+
+        auth_class.return_value.get_raw_token.return_value = None
+        with self.assertRaises(ValueError):
+            authenticate({b"sec-websocket-protocol": b"bearer.not-a-jwt"})
+
+
 class LiveFastPathTests(SimpleTestCase):
     def setUp(self):
         cache.clear()

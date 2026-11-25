@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "mobile",
     "experiences",
     "plans",
+    "web",
 ]
 
 MIDDLEWARE = [

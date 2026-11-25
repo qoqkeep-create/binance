@@ -9,7 +9,8 @@ from users.views import LoginView, RegisterView, RefreshAccessTokenView, LogoutV
 
 
 def user_payload(user):
-    return {"id": str(user.pk), "email": user.email, "displayName": user.email.split("@")[0],
+    return {"id": str(user.pk), "email": user.email, "username": user.email.split("@", 1)[0],
+            "displayName": user.email.split("@", 1)[0], "role": "user",
             "canViewReferenceNotifications": False, "isAdmin": user.is_admin}
 
 

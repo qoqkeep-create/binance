@@ -2,6 +2,10 @@
 
 整合环境使用 Python 采集和推送，SwiftUI / Metal 显示。接口和当前性能样本见 [整合说明](INTEGRATION.md)。
 
+## Web 行情接入（2026-11-25，本地）
+
+`frontend/trade-web` 与 iOS 并列使用 `market_stream` 的 `/api/market/tickers|symbols|klines` 和 `/ws/v1`，不在浏览器直连 Binance。Web K 线保留 `items` 的毫秒时间和字符串／数字字段映射，分析助手的 `12h` 周期已加入后端共享周期目录；WSS 浏览器鉴权使用 `bearer.<JWT>` subprotocol，token 不进入请求 URL。Web 只做本地构建与替身测试，尚未部署静态产物或做实机／线上验收。
+
 ## 持仓浮盈与开仓标签（2026-11-22，本地验证）
 
 本轮复现两条消失路径：同账户 `USDTChartPositionsModel.monitor` 重启／取消时会清空已知持仓，前台重读较慢时线条随之缺失；原浮盈文字绑定开仓价，开仓价离开纵向视口时，浮盈框也被一起裁掉。另将非数组返回视为读取失败，避免 `null`／对象通过 `.rows` 静默变成已确认空仓。

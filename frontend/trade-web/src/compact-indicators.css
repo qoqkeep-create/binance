@@ -1,0 +1,43 @@
+.compact-indicator-strip {
+  --compact-indicators-height: 108px;
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--compact-indicators-height);
+  border-top: 1px solid var(--line);
+  background: var(--bg-deep);
+  color: var(--muted);
+}
+
+.compact-indicator-graphics {
+  display: grid;
+  grid-template-rows: repeat(2, 1fr);
+  height: 100%;
+}
+
+.compact-indicator-pane {
+  position: relative;
+  min-height: 0;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.compact-indicator-pane:last-child { border-bottom: 0; }
+.compact-indicator-pane svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.compact-indicator-caption { position: absolute; z-index: 1; top: 2px; left: 10px; display: flex; align-items: baseline; gap: 7px; pointer-events: none; font: 8px var(--font-ui); }
+.compact-indicator-caption strong { color: var(--text); font-weight: 500; letter-spacing: .02em; }
+.compact-indicator-caption span { color: var(--muted); font-size: 8px; }
+.compact-indicator-placeholder { display: grid; place-items: center; height: 100%; color: var(--muted-dark); font: 9px var(--font-ui); }
+.compact-zero-line, .compact-threshold-line { stroke: var(--line-bright); stroke-width: .65; stroke-dasharray: 2 3; opacity: .75; }
+.compact-threshold-line { opacity: .45; }
+.compact-bar-up { fill: var(--green); fill-opacity: .78; }
+.compact-bar-down { fill: var(--red); fill-opacity: .78; }
+.compact-macd-line { fill: none; stroke: var(--accent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.compact-signal-line { fill: none; stroke: var(--text); stroke-opacity: .62; stroke-width: .8; stroke-linecap: round; stroke-linejoin: round; }
+.compact-k-line { fill: none; stroke: var(--green); stroke-width: 1.15; stroke-linecap: round; stroke-linejoin: round; }
+.compact-d-line { fill: none; stroke: var(--red); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.compact-axis-label { fill: var(--muted-dark); font: 7px var(--font-ui); }
+
+:root[data-theme="light"] .compact-indicator-strip { background: var(--bg-elevated); }

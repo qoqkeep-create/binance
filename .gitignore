@@ -24,6 +24,10 @@ __pycache__/
 *.py[cod]
 server/db.sqlite3
 
+# Web build output and local dependencies
+node_modules/
+frontend/trade-web/dist/
+
 # Xcode
 DerivedData/
 .build/

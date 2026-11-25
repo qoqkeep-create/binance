@@ -10,6 +10,7 @@
 | [品牌与认证](ios-authentication.md) | Binance Tools 名称与图标、USDC 认证布局、底部弹窗及已有接口 |
 | [持仓浮窗](ios-floating-positions.md) | 外部多持仓画中画与 ActivityKit live 卡片，刷新、账户隔离及真机待验范围 |
 | [鸿蒙客户端](harmony-client.md) | 原生源码、签名安装、前三批复刻与 Mate 80 验证、功能差异 |
+| [Web 前端整合设计](plans/2026-11-25-web-frontend-integration-design.md) | `frontend/trade-web` 与 Django 账号、行情和 WSS 的整合边界 |
 | [鸿蒙复刻计划](plans/2026-11-03-harmony-ios-parity.md) | 当前 iOS 源码依据、七批执行顺序与剩余验收 |
 | [开发验证](development.md) | 后端、Xcode、测试与回归范围 |
 | [配置](configuration.md) | 整合环境的配置入口和关键参数 |

@@ -6,7 +6,7 @@ class MarketCoreTests(SimpleTestCase):
     def test_chart_interval_catalog_accepts_all_alternate_periods(self):
         from market_stream.core import INTERVAL_MS
         from market_stream.websocket import validate_subscription
-        for interval in ("30m", "2h", "8h", "16h", "3d", "1w"):
+        for interval in ("30m", "2h", "8h", "12h", "16h", "3d", "1w"):
             with self.subTest(interval=interval):
                 self.assertIn(interval, INTERVAL_MS)
                 channel, filters = validate_subscription({"channel": "market.history", "filters": {"intervals": [interval]}})

@@ -49,6 +49,14 @@ def authenticate(headers):
     close_old_connections()
     try:
         header = headers.get(b"authorization", b"").decode()
+        # Browser WebSocket constructors cannot set Authorization headers.  The
+        # Web client therefore sends a short-lived JWT as a bearer subprotocol
+        # (``bearer.<jwt>``); unlike a query parameter it does not put the token
+        # in the request URL. Native clients continue using the header.
+        if not header:
+            token = _subprotocol_token(headers)
+            if token:
+                header = f"Bearer {token}"
         authenticator = JWTAuthentication()
         token = authenticator.get_raw_token(header.encode())
         if token is None:
@@ -58,6 +66,26 @@ def authenticate(headers):
         return str(user.pk), int(validated["exp"])
     finally:
         close_old_connections()
+
+
+def _browser_subprotocol(headers):
+    """Return the complete browser bearer subprotocol, if valid."""
+    raw = headers.get(b"sec-websocket-protocol", b"")
+    try:
+        protocols = raw.decode("ascii").split(",")
+    except (UnicodeDecodeError, AttributeError):
+        return None
+    for protocol in protocols:
+        protocol = protocol.strip()
+        match = re.fullmatch(r"bearer\.([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)", protocol)
+        if match:
+            return protocol
+    return None
+
+
+def _subprotocol_token(headers):
+    protocol = _browser_subprotocol(headers)
+    return protocol.split(".", 1)[1] if protocol else None
 
 
 def message(kind, **fields):
@@ -102,7 +130,9 @@ async def application(scope, receive, send):
         return
     await receive()
     headers = dict(scope.get("headers", []))
+    protocol = None
     try:
+        protocol = _browser_subprotocol(headers)
         user_id, expires = await sync_to_async(authenticate, thread_sensitive=False)(headers)
         mode = headers.get(b"x-trading-mode", b"ordinary").decode()
         if mode not in {"ordinary", "lead"}:
@@ -112,7 +142,10 @@ async def application(scope, receive, send):
         await asyncio.to_thread(record_close, "authentication_rejected")
         await send({"type": "websocket.close", "code": 4401})
         return
-    await send({"type": "websocket.accept"})
+    accept = {"type": "websocket.accept"}
+    if protocol:
+        accept["subprotocol"] = protocol
+    await send(accept)
     outgoing = asyncio.Queue(maxsize=OUTGOING_CAPACITY)
     subscriptions = {}
     member = None

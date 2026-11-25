@@ -1,18 +1,18 @@
 # 原项目来源与历史查询
 
-2026-10-31 按用户要求，当前目录仅保留整合实现，删除原项目的参考代码、旧 Web、旧部署和历史文档副本。原始目录继续只读，后续查历史直接使用以下路径。
+2026-10-31 按用户要求，当前目录仅保留整合实现，删除原项目的参考代码、旧部署和历史文档副本。2026-11-25 起，Web 来源 `/Users/apple/work/trade-web` 只读，当前副本位于 `frontend/trade-web/`；来源 Flask 服务不作为整合运行单元。原始目录继续只读，后续查历史直接使用以下路径。
 
 | 来源 | 本地原始目录 | 查询入口 |
 | --- | --- | --- |
 | USDT Python / Web | `/Users/apple/work/TradeTools-Binance` | `server/`、`tools/`、`docs/`、`deploy/` |
 | USDC Java / iOS | `/Users/apple/work/tradetools-usdc` | `backend/app-service/`、`frontend/ios-app/`、`docs/` |
-| 当前整合版 | `/Users/apple/work/TradeTools-Binance-iOS` | `server/`、`frontend/ios-app/`、`deploy/integrated/` |
+| 当前整合版 | `/Users/apple/work/TradeTools-Binance-iOS` | `server/`、`frontend/trade-web/`、`frontend/ios-app/`、`deploy/integrated/` |
 
 ## 清理边界
 
 整合版继续使用的 Python 业务模块、数据库迁移、原生行情 / Metal 图表、业务页面、共享模型及测试均保留。文件名中的 USDT 或测试数据中的 USDC 表示资产或协议来源，不能据此删除仍被使用的实现。
 
-已移除的参考副本包括 Java 后端、React Web、旧 Compose / Jenkins / Nginx / 运维、网络对比材料、历史方案，以及未接入整合导航的旧原生页面和旧 LAN Scheme。原生图表的当前维护说明保留在 [行情文档](market-data.md)，原设计历史从 USDC 来源目录查看。
+已移除的参考副本包括 Java 后端、旧 Compose / Jenkins / Nginx / 运维、网络对比材料、历史方案，以及未接入整合导航的旧原生页面和旧 LAN Scheme。当前 Web 源码已复制到 `frontend/trade-web/`，原生图表的当前维护说明保留在 [行情文档](market-data.md)，原设计历史从 USDC 来源目录查看。
 
 ## Git 查询
 

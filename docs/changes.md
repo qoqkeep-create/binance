@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-25：Web 前端与 Django 行情整合（本地）
+
+复制 `/Users/apple/work/trade-web` 到 `frontend/trade-web/`，保留现有 React/Vite 界面和指标逻辑；认证改用整合 Django 的 JWT access token、HttpOnly refresh cookie，页面偏好改用新增 `web.0001_initial` 的 `/api/web/settings`。行情列表、K 线和分析助手统一读取 `market_stream` 的 `/api/market/*`，实时数据使用 `/ws/v1` 的浏览器 subprotocol 鉴权；原 Flask SQLite 账户和浏览器直连 Binance 均不再作为运行路径。
+
+本地验证：Web `npm test`（5 组确定性测试）和 `npm run build` 通过；Django `check`、`makemigrations --check`、Web settings／浏览器 WSS 鉴权／移动认证定向测试通过。尚未部署 Web 静态产物、未进行 TestFlight、实机或真实交易／资金操作。
+
 ## 2026-11-25：手动前移止损保持交易所最新保护位
 
 修复对账只按本地旧 `current_stop_price` 精确匹配的问题：同方向、全仓的实时 `STOP_MARKET` 中，只要交易所触发价比本地止损更有利，就先采纳该价格和最新 algo ID，再进行完整性判断或重建；`initial_stop_price` 继续作为原始风险基准，更差的止损不会覆盖已有保护。多仓 90→95、空仓 110→105、旧 ID 换新 ID 及更差值不覆盖回归均通过，交易所替身未执行真实保护单。后端已随 **`integrated-quick-6156709`** 部署到 47.80.22.243（首尔服务器）。

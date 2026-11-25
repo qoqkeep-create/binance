@@ -13,9 +13,11 @@ Binance /private 用户流 -> Inbox -> 账户串行归并 / REST 对账 -> Outbo
 原独立 APScheduler -------------------------------------> 原订单保护和维护
 ```
 
+Web 终端与 iOS 并列放在 `frontend/trade-web/`。它不启动来源项目的 Flask 服务，使用现有 Django 用户和 `market_stream`：页面认证调用 `/api/auth/*`，偏好调用 `/api/web/settings`，行情快照调用 `/api/market/tickers|symbols|klines`，实时 ticker／K 线订阅 `/ws/v1`。浏览器 WebSocket 以 `bearer.<JWT>` subprotocol 完成鉴权，路径按 `/market/` 或 `/integrated/market/` 自动解析；原 Binance REST/WSS 不在浏览器运行。
+
 Python 保留原交易业务、Decimal 精度、账户模式、绑定代际、原保护及结算口径。Java 的优势转为独立采集进程、账户事件流、持久化命令、账户串行执行和有界推送；运行时不再启动另一套 Java 交易引擎。
 
-行情覆盖当前报价资产的全部正在交易永续合约，默认 USDT。`1m` 连续 K 线每组最多 80 个订阅；live 事件唤醒即时发布、ticker 与收线存储独立；收线 upsert，完整源桶聚合高周期，缺源线不会伪造完整桶。iOS 同时订阅 1m 与目标周期，沿用原 Metal 图表的分钟合成及历史分页逻辑。本地已扩展至 13 种周期，含自定义 16h 与周一对齐的 1w，新增六种按需补全、未扩大启动预热范围；本批尚未部署，边界及具体周期见 [行情](market-data.md#快捷周期与自动价格视窗2026-11-03)。
+行情覆盖当前报价资产的全部正在交易永续合约，默认 USDT。`1m` 连续 K 线每组最多 80 个订阅；live 事件唤醒即时发布、ticker 与收线存储独立；收线 upsert，完整源桶聚合高周期，缺源线不会伪造完整桶。iOS 同时订阅 1m 与目标周期，沿用原 Metal 图表的分钟合成及历史分页逻辑。本地已扩展至 14 种周期，含 12h、16h 与周一对齐的 1w，新增周期按需补全、未扩大启动预热范围；边界及具体周期见 [行情](market-data.md#快捷周期与自动价格视窗2026-11-03)。
 
 2026-11-01 改动将历史 HTTP 与外部补线解耦：先返回数据库／共享热窗口快照，由持久化任务在后台补齐全部周期的尾部、内部缺口和保留窗口。启动／定时预热，使用上市边界和本地分钟部分桶；统计由独立的 6 个 worker 并发缓存。客户端行情先连接，账户资料后刷新；已有数据即展示，补全以就绪通知／订阅确认触发重读，保留 15 秒校对。迁移、兼容和验证边界见 [行情与图表](market-data.md#后台自动补全与首屏读取)。相关改动已纳入 GitHub 源码交付；后端于本日部署至 47.80.22.243（首尔服务器）的 `integrated-20261101-74b8e5d-wss`，手机首屏速度待用户验收，见 [运维](operations.md)。
 
@@ -33,6 +35,7 @@ Python 保留原交易业务、Decimal 精度、账户模式、绑定代际、�
 | `/api/market/tickers`、`/popular`、`/search` | 列表、热门和搜索 |
 | `/api/market/klines` | `symbol/interval/limit/beforeOpenTime/tradingData`；与原 Swift 模型兼容 |
 | `/api/market/watchlist/defaults` | 默认自选；用户编辑由原客户端保存 |
+| `/api/web/settings` | Web 页面偏好，按 iOS 用户隔离并以版本号处理并发写入 |
 | `/api/push/devices/register`、`/unregister` | 当前登录用户安装的 APNs token 注册／停用 |
 | `/api/commands`、`/api/commands/<UUID>` | 带幂等键提交、当前用户/模式查询 |
 | `GET /v1/trade/order/list` | 普通限价与 Maker 的统一只读委托列表，保留终态；`page`／`page_size`（默认 20、最大 100），返回 `items` 与 `pagination`；2026-11-11 已部署到 47.80.22.243（首尔服务器），客户端需新包 |

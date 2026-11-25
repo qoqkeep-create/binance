@@ -5,6 +5,7 @@ from common.health import deep_health
 
 urlpatterns = [
     path("api/", include("mobile.urls")),
+    path("api/web/", include("web.urls")),
     path("admin/", admin.site.urls),
     path("v1/health", deep_health),
     path("v1/auth/", include("users.urls")),
