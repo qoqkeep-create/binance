@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-26：Web TradingView 图表边界与周期栏修复
+
+图表工作区现在使用独立的最小高度和溢出裁剪，TradingView iframe 的底部范围固定在全局状态栏之上，官方设置齿轮和 MACD 底部控件不会被信息栏覆盖。页面自建周期栏的文字调整为 13px，按钮点击区域同步放大。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
+静态 release **`trade-web-20261126-chart-boundary-7139de3`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希与本地构建一致，健康检查通过。
+
 ## 2026-11-26：Web TradingView 日线切换错误修复
 
 定位到 TradingView legacy embed 的日线参数限制。`interval: "D"` 同时携带 `range: "1y"` 会触发图表错误弹窗，移除日线的 `range` 后由 TradingView 使用原生历史窗口。对照页面中 `D/1y` 与 `1D/1y` 均复现错误，省略 `range` 的 `D` 与 `1D` 均正常显示主图、MACD 和 StochRSI。Web `npm test`、`npm run build` 和 `git diff --check` 通过。

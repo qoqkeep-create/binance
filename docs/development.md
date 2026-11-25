@@ -1,5 +1,9 @@
 # 开发与验证
 
+## Web TradingView 图表边界与周期栏修复（2026-11-26）
+
+全局状态栏与图表工作区使用独立的 flex 边界。`workspace`、`chart-workspace` 和 `tradingview-stage` 均限制溢出，stage 使用 `height: 0` 加 flex 剩余空间计算，确保 TradingView iframe 的底边停在状态栏上方。周期栏按钮调整为 13px，最小宽度 46px、高度 31px。契约测试锁定状态栏层级、stage 高度和周期字号。
+
 ## Web TradingView 日线切换错误修复（2026-11-26）
 
 legacy embed 对日线 `interval: "D"` 不接受同时存在的 `range` 参数。原实现把页面偏好的 `timeFrame: "1y"` 直接传成 `range: "1y"`，因此每次切换 1D 都打开 TradingView 错误弹窗。现在日线省略 `range`，分钟和小时周期继续传递页面时间范围。`tests/tradingViewWidget.test.mjs` 锁定该配置，D／1D 对照探针验证无 `range` 时正常加载。
