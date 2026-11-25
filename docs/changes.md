@@ -1,5 +1,11 @@
 # 变更与验收记录
 
+## 2026-11-26：Web K 线区域跟随深浅色主题
+
+TradingView 官方 iframe 继续使用 `theme: "dark"`／`theme: "light"`，外层 K 线 stage、周期栏、图表容器和 iframe 占位区新增统一的主题表面色变量，白色模式不再留下深色 K 线背景。主题变化会重建官方 iframe，确保图表内部背景和页面主题同步。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
+静态 release **`trade-web-20261126-theme-35f7715`** 已部署到 **47.80.22.243（首尔服务器）**，线上 HTML、JS、CSS、TradingView loader 和健康接口均返回 200。浅色 TradingView 探针实际显示主图、MACD 和 StochRSI，未执行真实交易或资金操作。
+
 ## 2026-11-26：Web TradingView 底部控件与图表展开入口修复
 
 TradingView iframe 底部增加 24px 控件留白，MACD 底部操作和官方设置齿轮保持在图表工作区内。原右上角盘面速览展开按钮移动到周期栏最右侧，继续使用原有展开／收起状态。Web `npm test`、`npm run build` 和 `git diff --check` 通过。

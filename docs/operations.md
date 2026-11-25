@@ -1,5 +1,11 @@
 # 整合环境部署与运维
 
+## Web TradingView 深浅色主题同步发布（2026-11-26，北京时间）
+
+Web 页面主题现在同时驱动 TradingView 官方 iframe 和外层 K 线工作区。浅色模式使用 Web 的 `#eef0f3` 图表表面色，深色模式使用 `#0c0d0f`，周期栏、iframe 占位区和图表容器共享同一主题表面色。主题切换会按 TradingView 官方 `theme` 参数重新创建图表，主图、MACD、StochRSI、官方设置入口和画线能力保持原有链路。
+
+静态 release **`trade-web-20261126-theme-35f7715`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。线上页面、JS/CSS、本站 TradingView loader 均返回 200，线上资源 SHA-256 与本地构建一致，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。
+
 ## Web TradingView 原生附图与首次加载修复（2026-11-26，北京时间）
 
 本次 Web 静态包将 EMA 21／55／144 聚合到 TradingView MA Ribbon，并预置 Supertrend、MACD 和 StochRSI 原生 studies。针对附图默认缺失，MACD／StochRSI 改为 legacy embed 可稳定解析的对象描述并固定为独立 pane。针对 1D 切换错误，日线配置省略与 `interval: "D"` 冲突的 `range` 参数。图表工作区边界固定在全局状态栏上方，官方设置齿轮和 MACD 底部控件保留 24px 安全区，盘面速览展开入口移动到周期栏最右侧，顶部周期栏文字放大。页面不再覆盖设置入口，主图右下角保留 TradingView 官方设置齿轮，背景使用 Web 暗色画布。首次挂载增加偏好同步门槛，避免 TradingView iframe 在账号设置回填期间被重复卸载而出现“重新连接”弹窗。

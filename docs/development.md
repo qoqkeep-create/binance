@@ -1,5 +1,17 @@
 # 开发与验证
 
+## Web K 线区域跟随深浅色主题（2026-11-26）
+
+`TerminalApp` 将页面主题传给 `TradingViewWidget`。官方 iframe 使用对应的 `theme`、`backgroundColor` 和 `gridColor`，图表 stage 通过 `data-chart-theme` 和 `--chart-surface` 同步外层周期栏、容器和占位区。主题变化会触发一次官方 iframe 重建，避免 TradingView 内部仍保留旧主题。
+
+验证结果如下。
+
+- Web `npm test` 通过，包含主题参数、外层主题表面色和官方设置 featureset 契约。
+- Web `npm run build` 通过，产物只包含页面、JS/CSS 和 TradingView 官方 loader。
+- `git diff --check` 通过。
+- 浅色 TradingView 浏览器探针实际渲染主图、MACD 和 StochRSI，外层周期栏与状态栏保持浅色。
+- 线上页面、资源和 `/integrated/v1/health` 已在 **47.80.22.243（首尔服务器）** 验收通过。线上浏览器已打开登录页，未使用真实账号提交登录或交易操作。
+
 ## Web TradingView 底部控件与图表展开入口修复（2026-11-26）
 
 TradingView iframe 使用 `--chart-bottom-clearance: 24px` 保留底部控件区，MACD 的底部操作和官方设置入口不会贴近或进入全局状态栏。盘面速览展开按钮由 `TerminalApp` 作为 `insightToggle` 传入 `TradingViewWidget`，渲染在周期栏最右侧，状态和无障碍标签沿用原实现。
