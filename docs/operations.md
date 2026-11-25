@@ -1,8 +1,24 @@
 # 整合环境部署与运维
 
+## Web TradingView legacy iframe 修复发布（2026-11-26，北京时间）
+
+原始 Web 版本使用 TradingView 官方 legacy Advanced Chart iframe。整合版在最近一次图表恢复中切换到 `widgets.tradingview-widget.com` Web Component，浏览器需要额外加载 module loader 和内部嵌入页，部分网络会在图表内部返回 `Something went wrong`。本次将主图恢复为 `https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js`，保留自建六周期栏、底部 MACD／StochRSI 和 TradingView 画线能力。后端、行情接口、账号体系和交易逻辑未改。
+
+静态 release **`trade-web-20261126-tv-legacy`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。公网页面、JS/CSS 资源和 `/integrated/v1/health` 已复核，浏览器是否能显示图表仍取决于访问者到 TradingView `s3.tradingview.com` 的网络连通性。
+
+## Web 图表控件与附图联动发布（2026-11-26，北京时间）
+
+Web 主图继续使用 TradingView；页面顶部周期栏改为自建并提供 `3m / 5m / 15m / 1h / 4h / 1D`，TradingView 自带顶部工具栏隐藏。底部自建 MACD／StochRSI 支持正柱实心绿、负柱空心紫、快线绿、慢线紫及附图总高度拖拽调整；主图 stage 与两个附图共享横向十字线索引。官方 Web Component 不接受 EMA study 的 plot color override，因此本轮保留 TradingView 默认 EMA 配色，不注入自建主图线。静态 release **`trade-web-20261126-chart-controls-safe`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`；后端容器和 Nginx 配置未切换。
+
+## Web TradingView-only K 线修复发布（2026-11-26，北京时间，历史版本）
+
+该版本使用 TradingView Web Component。它已由上方 legacy iframe 修复替代，自建 SVG K 线及其回退逻辑仍已从 Web 源码和静态产物移除。
+
+静态 release **`trade-web-20261126-tv-widget`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，旧的 `trade-web-20261126-kline-fix` 保留为可回退目录但不再是 active 版本；后端容器和 Nginx 配置未切换。公网 `/integrated/market/`、深层路径、JS/CSS 均返回 200。Chrome 线上验收确认 `BINANCE:XAUTUSDT.P` 的 15m TradingView 蜡烛图、EMA ribbon、Supertrend、画线工具和底部指标条均已显示。
+
 ## Web K 线回退修复发布（2026-11-26，北京时间）
 
-线上发现外部 TradingView widget 在部分网络下长期停留在“正在连接”，主图黑屏但行情 API 正常。Web 前端已增加整合 `/api/market/klines` 的本地 K 线 SVG 回退，外部 widget 未在 5 秒内就绪时自动切换。静态 release `trade-web-20261126-kline-fix` 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`；后端和 Nginx 未重新切换。用户刷新线上页面后即可使用本地 K 线。
+（中间版本，已由上方 TradingView-only 发布替代。）线上发现外部 TradingView widget 在部分网络下长期停留在“正在连接”，曾临时发布 `trade-web-20261126-kline-fix` 提供本地 SVG 回退；该回退版本不再作为线上 active 版本。
 
 ## Web 与同源后端完整发布（2026-11-26，北京时间）
 

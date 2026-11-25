@@ -1,8 +1,22 @@
 # 变更与验收记录
 
+## 2026-11-26：Web TradingView 加载链路恢复为 legacy iframe
+
+原始 `trade-web` 使用 `https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js`，整合版后来改成 `widgets.tradingview-widget.com` Web Component。后者新增 module loader 和自定义元素初始化链路，当前浏览器网络下更容易在 TradingView 内部显示 `Something went wrong`。现恢复原始 legacy iframe，主图继续使用 TradingView，页面自建周期栏、底部附图和现有后端数据对接保持不变。
+
+本地 Web `npm test`、`npm run build` 和 `git diff --check` 通过。线上静态 release 已切换到 **47.80.22.243（首尔服务器）**，TradingView 仍受访问者网络到 `s3.tradingview.com` 的连通性影响。
+
+## 2026-11-26：Web 自建周期栏与附图交互
+
+顶部周期信息改为页面自建控件，支持 `3m / 5m / 15m / 1h / 4h / 1D`，主 K 线仍由 TradingView 绘制。自建 MACD 使用绿色快线、紫色慢线、正柱实心绿和负柱空心紫；StochRSI K／D 线为绿／紫。两个附图总高度可拖拽或用键盘上下箭头调整并持久化，主图 stage 与附图共享横向十字线索引。已验证官方 Web Component 不接受 MA Ribbon plot color override，故没有用自建主图线冒充 EMA；EMA 三色需求保留为后续 Charting Library 能力项。新增周期、附图高度和 TradingView-only 契约测试；Web `npm test`、`npm run build`、`git diff --check` 通过。
+
+## 2026-11-26：Web K 线恢复为官方 TradingView（历史版本）
+
+该版本使用 TradingView Web Component，已由上方 legacy iframe 修复替代。自建 SVG K 线回退仍已移除。
+
 ## 2026-11-26：Web K 线加载回退修复
 
-线上部分网络无法加载 TradingView widget，导致主图一直黑屏。`TradingViewWidget` 现在从整合 K 线接口加载本地 SVG 蜡烛图，外部 widget 超时或失败时自动回退，Compact MACD/StochRSI 继续使用整合 K 线。前端 `npm test`、`npm run build` 通过，静态 release `trade-web-20261126-kline-fix` 已发布到 47.80.22.243（首尔服务器）。
+（中间版本，已由上方 TradingView-only 修复替代。）曾临时增加本地 SVG 回退；现已从源码和线上 active 静态包移除。
 
 ## 2026-11-26：Web 首次线上发布
 

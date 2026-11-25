@@ -1,8 +1,22 @@
 # 开发与验证
 
+## Web TradingView legacy iframe 加载修复（2026-11-26）
+
+原始 `trade-web` 使用 TradingView 官方 legacy Advanced Chart iframe。整合版曾改用 `widgets.tradingview-widget.com` 的 Web Component，增加了模块加载和自定义元素初始化链路，当前浏览器网络下会在图表内部显示 `Something went wrong`。现恢复 `https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js`，主图仍完全由 TradingView 绘制，页面自建周期栏和自建 MACD／StochRSI 不变。切换周期或交易对时只重建一个官方 iframe，不再重建 Web Component 和外部 module loader。
+
+`tests/tradingViewWidget.test.mjs` 锁定 legacy embed 地址、TradingView-only 主图和 21／55／144 EMA 输入。Web `npm test` 和 `npm run build` 已通过。TradingView 外部资源仍依赖访问者浏览器到 `s3.tradingview.com` 的网络连通性，网络本身被拦截时页面会显示重试入口。
+
+## Web 周期栏、EMA 配色与附图联动（2026-11-26）
+
+`TradingViewWidget` 隐藏 TradingView 顶部工具栏并提供页面自建六周期按钮，周期值同步现有账户 `chart` preference。`CompactIndicatorStrip` 提供 MACD／StochRSI 自建附图、拖拽／键盘高度调整和 stage 横向十字线联动。官方 Web Component 对 MA Ribbon study 不接受 plot color overrides，当前保留 TradingView 默认 EMA 配色；若必须指定三色，需要引入具备 `studies_overrides` 的授权 Charting Library。`tests/indicatorLayout.test.mjs` 覆盖附图高度交互契约，原有 TradingView-only 和指标回归继续保留。
+
+## Web TradingView-only K 线修复（2026-11-26，历史版本）
+
+该版本曾使用 TradingView Web Component `https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js`。它已由上方 legacy iframe 修复替代。自建 SVG 主图仍已删除。
+
 ## Web K 线回退（2026-11-26）
 
-线上浏览器复现 TradingView 外部 widget 长时间加载，行情列表和右侧 ticker 正常。Web 主图增加本地 K 线回退，使用 `/api/market/klines` 的同源数据渲染，外部脚本未就绪时不再阻塞主图；前端 `npm test` 和 `npm run build` 均通过。真实登录账号刷新页面后的 K 线交互仍由用户验收。
+（中间版本，已由上方 TradingView-only 修复替代。）曾用 `/api/market/klines` 渲染本地 SVG 回退；该实现已删除。
 
 ## 固定止损与资金上限调整（2026-11-25，本地）
 
