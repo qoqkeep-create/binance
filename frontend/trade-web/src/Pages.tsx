@@ -20,6 +20,15 @@ function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void 
   return <div className="pg-empty"><span>{message}</span><button type="button" onClick={onRetry}>重试</button></div>;
 }
 
+function TpLevels({ levels }: { levels: PositionStrategyLevel[] }) {
+  return <div className="pg-tp-levels">{levels.map((level, index) => <div key={index} className="pg-tp-level">
+    <span>L{index + 1}</span>
+    <strong>止盈 RR {level.profitRR}</strong>
+    <span>减仓 {level.reducePosition}%</span>
+    <span>{level.stopLossType === "none" ? "止损不动" : level.stopLossType === "fixedRR" ? `止损固定RR ${level.stopLossRR}` : `止损绝对RR ${level.stopLossAbsoluteRR}`}</span>
+  </div>)}</div>;
+}
+
 export function PositionsPage({ onOpenSymbol, prices }: { onOpenSymbol: (symbol: string) => void; prices: Record<string, number> }) {
   const [rows, setRows] = useState<PositionRow[]>([]);
   const [margin, setMargin] = useState<MarginInfo | null>(null);

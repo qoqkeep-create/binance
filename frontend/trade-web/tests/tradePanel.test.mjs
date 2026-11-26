@@ -25,6 +25,15 @@ const styles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.me
 if (!styles.includes(".trade-type-row button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
   throw new Error("Market/limit selection must use the same rounded green chip as auto/manual");
 }
+if (!pages.includes("pg-tp-module") || !pages.includes("自动止盈") || !pages.includes("TpLevels") || !pages.includes("strategy_config")) {
+  throw new Error("Position card must expose a 止盈 module with 自动止盈 button showing the bound strategy levels");
+}
+if (!pages.includes("marginOpen") || !styles.includes(".pg-card footer { justify-content: flex-end; }") || !styles.includes(".pg-close-btn { padding: 7px 14px; border: 0; border-radius: 6px; background: var(--green)")) {
+  throw new Error("Margin ratio needs a detail modal; 立即平仓 sits bottom-right in green");
+}
+if (!styles.includes(".nav-item.active .nav-pos-count { background: color-mix(in srgb, var(--text) 92%, transparent); color: var(--green); }")) {
+  throw new Error("Position count badge must invert when the nav item is selected");
+}
 for (const marker of ["strategy_id", "strategy_name", "strategy_config", "include_fee: true", "payload, attemptKeyRef.current)", "pollCommand(id)"]) {
   if (!panel.includes(marker)) throw new Error(`Open command payload/flow missing ${marker}`);
 }

@@ -473,3 +473,19 @@ html[data-theme="light"] .pg-confirm footer button.is-long { color: #ffffff; }
 .conn-diag-name { color: var(--text); }
 .conn-diag-detail { margin-left: auto; color: var(--muted); }
 .conn-diag-detail.bad { color: var(--red); }
+
+/* 持仓卡：止盈模块／平仓右下角绿色／保证金弹窗／导航计数反色 */
+.pg-tp-module { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.pg-tp-module > span { color: var(--muted-dark); font: 10px var(--font-ui); }
+.pg-tp-btn { padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--text); font: 600 12px var(--font-ui); }
+.pg-tp-btn.is-running { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); background: color-mix(in srgb, var(--green) 10%, transparent); }
+.pg-tp-name { color: var(--text); font: 600 12px var(--font-ui); }
+.pg-tp-levels { display: flex; flex-direction: column; gap: 6px; }
+.pg-tp-level { display: grid; grid-template-columns: 26px 1fr 1fr 1.2fr; gap: 6px; align-items: baseline; color: var(--muted); font: 11px var(--font-ui); }
+.pg-tp-level strong { color: var(--text); font-weight: 500; }
+.pg-card footer { justify-content: flex-end; }
+.pg-close-btn { padding: 7px 14px; border: 0; border-radius: 6px; background: var(--green); color: #06281c; font: 600 12px var(--font-ui); }
+.pg-close-btn:hover { background: color-mix(in srgb, var(--green) 88%, white); }
+html[data-theme="light"] .pg-close-btn { color: #ffffff; }
+.pg-margin { cursor: pointer; background: transparent; }
+.nav-item.active .nav-pos-count { background: color-mix(in srgb, var(--text) 92%, transparent); color: var(--green); }
