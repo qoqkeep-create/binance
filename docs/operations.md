@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓刷新手感／划转上限／开仓超限文案与 Web K 线交互发布（2026-11-26，北京时间）
+
+源码 **`918eb6c5a877a8a612c657f81a832c374ec9dd5c`** 已推送 `codex/integrated-ios` 并完整交付整合工作区（含并行会话的指标设置、Supertrend 填充带、自适应高度与 K 线合并模块）。后端经 `quick_deploy.py` 发布为 **`integrated-quick-918eb6c`**，目标 **47.80.22.243（首尔服务器）**，api／market／worker／scheduler 切换，health database／migrations／scheduler 全 true；本次仅文案与预检 message，无新增 migration，未做数据库备份（快速路径）。Web 静态 release **`trade-web-20261126-kline-ux-918eb6c`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，线上 `index.html`／JS／CSS SHA-256 与本地构建一致（JS `5174872f…`／CSS `b3e168f7…`），`/integrated/v1/health` 全 true；Nginx location snippet 不变、未 reload。旧 release 保留可回退。同一提交 Xcode Cloud `Archive - iOS`／`Test - iOS` 已触发（交付时 in_progress），TestFlight 分发与手机安装另行核验。iOS 模拟器 XCTest 执行受 CoreSimulator 环境故障阻塞，编译与 build-for-testing 通过；未执行真实交易、划转或保护单操作。
+
 ## Web K 线改用 lightweight-charts 自建（2026-11-26，北京时间）
 
 Web K 线区域改为 `lightweight-charts` v5 自绘，替换 TradingView 托管 iframe；产物不再依赖外部 `www.tradingview-widget.com` loader，副图固定 72px、首屏 32 根、切币单次加载。静态 release **`trade-web-20261126-lwcharts-8472ec8`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**；旧 `trade-web-20261126-tv-bar-density-ad2380a` 保留可回退。`nginx -t` 通过并 reload，后端容器与 Nginx 路由不切换（配套后端 `cce9a5d`／`16aca68` 已含在线上 `integrated-20261125-aff69f5`，无已推送未上线后端）。线上 `index.html`／JS／CSS SHA-256 与本地构建一致（`35a18bd2…`／`fb241891…`／`6987e88a…`），SPA 深层路径 200，`/integrated/v1/health` database／migrations／scheduler 全 true；线上登录页首屏渲染正常。实时尾根推送沿用既有 `/ws/v1`（需 ASGI 入口）；登录后真实账号图表由用户验收，未执行真实交易或资金操作。

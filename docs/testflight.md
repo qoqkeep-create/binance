@@ -1,5 +1,9 @@
 # 原生 iOS 的 TestFlight 发布与手机测试
 
+## 持仓刷新手感与资金提示（2026-11-26）
+
+提交 **`918eb6c5a877a8a612c657f81a832c374ec9dd5c`** 已推送 `codex/integrated-ios`，GitHub check-runs 确认自动触发 Xcode Cloud `Archive - iOS`／`Test - iOS`（交付时均 in_progress，尚无最终结论）。本包包含持仓下拉刷新 56 pt 短阈值／停留 0.2 s 回位、划转页"合约资金上限 5000 USDT"、开仓超限明确文案。本地 Debug 模拟器编译与 build-for-testing 通过；模拟器 XCTest 执行因 CoreSimulator 设备目录／testmanagerd 环境故障多次未能启动（与历史多轮一致），不代表代码断言失败，待环境可用重跑。准确 Build Number、TestFlight 处理／内部组分发与手机安装尚未核实；真机下拉手感需安装新包验收。后端与 Web 发布见 [运维](operations.md)。
+
 ## 固定资金、开仓反馈与网络恢复（2026-11-14）
 
 完整整合源码提交 **`31f0625c802797abc3f89661f5959e4c86eb203f`** 已推送 `codex/integrated-ios`，自动触发 [Xcode Cloud 运行](https://appstoreconnect.apple.com/teams/a1d39eb0-e706-4568-ae9b-edba97561247/apps/6829222305/ci/builds/e2cd8ccc-9196-4837-942f-af994350cbb4)。北京时间 **19:53** 的 GitHub 只读核对确认该提交的 [Test 成功](https://github.com/qoqkeep-create/binance/runs/132438483124)、[Archive 成功](https://github.com/qoqkeep-create/binance/runs/132437988258)；两项分别于 19:51:10、19:48:53 完成。
