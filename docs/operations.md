@@ -1,5 +1,17 @@
 # 整合环境部署与运维
 
+## 交易/账户对齐批次 Web 发布（2026-11-26，北京时间）
+
+源码 **`6841bd7`** 已推送。Web 静态 release **`trade-web-20261126-parity-6841bd7`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**，ba.wow211.com 与 IP 双入口），线上 index/JS/CSS SHA-256 与本地一致（`17c4263c…`／`02502497…`／`b61b7d3c…`），`nginx -t` 通过并 reload。含：WS 断线刷新会话（修旧 bundle token 过期导致的"连接中断"）＋ping/pong 延迟按 iOS 阈值显示；主导航加宽＋持仓绿点；交易/盘面图形切换按钮；交易面板市价/限价＋开仓设置 Maker＋去方向待定；账户页止盈止损策略 CRUD/启用＋API 绑定/解绑全流程。后端容器不切换。开仓/挂单/绑定等写操作仅用户确认后执行；本轮验收未触发真实交易。
+
+## 价格卡片三段式修正＋涨跌右置防溢出 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`3e1949b`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-pricecard2-3e1949b`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地单链构建一致（`17c4263c…`／`02502497…`／`b61b7d3c…`），ba.wow211.com 复核同哈希。按用户最新口径重排：上币种（BTC）→「当前价格」小标→价格数字行，**增减数值＋百分比竖排置于数字右侧**；替换并行会话的"币种左／价格右上"横排（该布局右列超出卡片）。防溢出：卡片改块级、行 flex baseline＋space-between、数字 nowrap＋min-width 0、涨跌列 flex:none＋nowrap；296/260/232px 卡宽压测 row scrollWidth==clientWidth 无溢出。契约测试改锁新布局（price-card-row/label，禁 price-card-right）。并发会话同期给 TradePanel 加限价单、反转切换按钮语义（标签显示目标态），tradePanel 断言随演进对齐（稳定幂等键／二次确认／UNKNOWN 不重发保留）。后端不切换，旧 release 保留可回退。
+
+## 工具栏按钮归位＋自动/手动圆角选中框 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`3e1949b`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-toolbar-3e1949b`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地单链构建一致（`99c03ceb…`／`bb2e19d5…`／`b6fa28d6…`），**ba.wow211.com 域名复核同哈希＋选中框标记在位**。① 「重置」移入图表工具栏、置于自动/手动左侧；「向右拓展 K 线」（insight-toggle）移到「指标」右侧；删除顶栏 chart-actions portal 容器与 actionsContainer prop。② 自动/手动选中态加圆角矩形框：1px 绿描边＋5px 圆角＋12% 绿底（基础态透明描边防漂移），保留绿字加粗。浏览器实测顺序 重置→自动/手动→指标→拓展、选中框 computed 正确、拓展按钮新位置收放面板正常（本地隔离库建验收户 qoder-verify 登录）。域名说明：本会话早前按用户要求接入 tt.wow211.com（block/证书/ALLOWED_HOSTS 均就绪），用户随后在并行会话改用 ba.wow211.com 并删除 tt 的 DNS 记录（现 NXDOMAIN）；服务器 tt/ba/IP 三 block 并存，tt 若恢复 A 记录即通。后端不切换，旧 release 保留可回退。
+
 ## 域名切换 ba.wow211.com 调通（2026-11-26，北京时间）
 
 用户改用 **ba.wow211.com**（DNS 已解析到 47.80.22.243）。原 nginx 仅有 tt/IP server block，ba 落到 IP 证书导致证书名不匹配无法访问。已：① 装 ba:80 block（acme webroot＋301 到 https）；② certbot webroot 签发 ba.wow211.com LE 证书；③ 装完整 ba:443 block（`deploy/integrated/nginx-domain.conf` 已改为 ba，安装为 sites-enabled/ba-wow211）；④ server.env `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS` 增加 ba（保留 tt/IP），按 quick_deploy 同参数重建 api/market/worker/scheduler 四容器（healthy）。核验：https://ba.wow211.com/ 308→/integrated/market/、market 200 且 `ssl_verify_result=0`、/integrated/v1/health 全 true。tt 与 IP 入口保留可用。cert-renew timer 覆盖 ba lineage 自动续期。
