@@ -55,11 +55,11 @@ assert(updated.length === 2 && updated[1].close === 13 && updated[1].high === 14
 const appended = mergeCandle(baseCandles, { time: 2700, open: 13, high: 15, low: 12, close: 14, volume: 1 });
 assert(appended.length === 3 && appended[2].time === 2700, "newer kline appends");
 assert(mergeCandle(baseCandles, { time: 0, open: 1, high: 1, low: 1, close: 1, volume: 1 }) === baseCandles, "older kline is ignored");
-const ticked = mergeTicker(baseCandles, 15);
+const ticked = mergeTicker(baseCandles, 15, 1800);
 assert(ticked[1].close === 15 && ticked[1].high === 15 && ticked[1].low === 10, "ticker lifts the last candle close/high");
-const tickedDown = mergeTicker(baseCandles, 8);
+const tickedDown = mergeTicker(baseCandles, 8, 1800);
 assert(tickedDown[1].close === 8 && tickedDown[1].low === 8 && tickedDown[1].high === 13, "ticker drops the last candle close/low");
-assert(mergeTicker(baseCandles, 0) === baseCandles && mergeTicker(baseCandles, NaN) === baseCandles, "invalid ticker price is ignored");
-assert(mergeTicker(baseCandles, 12) === baseCandles, "unchanged ticker price is a no-op");
+assert(mergeTicker(baseCandles, 0, 1800) === baseCandles && mergeTicker(baseCandles, NaN, 1800) === baseCandles, "invalid ticker price is ignored");
+assert(mergeTicker(baseCandles, 12, 1800) === baseCandles, "unchanged ticker price is a no-op");
 
 console.log("chartIndicators: EMA/Supertrend/MACD/StochRSI checks passed");

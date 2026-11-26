@@ -21,12 +21,19 @@ if (!pages.includes('min={50} max={300} step={1}') || !pages.includes('id="accou
 if (!panel.includes("输入止损价") || panel.indexOf("trade-settings-btn") < panel.indexOf("trade-submit")) {
   throw new Error("Open button must read 输入止损价 before stop entry; settings button sits below it");
 }
+if (!panel.includes("trade-paste-icon") || !panel.includes("trade-input-wrap") || !panel.includes("pg-notice-close") || panel.indexOf("pg-notice trade-notice") < panel.indexOf('className="trade-settings"')) {
+  throw new Error("Paste must be an icon inside the stop input; notice sits at panel bottom with a close button");
+}
+const cssSrc = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+if (!cssSrc.includes(".trade-field > span:first-child { flex: none; white-space: nowrap; }")) {
+  throw new Error("Stop-price label must stay on one line");
+}
 const styles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
 if (!styles.includes(".trade-type-row button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
   throw new Error("Market/limit selection must use the same rounded green chip as auto/manual");
 }
-if (!pages.includes("pg-tp-module") || !pages.includes("自动止盈") || !pages.includes("TpLevels") || !pages.includes("strategy_config")) {
-  throw new Error("Position card must expose a 止盈 module with 自动止盈 button showing the bound strategy levels");
+if (!pages.includes("pg-tp-btn") || !pages.includes("自动止盈") || !pages.includes("TpLevels") || !pages.includes("strategy_config")) {
+  throw new Error("Position card footer must expose 自动止盈 button (left of 立即平仓) showing the bound strategy levels");
 }
 if (!pages.includes("marginOpen") || !styles.includes(".pg-card footer { justify-content: flex-end; }") || !styles.includes(".pg-close-btn { padding: 7px 14px; border: 0; border-radius: 6px; background: var(--green)")) {
   throw new Error("Margin ratio needs a detail modal; 立即平仓 sits bottom-right in green");

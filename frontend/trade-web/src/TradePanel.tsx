@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Settings2, X } from "lucide-react";
+import { ChevronRight, ClipboardPaste, Settings2, X } from "lucide-react";
 import { tradeApi, type AccountInfo } from "./lib/tradeApi";
+import { getCopiedPrice } from "./lib/priceClipboard";
 
 const FEE_RATE = 0.001;
 const MAKER_KEYS = {
@@ -123,7 +124,6 @@ export default function TradePanel({ symbol, price, canTrade, visible, onNavigat
   const blocked = !canTrade ? "游客模式仅浏览，登录后可编辑交易" : strategyState === "ready" && !strategy ? "尚未启用止盈策略，请先在账户页启用" : "";
 
   return <div className="trade-panel">
-    {notice && <div className="pg-notice">{notice}</div>}
     {blocked && <div className="trade-hint">{blocked}</div>}
     <div className="trade-type-row" role="group" aria-label="开仓方式">
       <button type="button" className={orderType === "market" ? "active" : ""} onClick={() => { setOrderType("market"); attemptKeyRef.current = null; }}>市价开仓</button>
@@ -145,7 +145,10 @@ export default function TradePanel({ symbol, price, canTrade, visible, onNavigat
     </label>}
     <label className="trade-field">
       <span>止损价</span>
-      <input value={stopInput} inputMode="decimal" placeholder="输入止损价" onChange={(event) => { setStopInput(event.target.value.replace(/[^\d.]/g, "")); attemptKeyRef.current = null; }} />
+      <span className="trade-input-wrap">
+        <input value={stopInput} inputMode="decimal" placeholder="输入止损价" onChange={(event) => { setStopInput(event.target.value.replace(/[^\d.]/g, "")); attemptKeyRef.current = null; }} />
+        <button type="button" className="trade-paste-icon" title="粘贴" aria-label="粘贴止损价" onClick={() => { const v = getCopiedPrice(); if (v !== null) { setStopInput(v); attemptKeyRef.current = null; setNotice("已粘贴止损价"); } }}><ClipboardPaste size={13} aria-hidden="true" /></button>
+      </span>
     </label>
     <div className="trade-field">
       <span>止损金额</span>
@@ -171,6 +174,7 @@ export default function TradePanel({ symbol, price, canTrade, visible, onNavigat
       <label className="trade-maker-row"><span>预挂止盈用 Maker</span><input type="checkbox" checked={maker.takeProfit} onChange={(event) => setMakerPref("takeProfit", event.target.checked)} /></label>
       <div className="trade-maker-row is-fixed"><span>止损</span><strong>触发后市价</strong></div>
     </div>}
+    {notice && <div className="pg-notice trade-notice">{notice}<button type="button" className="pg-notice-close" aria-label="关闭提示" onClick={() => setNotice("")}><X size={12} /></button></div>}
     {confirmOpen && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认{orderType === "market" ? "开仓" : "挂单"}</strong><button type="button" aria-label="关闭" onClick={() => setConfirmOpen(false)}><X size={15} /></button></header>

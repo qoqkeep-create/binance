@@ -22,7 +22,8 @@ export function prefetchKlines(symbol: string, interval: string, limit = 300) {
   if (cache.has(key) || inflight.has(key)) return;
   const promise = getKlines(symbol, interval, limit)
     .then((candles) => {
-      putCachedKlines(symbol, interval, candles);
+      // 空表（冷币异步修复中）不入缓存，避免回切读到空快照。
+      if (candles.length) putCachedKlines(symbol, interval, candles);
       inflight.delete(key);
       return candles;
     })

@@ -1,5 +1,77 @@
 # 整合环境部署与运维
 
+## 导航芯片加高／去列表编号／币名加粗 USDT 缩小 Web 发布（2026-11-27，北京时间）
+
+① 主导航选中圆角芯片加高：main-nav align-self:stretch＋padding 4px 0、nav-item height:100% → 芯片比顶栏上下各窄 4px（实测栏 56/芯片 47）；② 去掉所有筛选组（市值前20/山寨/涨幅/跌幅）交易对编号（market-rank 全删含 CSS）；③ 币名 strong 700 加粗、"/USDT" span 9px 缩小弱化。本地实测 ranks=0（山寨组）、nameWeight 700、usdtSize 9px。Web release **`trade-web-20261127-navlist-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `a3252c71…`／`aafd20fb…`／`bb380b21…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
+## tiny 价格右轴无价格修复（分档精度＋动态 minMove）Web 发布（2026-11-27，北京时间）
+
+用户报价格 0.00012 级时右轴不显示任何价格。根因：分档精度只到 4 位小数（0.0000123→"0.0000"）＋minMove=0.0001 过粗把刻度全舍入抹平。修：抽 lib/priceFormat（priceScaleFormatter 增 <1e-4→8 位、<0.01→6 位档；minMoveFor 按量级 1e-8/1e-6/1e-4）；renderData 全量路径按尾根量级对主图全部系列 applyOptions priceFormat.minMove；持仓/测量/斐波那契标签改用分档 formatter。单测 priceFormat.test.ts 七组量级断言入 runner；本地 stub 0.00012 实测 candle priceFormat.minMove=1e-6。Web release **`trade-web-20261127-tinyprice-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `f2fef010…`／`72ba9f8c…` 与本地单链构建一致，ba 复核同哈希。后端不切换，旧 release 保留可回退。
+
+## 交易面板四项 UI（标签单行/粘贴图标/报错底部/可关闭）Web 发布（2026-11-27，北京时间）
+
+① 止损价等字段标签 flex:none＋nowrap 单行；② 「粘贴」文字按钮改 ClipboardPaste 小图标，置于止损输入框内右 6px（与止损金额箭头同位），点击直接填入；③ 报错/提示 notice 移至交易面板最底部（开仓设置之下）；④ notice 整行右上角加关闭按钮（pg-notice-close）点击消失。本地实测：nowrap、图标在框内 rightGap=6、notice isLast=true＋close 生效、粘贴值 486.54 联动。Web release **`trade-web-20261127-panelui-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `23ee0845…`／`0d2b5da1…`／`45d28345…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定四项。后端不切换，旧 release 保留可回退。
+
+## 复制改鼠标横线价＋止损价粘贴按钮 Web 发布（2026-11-27，北京时间）
+
+用户澄清复制语义＝鼠标所处横线价格（非最新市价）；止损输入框右加「粘贴」。修：contextmenu 时 coordinateToPrice(cursorY) 存入 clickMenu.price；copyCurrentPrice 用该价（缺省回退尾根）经 priceScaleFormatter 格式化后写系统剪贴板＋会话共享模块 lib/priceClipboard；TradePanel 止损价 input 右侧「粘贴」按钮读共享值填入并重置幂等键＋提示"已粘贴止损价"。本地闭环实测：右键横线→复制→粘贴→input=486.54（=复制存储值）＋提示出现。Web release **`trade-web-20261127-paste-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `e43ae782…`／`6fd4e4a6…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定横线价捕获与粘贴链路。后端不切换，旧 release 保留可回退。
+
+## 做多/做空/斐波那契三测量工具 Web 发布（2026-11-27，北京时间）
+
+对齐 TradingView 测量工具新增三工具，图标置于周期同一横条（toolbar-left 周期后 divider＋TrendingUp/TrendingDown/Rows3）。交互：点图标激活（绿芯片选中）→图面拖拽定锚（期间禁平移/缩放）→抬起提交；做多/做空＝入场/止损线＋红亏区/绿盈区＋目标按 RR=2，标签含开仓价/止损%/止盈% RR2；斐波那契＝0/0.236/0.382/0.5/0.618/0.786/1 七档横线＋价格标签；锚点用 time+price 存储，平移/缩放/resize/尾根经 drawTick 重算覆盖层；右键菜单增「清除测量」。本地合成拖拽实测：多头 tags 开仓476.3673/止损-3.81%/止盈+7.62% RR2＋2 zones；fib 7 档；清除归零。Web release **`trade-web-20261127-measure-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `41cb22d8…`／`dbdca736…`／`fd6148c3…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定三工具/RR/fib/清除。后端不切换，旧 release 保留可回退。
+
+## 切币空白第五层根因＝价格轴 autoScale 冻结旧币价格窗 Web 发布（2026-11-27，北京时间）
+
+用户报切币仍空白、但点手动→自动即出图，要求务必根治。关键线索定位：resetView 会恢复各 pane priceScale autoScale；而手动模式竖向拖动/价格轴缩放会 setAutoScale(false) **冻结旧币价格窗**，切币 effect 此前只换数据不恢复 autoScale → 新币蜡烛全落在冻结窗外＝空白（数据其实已加载）。修：切币/切周期 effect 内恢复全部 pane autoScale:true。DEV-only `window.__chart` 钩子（生产构建 grep=0 确认剔除）本地实证：手动竖拖后 autoScale=false、窗 0.00139–0.00185（旧币）；切 XMR 后 autoScale=true、窗 436.7–529.6、ready 无 error。Web release **`trade-web-20261127-autoscale-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `40f926c0…`／`f414eb7a…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定切币 autoScale 恢复（≥2 处）。至此切币链路五层根因（跨币污染/尾根桶/冷币空表/队列 hang/价格窗冻结）全部闭环。后端不切换，旧 release 保留可回退。
+
+## 菜单改右键触发＋竖排＋屏蔽浏览器原生右键 Web 发布（2026-11-27，北京时间）
+
+用户纠正：菜单应右键触发（此前左键误触发），且浏览器原生右键（图片另存为/复制图片/检查）需屏蔽；菜单上下排列。修：删除左键 pointerup 开菜单逻辑（downAt 全删），改 container contextmenu 监听 preventDefault＋开菜单（clamp 130×76）；左键 pointerdown 仅关菜单；菜单 CSS flex-direction:column、按钮左对齐满宽。本地合成事件实测：左键不开、右键 defaultPrevented=true＋菜单 column＋刷新/复制当前价格于点击坐标。Web release **`trade-web-20261127-ctxmenu-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `826b5b47…`／`eb00da91…`／`dec9b946…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定右键/竖排/无左键逻辑。后端不切换，旧 release 保留可回退。
+
+## 切币挂起超时重试＋三框右移两条款 Web 发布（2026-11-27，北京时间）
+
+用户报切币仍加载不出。深查第四层根因：生产 api 为 uvicorn 单 worker＋Django thread_sensitive 同步单线程，冷币同步补页（Binance REST 数秒）占住线程时后续请求**排队挂起不返回**——空表重试救不了 hang（蒙层长转）。修：fetchHistory 每 attempt 加 12s Promise.race 超时守卫，超时/瞬断（非 Abort）均退避重试≤6 次保留蒙层，超限才 error；guard 计时器 settle 即清。另三框（开仓/止损/浮盈亏）整体再右移两个条宽：base=8+2*strip，pnl=base+strip+8，止盈仍 1/6。本地 stub 实测：非预取币 AKE 首请求挂起→2s 蒙层在→12s 超时重试→15s 出图无 error；偏移 156/156/238 @strip74。Web release **`trade-web-20261127-hangretry-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `ba83eeb9…`／`e7def7ae…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定超时守卫与偏移。后端不切换（线程模型属后端架构，如需扩容另议），旧 release 保留可回退。
+
+## 指标线序（快/绿在上）＋方框贴左缘/浮盈亏条宽右移 Web 发布（2026-11-27，北京时间）
+
+源码基线 **`94b3ee3`**＋本会话未提交改动。Web 静态 release **`trade-web-20261127-lineorder-94b3ee3`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `7b1fd7e8…`／`57698240…` 与本地单链构建一致，ba 复核同哈希。① MACD 慢线 DEA 先加、快线 DIF 后加（后加绘制在上）→DIF 压 DEA；StochRSI 紫 D 先加、绿 K 后加→K 压 D。② 开仓/止损方框贴左缘 8px；浮盈亏方框＝8＋字条实测宽＋8（一个条宽右移错开）；止盈保持 1/6。本地 stub 实测 entryW=74→pnl left=90、entry/stop=8、tp=82。契约测试锁定线序与偏移。后端不切换，旧 release 保留可回退。
+
+## 持仓方框分组偏移（开仓/止损 1/8、浮盈亏/止盈 1/6）Web 发布（2026-11-27，北京时间）
+
+用户要求错开方框避免重叠：开仓/止损左偏移改 **1/8 屏宽**，浮盈亏与止盈保持 1/6。layoutPosLabels 按 key 分组取 leftEighth/leftSixth。本地 stub 实测 w=492 时开仓/止损 left=62(=492/8)、浮亏/止盈 left=82(=492/6)。Web release **`trade-web-20261127-labeloffset-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `d9b6f516…`／`c5ea77fa…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定分组偏移。后端不切换，旧 release 保留可回退。
+
+## 刷新＝完整重置＋点击图面菜单（刷新/复制当前价格）Web 发布（2026-11-27，北京时间）
+
+源码基线 **`94b3ee3`**＋本会话未提交改动。Web 静态 release **`trade-web-20261127-clickmenu-94b3ee3`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `062ced96…`／`d697fa3d…` 与本地单链构建一致，ba 复核同哈希。① 刷新按钮修复：refreshChart 成功后追加 resetView()（模式回自动＋各 pane autoScale＋自动留白视口），空表置 error 不再假成功；此前仅 renderData(resetView=true) 不复位手动模式/价格轴缩放致"重置不成功"。② 点击图面（pointerdown/up 位移≤5px 判定点击，拖拽不触发）在点击处弹小菜单：「刷新」同顶部刷新；「复制当前价格」复制尾根收盘（priceScaleFormatter 分档精度），clipboard API 失败回退 execCommand，成功显示"已复制"；菜单边界 clamp、点外部/拖拽自动关闭。本地合成指针实测菜单于点击坐标出现、两按钮齐全；隐藏面板无焦点剪贴板回退失败属环境限制，复制成功归线上验收。后端不切换，旧 release 保留可回退。
+
+## 持仓线方框左 1/6＋现价涨跌色＋挂止盈单画线 Web 发布（2026-11-27，北京时间）
+
+源码基线 **`94b3ee3`**＋本会话未提交改动。Web 静态 release **`trade-web-20261127-poslabel-94b3ee3`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `6a11cce8…`／`bbe813bb…`／`0a88ab0c…` 与本地单链构建一致，ba 复核同哈希。① 开仓/止损/浮盈亏/止盈所有方框改 DOM 层（.pos-label-layer/.pos-label）定位**左 1/6 屏宽**（axisLabelVisible:false 去右轴框），y 由 sync 记录的价格表＋priceToCoordinate 布局，随 tail/resize/可见范围变化重排；② 现价线颜色随 tick 涨跌绿/红（prevClose 基线，首帧用前一根收盘）；③ 已挂止盈单（/v1/trade/order/list kind *take_profit 且 can_cancel）逐单画绿虚线＋「止盈 L1/L2 价」方框，5s 轮询同步撤单消失。本地 stub 实测五方框 left=82(=492/6)、文案/颜色正确；隐藏面板价格坐标退化致 y 序不可本地判定，y 对齐归线上验收。后端不切换，旧 release 保留可回退。
+
+## 切币K线空白深查根因＝冷币空表无重试 Web 发布（2026-11-27，北京时间）
+
+用户报切币仍加载不出K线，深查后端 `service.load_history`：冷币首请求若同步补页失败/锁被占（连续切币竞争）即返回 `items: []`＋`historyPending: true` 并异步修复；前端旧逻辑把空表当成功渲染→撤蒙层→永久空白，且 prefetch 会缓存空快照。修：数据 effect 改 fetchHistory(attemptNo) 退避重试（空表保留 loading 蒙层，1.2s×(n+1) 最多 6 次，超限才 error）；空表不写缓存；klineCache.prefetch 空表不入缓存；cleanup 清 retryTimer。本地 stub 实测：前两次空表期间蒙层保留、第 3 次出图（calls=3）、无 error。Web release **`trade-web-20261127-emptyretry-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `47da56c2…`／`cf4195dc…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定空表重试与空缓存禁令。叠加此前世代令牌（跨币污染）与 ticker 桶守卫（尾根开收盘），切币链路三层根因均已修。后端不切换，旧 release 保留可回退。
+
+## 持仓卡 footer 重排＋K线持仓三线 Web 发布（2026-11-27，北京时间）
+
+源码基线 **`94b3ee3`**＋本会话未提交改动。Web 静态 release **`trade-web-20261127-poslines-94b3ee3`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `e96edfbd…`／`1b69cb19…` 与本地单链构建一致，ba 复核同哈希。① 持仓卡：去「止盈」标题，自动止盈(中)按钮缩小（11px/5px  padding）移入 footer 置于「立即平仓」左侧。② K线图持仓三线（该币有持仓时）：开仓价蓝虚线＋轴框「开仓 x.xxxx」；止损红虚线＋轴框「止损 -亏损额U」（亏损额=名义×|开仓-止损|/开仓）；现价点线＋轴框「浮盈/浮亏 ±x.xxU」随尾根实时刷新（renderData tail/全量两路径＋5s 持仓轮询）；无持仓/切币清理 removePriceLine。契约测试锁定三线与 footer 顺序。只读展示不触发资金操作。三线观感归线上验收（隐藏面板 canvas 不绘制）。后端不切换，旧 release 保留可回退。
+
+## 自动视图右侧留白 1/5 Web 发布（2026-11-27，北京时间）
+
+用户澄清期望：点自动复位后最新根**不应顶到右缘**，应留 1/5 空白（现状 setVisibleLogicalRange(to=len-1) 不应用 rightOffset 故顶满）。修：autoRange(length)＝{from: max(0, last-0.8*bars+0.5), to: last+0.2*bars-0.5}，跨度仍=autoVisibleBars 保持 7.6px 密度，最新根落视口 80% 处＝右侧 20% 留白；renderData auto 分支/resize/resetView 三处统一改用。契约测试含 80% 位置与跨度数值自检。Web release **`trade-web-20261127-rightgap-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `310dfb03…`／`940760af…` 与本地单链构建一致，ba 复核同哈希。手动模式 rightOffset=5 滚动余量保留。留白观感归线上验收。后端不切换，旧 release 保留可回退。
+
+## 最新K线开收盘对不上修复（ticker 桶守卫＋成交量收盘计入）Web 发布（2026-11-27，北京时间）
+
+用户报K线开盘/收盘对不上、尤其最新根。根因：mergeTicker 无条件改写最后一根——大周期桶滚后新桶蜡烛尚未由 1m 聚合生成（等首条 1m 推送）期间，ticker 价格写进**上一已收盘根**，其 close/high/low 被实时价污染＝开收盘对不上；另聚合分支对同一 forming 1m 反复累加 volume 致成交量虚高。修：mergeTicker 增 bucketTime 参数（由 eventTime 推导当前桶），桶<尾根＝忽略、桶>尾根＝ticker 种子新根（open=high=low=close=价）、桶=尾根才改 close/high/low；聚合 volume 仅 event.closed 时累加。新增 tests/candleMerge.test.ts 确定性单测（闭根不被改写/滚桶种子/过期桶忽略/空列表种子/mergeCandle 三态）入 runner。Web release **`trade-web-20261127-tailfix-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `15c4c1d3…`／`e5739073…` 与本地单链构建一致，ba 复核同哈希。本地 WSGI 无 WSS 不能实测尾根跳动，单测＋契约断言锁定语义，尾根观感归线上验收。后端不切换，旧 release 保留可回退。
+
+## 切币K线空白竞态修复 Web 发布（2026-11-27，北京时间）
+
+用户报切换标的较大概率K线完全加载不出来。根因：左滚历史补载 loadOlder 在 await 期间若切币/切周期，旧币历史会 prepend 进新币数组并 **putCachedKlines 污染新币会话缓存**；混合价格域（如 BTC 十万级混入 SOL 几十级）把新币蜡烛压成平线/空白，且污染缓存使回切持续复现（会话内 Map，MAX_ENTRIES 12）。修：loadGenRef 世代令牌——数据 effect 与 refreshChart 推进世代，loadOlder await 后世代不符或 symbol 不符即丢弃。Web release **`trade-web-20261127-switchfix-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `a55e5eae…`／`486d3a0d…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定世代守卫。本地冒烟：ETH/XRP/ZEC 等切币 1.2s 内收敛 ready 无 error；冷门币（MANTRA/INIT/ENA）本地冷 fetch >1.2s 仍 loading 属后端历史冷加载延迟（生产 SWR+预热覆盖 majors），非本竞态。隐藏面板无法实测污染复现，归线上验收；若仍复现请提供币种与截图。后端不切换，旧 release 保留可回退。
+
+## 持仓卡止盈模块／平仓绿色右下角／保证金弹窗／计数反色 Web 发布（2026-11-27，北京时间）
+
+源码基线 **`94b3ee3`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-tpcard-94b3ee3`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地单链构建一致（`c88a2698…`／`729e0f48…`／`426b4ed3…`），ba.wow211.com 复核同哈希。① 持仓卡新增「止盈」模块＋「自动止盈」按钮（运行中显示「自动止盈中」绿芯片），点击弹窗展示该持仓绑定策略快照（strategy_name/strategy_config 来自 /v1/position/list）各档 RR/减仓/止损类型；未绑定时展示当前启用策略或引导账户页。② 「立即平仓」移右下角改实底绿（浅色白字）。③ 保证金率徽标改按钮→「保证金详情」弹窗（保证金率/钱包/保证金/可用余额＋强平警示）。④ 导航持仓计数徽标选中反色（未选绿底深字→选中近白底绿字）。本地 stub 持仓实测：反色 computed、绿平仓 flex-end、止盈弹窗两档、保证金弹窗四字段全正确。只读展示，未触发任何真实平仓/改策略。后端不切换，旧 release 保留可回退。
+
 ## 实时推送全层恢复（ticker 通配＋1m feed 客户端聚合）（2026-11-27，北京时间）
 
 源码 `7f525e0`/`0d24908` 已推送，Web `trade-web-20261127-agg-0d24908` 已上线（哈希 `c88a2698…` 一致）。ticker 改后端通配单 topic（空 symbols）收全量；kline 订阅 1m 实时 feed，大周期客户端聚合到对应桶（open/high/low/close），尾根实时且带影线。生产分层诊断全绿：WS 已连接、ticker 收到报价、kline 收到K线。连接层无需再改。

@@ -112,6 +112,70 @@ if (!source.includes("scale.setAutoScale(false)") || !source.includes("setVisibl
 if (!source.includes("subscribeVisibleLogicalRangeChange(onRange)") || !source.includes("current[0].time * 1000") || !source.includes("preserveView")) {
   throw new Error("Scrolling left must load older history via beforeOpenTime without jumping the viewport");
 }
+if (!source.includes("const gen = loadGenRef.current") || !source.includes("gen !== loadGenRef.current || symbolRef.current !== symbol")) {
+  throw new Error("Older-history loads must be discarded across symbol/interval changes to avoid cross-symbol cache poisoning");
+}
+if (!source.includes("if (!candles.length)") || !source.includes("retryTimer = setTimeout(() => fetchHistory(attemptNo + 1)") || !source.includes("if (retryTimer) clearTimeout(retryTimer)")) {
+  throw new Error("Empty cold-start history must keep the veil and retry with backoff, never render/cache empty");
+}
+const cacheSrc = readFileSync(fileURLToPath(new URL("../src/lib/klineCache.ts", import.meta.url)), "utf8");
+if (!cacheSrc.includes("if (candles.length) putCachedKlines")) {
+  throw new Error("Prefetch must not cache empty cold-start snapshots");
+}
+const merge = readFileSync(fileURLToPath(new URL("../src/lib/candleMerge.ts", import.meta.url)), "utf8");
+if (!merge.includes("mergeTicker(candles: Candle[], price: number, bucketTime: number)") || !merge.includes("if (bucketTime < last.time) return candles;") || !merge.includes("bucketTime > last.time")) {
+  throw new Error("Ticker merge must target the current time bucket only and seed a new bar at roll, never mutate closed history");
+}
+if (!source.includes("volume: event.closed ? last.volume + incoming.volume : last.volume") || !source.includes("Math.floor(ts / 1000 / width) * width")) {
+  throw new Error("Bucket volume must count closed 1m only; ticker bucket must derive from event time");
+}
+if (!source.includes("last - bars * 0.8 + 0.5") || !source.includes("last + bars * 0.2 - 0.5")) {
+  throw new Error("Auto/reset view must leave 1/5 right blank with unchanged bar density");
+}
+{
+  const bars = 131; const last = 299;
+  const from = Math.max(0, last - bars * 0.8 + 0.5);
+  const to = last + bars * 0.2 - 0.5;
+  const fraction = (last - from + 0.5) / (to - from + 1);
+  if (Math.abs(fraction - 0.8) > 1e-9 || Math.abs((to - from + 1) - bars) > 1e-9) {
+    throw new Error("Auto range math must place last bar at 80% and keep span = bars");
+  }
+}
+if (!source.includes("createPriceLine") || !source.includes("止损 -") || !source.includes("开仓 ") || !source.includes("浮盈") || !source.includes("removePriceLine")) {
+  throw new Error("Chart must draw entry/stop(loss box)/live-PnL price lines for open positions");
+}
+if (!source.includes("const leftEdge = 8") || !source.includes("const base = leftEdge + strip * 2") || !source.includes("base + strip + 8") || !source.includes("container.clientWidth / 6") || !source.includes("pos-label-layer") || !source.includes("axisLabelVisible: false") || !source.includes("tickDirRef.current = close > prevCloseRef.current ? 1 : -1") || !source.includes('order.kind.endsWith("take_profit")')) {
+  throw new Error("Entry/stop at left edge+2 strips, PnL one strip right of them, TP at 1/6; tick-colored price line; TP orders drawn");
+}
+if (!source.includes("kline-attempt-timeout") || !source.includes("Promise.race([getKlines(symbol, selectedInterval, HISTORY_LIMIT, controller.signal), guard])")) {
+  throw new Error("Each history attempt must time out (backend sync-thread queue hang) and retry with backoff");
+}
+if ((source.match(/priceScale\("right", index\).applyOptions\(\{ autoScale: true \}\)/g) || []).length < 2) {
+  throw new Error("Symbol switch must restore price-scale autoScale (manual drag freezes old symbol price window => blank chart)");
+}
+if (source.indexOf("macdDeaRef.current = chart.addSeries") > source.indexOf("macdDifRef.current = chart.addSeries") || source.indexOf("stochDRef.current = chart.addSeries") > source.indexOf("stochKRef.current = chart.addSeries")) {
+  throw new Error("Fast MACD line and green Stoch K must render above slow DEA / purple D");
+}
+if ((source.match(/resetView\(\);/g) || []).length < 2 || !source.includes("kline-click-menu") || !source.includes("复制当前价格") || !source.includes("copyCurrentPrice")) {
+  throw new Error("Refresh must fully reset (mode+price axis+viewport); click menu offers 刷新 and 复制当前价格");
+}
+if (!source.includes('container.addEventListener("contextmenu", onContextMenu)') || !source.includes("event.preventDefault();") || source.includes("downAt") || !klineCss.includes(".kline-click-menu { position: absolute; z-index: 6; display: flex; flex-direction: column;")) {
+  throw new Error("Menu must open on right-click only (native context menu suppressed) and stack vertically");
+}
+if (!source.includes("做多测量") || !source.includes("做空测量") || !source.includes("斐波那契测量") || !source.includes("FIB_LEVELS") || !source.includes("0.618") || !source.includes("MEASURE_RR") || !source.includes("measure-layer") || !source.includes("清除测量")) {
+  throw new Error("Three measure tools (long/short/fib) with toolbar icons, RR zones, fib levels and clear action required");
+}
+const pasteSrc = readFileSync(fileURLToPath(new URL("../src/TradePanel.tsx", import.meta.url)), "utf8");
+if (!source.includes("price: pRaw === null ? null : Number(pRaw)") || !source.includes("setCopiedPrice(text)") || !pasteSrc.includes("粘贴") || !pasteSrc.includes("getCopiedPrice")) {
+  throw new Error("Copy must capture the cursor horizontal-line price; stop-loss input needs a 粘贴 button fed by it");
+}
+if (!source.includes('from "./lib/priceFormat"') || !source.includes("minMove: minMoveFor(candles[last].close)")) {
+  throw new Error("Tiny prices must widen decimals and minMove per symbol or the right scale shows no prices");
+}
+const pagesSrc = readFileSync(fileURLToPath(new URL("../src/Pages.tsx", import.meta.url)), "utf8");
+if (pagesSrc.includes(">止盈</span>") || pagesSrc.indexOf("pg-tp-btn") > pagesSrc.indexOf("pg-close-btn")) {
+  throw new Error("Take-profit button must sit left of 立即平仓 without a 止盈 title");
+}
 if (!klineCss.includes("font: 12px var(--font-ui);") || !klineCss.includes("font: 13px var(--font-ui);")) {
   throw new Error("自动/手动/指标 labels must be one font level larger");
 }
@@ -128,7 +192,7 @@ const realtime = readFileSync(fileURLToPath(new URL("../src/lib/realtime.ts", im
 if (!realtime.includes("sub.tickerSymbols?.length ? sub.tickerSymbols.includes(symbol) : sub.symbol === symbol") || !app.includes("pendingTickersRef")) {
   throw new Error("Left market list must refresh continuously from the shared WS ticker fanout, throttled");
 }
-if (!styles.includes(".main-nav { align-self: center; display: flex; align-items: center; gap: 4px; padding: 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {
+if (!styles.includes(".main-nav { align-self: stretch; display: flex; align-items: stretch; gap: 4px; padding: 4px 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {
   throw new Error("Main nav must sit on the topbar background without its own box and keep buttons single-line");
 }
 if (!klineCss.includes("background: rgba(240, 243, 247, 0.1)") || !klineCss.includes('.kline-stage[data-chart-theme="light"] .kline-loading')) {
@@ -155,8 +219,15 @@ if (!source.includes('from "./lib/supertrendLine"') || !stline.includes("b.direc
 if (!stline.includes("(config.visibleRange ? config.visibleRange() : null) || range") || !source.includes("stLineConfigRef.current.visibleRange = liveRange")) {
   throw new Error("Supertrend line must clip against the live logical visible range; update-time item indices drop the tail bars");
 }
-if (!source.includes("priceScaleFormatter") || !source.includes("abs < 1 ? 4 : abs < 100 ? 3 : abs < 10000 ? 2 : 1")) {
-  throw new Error("Right price scale must use tiered decimals (4/3/2/1)");
+const priceFormatSrc = readFileSync(fileURLToPath(new URL("../src/lib/priceFormat.ts", import.meta.url)), "utf8");
+if (!source.includes("priceScaleFormatter") || !priceFormatSrc.includes("abs < 0.0001 ? 8 : abs < 0.01 ? 6 : abs < 1 ? 4")) {
+  throw new Error("Right price scale must use tiered decimals incl. tiny-price tiers");
+}
+if (app.includes("market-rank") || !styles.includes(".nav-item { display: flex; gap: 7px; align-items: center; height: 100%;") || !styles.includes(".market-name strong { overflow-wrap: anywhere; font-weight: 700; }") || !styles.includes("font-size: 9px; font-weight: 500; }")) {
+  throw new Error("No rank numbers in market lists; nav chip near-full bar height; coin name bold with smaller USDT");
+}
+if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-items: flex-start;")) {
+  throw new Error("History open/close times must sit at the card bottom-left");
 }
 
 console.log("KlineChart self-rendered contract tests passed");

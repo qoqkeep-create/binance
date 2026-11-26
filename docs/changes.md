@@ -1,5 +1,77 @@
 # 变更与验收记录
 
+## 2026-11-27：导航芯片加高至近顶栏／去全部列表编号／币名 700＋USDT 9px
+
+main-nav stretch＋4px 0、nav-item height:100%（芯片=栏高-8）；market-rank markup＋CSS 全删（所有筛选组）；.market-name strong 700、span 9px/500 muted。实测 bar56/chip47/ranks0/700/9px。契约测试锁定。release navlist-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：tiny 价格右轴无价格＝精度 4 位＋minMove 过粗，分档 8/6 位＋动态 minMove
+
+lib/priceFormat：formatter <1e-4→8、<0.01→6、<1→4、<100→3、<1e4→2、else 1；minMoveFor 1e-8/1e-6/1e-4。renderData 全量按尾根量级 applyOptions 主图系列 priceFormat；持仓/测量/fib 标签改 formatter。priceFormat.test.ts 七组断言；stub 0.00012 实测 minMove=1e-6。release tinyprice-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：交易面板四项 UI（标签单行／粘贴图标入框／报错底部／整行可关闭）
+
+.trade-field>span:first-child flex:none nowrap；粘贴改 ClipboardPaste 图标 absolute 输入框内 right6（同金额箭头位）；notice 移面板末（settings 块后）＋pg-notice-close 右上关闭。实测 nowrap/iconInWrap/rightGap6/notice isLast/close 生效/粘贴联动。契约测试锁定。release panelui-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：复制＝鼠标横线价／止损价输入框右加粘贴
+
+clickMenu 增 price（contextmenu 时 coordinateToPrice(cursorY)）；copyCurrentPrice 用 menu.price 回退尾根；lib/priceClipboard 会话共享 set/get；TradePanel 止损 input 右「粘贴」按钮填入共享值＋重置 attemptKey＋notice。闭环实测 input=复制值＋提示。契约测试锁定。release paste-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：做多/做空/斐波那契三测量工具（TV 对齐）＋周期栏图标
+
+MeasureDraw{kind,t1,p1,t2,p2}；setTool 激活期禁 handleScroll/handleScale；pointerdown/move/up  draft→commit（t 异且 p 异）；renderMeasure：多/空＝entry/stop/target(RR2) 线＋红/绿 zone＋中文标签（开仓/止损-%/止盈+% RR2）；fib 七档线＋价格标签；覆盖层 .measure-layer z2 pointer-events none；drawTick 于 onRange/resize/tail 触发重算；右键菜单「清除测量」。工具栏 toolbar-left divider 后三图标（aria-label 做多测量/做空测量/斐波那契测量）active 绿芯片。合成拖拽实测 RR 数值自洽（3.81→7.62）、fib 7 档、清除归零。契约测试锁定。release measure-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：切币空白第五层根因＝autoScale 冻结旧币价格窗，切币 effect 恢复
+
+线索"点手动→自动即出图"指向 resetView 的 autoScale 恢复。手动竖拖/轴缩放 setAutoScale(false) 冻结旧币窗；切币只换数据不恢复→新币蜡烛窗外＝空白。修：数据 effect 内 panes.forEach priceScale("right",i).applyOptions({autoScale:true})。DEV-only __chart 钩子实证冻结(0.0014 级)→切 XMR 恢复(436–529)；生产 grep __chart=0。契约测试锁定≥2 处 autoScale 恢复。release autoscale-94b3ee3 上线首尔＋ba 哈希一致。五层根因闭环。
+
+## 2026-11-27：菜单改右键触发／竖排／屏蔽原生右键
+
+删左键开菜单（downAt 移除）；contextmenu preventDefault＋setClickMenu(clamp 130×76)；左键 down 仅关菜单；.kline-click-menu column＋按钮左对齐满宽。合成事件实测左键不开/右键 prevented＋column＋两按钮。契约测试锁定。release ctxmenu-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：切币挂起第四层根因＝同步单线程队列 hang，12s 超时退避重试；三框右移两条款
+
+生产 api uvicorn 1 worker＋thread_sensitive 同步单线程：冷币补页占线程→后续 klines 请求挂起不返回（非空表），蒙层长转＝"加载不出来"。fetchHistory 每 attempt Promise.race 12s guard，超时/瞬断退避重试≤6 保留蒙层；guard settle 清计时器。三框 base=8+2*strip、pnl=base+strip+8、tp 1/6。stub 实测 AKE hang→veil→retry→ready；偏移 156/238。契约测试锁定。release hangretry-94b3ee3 上线首尔＋ba 哈希一致。后端线程模型未动（扩容另议）。
+
+## 2026-11-27：MACD DIF 压 DEA／Stoch 绿 K 压紫 D／方框贴左缘＋浮盈亏条宽右移
+
+系列添加顺序决定绘制层级：DEA 先/DIF 后、D 先/K 后。layoutPosLabels：entry/stop left=8；pnl left=8+strip(entry/stop offsetWidth 实测, fallback 64)+8；tp 保持 round(w/6)。stub 实测 8/8/90/82 @entryW74。契约测试锁定 indexOf 线序与偏移公式。release lineorder-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：持仓方框分组偏移（开仓/止损 1/8，浮盈亏/止盈 1/6）
+
+layoutPosLabels 按 key 分组：entry/stop → round(w/8)，其余 → round(w/6)，错开避免方框重叠。stub 实测 62/82 @w492。契约测试锁定。release labeloffset-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：刷新＝完整重置／点击图面菜单（刷新＋复制当前价格）
+
+refreshChart 成功后 resetView()（auto 模式＋autoScale＋autoRange），空表 error；修复手动缩放后刷新不复位。点击菜单：mount effect pointerdown 记录 downAt＋关旧菜单，pointermove 位移>5 关菜单（拖拽不弹），pointerup 位移≤5 且非菜单内→setClickMenu(clamp 坐标)；菜单 React 节点渲染于 kline-container 内（z6）；刷新按钮调 refreshChart；复制按钮 copyCurrentPrice（尾根 close→priceScaleFormatter；clipboard→execCommand 回退；ok 才显示已复制）。契约测试锁定 resetView 双调用与菜单文案。合成指针实测菜单定位=点击坐标。release clickmenu-94b3ee3 上线首尔＋ba 哈希一致；复制成功归线上验收。
+
+## 2026-11-27：持仓线方框左 1/6／现价涨跌色／挂止盈单画线
+
+syncPositionLines 重构：desired Map（entry/stop/pnl/tp-*）驱动 createPriceLine（axisLabelVisible:false）＋DOM 方框层；方框 left=containerWidth/6、top=priceToCoordinate(labelPriceRefs 价格)，layoutPosLabels 在 tail/全量/resize/onRange 调用；现价色=tickDir（close vs prevClose，首帧基线=前一根收盘）；止盈单来自 tradeApi.orders(1) 过滤 kind.endsWith("take_profit")&&can_cancel，逐单绿虚线＋L{n} 方框，撤单即移除。清理 removePriceLine＋el.remove＋maps 重置。stub 实测五方框 left=1/6、文案颜色正确；y 序隐藏面板不可判归线上。release poslabel-94b3ee3 上线首尔＋ba 哈希一致。
+
+## 2026-11-27：切币空白深查＝冷币空表(historyPending)无重试，退避重试修复
+
+后端 load_history 冷币首请求同步补页失败/锁竞争时回 items:[]＋historyPending:true 异步修复；前端旧逻辑空表当成功→撤蒙层永久空白＋prefetch 缓存空快照。修：fetchHistory(attemptNo) 空表保留蒙层退避重试 1.2s×(n+1)≤6 次超限 error；空表不 putCachedKlines；prefetch 空表不入缓存；cleanup clearTimeout。stub 实测两次空表蒙层保留、第三次出图。契约测试锁定。release emptyretry-94b3ee3 上线首尔＋ba 哈希一致。切币链路三层根因（跨币污染世代令牌／尾根桶守卫／冷币空表重试）齐备。
+
+## 2026-11-27：持仓卡 footer 重排＋K线开仓/止损/浮盈亏三线
+
+Pages：删 pg-tp-module 与「止盈」标题；pg-tp-btn（11px、padding 5/10、muted）入 footer 左于 pg-close-btn。KlineChart：syncPositionLines(row, liveClose) 用 createPriceLine 画开仓（#3179F5 虚线＋轴框「开仓 价」）、止损（#F63C55 虚线＋轴框「止损 -亏损U」，亏损=notional×|entry-stop|/entry）、现价浮盈亏（点线＋轴框「浮盈/浮亏 ±U」，(close-entry)/entry×notional×方向）；tail 与全量 renderData 均刷新；symbol effect 5s 轮询 tradeApi.positions 过滤本币；清理 removePriceLine＋挂载重置 refs。side 语义同 Pages isLong（0/long/BUY）。契约测试锁定。release poslines-94b3ee3 上线首尔＋ba 哈希一致；观感待线上验收。
+
+## 2026-11-27：自动视图右侧留白 1/5（最新根落 80% 视口）
+
+用户期望自动复位后右侧留 1/5 空白而非顶满。autoRange：from=max(0,last-0.8*bars+0.5)、to=last+0.2*bars-0.5（bars=autoVisibleBars），跨度不变保密度；三处自动复位统一。测试含 fraction=0.8 与 span=bars 数值自检。release rightgap-94b3ee3 上线首尔＋ba 哈希一致；观感待线上验收。
+
+## 2026-11-27：最新K线开收盘对不上＝ticker 改写已收盘根，桶守卫修复
+
+mergeTicker(candles, price, bucketTime)：bucketTime= floor(eventTime/1000/width)*width；桶<尾根忽略、桶>尾根种子新根、桶=尾根才合成 close/high/low——桶滚间隙不再污染上一收盘根。KlineChart 聚合 volume 改 `event.closed ? last.volume+incoming.volume : last.volume`（forming 1m 不重复累加）。tests/candleMerge.test.ts 五组确定性断言入 runner；chartIndicators 旧 mergeTicker 调用补桶参；契约测试锁定桶守卫与成交量语义。release tailfix-94b3ee3 上线首尔＋ba 哈希一致；尾根实时观感待线上验收（本地无 WSS）。
+
+## 2026-11-27：切币K线空白根因＝历史补载跨币污染缓存，世代令牌修复
+
+loadOlder await 期间切币 → 旧币 older 批次 prepend 进新币 candlesRef 并写新币缓存 → 价格域混合压平蜡烛＝"完全加载不出来"，污染缓存令回切持续复现。修：loadGenRef（数据 effect/refreshChart +1），loadOlder 捕获 gen，await 后 `gen !== loadGenRef.current || symbolRef.current !== symbol` 即 return 丢弃。契约测试锁定。本地冒烟多币切币收敛 ready；冷门币冷 fetch 延迟属后端侧（SWR/预热 majors），与本竞态无关。release switchfix-94b3ee3 上线首尔＋ba 哈希一致；污染复现与修复效果待线上验收（隐藏面板不可驱动滚动/缩放）。
+
+## 2026-11-27：持仓卡止盈模块／自动止盈策略弹窗／平仓绿色右下角／保证金弹窗／计数反色
+
+参考外部 holdings 卡（自动止盈中/添加自动止盈语义）但仅只读展示：PositionRow 增 strategy_name/strategy_config（服务端 /v1/position/list 已带快照）；卡内 pg-tp-module「止盈」＋pg-tp-btn「自动止盈」（strategy_status===1 时「自动止盈中」is-running 绿芯片）→ TpLevels 弹窗逐档 L{n}/止盈RR/减仓%/止损类型（none/fixedRR/absoluteRR）；未绑定展示 activeStrategy 或引导。footer justify-content:flex-end；pg-close-btn 实底 var(--green) 深字（浅色白字）。pg-margin 改 button→保证金详情弹窗（margin 四字段＋liquidation_reached 警示）。.nav-item.active .nav-pos-count 反色＝color-mix(text 92%) 底＋green 字。契约测试锁定。本地 stub 实测反色/绿平仓/两弹窗全正确；未触发真实资金操作。release tpcard-94b3ee3 上线首尔＋ba 哈希一致。
+
 ## 2026-11-26：右侧价格标尺鼠标拖拽缩放恢复
 
 ux4 误关 axisPressedMouseMove 致价格轴缩放消失。恢复 true（两模式）；图面拖动不缩放语义不变（pane drag 走 handleScroll）；手动竖向平移 onPointerDown 增守卫：clientX 落在 container 宽−右轴宽 之外即 return，轴区交还库缩放。测试断言改锁。release axiszoom-af642f7 上线首尔＋ba 哈希一致；轴拖拽手感待线上验收。

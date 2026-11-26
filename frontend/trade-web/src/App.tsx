@@ -301,7 +301,7 @@ function TerminalApp() {
                 }}>重试</button>
               </div>
             )}
-            {activeMarkets.map((row, index) => <button key={row.symbol} className={`market-row ${selectedSymbol === row.symbol ? "selected" : ""}`} onClick={() => setSelectedSymbol(row.symbol)} onMouseEnter={() => prefetchKlines(row.symbol, chartPreference.interval)}><div className="market-rank">{row.rank ?? String(index + 1).padStart(2, "0")}</div><div className="market-name"><strong>{row.baseAsset}<span>/USDT</span></strong><small>{compact.format(row.quoteVolume)} vol</small></div><div className="market-quote"><strong>{formatPrice(row.lastPrice)}</strong><small className={row.priceChangePercent >= 0 ? "positive" : "negative"}>{formatDelta(row.priceChangePercent)}</small></div></button>)}</div>
+            {activeMarkets.map((row) => <button key={row.symbol} className={`market-row ${selectedSymbol === row.symbol ? "selected" : ""}`} onClick={() => setSelectedSymbol(row.symbol)} onMouseEnter={() => prefetchKlines(row.symbol, chartPreference.interval)}><div className="market-name"><strong>{row.baseAsset}<span>/USDT</span></strong><small>{compact.format(row.quoteVolume)} vol</small></div><div className="market-quote"><strong>{formatPrice(row.lastPrice)}</strong><small className={row.priceChangePercent >= 0 ? "positive" : "negative"}>{formatDelta(row.priceChangePercent)}</small></div></button>)}</div>
           <div className="rail-footer"><div><span className={`status-light ${marketStatus === "ready" ? "is-live" : ""}`} /> Binance Futures</div><span>{activeMarkets.length} 个合约</span></div>
         </aside>
         <main className="chart-workspace">

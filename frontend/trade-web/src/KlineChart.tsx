@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { RefreshCw, SlidersHorizontal } from "lucide-react";
+import { RefreshCw, SlidersHorizontal, TrendingUp, TrendingDown, Rows3 } from "lucide-react";
 import {
-  createChart, ColorType, CrosshairMode,
+  createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
-  type IChartApi, type ISeriesApi, type Time as ChartTime,
+  type IChartApi, type ISeriesApi, type IPriceLine, type Time as ChartTime,
   type CandlestickData, type LineData, type WhitespaceData,
 } from "lightweight-charts";
 import { useAccount, usePreference } from "./AccountProvider";
 import { getKlines, type Candle } from "./lib/binance";
+import { tradeApi, type PositionRow } from "./lib/tradeApi";
+import { setCopiedPrice } from "./lib/priceClipboard";
+import { priceScaleFormatter, minMoveFor } from "./lib/priceFormat";
 import { intervalSeconds } from "./lib/analysisIndicators";
 import { marketRealtime } from "./lib/realtime";
 import { buildChartIndicators } from "./lib/chartIndicators";
@@ -43,6 +46,12 @@ const THEMES = {
 // 十字线只在各序列上保留竖横参考线，不显示小圆点标记。
 const NO_CROSSHAIR_MARKER = { crosshairMarkerVisible: false } as const;
 
+// 测量工具（对齐 TradingView 多/空仓位与斐波那契回撤）：拖拽定入场/止损，目标按 RR=2。
+type MeasureKind = "long" | "short" | "fib";
+interface MeasureDraw { id: number; kind: MeasureKind; t1: number; p1: number; t2: number; p2: number }
+const MEASURE_RR = 2;
+const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+
 type Time = ChartTime;
 type LinePoint = LineData<Time> | WhitespaceData<Time>;
 type CandlePoint = CandlestickData<Time> | WhitespaceData<Time>;
@@ -51,11 +60,7 @@ type MacdDataPoint = MacdBarPoint | WhitespaceData<Time>;
 type StLineDataPoint = SupertrendLinePoint | WhitespaceData<Time>;
 
 // 右轴价格标尺分档：<1 四位、1–99 三位、100–9999 两位、≥10000 一位。
-function priceScaleFormatter(price: number) {
-  const abs = Math.abs(price);
-  const digits = abs < 1 ? 4 : abs < 100 ? 3 : abs < 10000 ? 2 : 1;
-  return price.toFixed(digits);
-}
+// 右轴价格分档与 minMove 见 lib/priceFormat（tiny 价格需足小数位，否则刻度抹平）。
 // 主图右轴为共享 scale，须所有主图系列统一 priceFormat，否则被默认 precision 覆盖。
 const MAIN_PRICE_FORMAT = { type: "custom", formatter: priceScaleFormatter, minMove: 0.0001 } as const;
 // 自定义系列默认按全量数据 autoscale 会把屏外极值算进价格域（跨周期出现大片空白）；
@@ -118,6 +123,15 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const intervalRef = useRef<string>("15m");
   const loadingOlderRef = useRef(false);
   const hasMoreRef = useRef(true);
+  const loadGenRef = useRef(0);
+  const positionRef = useRef<PositionRow | null>(null);
+  const posLineRefs = useRef<Map<string, IPriceLine>>(new Map());
+  const posLabelRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const labelPriceRefs = useRef<Map<string, number>>(new Map());
+  const labelLayerRef = useRef<HTMLDivElement | null>(null);
+  const tpOrdersRef = useRef<Array<{ key: string; price: number }>>([]);
+  const prevCloseRef = useRef<number | null>(null);
+  const tickDirRef = useRef<1 | -1>(1);
   const loadOlderRef = useRef<() => Promise<void>>(async () => {});
   // 当前 candlesRef 归属的币种；切币未加载完成前置 null，禁止新币 tick 合并进旧币尾根。
   const candlesSymbolRef = useRef<string | null>(null);
@@ -128,6 +142,15 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const [attempt, setAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
+  const [clickMenu, setClickMenu] = useState<{ x: number; y: number; price: number | null } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [activeTool, setActiveTool] = useState<MeasureKind | null>(null);
+  const [drawings, setDrawings] = useState<MeasureDraw[]>([]);
+  const [draft, setDraft] = useState<MeasureDraw | null>(null);
+  const [, setDrawTick] = useState(0);
+  const activeToolRef = useRef<MeasureKind | null>(null);
+  const draftRef = useRef<MeasureDraw | null>(null);
+  const drawIdRef = useRef(1);
   const viewModeRef = useRef<"auto" | "manual">("auto");
   const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
 
@@ -136,6 +159,112 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const plot = Math.max(120, width - 60);
     return Math.min(AUTO_MAX_BARS, Math.max(AUTO_MIN_BARS, Math.round(plot / AUTO_BAR_SPACING)));
   };
+
+  // 自动视图：最新根落在视口 80% 处，右侧留 1/5 空白；跨度不变保持蜡烛密度。
+  const autoRange = (length: number) => {
+    const bars = autoVisibleBars();
+    const last = length - 1;
+    return { from: Math.max(0, last - bars * 0.8 + 0.5), to: last + bars * 0.2 - 0.5 };
+  };
+
+  // 持仓线：开仓／止损／现价浮盈亏／已挂止盈单；横线＋方框，方框定位左 1/6 处。
+  const layoutPosLabels = useCallback(() => {
+    const series = candleRef.current;
+    const layer = labelLayerRef.current;
+    const container = containerRef.current;
+    if (!series || !layer || !container) return;
+    const leftEdge = 8;
+    const leftSixth = Math.round(container.clientWidth / 6);
+    const strip = posLabelRefs.current.get("entry")?.offsetWidth || posLabelRefs.current.get("stop")?.offsetWidth || 64;
+    // 三框整体再右移两个条宽；浮盈亏仍在开仓/止损右侧一个条宽。
+    const base = leftEdge + strip * 2;
+    const height = container.clientHeight;
+    posLabelRefs.current.forEach((el, key) => {
+      const price = labelPriceRefs.current.get(key);
+      const y = price !== undefined ? series.priceToCoordinate(price) : null;
+      if (y === null || y < 0 || y > height) { el.style.display = "none"; return; }
+      el.style.display = "";
+      el.style.left = key === "entry" || key === "stop" ? `${base}px` : key === "pnl" ? `${base + strip + 8}px` : `${leftSixth}px`;
+      el.style.top = `${y}px`;
+    });
+  }, []);
+
+  const syncPositionLines = useCallback((row: PositionRow | null, liveClose?: number) => {
+    const series = candleRef.current;
+    if (!series) return;
+    const lines = posLineRefs.current;
+    const labels = posLabelRefs.current;
+    const layer = labelLayerRef.current;
+    const desired = new Map<string, { price: number; text: string; color: string; style: LineStyle }>();
+    if (row) {
+      const entry = Number(row.open_price);
+      const stop = Number(row.market_stop_price);
+      const notional = Number(row.position_amount);
+      if (Number.isFinite(entry) && entry > 0 && Number.isFinite(notional)) {
+        const long = row.side === "0" || row.side === "long" || row.side === "BUY";
+        const loss = Number.isFinite(stop) && stop > 0 ? notional * Math.abs(entry - stop) / entry : 0;
+        const close = liveClose !== undefined && Number.isFinite(liveClose) ? liveClose : entry;
+        const pnl = (close - entry) / entry * notional * (long ? 1 : -1);
+        if (prevCloseRef.current !== null && close !== prevCloseRef.current) tickDirRef.current = close > prevCloseRef.current ? 1 : -1;
+        prevCloseRef.current = close;
+        const dirColor = tickDirRef.current === 1 ? "#28A473" : "#F63C55";
+        desired.set("entry", { price: entry, text: `开仓 ${priceScaleFormatter(entry)}`, color: "#3179F5", style: LineStyle.Dashed });
+        if (Number.isFinite(stop) && stop > 0) desired.set("stop", { price: stop, text: `止损 -${loss.toFixed(2)}U`, color: "#F63C55", style: LineStyle.Dashed });
+        desired.set("pnl", { price: close, text: `${pnl >= 0 ? "浮盈" : "浮亏"} ${pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}U`, color: dirColor, style: LineStyle.Dotted });
+        tpOrdersRef.current.forEach((tp, index) => {
+          if (Number.isFinite(tp.price) && tp.price > 0) desired.set(tp.key, { price: tp.price, text: `止盈${tpOrdersRef.current.length > 1 ? ` L${index + 1}` : ""} ${priceScaleFormatter(tp.price)}`, color: "#28A473", style: LineStyle.Dashed });
+        });
+      }
+    }
+    for (const [key, line] of [...lines.entries()]) {
+      if (!desired.has(key)) { series.removePriceLine(line); lines.delete(key); }
+    }
+    for (const [key, el] of [...labels.entries()]) {
+      if (!desired.has(key)) { el.remove(); labels.delete(key); labelPriceRefs.current.delete(key); }
+    }
+    desired.forEach((spec, key) => {
+      labelPriceRefs.current.set(key, spec.price);
+      const existing = lines.get(key);
+      if (existing) existing.applyOptions({ price: spec.price, color: spec.color, lineStyle: spec.style, axisLabelVisible: false });
+      else lines.set(key, series.createPriceLine({ price: spec.price, color: spec.color, lineWidth: 1, lineStyle: spec.style, axisLabelVisible: false, lineVisible: true }));
+      let el = labels.get(key);
+      if (!el && layer) {
+        el = document.createElement("div");
+        el.className = "pos-label";
+        layer.appendChild(el);
+        labels.set(key, el);
+      }
+      if (el) {
+        el.textContent = spec.text;
+        el.style.background = spec.color;
+      }
+    });
+    layoutPosLabels();
+  }, [layoutPosLabels]);
+
+  useEffect(() => {
+    let active = true;
+    const loadPos = () => Promise.all([
+      tradeApi.positions(),
+      tradeApi.orders(1).catch(() => ({ items: [] as Array<{ id: number; symbol: string; kind: string; price: number | string; can_cancel: boolean }> })),
+    ]).then(([rows, orders]) => {
+      if (!active) return;
+      const row = rows.find((item) => item.symbol === symbol) ?? null;
+      positionRef.current = row;
+      tpOrdersRef.current = (orders.items ?? [])
+        .filter((order) => order.symbol === symbol && order.kind.endsWith("take_profit") && order.can_cancel)
+        .map((order) => ({ key: `tp-${order.id}`, price: Number(order.price) }));
+      syncPositionLines(row, candlesRef.current[candlesRef.current.length - 1]?.close);
+    }).catch(() => undefined);
+    void loadPos();
+    const timer = window.setInterval(loadPos, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      positionRef.current = null;
+      syncPositionLines(null);
+    };
+  }, [symbol, syncPositionLines]);
 
   const renderData = useCallback((candles: Candle[], resetView: boolean, tail = false, preserveView = false) => {
     const chart = chartRef.current;
@@ -160,6 +289,14 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       const histogram = indicators.macd[index].histogram;
       return histogram === null ? { time: times[index] as Time } : { time: times[index] as Time, value: histogram };
     };
+    if (!tail) {
+      // tiny 价格（如 0.0000123）须按量级放宽 minMove，否则右轴刻度全舍入为 0＝无价格。
+      const mainFormat = { ...MAIN_PRICE_FORMAT, minMove: minMoveFor(candles[last].close) };
+      candleRef.current.applyOptions({ priceFormat: mainFormat });
+      emaRefs.current.forEach((series) => series?.applyOptions({ priceFormat: mainFormat }));
+      stLineRef.current?.applyOptions({ priceFormat: mainFormat });
+      bandRef.current?.applyOptions({ priceFormat: mainFormat });
+    }
     if (tail) {
       // 实时 tick 只更新尾根，避免每 tick 全量 setData 重建全部系列。
       const candle = candles[last];
@@ -172,6 +309,9 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       macdDeaRef.current?.update(linePoint(times[last], indicators.macd[last].dea));
       stochKRef.current?.update(linePoint(times[last], indicators.stoch[last].k));
       stochDRef.current?.update(linePoint(times[last], indicators.stoch[last].d));
+      if (prevCloseRef.current === null) prevCloseRef.current = candles[last - 1]?.close ?? null;
+      syncPositionLines(positionRef.current, candle.close);
+      setDrawTick((t) => t + 1);
       return;
     }
     candleRef.current.setData(candles.map((candle): CandlePoint => ({
@@ -203,6 +343,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     stochDRef.current?.setData(lineData(times, indicators.stoch.map((point) => point.d)));
     stochKRef.current?.applyOptions({ color: config.stoch.kColor, visible: config.stoch.enabled });
     stochDRef.current?.applyOptions({ color: config.stoch.dColor, visible: config.stoch.enabled });
+    if (prevCloseRef.current === null) prevCloseRef.current = candles[last - 1]?.close ?? null;
+    syncPositionLines(positionRef.current, candles[last].close);
     applyPaneLayout(chart, config);
     // TradingView 式附图图例：名称＋参数固定 pane 左上角，禁用时隐藏。
     const panes = chart.panes();
@@ -225,7 +367,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       legend.style.display = spec.enabled ? "" : "none";
     });
     if (resetView || (viewModeRef.current === "auto" && !preserveView)) {
-      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - autoVisibleBars()), to: candles.length - 1 });
+      chart.timeScale().setVisibleLogicalRange(autoRange(candles.length));
     }
   }, []);
 
@@ -247,6 +389,11 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       localization: { locale: "zh-CN" },
     });
     chartRef.current = chart;
+    if (import.meta.env.DEV) (window as unknown as { __chart?: IChartApi }).__chart = chart;
+    const labelLayer = document.createElement("div");
+    labelLayer.className = "pos-label-layer";
+    container.appendChild(labelLayer);
+    labelLayerRef.current = labelLayer;
     // 自定义系列绘制时读实时可见范围，避免陈旧 visibleRange 造成左拖堆积／右侧缺柱。
     const liveRange = () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
     bandConfigRef.current.visibleRange = liveRange;
@@ -262,17 +409,21 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const stLineView = createSupertrendLineView(stLineConfigRef.current);
     stLineRef.current = chart.addCustomSeries(stLineView.view, { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT, autoscaleInfoProvider: () => visiblePriceScale(stLineView.visiblePriceRange()) }, 0);
     macdHistRef.current = chart.addCustomSeries(createMacdHistogramView(macdConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
-    macdDifRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
+    // 慢线先加、快线后加：DIF 压在 DEA 之上（后加者绘制在上）。
     macdDeaRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
+    macdDifRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     const fixedRange = { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) };
-    stochKRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...fixedRange, ...NO_CROSSHAIR_MARKER }, 2);
+    // D 先加、K 后加：绿 K 压在紫 D 之上。
     stochDRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...fixedRange, ...NO_CROSSHAIR_MARKER }, 2);
+    stochKRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...fixedRange, ...NO_CROSSHAIR_MARKER }, 2);
     const resizeObserver = new ResizeObserver(() => {
       if (!chartRef.current) return;
       applyPaneLayout(chartRef.current, settingsRef.current);
       if (viewModeRef.current === "auto" && candlesRef.current.length) {
-        chartRef.current.timeScale().setVisibleLogicalRange({ from: Math.max(0, candlesRef.current.length - autoVisibleBars()), to: candlesRef.current.length - 1 });
+        chartRef.current.timeScale().setVisibleLogicalRange(autoRange(candlesRef.current.length));
       }
+      layoutPosLabels();
+      setDrawTick((t) => t + 1);
     });
     resizeObserver.observe(container);
     // 自动：左右拖动＋滚轮缩放可用，上下（价格轴／触摸竖向）锁定；手动：全向。
@@ -287,6 +438,18 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     // 手动模式左键拖图面＝全向平移不缩放；右侧价格标尺区域留给轴拖拽缩放。
     let vdrag: { startY: number; from: number; to: number } | null = null;
     const onPointerDown = (event: PointerEvent) => {
+      if ((event.target as HTMLElement).closest(".kline-click-menu")) return;
+      setClickMenu(null);
+      if (activeToolRef.current && event.button === 0) {
+        const rect = container.getBoundingClientRect();
+        const t = chart.timeScale().coordinateToTime(event.clientX - rect.left);
+        const pRaw = candleRef.current?.coordinateToPrice(event.clientY - rect.top) ?? null;
+        const p = pRaw === null ? null : Number(pRaw);
+        if (t === null || p === null) return;
+        draftRef.current = { id: 0, kind: activeToolRef.current, t1: Number(t), p1: p, t2: Number(t), p2: p };
+        setDraft(draftRef.current);
+        return;
+      }
       if (viewModeRef.current !== "manual" || event.button !== 0) return;
       const rect = container.getBoundingClientRect();
       const axisWidth = chart.priceScale("right", 0).width();
@@ -298,18 +461,54 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       vdrag = { startY: event.clientY, from: range.from, to: range.to };
     };
     const onPointerMove = (event: PointerEvent) => {
+      if (draftRef.current) {
+        const rect = container.getBoundingClientRect();
+        const t = chart.timeScale().coordinateToTime(event.clientX - rect.left);
+        const pRaw = candleRef.current?.coordinateToPrice(event.clientY - rect.top) ?? null;
+        const p = pRaw === null ? null : Number(pRaw);
+        if (t !== null && p !== null) {
+          draftRef.current = { ...draftRef.current, t2: Number(t), p2: p };
+          setDraft(draftRef.current);
+        }
+        return;
+      }
       if (!vdrag) return;
       const height = chart.panes()[0]?.getHeight() ?? 1;
       const perPixel = (vdrag.to - vdrag.from) / Math.max(1, height);
       const shift = (event.clientY - vdrag.startY) * perPixel;
       chart.priceScale("right", 0).setVisibleRange({ from: vdrag.from + shift, to: vdrag.to + shift });
     };
-    const onPointerUp = () => { vdrag = null; };
+    const onPointerUp = () => {
+      vdrag = null;
+      const d = draftRef.current;
+      if (d) {
+        draftRef.current = null;
+        setDraft(null);
+        if (d.t1 !== d.t2 && Math.abs(d.p1 - d.p2) > 0) setDrawings((list) => [...list, { ...d, id: drawIdRef.current++ }]);
+        setTool(null);
+      }
+    };
+    // 右键自定义菜单（屏蔽浏览器原生"图片另存为/检查"）；左键不触发。
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      const rect = container.getBoundingClientRect();
+      // 复制语义＝鼠标所处横线价格，非最新市价。
+      const pRaw = candleRef.current?.coordinateToPrice(event.clientY - rect.top) ?? null;
+      setCopied(false);
+      setClickMenu({
+        x: Math.min(Math.max(8, event.clientX - rect.left), Math.max(8, rect.width - 130)),
+        y: Math.min(Math.max(8, event.clientY - rect.top), Math.max(8, rect.height - 76)),
+        price: pRaw === null ? null : Number(pRaw),
+      });
+    };
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("pointerup", onPointerUp);
     const onRange = (range: { from: number; to: number } | null) => {
       if (range && range.from < 24) void loadOlderRef.current();
+      layoutPosLabels();
+      setDrawTick((t) => t + 1);
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     const onCrosshair = (param: { point?: { x: number; y: number } }) => {
@@ -327,6 +526,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       chart.unsubscribeCrosshairMove(onCrosshair);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("pointerup", onPointerUp);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       resizeObserver.disconnect();
@@ -337,6 +537,12 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       emaRefs.current = [null, null, null];
       stLineRef.current = null;
       paneLegendRefs.current = [null, null];
+      posLineRefs.current = new Map();
+      posLabelRefs.current.forEach((el) => el.remove());
+      posLabelRefs.current = new Map();
+      labelPriceRefs.current = new Map();
+      labelLayerRef.current?.remove();
+      labelLayerRef.current = null;
       macdHistRef.current = macdDifRef.current = macdDeaRef.current = null;
       stochKRef.current = stochDRef.current = null;
     };
@@ -367,6 +573,12 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     intervalRef.current = selectedInterval;
     hasMoreRef.current = true;
     loadingOlderRef.current = false;
+    loadGenRef.current += 1;
+    prevCloseRef.current = null;
+    tickDirRef.current = 1;
+    // 切币必须恢复价格轴 autoScale：手动竖向拖动/轴缩放会冻结旧币价格窗，
+    // 不恢复则新币蜡烛落在窗外＝"切换后空白"，点自动才出来。
+    chartRef.current.panes().forEach((_, index) => chartRef.current?.priceScale("right", index).applyOptions({ autoScale: true }));
     const controller = new AbortController();
     const cached = getCachedKlines(symbol, selectedInterval);
     candlesSymbolRef.current = null;
@@ -380,22 +592,40 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     } else {
       setStatus("loading");
     }
-    getKlines(symbol, selectedInterval, HISTORY_LIMIT, controller.signal).then((candles) => {
-      if (!active) return;
-      putCachedKlines(symbol, selectedInterval, candles);
-      candlesRef.current = candles;
-      candlesSymbolRef.current = symbol;
-      if (!cached) {
-        viewModeRef.current = "auto";
-        setViewMode("auto");
-      }
-      renderData(candles, !cached);
-      setStatus("ready");
-      // 首屏 autoSize／面板比例稳定后强制重绘一次，消除自定义系列首屏残影。
-      requestAnimationFrame(() => { if (active) renderData(candlesRef.current, false); });
-    }).catch((error: unknown) => {
-      if (active && !(error instanceof DOMException && error.name === "AbortError")) setStatus("error");
-    });
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const fetchHistory = (attemptNo: number) => {
+      // 后端同步线程队列可能挂起请求：每 attempt 12s 超时，超时/瞬断均退避重试保留蒙层。
+      let guardTimer: ReturnType<typeof setTimeout> | undefined;
+      const guard = new Promise<never>((_, reject) => { guardTimer = setTimeout(() => reject(new Error("kline-attempt-timeout")), 12000); });
+      Promise.race([getKlines(symbol, selectedInterval, HISTORY_LIMIT, controller.signal), guard]).then((candles) => {
+        if (guardTimer) clearTimeout(guardTimer);
+        if (!active) return;
+        if (!candles.length) {
+          // 冷币首请求后端可能先回空表＋historyPending（异步修复）：保留蒙层退避重试，不渲染空、不缓存空。
+          if (attemptNo < 6) retryTimer = setTimeout(() => fetchHistory(attemptNo + 1), 1200 * (attemptNo + 1));
+          else setStatus("error");
+          return;
+        }
+        putCachedKlines(symbol, selectedInterval, candles);
+        candlesRef.current = candles;
+        candlesSymbolRef.current = symbol;
+        if (!cached) {
+          viewModeRef.current = "auto";
+          setViewMode("auto");
+        }
+        renderData(candles, !cached);
+        setStatus("ready");
+        // 首屏 autoSize／面板比例稳定后强制重绘一次，消除自定义系列首屏残影。
+        requestAnimationFrame(() => { if (active) renderData(candlesRef.current, false); });
+      }).catch((error: unknown) => {
+        if (guardTimer) clearTimeout(guardTimer);
+        if (!active) return;
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (attemptNo < 6) retryTimer = setTimeout(() => fetchHistory(attemptNo + 1), 1200 * (attemptNo + 1));
+        else setStatus("error");
+      });
+    };
+    fetchHistory(0);
     let tickPending = false;
     const scheduleTail = () => {
       if (tickPending) return;
@@ -418,21 +648,25 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
           const list = candlesRef.current;
           const last = list[list.length - 1];
           if (last && last.time === bucket) {
-            candlesRef.current = [...list.slice(0, -1), { ...last, high: Math.max(last.high, incoming.high), low: Math.min(last.low, incoming.low), close: incoming.close, volume: last.volume + incoming.volume }];
+            // forming 1m 不重复累加成交量：仅收盘 1m 计入桶成交量。
+            candlesRef.current = [...list.slice(0, -1), { ...last, high: Math.max(last.high, incoming.high), low: Math.min(last.low, incoming.low), close: incoming.close, volume: event.closed ? last.volume + incoming.volume : last.volume }];
           } else if (!last || bucket > last.time) {
             candlesRef.current = [...list, { time: bucket, open: incoming.open, high: incoming.high, low: incoming.low, close: incoming.close, volume: incoming.volume }].slice(-1500);
           }
         }
         scheduleTail();
       } else if (event.type === "ticker") {
-        const next = mergeTicker(candlesRef.current, event.price);
+        const width = intervalSeconds[selectedInterval] ?? 60;
+        const ts = event.eventTime && event.eventTime > 0 ? event.eventTime : Date.now();
+        const bucket = Math.floor(ts / 1000 / width) * width;
+        const next = mergeTicker(candlesRef.current, event.price, bucket);
         if (next !== candlesRef.current) {
           candlesRef.current = next;
           scheduleTail();
         }
       }
     } });
-    return () => { active = false; controller.abort(); unsubscribe(); };
+    return () => { active = false; controller.abort(); unsubscribe(); if (retryTimer) clearTimeout(retryTimer); };
   }, [hydrating, symbol, selectedInterval, attempt, renderData]);
 
   // 向左滚到历史边缘时补载更早 K 线（beforeOpenTime 分页），视口保持不跳。
@@ -442,9 +676,12 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     if (!chart || !symbol || loadingOlderRef.current || !hasMoreRef.current) return;
     const current = candlesRef.current;
     if (!current.length || current.length >= 3000) { hasMoreRef.current = false; return; }
+    const gen = loadGenRef.current;
     loadingOlderRef.current = true;
     try {
       const older = await getKlines(symbol, intervalRef.current, 300, undefined, current[0].time * 1000);
+      // 切币/切周期/刷新会推进世代：跨世代补载必须丢弃，否则旧币历史混入新币并污染缓存。
+      if (gen !== loadGenRef.current || symbolRef.current !== symbol) return;
       const fresh = older.filter((candle) => candle.time < current[0].time);
       if (older.length < 300) hasMoreRef.current = false;
       if (!fresh.length) return;
@@ -467,18 +704,100 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     if (!chart || !length) return;
     // 手动期的价格轴缩放一并复位：恢复各 pane 自动价格域。
     chart.panes().forEach((_, index) => chart.priceScale("right", index).applyOptions({ autoScale: true }));
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, length - autoVisibleBars()), to: length - 1 });
+    chart.timeScale().setVisibleLogicalRange(autoRange(length));
+  }
+
+  async function copyCurrentPrice() {
+    const price = clickMenu?.price ?? candlesRef.current[candlesRef.current.length - 1]?.close;
+    if (price === undefined || price === null) return;
+    const text = priceScaleFormatter(price);
+    setCopiedPrice(text);
+    let ok = false;
+    if (navigator.clipboard) {
+      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fall through to legacy copy */ }
+    }
+    if (!ok) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(ok);
+  }
+
+  function setTool(tool: MeasureKind | null) {
+    activeToolRef.current = tool;
+    setActiveTool(tool);
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (tool) {
+      // 绘制期间禁用平移/缩放，避免拖拽锚点时图面跟着动。
+      chart.applyOptions({
+        handleScroll: { pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false, mouseWheel: false },
+        handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: false },
+      });
+    } else {
+      viewModeApplyRef.current(viewModeRef.current);
+    }
+  }
+
+  function renderMeasure(d: MeasureDraw) {
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    if (!chart || !series) return null;
+    const ts = chart.timeScale();
+    const x1 = ts.timeToCoordinate(d.t1 as ChartTime);
+    const x2 = ts.timeToCoordinate(d.t2 as ChartTime);
+    if (x1 === null || x2 === null) return null;
+    const left = Math.min(x1, x2);
+    const width = Math.max(24, Math.abs(x2 - x1));
+    const yOf = (p: number) => series.priceToCoordinate(p);
+    const nodes: ReactNode[] = [];
+    const line = (key: string, y: number | null, color: string, tag: string) => {
+      if (y === null) return;
+      nodes.push(<div key={`${key}l`} className="measure-line" style={{ left, width, top: y, background: color }} />);
+      nodes.push(<div key={`${key}t`} className="measure-tag" style={{ left: left + 4, top: y - 16, background: color }}>{tag}</div>);
+    };
+    const zone = (key: string, ya: number | null, yb: number | null, color: string) => {
+      if (ya === null || yb === null) return;
+      nodes.push(<div key={key} className="measure-zone" style={{ left, width, top: Math.min(ya, yb), height: Math.abs(ya - yb), background: color }} />);
+    };
+    if (d.kind === "fib") {
+      FIB_LEVELS.forEach((r) => {
+        const p = d.p1 + (d.p2 - d.p1) * r;
+        line(`f${r}`, yOf(p), "#8A93A3", `${r}  ${priceScaleFormatter(p)}`);
+      });
+    } else {
+      const risk = Math.abs(d.p1 - d.p2);
+      const target = d.kind === "long" ? d.p1 + risk * MEASURE_RR : d.p1 - risk * MEASURE_RR;
+      const yE = yOf(d.p1);
+      const yS = yOf(d.p2);
+      const yT = yOf(target);
+      zone("loss", yE, yS, "rgba(246, 60, 85, 0.14)");
+      zone("profit", yE, yT, "rgba(40, 164, 115, 0.14)");
+      const riskPct = d.p1 > 0 ? (risk / d.p1) * 100 : 0;
+      line("e", yE, "#3179F5", `开仓 ${priceScaleFormatter(d.p1)}`);
+      line("s", yS, "#F63C55", `止损 -${riskPct.toFixed(2)}%`);
+      line("t", yT, "#28A473", `止盈 +${(riskPct * MEASURE_RR).toFixed(2)}%  RR${MEASURE_RR}`);
+    }
+    return <div className="measure-layer" key={d.id}>{nodes}</div>;
   }
 
   async function refreshChart() {
     if (refreshing) return;
     setRefreshing(true);
+    loadGenRef.current += 1;
     try {
       const candles = await getKlines(symbol, selectedInterval, HISTORY_LIMIT);
+      if (!candles.length) { setStatus("error"); return; }
       putCachedKlines(symbol, selectedInterval, candles);
       candlesRef.current = candles;
       candlesSymbolRef.current = symbol;
       renderData(candles, true);
+      // 刷新＝完整重置：模式回自动、价格轴 autoScale、视口回自动留白。
+      resetView();
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -496,6 +815,10 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
               {interval === "1d" ? "1D" : interval.toUpperCase()}
             </button>
           ))}
+          <span className="divider" />
+          <button type="button" className={`measure-tool ${activeTool === "long" ? "active" : ""}`} title="做多测量" aria-label="做多测量" onClick={() => setTool(activeTool === "long" ? null : "long")}><TrendingUp size={15} /></button>
+          <button type="button" className={`measure-tool ${activeTool === "short" ? "active" : ""}`} title="做空测量" aria-label="做空测量" onClick={() => setTool(activeTool === "short" ? null : "short")}><TrendingDown size={15} /></button>
+          <button type="button" className={`measure-tool ${activeTool === "fib" ? "active" : ""}`} title="斐波那契测量" aria-label="斐波那契测量" onClick={() => setTool(activeTool === "fib" ? null : "fib")}><Rows3 size={15} /></button>
         </div>
         <div className="toolbar-right">
           <button type="button" className="chart-refresh" aria-label="刷新 K 线" title="刷新 K 线" disabled={refreshing} onClick={() => void refreshChart()}><RefreshCw size={14} className={refreshing ? "spin" : ""} /></button>
@@ -512,7 +835,15 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       <div className="kline-stage" data-chart-theme={theme}>
         {status === "loading" && <div className="kline-loading" role="status" aria-label="K 线加载中"><span className="kline-bars" aria-hidden="true"><i /><i /><i /><i /></span></div>}
         {status === "error" && <div className="chart-widget-notice chart-widget-error"><p role="status">K 线加载失败</p><button className="chart-restore" type="button" onClick={() => setAttempt((previous) => previous + 1)}>重试</button></div>}
-        <div ref={containerRef} className="kline-container" />
+        <div ref={containerRef} className="kline-container">
+          {drawings.map((d) => renderMeasure(d))}
+          {draft && renderMeasure(draft)}
+          {clickMenu && <div className="kline-click-menu" style={{ left: clickMenu.x, top: clickMenu.y }}>
+            <button type="button" onClick={() => { setClickMenu(null); void refreshChart(); }}>刷新</button>
+            <button type="button" onClick={() => void copyCurrentPrice()}>{copied ? "已复制" : "复制当前价格"}</button>
+            <button type="button" onClick={() => { setDrawings([]); setClickMenu(null); }}>清除测量</button>
+          </div>}
+        </div>
         {crosshair && (() => {
           const base = candlesRef.current[candlesRef.current.length - 1]?.close ?? crosshair.price;
           const pct = base > 0 ? (crosshair.price - base) / base * 100 : 0;

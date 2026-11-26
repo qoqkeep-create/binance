@@ -115,13 +115,10 @@ export function PositionsPage({ onOpenSymbol, prices }: { onOpenSymbol: (symbol:
           <div><span>市价止损</span><strong>{row.market_stop_price ? fmt(row.market_stop_price, 4) : "未设置"}</strong></div>
           <div><span>市价止盈</span><strong>{row.manual_take_profit_price ? fmt(row.manual_take_profit_price, 4) : "未设置"}</strong></div>
         </div>
-        <div className="pg-tp-module">
-          <span>止盈</span>
+        <footer>
           <button type="button" className={`pg-tp-btn ${row.strategy_status === 1 ? "is-running" : ""}`} onClick={() => setTpRow(row)}>
             {row.strategy_status === 1 ? "自动止盈中" : "自动止盈"}
           </button>
-        </div>
-        <footer>
           <button type="button" className="pg-close-btn" onClick={() => setConfirmId(row.id)}>立即平仓</button>
         </footer>
       </article>;
