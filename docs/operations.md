@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 连接分层诊断 Web 发布（2026-11-26，北京时间）
+
+源码 **`b50ea94`** 已推送。Web **`trade-web-20261126-diag-b50ea94`** 原子切换（哈希 `42e0060d…` 与本地一致）。点击连接状态打开分层诊断：域名/TLS/证书、REST 行情目录、WS 握手/鉴权、WS ticker 推送、WS kline 推送，各段红绿点＋明细＋重新检测。生产实测：TLS 147ms ok、REST 已同步、**WS 握手/鉴权=被拒**（后端 ValueError=缺 bearer）。服务端直连/经 nginx 带 subprotocol 均 101，残差在浏览器侧 token/subprotocol 送达（疑似新域名 refresh cookie path 致 token 未续），待针对性排查。大周期下影线数据核验正确（low=min 源 low），实图有下影线；刷新按钮可强制重拉。
+
 ## 右侧价格标尺鼠标缩放恢复 Web 发布（2026-11-26，北京时间）
 
 用户反馈价格标尺拖拽缩放消失。根因：ux4 为满足「图面拖动不缩放」误将 handleScale.axisPressedMouseMove 全关（连价格轴拖拽缩放一起禁掉）。恢复 axisPressedMouseMove:true（自动/手动两模式），图面左键拖动仍只平移不缩放；手动竖向平移 handler 增几何守卫（pointer 落在右价格标尺宽度内即跳过，交还轴缩放）。Web release **`trade-web-20261126-axiszoom-af642f7`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `b17f4784…`／`9803491b…` 与本地单链构建一致，ba 复核同哈希。契约测试改锁 axisPressedMouseMove:true＋轴区守卫。轴拖拽为库原生指针交互，隐藏面板不可合成驱动，归线上验收。后端不切换，旧 release 保留可回退。
