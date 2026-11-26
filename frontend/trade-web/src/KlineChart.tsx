@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { RefreshCw, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import {
-  createChart, ColorType, CrosshairMode, LineStyle,
-  CandlestickSeries, LineSeries, HistogramSeries,
+  createChart, ColorType, CrosshairMode,
+  CandlestickSeries, LineSeries,
   type IChartApi, type ISeriesApi, type Time as ChartTime,
-  type CandlestickData, type LineData, type HistogramData, type WhitespaceData,
+  type CandlestickData, type LineData, type WhitespaceData,
 } from "lightweight-charts";
 import { useAccount, usePreference } from "./AccountProvider";
 import { BinanceStream, getKlines, type Candle } from "./lib/binance";
@@ -14,6 +14,7 @@ import { buildChartIndicators } from "./lib/chartIndicators";
 import { mergeCandle, mergeTicker } from "./lib/candleMerge";
 import { DEFAULT_INDICATORS, mergeIndicatorSettings, type IndicatorSettings } from "./lib/indicatorSettings";
 import { createSupertrendBandView, type BandPoint, type BandFillConfig } from "./lib/supertrendBand";
+import { createMacdHistogramView, type MacdBarPoint, type MacdHistogramConfig } from "./lib/macdHistogram";
 import IndicatorSettingsPanel from "./IndicatorSettingsPanel";
 import "./kline-chart.css";
 
@@ -25,6 +26,8 @@ const INITIAL_VISIBLE_BARS = 64;
 // 自适应高度比例：主图 70%，两个副图各 15%。
 const PANE_STRETCH = { main: 70, sub: 15 };
 const RIGHT_OFFSET = 5;
+// 客户端 SWR 缓存：回切已看过的币种瞬时出图，后台再拉新数据校正。
+const klineCache = new Map<string, Candle[]>();
 
 interface ChartPreference { interval: string; indicators?: unknown }
 const defaultChartPreference: ChartPreference = { interval: "15m", indicators: DEFAULT_INDICATORS };
@@ -44,8 +47,12 @@ const NO_CROSSHAIR_MARKER = { crosshairMarkerVisible: false } as const;
 type Time = ChartTime;
 type LinePoint = LineData<Time> | WhitespaceData<Time>;
 type CandlePoint = CandlestickData<Time> | WhitespaceData<Time>;
-type HistogramPoint = HistogramData<Time> | WhitespaceData<Time>;
 type BandDataPoint = BandPoint | WhitespaceData<Time>;
+type MacdDataPoint = MacdBarPoint | WhitespaceData<Time>;
+
+function linePoint(time: number, value: number | null): LinePoint {
+  return value === null ? { time: time as Time } : { time: time as Time, value };
+}
 
 function lineData(times: number[], values: Array<number | null>): LinePoint[] {
   return times.map((time, index) => values[index] === null
@@ -83,12 +90,15 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
   const emaRefs = useRef<Array<ISeriesApi<"Line"> | null>>([null, null, null]);
   const stUpRef = useRef<ISeriesApi<"Line"> | null>(null);
   const stDownRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const macdHistRef = useRef<ISeriesApi<"Custom", Time, MacdDataPoint> | null>(null);
+  const macdConfigRef = useRef<MacdHistogramConfig>({ upColor: "#28A473", downColor: "#F63C55", zeroColor: "#333B47" });
   const macdDifRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdDeaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const stochKRef = useRef<ISeriesApi<"Line"> | null>(null);
   const stochDRef = useRef<ISeriesApi<"Line"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
+  // 当前 candlesRef 归属的币种；切币未加载完成前置 null，禁止新币 tick 合并进旧币尾根。
+  const candlesSymbolRef = useRef<string | null>(null);
   const themeRef = useRef(theme);
   const settingsRef = useRef(settings);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -96,45 +106,65 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
   const viewModeRef = useRef<"auto" | "manual">("auto");
 
-  const renderData = useCallback((candles: Candle[], resetView: boolean) => {
+  const renderData = useCallback((candles: Candle[], resetView: boolean, tail = false) => {
     const chart = chartRef.current;
-    if (!chart || !candleRef.current) return;
+    if (!chart || !candleRef.current || !candles.length) return;
     const t = THEMES[themeRef.current];
     const config = settingsRef.current;
     const indicators = buildChartIndicators(candles, config);
     const times = indicators.times;
+    const last = candles.length - 1;
+    const emaValues = [indicators.ema21, indicators.ema55, indicators.ema144];
+    // 反转处留一根空 bar，让多头／空头线段明确断开。
+    const isFlip = (index: number) => index > 0 && indicators.supertrend[index - 1].direction !== indicators.supertrend[index].direction;
+    const stPoint = (index: number, direction: 1 | -1): LinePoint => {
+      const point = indicators.supertrend[index];
+      return point.direction === direction && point.value !== null && !isFlip(index) ? { time: times[index] as Time, value: point.value } : { time: times[index] as Time };
+    };
+    const bandPoint = (index: number): BandDataPoint => {
+      const point = indicators.supertrend[index];
+      // 反转 bar 留空，避免填充带画出跨趋势的竖直连接段。
+      return point.value === null || isFlip(index) ? { time: times[index] as Time } : { time: times[index] as Time, close: candles[index].close, st: point.value, direction: point.direction ?? 1 };
+    };
+    const macdPoint = (index: number): MacdDataPoint => {
+      const histogram = indicators.macd[index].histogram;
+      return histogram === null ? { time: times[index] as Time } : { time: times[index] as Time, value: histogram };
+    };
+    if (tail) {
+      // 实时 tick 只更新尾根，避免每 tick 全量 setData 重建全部系列。
+      const candle = candles[last];
+      candleRef.current.update({ time: candle.time as Time, open: candle.open, high: candle.high, low: candle.low, close: candle.close });
+      emaRefs.current.forEach((series, index) => series?.update(linePoint(times[last], emaValues[index][last])));
+      stUpRef.current?.update(stPoint(last, 1));
+      stDownRef.current?.update(stPoint(last, -1));
+      bandRef.current?.update(bandPoint(last));
+      macdHistRef.current?.update(macdPoint(last));
+      macdDifRef.current?.update(linePoint(times[last], indicators.macd[last].dif));
+      macdDeaRef.current?.update(linePoint(times[last], indicators.macd[last].dea));
+      stochKRef.current?.update(linePoint(times[last], indicators.stoch[last].k));
+      stochDRef.current?.update(linePoint(times[last], indicators.stoch[last].d));
+      return;
+    }
     candleRef.current.setData(candles.map((candle): CandlePoint => ({
       time: candle.time as Time, open: candle.open, high: candle.high, low: candle.low, close: candle.close,
     })));
-    const emaValues = [indicators.ema21, indicators.ema55, indicators.ema144];
     emaRefs.current.forEach((series, index) => {
       series?.setData(lineData(times, emaValues[index]));
       series?.applyOptions({ color: config.ema.colors[index], visible: config.ema.enabled });
     });
-    // 反转处留一根空 bar，让多头／空头线段明确断开。
-    const isFlip = (index: number) => index > 0 && indicators.supertrend[index - 1].direction !== indicators.supertrend[index].direction;
-    stUpRef.current?.setData(times.map((time, index): LinePoint => {
-      const point = indicators.supertrend[index];
-      return point.direction === 1 && point.value !== null && !isFlip(index) ? { time: time as Time, value: point.value } : { time: time as Time };
-    }));
-    stDownRef.current?.setData(times.map((time, index): LinePoint => {
-      const point = indicators.supertrend[index];
-      return point.direction === -1 && point.value !== null && !isFlip(index) ? { time: time as Time, value: point.value } : { time: time as Time };
-    }));
+    stUpRef.current?.setData(times.map((_, index) => stPoint(index, 1)));
+    stDownRef.current?.setData(times.map((_, index) => stPoint(index, -1)));
     stUpRef.current?.applyOptions({ color: config.supertrend.upColor, visible: config.supertrend.enabled });
     stDownRef.current?.applyOptions({ color: config.supertrend.downColor, visible: config.supertrend.enabled });
     bandConfigRef.current.fillUpColor = config.supertrend.fillUpColor;
     bandConfigRef.current.fillDownColor = config.supertrend.fillDownColor;
     bandConfigRef.current.fillOpacity = config.supertrend.fillOpacity;
-    bandRef.current?.setData(times.map((time, index): BandDataPoint => {
-      const point = indicators.supertrend[index];
-      return point.value === null ? { time: time as Time } : { time: time as Time, close: candles[index].close, st: point.value, direction: point.direction ?? 1 };
-    }));
+    bandRef.current?.setData(times.map((_, index) => bandPoint(index)));
     bandRef.current?.applyOptions({ visible: config.supertrend.enabled });
-    macdHistRef.current?.setData(times.map((time, index): HistogramPoint => {
-      const histogram = indicators.macd[index].histogram;
-      return histogram === null ? { time: time as Time } : { time: time as Time, value: histogram, color: histogram >= 0 ? config.macd.upColor : config.macd.downColor };
-    }));
+    macdConfigRef.current.upColor = config.macd.upColor;
+    macdConfigRef.current.downColor = config.macd.downColor;
+    macdConfigRef.current.zeroColor = t.grid;
+    macdHistRef.current?.setData(times.map((_, index) => macdPoint(index)));
     macdDifRef.current?.setData(lineData(times, indicators.macd.map((point) => point.dif)));
     macdDeaRef.current?.setData(lineData(times, indicators.macd.map((point) => point.dea)));
     macdDifRef.current?.applyOptions({ color: config.macd.difColor, visible: config.macd.enabled });
@@ -145,7 +175,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     stochKRef.current?.applyOptions({ color: config.stoch.kColor, visible: config.stoch.enabled });
     stochDRef.current?.applyOptions({ color: config.stoch.dColor, visible: config.stoch.enabled });
     applyPaneLayout(chart, config);
-    if (candles.length && (resetView || viewModeRef.current === "auto")) {
+    if (resetView || viewModeRef.current === "auto") {
       chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - INITIAL_VISIBLE_BARS), to: candles.length - 1 });
     }
   }, []);
@@ -175,13 +205,12 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     emaRefs.current = [0, 1, 2].map(() => chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }));
     stUpRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER });
     stDownRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER });
-    macdHistRef.current = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
+    macdHistRef.current = chart.addCustomSeries(createMacdHistogramView(macdConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     macdDifRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     macdDeaRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     const fixedRange = { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) };
     stochKRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...fixedRange, ...NO_CROSSHAIR_MARKER }, 2);
     stochDRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...fixedRange, ...NO_CROSSHAIR_MARKER }, 2);
-    macdHistRef.current.createPriceLine({ price: 0, color: t.grid, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: "" });
     const resizeObserver = new ResizeObserver(() => { if (chartRef.current) applyPaneLayout(chartRef.current, settingsRef.current); });
     resizeObserver.observe(container);
     const markManual = () => { viewModeRef.current = "manual"; setViewMode("manual"); };
@@ -226,28 +255,53 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     if (hydrating || !chartRef.current) return;
     let active = true;
     const controller = new AbortController();
-    setStatus("loading");
-    getKlines(symbol, selectedInterval, HISTORY_LIMIT, controller.signal).then((candles) => {
-      if (!active) return;
-      candlesRef.current = candles;
+    const cacheKey = `${symbol}|${selectedInterval}`;
+    const cached = klineCache.get(cacheKey);
+    candlesSymbolRef.current = null;
+    if (cached && cached.length) {
+      candlesRef.current = cached;
+      candlesSymbolRef.current = symbol;
       viewModeRef.current = "auto";
       setViewMode("auto");
-      renderData(candles, true);
+      renderData(cached, true);
+      setStatus("ready");
+    } else {
+      setStatus("loading");
+    }
+    getKlines(symbol, selectedInterval, HISTORY_LIMIT, controller.signal).then((candles) => {
+      if (!active) return;
+      if (klineCache.size > 12) klineCache.delete(klineCache.keys().next().value as string);
+      klineCache.set(cacheKey, candles);
+      candlesRef.current = candles;
+      candlesSymbolRef.current = symbol;
+      if (!cached) {
+        viewModeRef.current = "auto";
+        setViewMode("auto");
+      }
+      renderData(candles, !cached);
       setStatus("ready");
     }).catch((error: unknown) => {
       if (active && !(error instanceof DOMException && error.name === "AbortError")) setStatus("error");
     });
+    let tickPending = false;
+    const scheduleTail = () => {
+      if (tickPending) return;
+      tickPending = true;
+      window.setTimeout(() => {
+        tickPending = false;
+        if (active && candlesSymbolRef.current === symbol && candlesRef.current.length) renderData(candlesRef.current, false, true);
+      }, 120);
+    };
     const stream = new BinanceStream(symbol, selectedInterval, (event) => {
-      if (!active) return;
+      if (!active || candlesSymbolRef.current !== symbol) return;
       if (event.type === "kline") {
-        const next = mergeCandle(candlesRef.current, event.candle);
-        candlesRef.current = next;
-        renderData(next, false);
+        candlesRef.current = mergeCandle(candlesRef.current, event.candle);
+        scheduleTail();
       } else if (event.type === "ticker") {
         const next = mergeTicker(candlesRef.current, event.price);
         if (next !== candlesRef.current) {
           candlesRef.current = next;
-          renderData(next, false);
+          scheduleTail();
         }
       }
     });
@@ -287,7 +341,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
         </div>
       </div>
       <div className="kline-stage" data-chart-theme={theme}>
-        {status === "loading" && <div className="chart-widget-loading" role="status"><RefreshCw size={14} className="spin" /> 正在加载 K 线…</div>}
+        {status === "loading" && <div className="kline-loading" role="status"><span className="kline-spinner" aria-hidden="true" /><span>加载 K 线…</span></div>}
         {status === "error" && <div className="chart-widget-notice chart-widget-error"><p role="status">K 线加载失败</p><button className="chart-restore" type="button" onClick={() => setAttempt((previous) => previous + 1)}>重试</button></div>}
         <div ref={containerRef} className="kline-container" />
       </div>

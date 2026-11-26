@@ -7,7 +7,7 @@ const indicators = readFileSync(fileURLToPath(new URL("../src/lib/chartIndicator
 if (source.includes("tv-advanced-chart") || source.includes("widgets.tradingview-widget.com") || source.includes("TradingViewWidget")) {
   throw new Error("Web K-line must be self-rendered, not the TradingView iframe widget");
 }
-for (const marker of ["createChart", "CandlestickSeries", "HistogramSeries", "LineSeries", 'from "lightweight-charts"']) {
+for (const marker of ["createChart", "CandlestickSeries", "LineSeries", 'from "lightweight-charts"', 'from "./lib/macdHistogram"', 'from "./lib/supertrendBand"']) {
   if (!source.includes(marker)) throw new Error(`K-line chart must use lightweight-charts: ${marker}`);
 }
 if (!source.includes('import { buildChartIndicators } from "./lib/chartIndicators"')) {
@@ -52,6 +52,27 @@ if (!source.includes("}, [hydrating, symbol, selectedInterval, attempt, renderDa
 }
 if (!source.includes("candleRef.current.setData(") || source.includes("createChart(container") === false) {
   throw new Error("Symbol switches must update data on the existing series");
+}
+
+const band = readFileSync(fileURLToPath(new URL("../src/lib/supertrendBand.ts", import.meta.url)), "utf8");
+const macd = readFileSync(fileURLToPath(new URL("../src/lib/macdHistogram.ts", import.meta.url)), "utf8");
+if (!band.includes("data.visibleRange") || !band.includes("range.from - 1")) {
+  throw new Error("Supertrend band must clip to the visible range to avoid edge stacking");
+}
+if (!macd.includes("strokeRect") || !macd.includes("fillRect")) {
+  throw new Error("MACD histogram must render solid positive and hollow negative bars");
+}
+if (!source.includes("renderData(candlesRef.current, false, true)") || !source.includes("candleRef.current.update(")) {
+  throw new Error("Live ticks must update only the tail bar, not rebuild all series");
+}
+if (!source.includes("kline-loading") || !source.includes("kline-spinner")) {
+  throw new Error("An iOS-style loading overlay must cover the chart while loading");
+}
+if (!source.includes("const klineCache = new Map") || !source.includes("klineCache.get(cacheKey)")) {
+  throw new Error("Symbol switches must use a client SWR cache for instant revisits");
+}
+if (!source.includes("candlesSymbolRef.current !== symbol") || !source.includes("candlesSymbolRef.current = null")) {
+  throw new Error("New-symbol ticks must never merge into the previous symbol's candles");
 }
 
 console.log("KlineChart self-rendered contract tests passed");

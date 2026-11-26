@@ -15,7 +15,7 @@ export interface BandFillConfig {
   fillOpacity: number;
 }
 
-interface StoredBar { x: number; close: number; st: number; direction: 1 | -1 }
+interface StoredBar { x: number; index: number; close: number; st: number; direction: 1 | -1 }
 
 function withAlpha(hex: string, alpha: number) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -27,14 +27,18 @@ function withAlpha(hex: string, alpha: number) {
 /** Filled band between close and the Supertrend line, broken at direction reversals. */
 export function createSupertrendBandView(config: BandFillConfig): ICustomSeriesPaneView<Time, BandPoint, CustomSeriesOptions> {
   let bars: StoredBar[] = [];
+  let range: { from: number; to: number } | null = null;
   const renderer: ICustomSeriesPaneRenderer = {
     draw(target, priceConverter) {
-      target.useMediaCoordinateSpace(({ context }) => {
+      target.useMediaCoordinateSpace(({ context, mediaSize }) => {
         if (bars.length < 2 || config.fillOpacity <= 0) return;
         for (let index = 0; index < bars.length - 1; index += 1) {
           const a = bars[index];
           const b = bars[index + 1];
           if (a.direction !== b.direction) continue;
+          // 只画可见范围内的 bar，避免屏外 bar 的 x 被夹到边缘造成左／右堆积。
+          if (range && (b.index < range.from - 1 || a.index > range.to + 1)) continue;
+          if (b.x < 0 || a.x > mediaSize.width) continue;
           const closeA = priceConverter(a.close);
           const stA = priceConverter(a.st);
           const closeB = priceConverter(b.close);
@@ -55,11 +59,12 @@ export function createSupertrendBandView(config: BandFillConfig): ICustomSeriesP
   return {
     renderer: () => renderer,
     update(data: PaneRendererCustomData<Time, BandPoint>) {
+      range = data.visibleRange ? { from: data.visibleRange.from, to: data.visibleRange.to } : null;
       bars = [];
       for (const bar of data.bars) {
         const point = bar.originalData;
         if (point.st === undefined || point.close === undefined) continue;
-        bars.push({ x: bar.x, close: point.close, st: point.st, direction: point.direction });
+        bars.push({ x: bar.x, index: bar.time, close: point.close, st: point.st, direction: point.direction });
       }
     },
     priceValueBuilder: (row) => [row.close, row.st],
