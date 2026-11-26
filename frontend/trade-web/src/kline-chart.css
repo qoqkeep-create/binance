@@ -1,0 +1,19 @@
+.kline-stage {
+  --chart-surface: #212731;
+  min-height: 0;
+  height: 0;
+  flex: 1 1 auto;
+  position: relative;
+  margin: 3px 4px 0;
+  overflow: hidden;
+  background: var(--chart-surface);
+}
+
+.kline-stage[data-chart-theme="light"] {
+  --chart-surface: #ffffff;
+}
+
+.kline-container {
+  position: absolute;
+  inset: 0;
+}

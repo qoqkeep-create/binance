@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web K 线改用 lightweight-charts 自建（2026-11-26，北京时间）
+
+Web K 线区域改为 `lightweight-charts` v5 自绘，替换 TradingView 托管 iframe；产物不再依赖外部 `www.tradingview-widget.com` loader，副图固定 72px、首屏 32 根、切币单次加载。本轮仅完成本地构建、替身测试与本地浏览器验收，**尚未生成静态 release、尚未部署**；待用户明确推送／部署指令后再原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**）。后端容器与 Nginx 配置不切换；实时尾根推送沿用既有 `/ws/v1`（需 ASGI 入口）。
+
 ## Web K 线初始可见数量调整（2026-11-26，北京时间）
 
 Web Component 初始时间范围压缩为原来的约一半，`2d → 1d`、`7d → 3d`、`1M → 15d`、`1y → 6M`，降低初始 K 线密度并保持用户缩放能力。静态 release **`trade-web-20261126-tv-bar-density-<commit>`** 将在本次验证后原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置不切换。

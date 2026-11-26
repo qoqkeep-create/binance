@@ -1,5 +1,11 @@
 # 开发与验证
 
+## Web K 线改用 lightweight-charts 自建（2026-11-26）
+
+`frontend/trade-web` 新增 `KlineChart.tsx` 与 `lib/chartIndicators.ts`，以 `lightweight-charts` v5 自绘替换 `TradingViewWidget`（已删除）。主图蜡烛＋EMA 21/55/144＋Supertrend 10×6（Wilder ATR），副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3，参数与暗／浅配色对齐 iOS `ChartEngine`。副图高度用绝对 `setStretchFactor` 固定 72px（`setHeight` 连续调用会互相干扰），并以 ResizeObserver 维持；首屏 `setVisibleLogicalRange` 固定 32 根。图表实例只挂载一次，切币／切周期经 AbortController＋生成守卫单次 `getKlines` 后 `setData`，尾根由 `BinanceStream` kline 事件 `update` 合并。周期栏 3m/5m/15m/1h/4h/1d（默认 15m），偏好仍走 `usePreference("chart")`。
+
+验证：新增 `tests/chartIndicators.test.ts`（EMA／Supertrend／MACD ×2／StochRSI 边界）与 `tests/klineChart.test.mjs`（自建契约、副图 72、首屏 32、单实例单次加载），移除 `tradingViewWidget.test.mjs`。`npm test`、`npm run build`、`git diff --check` 通过。本地浏览器（隔离 SQLite＋只读行情）实测：四指标渲染、副图 row 高度 72/72、首屏约 32 根、切币与切周期各仅新增 1 条 `/api/market/klines`、深浅色主题、滚轮缩放。实时尾根推送需 ASGI 后端（本地 WSGI runserver 无 WebSocket），未部署静态产物、未做真实交易或资金操作。
+
 ## Web K 线初始可见数量调整（2026-11-26）
 
 `TradingViewWidget` 将 legacy 偏好时间范围映射到更短的 Web Component `time-frame` 初始值，`2d`、`7d`、`1M`、`1y` 分别压缩为 `1d`、`3d`、`15d`、`6M`。契约测试锁定映射，Web `npm test`、`npm run build` 和 `git diff --check` 通过。

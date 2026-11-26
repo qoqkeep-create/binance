@@ -4,7 +4,7 @@
 
 ## Web 行情接入（2026-11-25，本地）
 
-`frontend/trade-web` 与 iOS 并列使用 `market_stream` 的 `/api/market/tickers|symbols|klines` 和 `/ws/v1`，不在浏览器直连 Binance。Web K 线保留 `items` 的毫秒时间和字符串／数字字段映射，分析助手的 `12h` 周期已加入后端共享周期目录；WSS 浏览器鉴权使用 `bearer.<JWT>` subprotocol，token 不进入请求 URL。Web 只做本地构建与替身测试，尚未部署静态产物或做实机／线上验收。
+`frontend/trade-web` 与 iOS 并列使用 `market_stream` 的 `/api/market/tickers|symbols|klines` 和 `/ws/v1`，不在浏览器直连 Binance。Web K 线保留 `items` 的毫秒时间和字符串／数字字段映射，分析助手的 `12h` 周期已加入后端共享周期目录；WSS 浏览器鉴权使用 `bearer.<JWT>` subprotocol，token 不进入请求 URL。Web K 线自 2026-11-26 起改用 `lightweight-charts` v5 自绘（替换 TradingView 托管 iframe）：主图蜡烛＋EMA 21/55/144＋Supertrend 10×6，副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3，参数与配色对齐 iOS；副图固定 72px、首屏 32 根、切币／切周期单次 `setData` 加载，历史走 `/api/market/klines`、尾根实时走 `/ws/v1`。Web 已完成本地构建、替身测试与本地浏览器验收，尚未部署静态产物或做线上验收。
 
 ## 持仓浮盈与开仓标签（2026-11-22，本地验证）
 
