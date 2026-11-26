@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web K 线初始可见数量调整（2026-11-26，北京时间）
+
+Web Component 初始时间范围压缩为原来的约一半，`2d → 1d`、`7d → 3d`、`1M → 15d`、`1y → 6M`，降低初始 K 线密度并保持用户缩放能力。静态 release **`trade-web-20261126-tv-bar-density-<commit>`** 将在本次验证后原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置不切换。
+
 ## Web K 线切币重复加载修复（2026-11-26，北京时间）
 
 切换交易对时复用已挂载的 TradingView Web Component，只更新官方 `symbol` 属性，不再同时重建组件和再次写入交易对。静态 release **`trade-web-20261126-tv-symbol-switch-<commit>`** 将在本次验证后原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置不切换。

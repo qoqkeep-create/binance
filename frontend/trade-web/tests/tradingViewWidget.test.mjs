@@ -9,10 +9,10 @@ if (!source.includes('const widgetTag = "tv-advanced-chart"') || !source.include
 if (!source.includes('className="tradingview-widget"') || !source.includes('chart.addEventListener("tv-widget-ready"')) {
   throw new Error("TradingView Web Component must use its official ready event");
 }
-if (!source.includes('}, [hydrating, options, preference.timeFrame, readOnly, selectedInterval, theme]);')) {
+if (!source.includes('}, [hydrating, options, readOnly, selectedInterval, selectedTimeFrame, theme]);')) {
   throw new Error("TradingView symbol changes must reuse the mounted Web Component");
 }
-if (!source.includes("options.interval !== selectedInterval || options.timeFrame !== preference.timeFrame")) {
+if (!source.includes("options.interval !== selectedInterval || options.timeFrame !== selectedTimeFrame")) {
   throw new Error("TradingView chart must wait for synchronized preferences before mounting");
 }
 if (!source.includes('"STD;MACD"') || !source.includes('"StochasticRSI@tv-basicstudies"')) {
@@ -29,6 +29,9 @@ if (!source.includes('chart.setAttribute("hide-top-toolbar", "")') || !source.in
 }
 if (!source.includes('chart.setAttribute("time-frame", timeFrame || (interval === "D" ? "1y" : "2d"))')) {
   throw new Error("TradingView daily charts must use the Web Component time-frame attribute");
+}
+if (!source.includes('const compactTimeFrames: Record<string, string> = { "2d": "1d", "7d": "3d", "1M": "15d", "1y": "6M" }')) {
+  throw new Error("TradingView initial visible range must use the compact time-frame defaults");
 }
 if (!source.includes("insightToggle") || !source.includes("createPortal(insightToggle, actionsContainer)")) {
   throw new Error("Chart expansion control must live beside the reset action");

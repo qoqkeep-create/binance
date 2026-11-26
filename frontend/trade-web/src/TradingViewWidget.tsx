@@ -13,6 +13,10 @@ const intervalAliases: Record<string, string> = { "3m": "3", "5m": "5", "15m": "
 function canonicalInterval(interval: string) {
   return intervalAliases[interval] ?? interval;
 }
+const compactTimeFrames: Record<string, string> = { "2d": "1d", "7d": "3d", "1M": "15d", "1y": "6M" };
+function compactTimeFrame(timeFrame?: string) {
+  return timeFrame ? compactTimeFrames[timeFrame] ?? timeFrame : timeFrame;
+}
 function validChartPreference(value: unknown): value is ChartPreference {
   if (!value || typeof value !== "object") return false;
   const chart = value as ChartPreference;
@@ -60,12 +64,13 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
   const [options, setOptions] = useState<ChartOptions>({ interval: initialInterval, attempt: 0 });
   const [status, setStatus] = useState<ChartStatus>("loading");
   const selectedInterval = canonicalInterval(preference.interval);
+  const selectedTimeFrame = compactTimeFrame(preference.timeFrame);
   const chartSurface = theme === "light" ? "#eef0f3" : "#0c0d0f";
 
   useEffect(() => {
-    if (options.interval === selectedInterval && options.timeFrame === preference.timeFrame) return;
-    setOptions((previous) => ({ ...previous, interval: selectedInterval, timeFrame: preference.timeFrame, attempt: previous.attempt + 1 }));
-  }, [options.interval, options.timeFrame, preference.timeFrame, selectedInterval]);
+    if (options.interval === selectedInterval && options.timeFrame === selectedTimeFrame) return;
+    setOptions((previous) => ({ ...previous, interval: selectedInterval, timeFrame: selectedTimeFrame, attempt: previous.attempt + 1 }));
+  }, [options.interval, options.timeFrame, selectedInterval, selectedTimeFrame]);
 
   const reflectChartPreference = useEffectEvent((chart: HTMLElement) => {
     const interval = canonicalInterval(chart.getAttribute("interval") ?? initialInterval);
@@ -77,7 +82,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || hydrating || options.interval !== selectedInterval || options.timeFrame !== preference.timeFrame) return;
+    if (!container || hydrating || options.interval !== selectedInterval || options.timeFrame !== selectedTimeFrame) return;
 
     const chart = createChart(symbol, options, readOnly, theme);
     chartRef.current = chart;
@@ -123,7 +128,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
       chart.remove();
       chartRef.current = null;
     };
-  }, [hydrating, options, preference.timeFrame, readOnly, selectedInterval, theme]);
+  }, [hydrating, options, readOnly, selectedInterval, selectedTimeFrame, theme]);
 
   useEffect(() => {
     const chart = chartRef.current;

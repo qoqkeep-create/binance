@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：压缩初始 K 线可见数量
+
+初始可视时间范围按周期压缩到约原来的一半，减少 K 线过密和蜡烛过细的问题。调整只影响首次可视范围，用户仍可在 TradingView 中缩放和滚动。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
 ## 2026-11-26：修复切币时 K 线重复加载
 
 TradingView Web Component 现在在交易对切换时保留现有实例，只更新 `symbol` 属性。移除了切币时的重复重建路径，避免同一个交易对请求两次 K 线。Web `npm test`、`npm run build` 和 `git diff --check` 通过。

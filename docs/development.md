@@ -1,5 +1,9 @@
 # 开发与验证
 
+## Web K 线初始可见数量调整（2026-11-26）
+
+`TradingViewWidget` 将 legacy 偏好时间范围映射到更短的 Web Component `time-frame` 初始值，`2d`、`7d`、`1M`、`1y` 分别压缩为 `1d`、`3d`、`15d`、`6M`。契约测试锁定映射，Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
 ## Web K 线切币重复加载修复（2026-11-26）
 
 主图 Web Component 的挂载 effect 不再依赖 `symbol`，切币由独立 effect 更新现有元素的 `symbol` 属性。主题、周期或账户偏好变化仍按原规则重建组件。契约测试锁定组件复用依赖，Web `npm test`、`npm run build` 和 `git diff --check` 通过。
