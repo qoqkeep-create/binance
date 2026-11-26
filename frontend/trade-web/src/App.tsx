@@ -20,11 +20,11 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  BinanceStream,
   getMarketGroups,
   type MarketRow,
   type StreamEvent,
 } from "./lib/binance";
+import { marketRealtime } from "./lib/realtime";
 import KlineChart from "./KlineChart";
 import TradePanel from "./TradePanel";
 import { tradeApi } from "./lib/tradeApi";
@@ -197,7 +197,7 @@ function TerminalApp() {
     }
     setConnection("connecting");
     const symbols = tickerSymbolsKey ? tickerSymbolsKey.split(",") : [selectedSymbol];
-    const stream = new BinanceStream(selectedSymbol, "15m", (event: StreamEvent) => {
+    const unsubscribe = marketRealtime.subscribe({ symbol: selectedSymbol, interval: "15m", tickerSymbols: symbols, handler: (event: StreamEvent) => {
       if (event.type === "disconnected" || event.type === "error") { setConnection("disconnected"); setLatency(null); setTickerOk(false); setKlineOk(false); }
       if (event.type === "latency") setLatency(event.ms);
       if (event.type === "kline") setKlineOk(true);
@@ -206,8 +206,7 @@ function TerminalApp() {
         setTickerOk(true);
         pendingTickersRef.current.set(event.symbol, { price: event.price, change: event.changePercent });
       }
-    }, symbols);
-    stream.connect();
+    } });
     // 后端单条 !ticker@arr 已采集全合约，此处订阅不新增币安负载；UI 500ms 聚合避免逐消息渲染。
     const flush = window.setInterval(() => {
       const pending = pendingTickersRef.current;
@@ -222,7 +221,7 @@ function TerminalApp() {
         return { top20: update(current.top20), alts: update(current.alts), all: update(current.all) };
       });
     }, 500);
-    return () => { window.clearInterval(flush); stream.close(); };
+    return () => { window.clearInterval(flush); unsubscribe(); };
   }, [selectedSymbol, user, tickerSymbolsKey]);
 
   // 主导航首项与 K 线区左缘竖直对齐：按实测差值补 margin，随布局变化重算。

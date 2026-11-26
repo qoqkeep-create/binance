@@ -8,7 +8,8 @@ import {
   type CandlestickData, type LineData, type WhitespaceData,
 } from "lightweight-charts";
 import { useAccount, usePreference } from "./AccountProvider";
-import { BinanceStream, getKlines, type Candle } from "./lib/binance";
+import { getKlines, type Candle } from "./lib/binance";
+import { marketRealtime } from "./lib/realtime";
 import { buildChartIndicators } from "./lib/chartIndicators";
 import { mergeCandle, mergeTicker } from "./lib/candleMerge";
 import { getCachedKlines, putCachedKlines } from "./lib/klineCache";
@@ -403,7 +404,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
         if (active && candlesSymbolRef.current === symbol && candlesRef.current.length) renderData(candlesRef.current, false, true);
       }, 120);
     };
-    const stream = new BinanceStream(symbol, selectedInterval, (event) => {
+    const unsubscribe = marketRealtime.subscribe({ symbol, interval: selectedInterval, handler: (event) => {
       if (!active || candlesSymbolRef.current !== symbol) return;
       if (event.type === "kline") {
         candlesRef.current = mergeCandle(candlesRef.current, event.candle);
@@ -415,9 +416,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
           scheduleTail();
         }
       }
-    });
-    stream.connect();
-    return () => { active = false; controller.abort(); stream.close(); };
+    } });
+    return () => { active = false; controller.abort(); unsubscribe(); };
   }, [hydrating, symbol, selectedInterval, attempt, renderData]);
 
   // 向左滚到历史边缘时补载更早 K 线（beforeOpenTime 分页），视口保持不跳。

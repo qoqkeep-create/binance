@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BinanceStream, get24hTickers, getKlines, type Candle } from "./binance";
+import { get24hTickers, getKlines, type Candle } from "./binance";
+import { marketRealtime } from "./realtime";
 import { buildPivotSeries } from "./contractAnalysis";
 import {
   analysisSources as sources, buildAnalysisSnapshot, mergeRestCandles, newestValidQuote,
@@ -160,7 +161,7 @@ export function useContractAnalysis(symbol: string) {
     void load(true);
     const refreshTimer = window.setInterval(() => { void load(); }, 45000);
     const clockTimer = window.setInterval(() => setNow(Date.now() / 1000), 1000);
-    const stream = new BinanceStream(symbol, "1m", (event) => {
+    const unsubscribe = marketRealtime.subscribe({ symbol, interval: "1m", handler: (event) => {
         if (!active) return;
         const sampledAt = Date.now() / 1000;
         if (event.type === "ticker") {
@@ -188,15 +189,14 @@ export function useContractAnalysis(symbol: string) {
             };
           });
         }
-      });
-    stream.connect();
+      } });
     return () => {
       active = false;
       controller.abort();
       window.clearInterval(refreshTimer);
       window.clearInterval(clockTimer);
       if (initialRetryTimer) globalThis.clearTimeout(initialRetryTimer);
-      stream.close();
+      unsubscribe();
       refreshRef.current = null;
     };
   }, [symbol]);

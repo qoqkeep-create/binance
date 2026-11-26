@@ -124,9 +124,9 @@ if (!app.includes("navRef") || !app.includes("chartRect.left - nav.getBoundingCl
 if (!styles.includes(".main-nav .nav-item { flex: 1; justify-content: center; }") || !styles.includes("width: clamp(320px, calc((100vw - 480px) / 2), 860px)")) {
   throw new Error("Nav items must stay stretched long (half-width clamp), not shrink to natural width");
 }
-const binance = readFileSync(fileURLToPath(new URL("../src/lib/binance.ts", import.meta.url)), "utf8");
-if (!binance.includes("this.tickerSymbols?.length ? [...this.tickerSymbols] : [this.symbol]") || !app.includes("pendingTickersRef")) {
-  throw new Error("Left market list must refresh continuously from the WS ticker fanout, throttled");
+const realtime = readFileSync(fileURLToPath(new URL("../src/lib/realtime.ts", import.meta.url)), "utf8");
+if (!realtime.includes("sub.tickerSymbols?.length ? sub.tickerSymbols.includes(symbol) : sub.symbol === symbol") || !app.includes("pendingTickersRef")) {
+  throw new Error("Left market list must refresh continuously from the shared WS ticker fanout, throttled");
 }
 if (!styles.includes(".main-nav { align-self: center; display: flex; align-items: center; gap: 4px; padding: 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {
   throw new Error("Main nav must sit on the topbar background without its own box and keep buttons single-line");

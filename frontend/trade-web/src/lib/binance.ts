@@ -1,7 +1,7 @@
 /** Data adapters for the integrated Django market service. */
 
-import { getAccessToken, ensureFreshToken, accountApi } from "./account.js";
-import { apiPath, websocketPath } from "./runtime.js";
+import { getAccessToken, accountApi } from "./account.js";
+import { apiPath } from "./runtime.js";
 
 export type MarketGroup = "top20" | "alts";
 
@@ -64,62 +64,3 @@ export type StreamEvent =
   | { type: "latency"; ms: number }
   | { type: "disconnected" }
   | { type: "error"; error: Event | Error };
-
-/** Reconnecting subscription to the integrated market fanout. */
-export class BinanceStream {
-  private socket?: WebSocket;
-  private reconnectTimer?: ReturnType<typeof setTimeout>;
-  private pingTimer?: ReturnType<typeof setInterval>;
-  private latencySamples: number[] = [];
-  private stopped = false;
-  private requestId = 0;
-  constructor(private readonly symbol: string, private readonly interval: string, private readonly onEvent: (event: StreamEvent) => void, private readonly tickerSymbols?: readonly string[]) {}
-  connect() { this.stopped = false; this.open(); }
-  private async open() {
-    if (this.stopped) return;
-    const token = await ensureFreshToken();
-    if (this.stopped) return;
-    this.socket = token ? new WebSocket(websocketPath(), [`bearer.${token}`]) : new WebSocket(websocketPath());
-    this.socket.onopen = () => {
-      const id = `web-${++this.requestId}`;
-      this.socket?.send(JSON.stringify({ version: 1, type: "subscribe", requestId: id, subscriptions: [
-        { channel: "market.ticker", filters: { symbols: this.tickerSymbols?.length ? [...this.tickerSymbols] : [this.symbol], intervals: [] } },
-        { channel: "market.kline", filters: { symbols: [this.symbol], intervals: [this.interval] } },
-      ] }));
-      this.pingTimer = window.setInterval(() => {
-        this.socket?.send(JSON.stringify({ version: 1, type: "ping", requestId: `ping-${++this.requestId}`, timestamp: Date.now() }));
-      }, 2000);
-    };
-    this.socket.onmessage = (message) => {
-      try {
-        const envelope = JSON.parse(message.data as string) as { type?: string; channel?: string; data?: Record<string, unknown> };
-        const data = envelope.data ?? {};
-        if (envelope.type === "pong") {
-          const sent = Number(data.clientTimestamp);
-          if (Number.isFinite(sent) && sent > 0) {
-            this.latencySamples.push(Date.now() - sent);
-            if (this.latencySamples.length > 3) this.latencySamples.shift();
-            const sorted = [...this.latencySamples].sort((a, b) => a - b);
-            this.onEvent({ type: "latency", ms: sorted[Math.floor(sorted.length / 2)] });
-          }
-          return;
-        }
-        const symbol = String(data.symbol ?? "");
-        if (envelope.type !== "event" || symbol !== this.symbol) return;
-        if (envelope.channel === "market.ticker") this.onEvent({ type: "ticker", symbol, price: toNumber(data.lastPrice), changePercent: toNumber(data.priceChangePercent24h), eventTime: toNumber(data.eventTime) });
-        else if (envelope.channel === "market.kline") this.onEvent({ type: "kline", symbol, candle: mapCandle(data), closed: data.closed === true, eventTime: toNumber(data.eventTime) });
-      } catch (error) { this.onEvent({ type: "error", error: error as Error }); }
-    };
-    this.socket.onerror = (error) => this.onEvent({ type: "error", error });
-    this.socket.onclose = (event) => {
-      if (this.stopped) return;
-      if (this.pingTimer) clearInterval(this.pingTimer);
-      this.latencySamples = [];
-      this.onEvent({ type: "disconnected" });
-      // 异常断开（含 token 过期被拒 403/1006）先刷新会话再重连，避免持过期 token 死循环。
-      const recover = event.code !== 1000 ? accountApi.session().catch(() => undefined) : Promise.resolve();
-      void recover.finally(() => { if (!this.stopped) this.reconnectTimer = setTimeout(() => this.open(), 2000); });
-    };
-  }
-  close() { this.stopped = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); if (this.pingTimer) clearInterval(this.pingTimer); this.socket?.close(); }
-}
