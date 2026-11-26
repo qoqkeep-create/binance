@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web K 线顶部操作与底部空白修复（2026-11-26，北京时间）
+
+移除 K 线内部的自建周期栏，TradingView Web Component 官方周期栏独占图表顶部。重置和盘面速览展开按钮统一放入页面顶部操作容器，Web Component 从 stage 顶部铺满到状态栏上方，取消 legacy iframe 专用底部安全留白。静态 release **`trade-web-20261126-tv-toolbar-layout-<commit>`** 将在本次验证后原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置不切换。
+
 ## Web TradingView Web Component 切换（2026-11-26，北京时间）
 
 当前网络下复测 `tv-advanced-chart` Web Component 已正常加载主图、EMA Ribbon、Supertrend、MACD、StochRSI、官方顶部工具栏、左侧绘图工具栏和右下角设置按钮。Web Component 使用官方 ES module，不再依赖 legacy iframe 的右下角控件兼容行为。静态 release **`trade-web-20261126-tv-web-component-9a1b30a`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置未切换。线上资源和 `/integrated/v1/health` 均已复核。

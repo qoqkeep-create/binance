@@ -163,7 +163,7 @@ function TerminalApp() {
         </nav>
         <div className="top-actions">
           <div className="connection-status"><span className={`status-light ${connection === "live" ? "is-live" : ""}`} /> {connectionLabel}</div>
-          <div ref={setChartActions} hidden={activeNav !== "行情" || showAssistant} />
+          <div className="chart-actions" ref={setChartActions} hidden={activeNav !== "行情" || showAssistant} />
           <button
             className="theme-toggle"
             type="button"

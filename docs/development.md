@@ -1,5 +1,9 @@
 # 开发与验证
 
+## Web K 线顶部操作与底部空白修复（2026-11-26）
+
+移除 `TradingViewWidget` 内部的自建周期栏，重置按钮和盘面速览展开入口通过同一个顶部 `chart-actions` 容器并排渲染。`tradingview-widget` 改为 `inset: 0`，Web Component 直接填充 stage 到状态栏上方。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
 ## Web TradingView Web Component 切换（2026-11-26）
 
 `TradingViewWidget` 现在使用官方 `tv-advanced-chart` Web Component 和 `https://widgets.tradingview-widget.com/w/zh_CN/tv-advanced-chart.js`。图表配置通过官方元素属性传入，包含四个原生 studies、浅深色主题、官方绘图工具栏和官方设置入口。`tv-widget-ready`、`tv-widget-error` 和元素属性观察器用于加载状态、重试和官方周期变化同步。

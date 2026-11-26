@@ -9,14 +9,6 @@ const widgetScript = "https://widgets.tradingview-widget.com/w/zh_CN/tv-advanced
 const initialInterval = "15";
 interface ChartPreference { interval: string; timeFrame?: string }
 const defaultChartPreference: ChartPreference = { interval: initialInterval, timeFrame: "2d" };
-const localIntervals = [
-  { value: "3", label: "3 分钟", shortLabel: "3m", timeFrame: "2d" },
-  { value: "5", label: "5 分钟", shortLabel: "5m", timeFrame: "2d" },
-  { value: "15", label: "15 分钟", shortLabel: "15m", timeFrame: "2d" },
-  { value: "60", label: "1 小时", shortLabel: "1h", timeFrame: "7d" },
-  { value: "240", label: "4 小时", shortLabel: "4h", timeFrame: "1M" },
-  { value: "D", label: "1 天", shortLabel: "1D", timeFrame: "1y" },
-] as const;
 const intervalAliases: Record<string, string> = { "3m": "3", "5m": "5", "15m": "15", "1h": "60", "4h": "240", "1d": "D", "1D": "D" };
 function canonicalInterval(interval: string) {
   return intervalAliases[interval] ?? interval;
@@ -153,14 +145,8 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
   return (
     <>
       {actionsContainer && !readOnly && createPortal(<button className="chart-restore" type="button" onClick={resetChart}>重置</button>, actionsContainer)}
+      {actionsContainer && insightToggle && createPortal(insightToggle, actionsContainer)}
       <div className="tradingview-stage" data-chart-theme={theme} style={{ "--compact-indicators-height": "0px", "--chart-surface": chartSurface } as CSSProperties}>
-        <div className="chart-local-toolbar">
-          <span className="chart-local-toolbar-label">周期</span>
-          <div className="chart-local-intervals" role="group" aria-label="K线周期">
-            {localIntervals.map((item) => <button key={item.value} type="button" title={item.label} aria-pressed={selectedInterval === item.value} className={selectedInterval === item.value ? "active" : ""} onClick={() => setPreference({ interval: item.value, timeFrame: item.timeFrame })}>{item.shortLabel}</button>)}
-          </div>
-          {insightToggle && <div className="chart-local-toolbar-actions">{insightToggle}</div>}
-        </div>
         {status === "loading" && <div className="chart-widget-loading" role="status"><RefreshCw size={14} className="spin" /> 正在连接 TradingView…</div>}
         {(status === "slow" || status === "error") && <div className={`chart-widget-notice ${status === "error" ? "chart-widget-error" : ""}`}><p role="status">{status === "slow" ? "TradingView 图表响应较慢" : "TradingView 图表连接失败"}</p><button className="chart-restore" type="button" onClick={reloadChart}>重试图表</button><a href={chartUrl} target="_blank" rel="noreferrer">在 TradingView 打开 <ArrowUpRight size={13} aria-hidden="true" /></a></div>}
         <div ref={containerRef} className="tradingview-widget" />

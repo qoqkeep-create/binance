@@ -1,8 +1,12 @@
 # 变更与验收记录
 
+## 2026-11-26：移除自建周期栏并补满 K 线区域
+
+K 线区域不再渲染页面自建周期栏，TradingView 官方周期栏保留在图表内部。重置和盘面速览展开按钮移动到页面顶部并排显示，图表容器取消底部安全留白并填充到状态栏上方。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
 ## 2026-11-26：Web 切回 TradingView Web Component
 
-当前网络下 Web Component 复测通过，主图、EMA Ribbon、Supertrend、MACD、StochRSI、官方顶部工具栏、绘图工具栏和右下角设置按钮均能加载。Web Component 的 `interval` 和 `time-frame` 属性变化会回写到整合账号偏好，官方周期栏选择可以持久化。自建周期栏继续提供官方周期列表以外的 `3m / 5m / 4h / 1D` 快捷入口。静态 release **`trade-web-20261126-tv-web-component-9a1b30a`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希和 health 均通过。
+当前网络下 Web Component 复测通过，主图、EMA Ribbon、Supertrend、MACD、StochRSI、官方顶部工具栏、绘图工具栏和右下角设置按钮均能加载。Web Component 的 `interval` 和 `time-frame` 属性变化会回写到整合账号偏好，官方周期栏选择可以持久化。静态 release **`trade-web-20261126-tv-web-component-9a1b30a`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希和 health 均通过。
 
 ## 2026-11-26：恢复 TradingView 官方设置工具栏
 
