@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：右轴价格分档／撑压线真正断开／周期选中态加强
+
+右轴价格标尺按值分档：<1 四位、1–99 三位、100–9999 两位、≥10000 一位（`priceScaleFormatter`）；主图右轴为共享 scale，须 candle/EMA/撑压线/填充带全部统一 custom priceFormat，否则被默认 precision 覆盖（实测 BTC 一位、XRP 四位）。撑压线「多→空→多连在一起」的根因是 lightweight-charts v5 LineSeries 的 whitespace **不断开**（最小复现证实相邻有效点仍被连线）；改用自定义系列 `supertrendLine.ts` 只描「原始序号相邻且同向」线段，空头区域必然断开（XRP 4H 实测粉色空头区内无多头支撑线）。周期选中态改为实底强调色＋白字加粗，明显可辨。`npm test`／`build`／`git diff --check` 通过。
+
 ## 2026-11-26：消除超级趋势填充带首屏残影
 
 首屏残影来自反转后前两根 bar 的远端撑压值（竖直窄带）与单根反向 dip 的灰色小块，叠加首屏布局未定时的绘制。修复：填充带跳过每段趋势的前两根 bar（`isFlip(index) || isFlip(index-1)` 留空），从第三根开始填充，窄带与短 dip 残影消除且断开更干净；首屏 `setStatus("ready")` 后 `requestAnimationFrame` 强制重绘一次，待 autoSize／面板比例稳定后再画自定义系列。`npm run build`／`npm test` 通过；浏览器面板隐藏未能截图，待线上首屏验收。静态 release 见 [运维](operations.md)。

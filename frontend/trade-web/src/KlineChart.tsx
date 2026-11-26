@@ -15,6 +15,7 @@ import { mergeCandle, mergeTicker } from "./lib/candleMerge";
 import { getCachedKlines, putCachedKlines } from "./lib/klineCache";
 import { DEFAULT_INDICATORS, mergeIndicatorSettings, type IndicatorSettings } from "./lib/indicatorSettings";
 import { createSupertrendBandView, type BandPoint, type BandFillConfig } from "./lib/supertrendBand";
+import { createSupertrendLineView, type SupertrendLinePoint, type SupertrendLineConfig } from "./lib/supertrendLine";
 import { createMacdHistogramView, type MacdBarPoint, type MacdHistogramConfig } from "./lib/macdHistogram";
 import IndicatorSettingsPanel from "./IndicatorSettingsPanel";
 import "./kline-chart.css";
@@ -48,6 +49,16 @@ type LinePoint = LineData<Time> | WhitespaceData<Time>;
 type CandlePoint = CandlestickData<Time> | WhitespaceData<Time>;
 type BandDataPoint = BandPoint | WhitespaceData<Time>;
 type MacdDataPoint = MacdBarPoint | WhitespaceData<Time>;
+type StLineDataPoint = SupertrendLinePoint | WhitespaceData<Time>;
+
+// 右轴价格标尺分档：<1 四位、1–99 三位、100–9999 两位、≥10000 一位。
+function priceScaleFormatter(price: number) {
+  const abs = Math.abs(price);
+  const digits = abs < 1 ? 4 : abs < 100 ? 3 : abs < 10000 ? 2 : 1;
+  return price.toFixed(digits);
+}
+// 主图右轴为共享 scale，须所有主图系列统一 priceFormat，否则被默认 precision 覆盖。
+const MAIN_PRICE_FORMAT = { type: "custom", formatter: priceScaleFormatter, minMove: 0.0001 } as const;
 
 function linePoint(time: number, value: number | null): LinePoint {
   return value === null ? { time: time as Time } : { time: time as Time, value };
@@ -87,8 +98,8 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
   const bandConfigRef = useRef<BandFillConfig>({ fillUpColor: "#28A473", fillDownColor: "#F63C55", fillOpacity: 0.16 });
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const emaRefs = useRef<Array<ISeriesApi<"Line"> | null>>([null, null, null]);
-  const stUpRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const stDownRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stLineRef = useRef<ISeriesApi<"Custom", Time, StLineDataPoint> | null>(null);
+  const stLineConfigRef = useRef<SupertrendLineConfig>({ upColor: "#28A473", downColor: "#F63C55", lineWidth: 1.3 });
   const macdHistRef = useRef<ISeriesApi<"Custom", Time, MacdDataPoint> | null>(null);
   const macdConfigRef = useRef<MacdHistogramConfig>({ upColor: "#28A473", downColor: "#F63C55", zeroColor: "#333B47" });
   const macdDifRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -116,9 +127,9 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const emaValues = [indicators.ema21, indicators.ema55, indicators.ema144];
     // 反转处留一根空 bar，让多头／空头线段明确断开。
     const isFlip = (index: number) => index > 0 && indicators.supertrend[index - 1].direction !== indicators.supertrend[index].direction;
-    const stPoint = (index: number, direction: 1 | -1): LinePoint => {
+    const stLinePoint = (index: number): StLineDataPoint => {
       const point = indicators.supertrend[index];
-      return point.direction === direction && point.value !== null && !isFlip(index) ? { time: times[index] as Time, value: point.value } : { time: times[index] as Time };
+      return point.value === null ? { time: times[index] as Time } : { time: times[index] as Time, value: point.value, direction: point.direction ?? 1 };
     };
     const bandPoint = (index: number): BandDataPoint => {
       const point = indicators.supertrend[index];
@@ -136,8 +147,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       const candle = candles[last];
       candleRef.current.update({ time: candle.time as Time, open: candle.open, high: candle.high, low: candle.low, close: candle.close });
       emaRefs.current.forEach((series, index) => series?.update(linePoint(times[last], emaValues[index][last])));
-      stUpRef.current?.update(stPoint(last, 1));
-      stDownRef.current?.update(stPoint(last, -1));
+      stLineRef.current?.update(stLinePoint(last));
       bandRef.current?.update(bandPoint(last));
       macdHistRef.current?.update(macdPoint(last));
       macdDifRef.current?.update(linePoint(times[last], indicators.macd[last].dif));
@@ -153,10 +163,10 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       series?.setData(lineData(times, emaValues[index]));
       series?.applyOptions({ color: config.ema.colors[index], visible: config.ema.enabled });
     });
-    stUpRef.current?.setData(times.map((_, index) => stPoint(index, 1)));
-    stDownRef.current?.setData(times.map((_, index) => stPoint(index, -1)));
-    stUpRef.current?.applyOptions({ color: config.supertrend.upColor, visible: config.supertrend.enabled });
-    stDownRef.current?.applyOptions({ color: config.supertrend.downColor, visible: config.supertrend.enabled });
+    stLineConfigRef.current.upColor = config.supertrend.upColor;
+    stLineConfigRef.current.downColor = config.supertrend.downColor;
+    stLineRef.current?.setData(times.map((_, index) => stLinePoint(index)));
+    stLineRef.current?.applyOptions({ visible: config.supertrend.enabled });
     bandConfigRef.current.fillUpColor = config.supertrend.fillUpColor;
     bandConfigRef.current.fillDownColor = config.supertrend.fillDownColor;
     bandConfigRef.current.fillOpacity = config.supertrend.fillOpacity;
@@ -203,13 +213,13 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const liveRange = () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
     bandConfigRef.current.visibleRange = liveRange;
     macdConfigRef.current.visibleRange = liveRange;
-    bandRef.current = chart.addCustomSeries(createSupertrendBandView(bandConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 0);
+    bandRef.current = chart.addCustomSeries(createSupertrendBandView(bandConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT }, 0);
     candleRef.current = chart.addSeries(CandlestickSeries, {
       upColor: t.up, downColor: t.down, borderVisible: false, wickUpColor: t.up, wickDownColor: t.down, ...NO_CROSSHAIR_MARKER,
+      priceFormat: MAIN_PRICE_FORMAT,
     });
-    emaRefs.current = [0, 1, 2].map(() => chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }));
-    stUpRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER });
-    stDownRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER });
+    emaRefs.current = [0, 1, 2].map(() => chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT }));
+    stLineRef.current = chart.addCustomSeries(createSupertrendLineView(stLineConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT }, 0);
     macdHistRef.current = chart.addCustomSeries(createMacdHistogramView(macdConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     macdDifRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     macdDeaRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
@@ -232,7 +242,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       bandRef.current = null;
       candleRef.current = null;
       emaRefs.current = [null, null, null];
-      stUpRef.current = stDownRef.current = null;
+      stLineRef.current = null;
       macdHistRef.current = macdDifRef.current = macdDeaRef.current = null;
       stochKRef.current = stochDRef.current = null;
     };

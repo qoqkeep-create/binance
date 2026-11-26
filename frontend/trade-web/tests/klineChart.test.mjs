@@ -31,7 +31,7 @@ if (!source.includes("const INITIAL_VISIBLE_BARS = 64") || !source.includes("can
 if (!source.includes('from "./lib/supertrendBand"') || !source.includes("bandRef.current?.setData(")) {
   throw new Error("Supertrend must render a configurable fill band");
 }
-if (!source.includes("const isFlip = (index: number)") || !source.includes("!isFlip(index)")) {
+if (!source.includes("const isFlip = (index: number)") || !source.includes("isFlip(index) || isFlip(index - 1)")) {
   throw new Error("Supertrend bull/bear segments must break at reversals");
 }
 if (!source.includes("IndicatorSettingsPanel") || !source.includes("mergeIndicatorSettings(preference.indicators)")) {
@@ -77,6 +77,13 @@ if (!app.includes("prefetchKlines(row.symbol, chartPreference.interval)")) {
 }
 if (!source.includes("candlesSymbolRef.current !== symbol") || !source.includes("candlesSymbolRef.current = null")) {
   throw new Error("New-symbol ticks must never merge into the previous symbol's candles");
+}
+const stline = readFileSync(fileURLToPath(new URL("../src/lib/supertrendLine.ts", import.meta.url)), "utf8");
+if (!source.includes('from "./lib/supertrendLine"') || !stline.includes("b.index !== a.index + 1")) {
+  throw new Error("Supertrend support/resistance must break across opposite-direction regions");
+}
+if (!source.includes("priceScaleFormatter") || !source.includes("abs < 1 ? 4 : abs < 100 ? 3 : abs < 10000 ? 2 : 1")) {
+  throw new Error("Right price scale must use tiered decimals (4/3/2/1)");
 }
 
 console.log("KlineChart self-rendered contract tests passed");
