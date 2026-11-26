@@ -1,5 +1,11 @@
 # 开发与验证
 
+## Web TradingView Web Component 切换（2026-11-26）
+
+`TradingViewWidget` 现在使用官方 `tv-advanced-chart` Web Component 和 `https://widgets.tradingview-widget.com/w/zh_CN/tv-advanced-chart.js`。图表配置通过官方元素属性传入，包含四个原生 studies、浅深色主题、官方绘图工具栏和官方设置入口。`tv-widget-ready`、`tv-widget-error` 和元素属性观察器用于加载状态、重试和官方周期变化同步。
+
+本地浏览器探针实际验证主图、EMA Ribbon、Supertrend、MACD、StochRSI、顶部周期控件、左侧绘图工具栏和右下角设置按钮；Web `npm test`、`npm run build` 和 `git diff --check` 通过。官方 `favorites.intervals` 在 public widget 中未生效，因此自建周期栏仍保留为六个快捷周期入口。
+
 ## Web TradingView 官方设置入口恢复（2026-11-26）
 
 对照官方 legacy iframe 发现，整合版固定设置 `hide_top_toolbar: true`，会隐藏可编辑账号原本使用的 TradingView 官方工具栏。恢复为 `hide_top_toolbar: readOnly` 后，可编辑账号保留官方顶部工具栏，右下角 `main_series_scale_menu` 和 `show_chart_property_page` 继续负责官方设置页面，游客模式仍限制绘图操作。`header_settings` 一并加入启用 featureset。

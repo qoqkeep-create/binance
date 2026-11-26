@@ -2,19 +2,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("../src/TradingViewWidget.tsx", import.meta.url)), "utf8");
-const loader = readFileSync(fileURLToPath(new URL("../public/vendor/tradingview-advanced-chart.js", import.meta.url)), "utf8");
 
-if (!source.includes('const widgetScript = "vendor/tradingview-advanced-chart.js"')) {
-  throw new Error("TradingView loader must be served by the integrated web package");
+if (!source.includes('const widgetTag = "tv-advanced-chart"') || !source.includes('const widgetScript = "https://widgets.tradingview-widget.com/w/zh_CN/tv-advanced-chart.js"')) {
+  throw new Error("TradingView chart must use the official Web Component loader");
 }
-if (!source.includes('className="tradingview-widget tradingview-widget-container"')) {
-  throw new Error("TradingView legacy embed must use the official container class");
-}
-if (loader.length < 10000 || !loader.includes("www.tradingview-widget.com")) {
-  throw new Error("Integrated package is missing the official TradingView legacy loader");
-}
-if (source.includes("widgets.tradingview-widget.com") || source.includes("tv-advanced-chart")) {
-  throw new Error("TradingView chart must not depend on the Web Component loader");
+if (!source.includes('className="tradingview-widget"') || !source.includes('chart.addEventListener("tv-widget-ready"')) {
+  throw new Error("TradingView Web Component must use its official ready event");
 }
 if (!source.includes("options.interval !== selectedInterval || options.timeFrame !== preference.timeFrame")) {
   throw new Error("TradingView chart must wait for synchronized preferences before mounting");
@@ -23,16 +16,16 @@ if (!source.includes('"STD;MACD"') || !source.includes('"StochasticRSI@tv-basics
   throw new Error("TradingView MACD and StochRSI studies must be configured");
 }
 if (!source.includes('{ id: "STD;MACD", overlay: false, inputs: {} }') || !source.includes('{ id: "StochasticRSI@tv-basicstudies", overlay: false, inputs: {} }')) {
-  throw new Error("TradingView pane studies must use object descriptors to survive mixed study layouts");
+  throw new Error("TradingView Web Component pane studies must use object descriptors");
 }
-if (!source.includes('theme === "light" ? "#eef0f3" : "#0c0d0f"') || !source.includes('data-chart-theme={theme}') || !source.includes('"--chart-surface": chartSurface') || !source.includes("hide_top_toolbar: readOnly")) {
-  throw new Error("TradingView chart must keep the Web dark background and native settings controls");
+if (!source.includes('theme === "light" ? "#eef0f3" : "#0c0d0f"') || !source.includes('data-chart-theme={theme}') || !source.includes('"--chart-surface": chartSurface') || !source.includes('chart.setAttribute("theme", theme)')) {
+  throw new Error("TradingView chart must keep the Web theme surface");
 }
-if (!source.includes('"main_series_scale_menu"') || !source.includes('"show_chart_property_page"') || !source.includes('"header_settings"')) {
-  throw new Error("TradingView official chart settings features must stay enabled");
+if (!source.includes('chart.setAttribute("hide-top-toolbar", "")') || !source.includes('chart.setAttribute("show-drawing-toolbar", "")')) {
+  throw new Error("TradingView official toolbar controls must remain available");
 }
-if (!source.includes('...(interval === "D" ? {} : { range: timeFrame || "2d" })')) {
-  throw new Error("TradingView daily charts must omit the incompatible range parameter");
+if (!source.includes('chart.setAttribute("time-frame", timeFrame || (interval === "D" ? "1y" : "2d"))')) {
+  throw new Error("TradingView daily charts must use the Web Component time-frame attribute");
 }
 if (!source.includes("insightToggle") || !source.includes("chart-local-toolbar-actions")) {
   throw new Error("Chart expansion control must live in the chart toolbar");

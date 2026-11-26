@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web TradingView Web Component 切换（2026-11-26，北京时间）
+
+当前网络下复测 `tv-advanced-chart` Web Component 已正常加载主图、EMA Ribbon、Supertrend、MACD、StochRSI、官方顶部工具栏、左侧绘图工具栏和右下角设置按钮。Web Component 使用官方 ES module，不再依赖 legacy iframe 的右下角控件兼容行为。静态 release **`trade-web-20261126-tv-web-component-<commit>`** 将在本次验证后原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置不切换。
+
 ## Web TradingView 官方设置入口恢复（2026-11-26，北京时间）
 
 确认设置入口缺失的根因是整合版把 `hide_top_toolbar` 固定为 `true`，可编辑账号的 TradingView 官方工具栏因此被一并隐藏。现按原 Web 行为恢复可编辑账号的官方工具栏，同时保留自建周期栏、右下角 `main_series_scale_menu` 设置入口和只读游客模式的绘图限制。新增 `header_settings` 与 `show_chart_property_page` 官方 featureset 配置。
