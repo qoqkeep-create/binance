@@ -82,11 +82,41 @@ const app = readFileSync(fileURLToPath(new URL("../src/App.tsx", import.meta.url
 if (!app.includes("prefetchKlines(row.symbol, chartPreference.interval)")) {
   throw new Error("Market rows must prefetch klines on hover for instant switches");
 }
+if (!app.includes('(["行情", "信号", "引擎", "持仓", "历史", "账户"] as NavItem[])') || app.includes("nav-index")) {
+  throw new Error("Main nav must follow the user's order (行情/信号/引擎/持仓/历史/账户) without index numbers");
+}
+const pages = readFileSync(fileURLToPath(new URL("../src/Pages.tsx", import.meta.url)), "utf8");
+if (pages.includes("颜色模式") || pages.includes("onToggleTheme")) {
+  throw new Error("Account page must not duplicate the outer theme toggle");
+}
+const styles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+const klineCss = readFileSync(fileURLToPath(new URL("../src/kline-chart.css", import.meta.url)), "utf8");
+if (!styles.includes(".timeframe.active::after") || styles.includes(".timeframe.active { font-weight: 600; background: #2DBD85")) {
+  throw new Error("Timeframe selection must use a green short underline + bold text, not the solid nav chip");
+}
+if (!klineCss.includes(".view-mode button.active { color: var(--green)")) {
+  throw new Error("Auto/manual view-mode selection must be green");
+}
+if (!klineCss.includes("background: rgba(240, 243, 247, 0.1)") || !klineCss.includes('.kline-stage[data-chart-theme="light"] .kline-loading')) {
+  throw new Error("Symbol-switch loading must veil the old chart with a translucent light-gray overlay, not clear it");
+}
+if (!source.includes("pane-legend") || !source.includes("getHTMLElement()") || !klineCss.includes(".pane-legend")) {
+  throw new Error("Sub-panes must show TradingView-style name+params legends at their top-left");
+}
+if (!source.includes('grid: "rgba(240, 244, 250, 0.045)"')) {
+  throw new Error("Chart grid must stay finer than the pane separators");
+}
+if (!app.includes("price-card-coin") || !app.includes("price-card-right") || app.includes(">24H<")) {
+  throw new Error("Price card must put price top-right with stacked change after it, no 24H label");
+}
 if (!source.includes("candlesSymbolRef.current !== symbol") || !source.includes("candlesSymbolRef.current = null")) {
   throw new Error("New-symbol ticks must never merge into the previous symbol's candles");
 }
 if (!source.includes('from "./lib/supertrendLine"') || !stline.includes("b.direction === a.direction") || !stline.includes("段末")) {
   throw new Error("Supertrend support/resistance must break across opposite-direction regions and show the tail bar");
+}
+if (!stline.includes("(config.visibleRange ? config.visibleRange() : null) || range") || !source.includes("stLineConfigRef.current.visibleRange = liveRange")) {
+  throw new Error("Supertrend line must clip against the live logical visible range; update-time item indices drop the tail bars");
 }
 if (!source.includes("priceScaleFormatter") || !source.includes("abs < 1 ? 4 : abs < 100 ? 3 : abs < 10000 ? 2 : 1")) {
   throw new Error("Right price scale must use tiered decimals (4/3/2/1)");

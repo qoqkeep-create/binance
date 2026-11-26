@@ -1,5 +1,29 @@
 # 变更与验收记录
 
+## 2026-11-26：价格卡片重排（价格右上／涨跌后置上下／去 24H）
+
+价格卡片改为单行：左侧币种名，右侧当前价格（右上角），涨跌额度与百分比置于价格后方并上下堆叠；移除无用的「24H」与冗余「当前价格」标签。浏览器实测 SOL 卡片：71.10 右上、+3.3902／+5.01% 上下后置。`npm test`／`build`／`git diff --check` 通过。
+
+## 2026-11-26：网格更细／副图左上角名称参数图例／价格卡片三段式
+
+① 网格线视觉变细：lightweight-charts 网格无宽度参数，改低对比色 rgba(240,244,250,0.045)（深）／rgba(24,26,32,0.045)（浅）；MACD 零轴不随网格变淡，THEMES 增 zero 色保留原 #333B47／#EAECEF。② 副图 TradingView 式图例：renderData 内经 `pane.getHTMLElement()` 取 pane 画布 relative 容器（**返回值为 tr，直接挂绝对定位 div 会跑到图表顶部**，已踩坑修正），左上角 8/4px 挂 `.pane-legend`：`MACD(fast,slow,signal)`／`StochRSI(rsi,stoch,k,d)`，随设置联动、禁用 display:none、卸载清理。DOM 核对两图例 offset(8,4) 于各自 pane 内。③ 价格卡片：头部左币种（13px/600）右 24H，其下"当前价格"9px 弱标，再下大号数字（margin-top 4），涨跌行保留；删 price-card-symbol。契约测试新增图例/网格/卡片断言。`npm test`／`build` 通过；release `trade-web-20261126-legend-ffaa1e6` 上线 47.80.22.243（首尔服务器）哈希一致；视觉待用户线上验收。
+
+## 2026-11-26：切币加载半透明浅白灰蒙层＋动画，不清空旧图
+
+用户要求切币不要直接清空下方内容。原 `.kline-loading` 为不透明 `var(--chart-surface)` 底，视觉上等于清空旧图。改：深色 `rgba(240,243,247,0.1)`／浅色 `rgba(255,255,255,0.6)` 半透明浅白灰 veil＋`backdrop-filter: blur(2px)`＋`kline-veil .18s` 淡入；iOS 四竖条动画保留；`pointer-events: none` 不挡旧图交互。数据流不变：旧系列数据保留到新币 `setData`，成功即撤蒙层显示新图；SWR 缓存命中仍瞬时切币无蒙层。契约测试新增 veil 断言。探针元素核对双主题背景/模糊/动画参数。`npm test`／`build` 通过；release `trade-web-20261126-veil-ffaa1e6` 上线 47.80.22.243（首尔服务器）哈希一致；切币观感待用户线上验收。
+
+## 2026-11-26：周期选中绿色短下划线＋加粗／自动手动绿色
+
+主导航已用实底胶囊，周期选中态须区分：`.timeframe.active` 去 `#2DBD85` 实底（含浅色覆盖），改 `color: var(--text)`＋600＋`::after` 绿色短下划线（left/right 13px＝文字宽、2px、`var(--green)`，深浅主题各自绿）。`.view-mode button.active`（自动/手动）改 `var(--green)`＋600＋透明底。契约测试锁定下划线模式与绿色自动/手动。DOM 核对：深色下划线 #00a88f／浅色 #11765e，周期透明底加粗，自动绿色。`npm test`／`build` 通过；release `trade-web-20261126-tfline-ffaa1e6` 上线 47.80.22.243（首尔服务器）哈希一致；视觉待用户线上验收。
+
+## 2026-11-26：主导航换胶囊分段样式／去编号／新顺序／账户去色系开关
+
+用户嫌原导航（透明底＋细下划线＋01–06 编号）丑、不够突出。改：① 导航整体为圆角容器分段组（`var(--panel)` 底＋1px 边），每项 14px/600 胶囊 chip，选中实底 `#2DBD85` 深字（浅色 `#186a4e` 白字，与周期选中态同款），LIVE 徽标在选中态自适应反色；② 去掉 `nav-index` 编号，顺序按用户指定 行情／信号／引擎／持仓／历史／账户；③ 信号/引擎空态去掉 MODULE 05/06 编号眉题；④ 账户页删除颜色模式行与 `theme/onToggleTheme` props（外层顶栏主题切换保留）。响应式 700px 规则同步去 nav-index 引用。契约测试新增顺序／去编号／账户无色系断言。浏览器 DOM 核对深浅两主题选中对比与账户页结构。`npm test`／`build` 通过；release `trade-web-20261126-nav-ffaa1e6` 上线 47.80.22.243（首尔服务器）哈希一致；视觉待用户线上验收。
+
+## 2026-11-26：撑压线尾部断线根因修复＋价格卡片币种名称
+
+用户截图尾部几根 K 线"有填充、无撑压线"。根因：lightweight-charts v5 自定义系列 `update` 传入的 `visibleRange` 是 **bars 数组下标**（不含头部空白根），撑压线系列却存**逻辑序号**（`bar.time`，含 Supertrend 预热 9 根空白偏移）做 `a.index > range.to + 1` 右侧裁剪，尾部最新 9 根被误判屏外跳过；填充带绘制时直读 `getVisibleLogicalRange()`（逻辑语义一致）故尾部填充正常。修复对齐填充带 proven 模式：`SupertrendLineConfig` 增加 `visibleRange` 实时读取器（KlineChart 接 `liveRange`），绘制裁剪与 `visiblePriceRange` 改用实时逻辑范围；update 兜底范围按 `data.bars` 下标→逻辑序号换算。复现页（同渲染模块＋仪表化 update/draw＋canvas 像素探针）修复前尾部 9 根全缺、修复后 9 场景（自动／缩放右留白／左拖／tick／rollover／缩容／右拖空白／全量）屏内尾部全部有线；契约测试新增回归断言。盘面速览价格卡片现价前加币种名称（`price-card-symbol`，.55em 弱化），数字字号 clamp(25,2.2vw,34)→clamp(27,2.4vw,36)，DOM 核对同基线不溢出。`npm test`／`build` 通过；Web release `trade-web-20261126-sttail-ffaa1e6` 已上线 47.80.22.243（首尔服务器），哈希一致；视觉待用户线上验收。
+
 ## 2026-11-26：切币加载改 iOS 竖条动画＋顶部持仓／历史／账户标签
 
 ① 切币加载遮罩弃用圆形转圈，改 iOS `BinanceKlineLoadingIndicator` 同款：4 根底部对齐强调色竖条、正弦 smoothstep 波动、周期 .72s、逐条相位差、不透明背景盖住旧图。② 顶部导航新增 持仓／历史／账户 三标签（`Pages.tsx`＋`lib/tradeApi.ts` 走 `/v1` JWT）：持仓=列表+保证金率徽标+5s 刷新+立即平仓（confirm＋`/api/commands` position-close＋幂等键＋轮询）+未绑定/空态；历史=历史仓位/委托双 tab+全部/一天/三天/一周过滤+加载更多；账户=合约余额/今日盈亏/钱包/API 绑定/单笔止损额滑杆保存/颜色模式/退出。vite dev 补 `/v1` 代理。浏览器实测三页渲染与数据绑定正常（测试户未绑定显示绑定提示）。`npm test`／`build`／`git diff --check` 通过。

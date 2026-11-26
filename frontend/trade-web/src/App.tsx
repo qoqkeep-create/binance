@@ -77,6 +77,7 @@ function TerminalApp() {
   const [marketAttempt, setMarketAttempt] = useState(0);
   const [connection, setConnection] = useState<"connecting" | "live" | "disconnected">("connecting");
   const [showAssistant, setShowAssistant] = useState(false);
+  const [insightMode, setInsightMode] = useState<"trade" | "pulse">("trade");
   const [chartActions, setChartActions] = useState<HTMLDivElement | null>(null);
   const [structuresContainer, setStructuresContainer] = useState<HTMLElement | null>(null);
   const assistantOpener = useRef<HTMLElement | null>(null);
@@ -170,7 +171,7 @@ function TerminalApp() {
       <header className="topbar">
         <div className="brand-lockup"><div className="brand-glyph"><span /><span /><span /></div><div><div className="brand-name">ORBITAL</div><div className="brand-sub">MARKET INTELLIGENCE</div></div></div>
         <nav className="main-nav" aria-label="主导航">
-          {(["行情", "持仓", "历史", "账户", "信号", "引擎"] as NavItem[]).map((item, index) => <button key={item} className={`nav-item ${activeNav === item ? "active" : ""}`} onClick={() => setActiveNav(item)}><span className="nav-index">0{index + 1}</span>{item}{item === "信号" && <span className="nav-badge">LIVE</span>}</button>)}
+          {(["行情", "信号", "引擎", "持仓", "历史", "账户"] as NavItem[]).map((item) => <button key={item} className={`nav-item ${activeNav === item ? "active" : ""}`} onClick={() => setActiveNav(item)}>{item}{item === "信号" && <span className="nav-badge">LIVE</span>}</button>)}
         </nav>
         <div className="top-actions">
           <div className="connection-status"><span className={`status-light ${connection === "live" ? "is-live" : ""}`} /> {connectionLabel}</div>
@@ -226,12 +227,14 @@ function TerminalApp() {
             <div className="eyebrow">MARKET PULSE</div>
             <h2 id="market-pulse-title">盘面速览</h2>
           </header>
-          <div className="price-card" aria-label="当前价格与 24 小时变化">
-            <div className="price-card-heading"><span>当前价格</span><span>24H</span></div>
-            <strong className="price-card-number">{formatPrice(selectedPrice)}</strong>
-            <div className={`price-card-change ${selectedPercent !== undefined && selectedPercent >= 0 ? "positive" : "negative"}`}>
-              <span>{formatPointChange(selectedPointChange)}</span>
-              <span>{selectedPercent === undefined ? "—" : formatDelta(selectedPercent)}</span>
+          <div className="price-card" aria-label="当前价格与涨跌">
+            <span className="price-card-coin">{selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")}</span>
+            <div className="price-card-right">
+              <strong className="price-card-number">{formatPrice(selectedPrice)}</strong>
+              <div className={`price-card-change ${selectedPercent !== undefined && selectedPercent >= 0 ? "positive" : "negative"}`}>
+                <span>{formatPointChange(selectedPointChange)}</span>
+                <span>{selectedPercent === undefined ? "—" : formatDelta(selectedPercent)}</span>
+              </div>
             </div>
           </div>
           <div className="sentiment-card">
@@ -268,8 +271,8 @@ function TerminalApp() {
       </div>
       {activeNav === "持仓" && <div className="pg-scroll"><PositionsPage prices={priceMap} onOpenSymbol={(symbol) => { setSelectedSymbol(symbol); setActiveNav("行情"); }} /></div>}
       {activeNav === "历史" && <div className="pg-scroll"><HistoryPage /></div>}
-      {activeNav === "账户" && <div className="pg-scroll"><AccountPage theme={theme} onToggleTheme={toggleTheme} /></div>}
-      {(activeNav === "信号" || activeNav === "引擎") && <section className="empty-state"><div className="empty-orbit"><Cpu size={34} /></div><div className="eyebrow">MODULE {activeNav === "信号" ? "05" : "06"}</div><h1>{activeNav}模块即将上线</h1><p>核心数据层已连接 Binance Futures。切换回行情查看实时盘面。</p><button onClick={() => setActiveNav("行情")}><LayoutDashboard size={15} /> 返回行情</button></section>}
+      {activeNav === "账户" && <div className="pg-scroll"><AccountPage /></div>}
+      {(activeNav === "信号" || activeNav === "引擎") && <section className="empty-state"><div className="empty-orbit"><Cpu size={34} /></div><h1>{activeNav}模块即将上线</h1><p>核心数据层已连接 Binance Futures。切换回行情查看实时盘面。</p><button onClick={() => setActiveNav("行情")}><LayoutDashboard size={15} /> 返回行情</button></section>}
       <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span><span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
     </div>
   );
