@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 连接中断根因修复发布（2026-11-26，北京时间）
+
+源码 **`04c6d13`** 已推送。后端 **`integrated-quick-04c6d13`** 切换四容器（healthy、health 全 true）；Web **`trade-web-20261126-connfix-04c6d13`** 原子切换（ba/IP 双入口 200，哈希 `dbbd7375…`／`644ab582…`／`767d95a0…` 与本地一致）。根因与修复：① ba server block 曾成 443 默认 server 致 IP 直连（iOS）拿域名证书 TLS 失败→IP server 标 `default_server`（已 reload，IP 连接恢复 IP 证书）；② ASGI bearer subprotocol 在 scope["subprotocols"] 被 WS 鉴权忽略致 web 永远 403→合并进 headers。服务器内实测 Authorization 头与 subprotocol 均 101，经 nginx subprotocol 复测通过。iOS 与 web 连接恢复；未执行真实交易/资金操作。
+
 ## 交易/账户对齐批次 Web 发布（2026-11-26，北京时间）
 
 源码 **`6841bd7`** 已推送。Web 静态 release **`trade-web-20261126-parity-6841bd7`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**，ba.wow211.com 与 IP 双入口），线上 index/JS/CSS SHA-256 与本地一致（`17c4263c…`／`02502497…`／`b61b7d3c…`），`nginx -t` 通过并 reload。含：WS 断线刷新会话（修旧 bundle token 过期导致的"连接中断"）＋ping/pong 延迟按 iOS 阈值显示；主导航加宽＋持仓绿点；交易/盘面图形切换按钮；交易面板市价/限价＋开仓设置 Maker＋去方向待定；账户页止盈止损策略 CRUD/启用＋API 绑定/解绑全流程。后端容器不切换。开仓/挂单/绑定等写操作仅用户确认后执行；本轮验收未触发真实交易。
