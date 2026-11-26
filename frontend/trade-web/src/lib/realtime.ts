@@ -67,15 +67,15 @@ class MarketRealtime {
     socket.onopen = () => {
       if (generation !== this.generation) return;
       this.backoff = 1000;
-      const kline = [...this.subs].map((s) => ({ symbol: s.symbol, interval: s.interval }));
+      const kline = [...this.subs].map((s) => ({ symbol: s.symbol }));
       const klineSymbols = [...new Set(kline.map((k) => k.symbol))];
-      const klineIntervals = [...new Set(kline.map((k) => k.interval))];
-      // ticker 用空 symbols＝后端通配单 topic 收全量；kline 用订阅符号并集，客户端再分发。
+      // ticker 用空 symbols＝后端通配单 topic 收全量；kline 订阅 1m 实时 feed，
+      // 大周期由客户端聚合到对应桶（后端仅推 1m 实时 K 线）。
       socket.send(JSON.stringify({
         version: 1, type: "subscribe", requestId: `web-${++this.requestId}`,
         subscriptions: [
           { channel: "market.ticker", filters: { symbols: [], intervals: [] } },
-          { channel: "market.kline", filters: { symbols: klineSymbols, intervals: klineIntervals } },
+          { channel: "market.kline", filters: { symbols: klineSymbols, intervals: ["1m"] } },
         ],
       }));
       this.pingTimer = window.setInterval(() => {
@@ -107,10 +107,8 @@ class MarketRealtime {
             if (wanted) sub.handler({ type: "ticker", symbol, price, changePercent: change, eventTime: Number(data.eventTime) });
           }
         } else if (envelope.channel === "market.kline") {
-          const interval = String(data.interval ?? "");
           for (const sub of this.subs) {
             if (sub.symbol !== symbol) continue;
-            if (interval && interval !== sub.interval) continue;
             sub.handler({
               type: "kline", symbol,
               candle: {

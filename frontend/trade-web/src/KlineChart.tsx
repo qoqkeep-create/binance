@@ -9,6 +9,7 @@ import {
 } from "lightweight-charts";
 import { useAccount, usePreference } from "./AccountProvider";
 import { getKlines, type Candle } from "./lib/binance";
+import { intervalSeconds } from "./lib/analysisIndicators";
 import { marketRealtime } from "./lib/realtime";
 import { buildChartIndicators } from "./lib/chartIndicators";
 import { mergeCandle, mergeTicker } from "./lib/candleMerge";
@@ -407,7 +408,21 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const unsubscribe = marketRealtime.subscribe({ symbol, interval: selectedInterval, handler: (event) => {
       if (!active || candlesSymbolRef.current !== symbol) return;
       if (event.type === "kline") {
-        candlesRef.current = mergeCandle(candlesRef.current, event.candle);
+        const width = intervalSeconds[selectedInterval] ?? 60;
+        const incoming = event.candle;
+        if (selectedInterval === "1m") {
+          candlesRef.current = mergeCandle(candlesRef.current, incoming);
+        } else {
+          // 后端仅推 1m 实时 K 线；大周期客户端聚合到对应桶，保证尾根实时且带影线。
+          const bucket = Math.floor(incoming.time / width) * width;
+          const list = candlesRef.current;
+          const last = list[list.length - 1];
+          if (last && last.time === bucket) {
+            candlesRef.current = [...list.slice(0, -1), { ...last, high: Math.max(last.high, incoming.high), low: Math.min(last.low, incoming.low), close: incoming.close, volume: last.volume + incoming.volume }];
+          } else if (!last || bucket > last.time) {
+            candlesRef.current = [...list, { time: bucket, open: incoming.open, high: incoming.high, low: incoming.low, close: incoming.close, volume: incoming.volume }].slice(-1500);
+          }
+        }
         scheduleTail();
       } else if (event.type === "ticker") {
         const next = mergeTicker(candlesRef.current, event.price);
