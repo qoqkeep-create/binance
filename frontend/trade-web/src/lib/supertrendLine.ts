@@ -20,6 +20,7 @@ interface StoredBar { x: number; index: number; value: number; direction: 1 | -1
 // 只描「原始序号相邻且同向」的线段，多→空→多时中间空头区域必然断开。
 export function createSupertrendLineView(config: SupertrendLineConfig): ICustomSeriesPaneView<Time, SupertrendLinePoint, CustomSeriesOptions> {
   let bars: StoredBar[] = [];
+  let barSpacing = 6;
   let range: { from: number; to: number } | null = null;
   const renderer: ICustomSeriesPaneRenderer = {
     draw(target, priceConverter) {
@@ -27,20 +28,29 @@ export function createSupertrendLineView(config: SupertrendLineConfig): ICustomS
         context.lineWidth = config.lineWidth;
         context.lineJoin = "round";
         context.lineCap = "round";
-        for (let index = 0; index < bars.length - 1; index += 1) {
+        const half = Math.max(1, barSpacing / 2);
+        for (let index = 0; index < bars.length; index += 1) {
           const a = bars[index];
-          const b = bars[index + 1];
-          if (a.direction !== b.direction || b.index !== a.index + 1) continue;
-          if (range && (b.index < range.from - 1 || a.index > range.to + 1)) continue;
-          if (b.x < 0 || a.x > mediaSize.width) continue;
+          if (range && (a.index < range.from - 1 || a.index > range.to + 1)) continue;
+          if (a.x < -half || a.x > mediaSize.width + half) continue;
           const ya = priceConverter(a.value);
-          const yb = priceConverter(b.value);
-          if (ya === null || yb === null) continue;
+          if (ya === null) continue;
           context.strokeStyle = a.direction === 1 ? config.upColor : config.downColor;
+          // 每根画水平段，保证末根（无后继）也显示撑压线。
           context.beginPath();
-          context.moveTo(a.x, ya);
-          context.lineTo(b.x, yb);
+          context.moveTo(a.x - half, ya);
+          context.lineTo(a.x + half, ya);
           context.stroke();
+          const b = bars[index + 1];
+          if (b && b.direction === a.direction && b.index === a.index + 1) {
+            const yb = priceConverter(b.value);
+            if (yb !== null && Math.abs(yb - ya) > 0.01) {
+              context.beginPath();
+              context.moveTo(a.x + half, ya);
+              context.lineTo(a.x + half, yb);
+              context.stroke();
+            }
+          }
         }
       });
     },
@@ -48,6 +58,7 @@ export function createSupertrendLineView(config: SupertrendLineConfig): ICustomS
   return {
     renderer: () => renderer,
     update(data: PaneRendererCustomData<Time, SupertrendLinePoint>) {
+      barSpacing = data.barSpacing;
       range = data.visibleRange ? { from: data.visibleRange.from, to: data.visibleRange.to } : null;
       bars = [];
       for (const bar of data.bars) {

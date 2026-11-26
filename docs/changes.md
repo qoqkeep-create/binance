@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：反转首两根补填充／选中态深浅适配／撑压线补末尾
+
+填充带此前在趋势反转后跳过 2 根（`isFlip(index)||isFlip(index-1)`）导致切换后两根无填充；现每根都填充，断开仅靠渲染器不跨方向连接保证。周期选中态原 `color:#fff + var(--accent-strong)` 在深色模式下白底白字不可见；改为按 `html[data-theme]` 分配：深色绿底(#2DBD85)深字、浅色深绿底(#186a4e)白字。撑压线末根（无后继 bar）此前不画线；渲染器改为逐根水平段＋同向相邻竖直台阶，末根必显示。浏览器实测深色 4H 选中绿底深字、SOL 三位小数、反转填充与末尾撑压线正常。`npm test`／`build`／`git diff --check` 通过。
+
 ## 2026-11-26：右轴价格分档／撑压线真正断开／周期选中态加强
 
 右轴价格标尺按值分档：<1 四位、1–99 三位、100–9999 两位、≥10000 一位（`priceScaleFormatter`）；主图右轴为共享 scale，须 candle/EMA/撑压线/填充带全部统一 custom priceFormat，否则被默认 precision 覆盖（实测 BTC 一位、XRP 四位）。撑压线「多→空→多连在一起」的根因是 lightweight-charts v5 LineSeries 的 whitespace **不断开**（最小复现证实相邻有效点仍被连线）；改用自定义系列 `supertrendLine.ts` 只描「原始序号相邻且同向」线段，空头区域必然断开（XRP 4H 实测粉色空头区内无多头支撑线）。周期选中态改为实底强调色＋白字加粗，明显可辨。`npm test`／`build`／`git diff --check` 通过。

@@ -125,18 +125,14 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const times = indicators.times;
     const last = candles.length - 1;
     const emaValues = [indicators.ema21, indicators.ema55, indicators.ema144];
-    // 反转处留一根空 bar，让多头／空头线段明确断开。
-    const isFlip = (index: number) => index > 0 && indicators.supertrend[index - 1].direction !== indicators.supertrend[index].direction;
     const stLinePoint = (index: number): StLineDataPoint => {
       const point = indicators.supertrend[index];
       return point.value === null ? { time: times[index] as Time } : { time: times[index] as Time, value: point.value, direction: point.direction ?? 1 };
     };
     const bandPoint = (index: number): BandDataPoint => {
       const point = indicators.supertrend[index];
-      // 反转 bar 及其后一根留空：新趋势首两根撑压值仍在远端，会画出竖直窄带／
-      // 短反向 dip 的灰色残影；填充带从每段第三根开始，保证干净断开与无残影。
-      const skip = isFlip(index) || isFlip(index - 1);
-      return point.value === null || skip ? { time: times[index] as Time } : { time: times[index] as Time, close: candles[index].close, st: point.value, direction: point.direction ?? 1 };
+      // 每根都填充（含趋势切换首两根）；断开仅靠渲染器不跨方向连接保证。
+      return point.value === null ? { time: times[index] as Time } : { time: times[index] as Time, close: candles[index].close, st: point.value, direction: point.direction ?? 1 };
     };
     const macdPoint = (index: number): MacdDataPoint => {
       const histogram = indicators.macd[index].histogram;
