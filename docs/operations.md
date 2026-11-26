@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## MACD 增减实心空心与超级趋势同向断开 Web 发布（2026-11-26，北京时间）
+
+源码 **`aab7e57`** 已推送。Web 静态 release **`trade-web-20261126-macd-st-aab7e57`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `1e95f068…` 与本地构建一致，页面 200、`/integrated/v1/health` 全 true。MACD 柱改按能量柱增减实心/空心；超级趋势填充带仅连接原始序号相邻且同向 bar，两段同向趋势不再被连接。后端容器与 Nginx 不切换，旧 release 保留可回退。浏览器面板隐藏未能截图，待用户线上验收。
+
 ## 超级趋势反转断开 Web 发布（2026-11-26，北京时间）
 
 源码 **`0c104d0`** 已推送。Web 静态 release **`trade-web-20261126-st-break-0c104d0`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `8ebb9c4c…` 与本地构建一致，页面 200、`/integrated/v1/health` 全 true。修复超级趋势填充带在趋势反转处的竖直连接段（反转 bar 留空）。一并含并行会话 MACD 实心空心／左拖堆积／切币提速。后端容器与 Nginx 不切换，旧 release 保留可回退。浏览器面板隐藏未能截图，反转断开待用户线上验收。
