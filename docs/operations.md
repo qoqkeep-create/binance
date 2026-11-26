@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 实时推送全层恢复（ticker 通配＋1m feed 客户端聚合）（2026-11-27，北京时间）
+
+源码 `7f525e0`/`0d24908` 已推送，Web `trade-web-20261127-agg-0d24908` 已上线（哈希 `c88a2698…` 一致）。ticker 改后端通配单 topic（空 symbols）收全量；kline 订阅 1m 实时 feed，大周期客户端聚合到对应桶（open/high/low/close），尾根实时且带影线。生产分层诊断全绿：WS 已连接、ticker 收到报价、kline 收到K线。连接层无需再改。
+
 ## 实时层重构：单一共享 WS＋token 主动续期（2026-11-27，北京时间）
 
 架构评审结论：WS subprotocol 鉴权链路本身正确（浏览器手动带 subprotocol 可 open、refresh 200），不稳定根因是**多组件各自建流＋token 被动续期竞态**（App/图表/分析各开一条 WS，token 过期被拒后重连竞态）。重构为 `lib/realtime.ts` 单一 MarketRealtime：合并订阅单连接、连接前 `ensureFreshToken`、到期前 90s 主动续期、指数退避重连、延迟/分层状态广播；移除 BinanceStream。生产实测由"连接中断"恢复为**实时连接 148ms**。源码 `ffdec2a`/`a900457` 已推送，Web `trade-web-20261127-realtime2-a900457` 已上线（哈希 `8cfcd2b3…` 一致）。
