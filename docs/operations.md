@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 左拖边缘堆积修复 Web 发布（2026-11-26，北京时间）
+
+源码 **`0d807c7`** 已推送。Web 静态 release **`trade-web-20261126-pan-clip-0d807c7`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `95f5624a…` 与本地构建一致，页面 200、`/integrated/v1/health` 全 true。自定义系列（MACD 柱／Supertrend 填充带）绘制时直读图表实时可见范围做双侧裁剪，修复左拖时屏外 bar 夹到左缘的堆积色块。后端已由并行会话随切币提速完整同源发布，本轮不重复切换；旧 release 保留可回退。浏览器面板隐藏未能真实拖动截图，待用户线上左拖验收。
+
 ## K 线切币提速完整同源发布（2026-11-26，北京时间）
 
 源码 **`5a130d1`** 已推送并完整交付。Web 静态 release **`trade-web-20261126-latency-5a130d1`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地构建一致（`78c1a78c…`／`6520c946…`／`33c746d5…`），SPA 深层 200。后端经 `quick_deploy.py` 发布为 **`integrated-quick-5a130d1`**：`load_history` SWR（有本地历史立即返回＋异步 repair）、scheduler `prewarm_major_histories`（60s，置顶+成交量前20）、客户端共享 SWR 缓存/悬停与空闲预取/首屏 300 根。四容器 healthy，MySQL/Redis 未替换，切换前活动命令 0，health database/migrations/scheduler 全 true；`nginx -t` 通过并 reload。`market_stream` 回归 0 失败（仅本地缺 redis 二进制的环境性跳过/错误）。未执行真实开平仓/划转/撤保护。
