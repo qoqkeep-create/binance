@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## iOS 加载动画＋持仓/历史/账户标签 Web 发布（2026-11-26，北京时间）
+
+源码 **`615e304`** 已推送。Web 静态 release **`trade-web-20261126-tabs-615e304`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`448d9216…`／`a03b5f74…`／`416cff03…`），`/integrated/v1/health` 200，`nginx -t` 通过并 reload。新增持仓/历史/账户页走既有 `/v1` JWT 接口与 `/api/commands` 幂等命令，后端容器不切换。平仓等写操作仅在你点击确认后执行；本轮验收未执行真实交易/资金操作。
+
 ## 按用户 Pine 复原 Supertrend Web 发布（2026-11-26，北京时间）
 
 源码 **`cd83b48`** 已推送。Web 静态 release **`trade-web-20261126-pine-cd83b48`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`34c22b70…`／`0333cd36…`／`fde5bbc9…`），`nginx -t` 通过并 reload。本轮仅前端（撑压线 linebr 平滑折线、hl2 填充锚、末根撑压），后端不切换。未执行真实交易/资金操作。
