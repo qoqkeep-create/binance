@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：修复左拖时 MACD／超级趋势填充带左缘堆积
+
+根因：自定义系列 renderer 依赖 update 传入的 visibleRange，拖动时陈旧／缺失，左侧序号裁剪失效，屏外 bar 的 x 被夹到左缘堆叠成竖直色块。修复：KlineChart 注入 `visibleRange` getter（绘制时直读 `chart.timeScale().getVisibleLogicalRange()`），MACD 与填充带 renderer 按实时范围双侧序号裁剪（保留 ±1 边界），叠加像素 x 裁剪。`npm run build`／`npm test`（含边缘堆积契约）通过；浏览器面板隐藏未能真实拖动截图，待线上左拖验收。静态 release 见 [运维](operations.md)。
+
 ## 2026-11-26：K 线切币提速（后端 SWR＋majors 预热＋客户端预取）
 
 深排结论：切币等待几乎全在 `/api/market/klines` 冷/过期路径的请求内回源（本地实测 828–1322ms），渲染仅 6–10ms；真实后端已是 limit 无关热窗（`market:history:v4`，1500 超集按 limit 切片），故「统一缓存键」一项现状已满足。落地：① `load_history` SWR——已有本地历史时首请求立即返回旧快照＋异步 repair，仅空首屏才同步补一页（改写对应单测为新契约，另加空首屏同步用例）；② scheduler 新增 `prewarm_major_histories`（60s）为置顶＋成交量前 20 币种补 maintenance 预热任务（`repair.prewarm_majors`，不删其他任务）；③ 客户端 `lib/klineCache.ts` 共享 SWR 缓存，市场列表悬停预取＋就绪后空闲预取前 5，首屏 limit 500→300。浏览器实测悬停预取后点击 120ms 内无加载遮罩（瞬时）。`market_stream` 111 项仅余环境性 redis 缺失错误（本地无 redis 二进制）、0 失败；web `npm test`／`build`／`git diff --check` 通过。

@@ -11,6 +11,7 @@ export interface MacdHistogramConfig {
   upColor: string;
   downColor: string;
   zeroColor: string;
+  visibleRange?: () => { from: number; to: number } | null;
 }
 
 interface StoredBar { x: number; index: number; value: number }
@@ -32,10 +33,11 @@ export function createMacdHistogramView(config: MacdHistogramConfig): ICustomSer
         context.lineTo(mediaSize.width, zero);
         context.stroke();
         const half = Math.max(1, barSpacing * 0.35);
+        // 绘制时读图表实时可见范围，避免 update 的陈旧 range 导致左拖边缘堆积或右侧缺柱。
+        const vr = (config.visibleRange ? config.visibleRange() : null) || range;
         for (let i = 0; i < bars.length; i += 1) {
           const bar = bars[i];
-          // 左侧按可见范围裁剪防边缘堆积；右侧按像素 x 裁剪，避免误删最新 bar。
-          if (range && bar.index < range.from - 1) continue;
+          if (vr && (bar.index < vr.from - 1 || bar.index > vr.to + 1)) continue;
           if (bar.x < -half || bar.x > mediaSize.width + half) continue;
           const y = priceConverter(bar.value);
           if (y === null) continue;

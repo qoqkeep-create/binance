@@ -13,6 +13,7 @@ export interface BandFillConfig {
   fillUpColor: string;
   fillDownColor: string;
   fillOpacity: number;
+  visibleRange?: () => { from: number; to: number } | null;
 }
 
 interface StoredBar { x: number; index: number; close: number; st: number; direction: 1 | -1 }
@@ -32,14 +33,17 @@ export function createSupertrendBandView(config: BandFillConfig): ICustomSeriesP
     draw(target, priceConverter) {
       target.useMediaCoordinateSpace(({ context, mediaSize }) => {
         if (bars.length < 2 || config.fillOpacity <= 0) return;
+        // 绘制时读图表实时可见范围：update 传入的 visibleRange 可能陈旧，
+        // 左拖时屏外 bar 的 x 被夹到左缘会堆叠，必须按最新范围双侧裁剪
+        // （兜底沿用 range.from - 1／range.to + 1 的序号边界语义）。
+        const vr = (config.visibleRange ? config.visibleRange() : null) || range;
         for (let index = 0; index < bars.length - 1; index += 1) {
           const a = bars[index];
           const b = bars[index + 1];
           // 仅连接原始序号相邻且同向的 bar：反转留空或单根反向趋势造成的缺口都断开，
           // 避免两段同向趋势被填充带边缘连成一条线。
           if (a.direction !== b.direction || b.index !== a.index + 1) continue;
-          // 左侧按可见范围裁剪防边缘堆积；右侧按像素 x 裁剪，避免误删最新段填充。
-          if (range && b.index < range.from - 1) continue;
+          if (vr && (b.index < vr.from - 1 || a.index > vr.to + 1)) continue;
           if (b.x < 0 || a.x > mediaSize.width) continue;
           const closeA = priceConverter(a.close);
           const stA = priceConverter(a.st);

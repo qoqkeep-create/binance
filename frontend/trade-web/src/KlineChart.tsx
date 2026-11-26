@@ -197,6 +197,10 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       localization: { locale: "zh-CN" },
     });
     chartRef.current = chart;
+    // 自定义系列绘制时读实时可见范围，避免陈旧 visibleRange 造成左拖堆积／右侧缺柱。
+    const liveRange = () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
+    bandConfigRef.current.visibleRange = liveRange;
+    macdConfigRef.current.visibleRange = liveRange;
     bandRef.current = chart.addCustomSeries(createSupertrendBandView(bandConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 0);
     candleRef.current = chart.addSeries(CandlestickSeries, {
       upColor: t.up, downColor: t.down, borderVisible: false, wickUpColor: t.up, wickDownColor: t.down, ...NO_CROSSHAIR_MARKER,
