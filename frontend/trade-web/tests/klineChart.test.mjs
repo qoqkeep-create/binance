@@ -72,8 +72,8 @@ if (!macd.includes("strokeRect") || !macd.includes("fillRect")) {
 if (!source.includes("renderData(candlesRef.current, false, true)") || !source.includes("candleRef.current.update(")) {
   throw new Error("Live ticks must update only the tail bar, not rebuild all series");
 }
-if (!source.includes("kline-loading") || !source.includes("kline-spinner")) {
-  throw new Error("An iOS-style loading overlay must cover the chart while loading");
+if (!source.includes("kline-loading") || !source.includes("kline-bars")) {
+  throw new Error("An iOS-style equalizer-bar loading overlay must cover the chart while loading");
 }
 if (!source.includes('from "./lib/klineCache"') || !source.includes("getCachedKlines(symbol, selectedInterval)")) {
   throw new Error("Symbol switches must use the shared client SWR cache for instant revisits");

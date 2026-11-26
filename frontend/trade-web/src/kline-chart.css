@@ -110,20 +110,29 @@
   inset: 0;
   z-index: 4;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  color: var(--muted);
-  font: 12px var(--font-ui);
-  background: color-mix(in srgb, var(--chart-surface) 62%, transparent);
+  background: var(--chart-surface);
   pointer-events: none;
 }
-.kline-spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--line-bright);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: rotate .8s linear infinite;
+/* iOS BinanceKlineLoadingIndicator：4 根底部对齐强调色竖条，正弦 smoothstep 波动、周期 .72s、逐条相位差。 */
+.kline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5.33px;
+  height: 20px;
+}
+.kline-bars i {
+  width: 6.67px;
+  height: 6.67px;
+  background: var(--accent);
+  animation: kline-bar .72s ease-in-out infinite;
+}
+.kline-bars i:nth-child(1) { animation-delay: 0s; }
+.kline-bars i:nth-child(2) { animation-delay: -.0936s; }
+.kline-bars i:nth-child(3) { animation-delay: -.1872s; }
+.kline-bars i:nth-child(4) { animation-delay: -.2808s; }
+@keyframes kline-bar {
+  0%, 100% { height: 6.67px; }
+  50% { height: 20px; }
 }

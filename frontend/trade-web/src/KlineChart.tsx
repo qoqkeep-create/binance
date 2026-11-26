@@ -374,7 +374,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
         </div>
       </div>
       <div className="kline-stage" data-chart-theme={theme}>
-        {status === "loading" && <div className="kline-loading" role="status"><span className="kline-spinner" aria-hidden="true" /><span>加载 K 线…</span></div>}
+        {status === "loading" && <div className="kline-loading" role="status" aria-label="K 线加载中"><span className="kline-bars" aria-hidden="true"><i /><i /><i /><i /></span></div>}
         {status === "error" && <div className="chart-widget-notice chart-widget-error"><p role="status">K 线加载失败</p><button className="chart-restore" type="button" onClick={() => setAttempt((previous) => previous + 1)}>重试</button></div>}
         <div ref={containerRef} className="kline-container" />
       </div>

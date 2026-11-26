@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：切币加载改 iOS 竖条动画＋顶部持仓／历史／账户标签
+
+① 切币加载遮罩弃用圆形转圈，改 iOS `BinanceKlineLoadingIndicator` 同款：4 根底部对齐强调色竖条、正弦 smoothstep 波动、周期 .72s、逐条相位差、不透明背景盖住旧图。② 顶部导航新增 持仓／历史／账户 三标签（`Pages.tsx`＋`lib/tradeApi.ts` 走 `/v1` JWT）：持仓=列表+保证金率徽标+5s 刷新+立即平仓（confirm＋`/api/commands` position-close＋幂等键＋轮询）+未绑定/空态；历史=历史仓位/委托双 tab+全部/一天/三天/一周过滤+加载更多；账户=合约余额/今日盈亏/钱包/API 绑定/单笔止损额滑杆保存/颜色模式/退出。vite dev 补 `/v1` 代理。浏览器实测三页渲染与数据绑定正常（测试户未绑定显示绑定提示）。`npm test`／`build`／`git diff --check` 通过。
+
 ## 2026-11-26：按用户 Pine 复原 Supertrend 平滑折线／hl2 填充／末根撑压
 
 用户提供其 TradingView v6 Pine（`ta.supertrend(6,10)`、`plot.style_linebr`、`fill(趋势线, src=hl2, 85%透明)`）。据此：① 撑压线改**相邻同向点直线连接的平滑折线**（linebr 语义），替换逐根水平台阶（锯齿来源）；段末／最新根／孤立反转根向右延伸半根保证末尾始终有线；多空仍断开。② 填充锚由 close 改 **hl2 中价**（对齐 `fill(plot, src)`），透明度默认 0.16≈官方 85% 透明。浏览器实测 ETH 1H 撑压线平滑无锯齿、多空断开、末根有线。`npm test`／`build`／`git diff --check` 通过。

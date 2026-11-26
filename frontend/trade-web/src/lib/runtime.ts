@@ -12,6 +12,10 @@ export function apiPath(path: string): string {
   return `${appPrefix()}/api${path}`;
 }
 
+export function v1Path(path: string): string {
+  return `${appPrefix()}/v1${path}`;
+}
+
 export function websocketPath(): string {
   if (typeof window === "undefined") return "ws://localhost/ws/v1";
   const configured = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_WS_URL;
