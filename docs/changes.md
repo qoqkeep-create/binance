@@ -2,7 +2,7 @@
 
 ## 2026-11-26：恢复 TradingView 官方设置工具栏
 
-定位到设置按钮缺失来自 `TradingViewWidget` 固定传入 `hide_top_toolbar: true`。可编辑账号现在保留 TradingView 官方顶部工具栏，游客只读模式继续隐藏绘图工具。自建周期栏、主图和附图 studies、右下角官方设置入口继续启用。新增官方 `header_settings` featureset 契约测试。
+定位到设置按钮缺失来自 `TradingViewWidget` 固定传入 `hide_top_toolbar: true`。可编辑账号现在保留 TradingView 官方顶部工具栏，游客只读模式继续隐藏绘图工具。自建周期栏、主图和附图 studies、右下角官方设置入口继续启用。新增官方 `header_settings` featureset 契约测试。静态 release **`trade-web-20261126-tv-settings-9945f7c`** 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希和 `/integrated/v1/health` 均通过。
 
 ## 2026-11-26：Web K 线区域跟随深浅色主题
 
