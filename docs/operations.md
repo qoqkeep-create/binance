@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web HTTPS 证书与自动续期补齐（2026-11-26，北京时间）
+
+Web 两个入口均已持受信任 Let's Encrypt 证书：域名 **tt.wow211.com**（SAN DNS，89 天）与 IP **47.80.22.243**（SAN IP，短寿命），`curl` 校验 `ssl_verify_result=0`；域名 80→443 301、根路径 308 到 `/integrated/market/`。缺口为 **cert-renew.timer 此前未安装/未启用**（IP 证书仅 4 天到期不会自动续）：已从 `deploy/integrated/cert-renew.{service,timer}` 安装并 `enable --now`（每 6h 检查），service 加 `--deploy-hook "systemctl reload nginx"` 续期后自动重载；`certbot renew --dry-run` 通过（webroot authenticator）。IP 短寿命证书按 certbot 比例窗口在到期前由 timer 自动续。`quick_deploy_remote.py` 增加幂等安装/启用 cert-renew 单元，保证后续主机可复现。
+
 ## 主导航加宽去闪／历史时间堆叠／十字线百分比 Web 发布（2026-11-26，北京时间）
 
 源码 **`e8e97a0`** 已推送。Web 静态 release **`trade-web-20261126-nav-e8e97a0`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`52f51f02…`／`f835b56d…`／`298cdcc0…`），`nginx -t` 通过并 reload。仅前端呈现，后端不切换。十字线百分比价框待线上真实鼠标验收。未执行真实交易/资金操作。

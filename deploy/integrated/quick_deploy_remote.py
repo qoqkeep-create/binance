@@ -148,6 +148,14 @@ def main() -> int:
             release.mkdir(mode=0o755)
             extract(archive, release)
             (release / "server.env").symlink_to(ROOT / "server.env")
+            for unit in ("cert-renew.service", "cert-renew.timer"):
+                src = release / "deploy/integrated" / unit
+                dst = Path("/etc/systemd/system") / unit
+                if src.exists() and (not dst.exists() or sha256(src) != sha256(dst)):
+                    dst.write_bytes(src.read_bytes())
+                    subprocess.run(["systemctl", "daemon-reload"], check=True)
+            if Path("/opt/certbot/bin/certbot").exists():
+                subprocess.run(["systemctl", "enable", "--now", "cert-renew.timer"], check=False)
             new_nginx = release / "deploy/integrated/nginx-location.conf"
             if sha256(new_nginx) != sha256(NGINX_CONFIG):
                 raise SystemExit("Nginx 配置有变化，请使用完整发布流程")
