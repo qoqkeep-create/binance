@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：Web K 线顶部时间周期按钮加大
+
+顶部周期切换（3M／5M／15M／1H／4H／1D）字号 10→13 px、内边距 6/7→8/13 px、圆角 3→4 px，按钮高约 34.5 px（工具栏 44 px 内），提升可点性。仅 `styles.css` 尺寸调整，不改周期逻辑与偏好。`npm run build`／`npm test` 通过，内置浏览器核对计算尺寸生效。静态 release 见 [运维](operations.md)。
+
 ## 2026-11-26：Web K 线尾根随实时报价跳动
 
 最新 K 线此前仅依赖 `market.kline` 推送，推送间隙尾根静止。现 chart 行情流同时处理 `market.ticker`，用实时报价合成尾根 close/high/low（`lib/candleMerge.ts` 的 `mergeTicker`），kline 推送仍负责完整 OHLC 与新增收盘根。浏览器以模拟 WSS 报价实测尾根 close 连续变化（1702.22→1705.72→1706.61）且与价格卡一致；`mergeCandle`/`mergeTicker` 单测覆盖替换／追加／忽略旧根／无效报价／no-op。Web `npm test`、`npm run build`、`git diff --check` 通过。

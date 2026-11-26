@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web K 线尾根实时跳动发布（2026-11-26，北京时间）
+
+Web 静态 release **`trade-web-20261126-lwcharts-live-2e7e3be`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），核心为尾根随 `market.ticker` 报价跳动（`mergeTicker`），并含 Supertrend 填充／断开、指标总设置、70/15/15 自适应、首屏 64 根；线上 index/JS/CSS SHA-256 与本地构建一致（`87221cf4…`／`5174872f…`／`b3e168f7…`），SPA 深层 200，与并行会话 `trade-web-20261126-kline-ux-918eb6c` 字节同源。后端经 `quick_deploy.py` 发布为 **`integrated-quick-e1526b0`**，api／market／worker／scheduler 四容器 healthy，MySQL／Redis 未替换，切换前活动命令 0，health database／migrations／scheduler 全 true；`nginx -t` 通过并 reload。登录后真实账号尾根跳动由用户线上验收；未执行真实开平仓／划转／撤保护。
+
 ## 持仓刷新手感／划转上限／开仓超限文案与 Web K 线交互发布（2026-11-26，北京时间）
 
 源码 **`918eb6c5a877a8a612c657f81a832c374ec9dd5c`** 已推送 `codex/integrated-ios` 并完整交付整合工作区（含并行会话的指标设置、Supertrend 填充带、自适应高度与 K 线合并模块）。后端经 `quick_deploy.py` 发布为 **`integrated-quick-918eb6c`**，目标 **47.80.22.243（首尔服务器）**，api／market／worker／scheduler 切换，health database／migrations／scheduler 全 true；本次仅文案与预检 message，无新增 migration，未做数据库备份（快速路径）。Web 静态 release **`trade-web-20261126-kline-ux-918eb6c`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，线上 `index.html`／JS／CSS SHA-256 与本地构建一致（JS `5174872f…`／CSS `b3e168f7…`），`/integrated/v1/health` 全 true；Nginx location snippet 不变、未 reload。旧 release 保留可回退。同一提交 Xcode Cloud `Archive - iOS`／`Test - iOS` 已触发（交付时 in_progress），TestFlight 分发与手机安装另行核验。iOS 模拟器 XCTest 执行受 CoreSimulator 环境故障阻塞，编译与 build-for-testing 通过；未执行真实交易、划转或保护单操作。
