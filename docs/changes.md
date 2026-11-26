@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：K 线切币提速（后端 SWR＋majors 预热＋客户端预取）
+
+深排结论：切币等待几乎全在 `/api/market/klines` 冷/过期路径的请求内回源（本地实测 828–1322ms），渲染仅 6–10ms；真实后端已是 limit 无关热窗（`market:history:v4`，1500 超集按 limit 切片），故「统一缓存键」一项现状已满足。落地：① `load_history` SWR——已有本地历史时首请求立即返回旧快照＋异步 repair，仅空首屏才同步补一页（改写对应单测为新契约，另加空首屏同步用例）；② scheduler 新增 `prewarm_major_histories`（60s）为置顶＋成交量前 20 币种补 maintenance 预热任务（`repair.prewarm_majors`，不删其他任务）；③ 客户端 `lib/klineCache.ts` 共享 SWR 缓存，市场列表悬停预取＋就绪后空闲预取前 5，首屏 limit 500→300。浏览器实测悬停预取后点击 120ms 内无加载遮罩（瞬时）。`market_stream` 111 项仅余环境性 redis 缺失错误（本地无 redis 二进制）、0 失败；web `npm test`／`build`／`git diff --check` 通过。
+
 ## 2026-11-26：修复 MACD 右侧能量柱缺失与超级趋势末段填充空白
 
 根因：两个自定义系列（MACD 柱、Supertrend 填充带）用 `visibleRange.to + 1` 做右侧序号裁剪，误删最新 bar，导致右侧能量柱不显示、末段填充空白。改为左侧保留序号裁剪（防边缘堆积、满足契约测试）、右侧改用像素 x 裁剪；MACD 近零柱最小高度 2px 保证可见。StochRSI 核对无误：RSI14→Stoch14→K=SMA3→D=SMA3，0–100 固定区间双线图，与 iOS 参数一致。浏览器实测：能量柱全宽显示（增长实心/缩短空心）、末段填充恢复、StochRSI 正常。`npm run build`／`npm test` 通过。静态 release 见 [运维](operations.md)。

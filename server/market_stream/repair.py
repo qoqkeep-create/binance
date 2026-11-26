@@ -39,6 +39,13 @@ def seed(symbols):
             schedule(symbol, interval, kind="maintenance", priority=10)
 
 
+def prewarm_majors(symbols):
+    """Unlike seed, never deletes other symbols' tasks; only tops up maintenance warm tasks."""
+    for symbol in symbols:
+        for interval in PREWARM_INTERVALS:
+            schedule(symbol, interval, kind="maintenance", priority=10)
+
+
 def fetch_page(symbol, interval, *, start=None, end=None, budget_priority="background", timeout=None):
     """One bounded 1500-row exchange page, normalized and retention-filtered."""
     from market_stream import service

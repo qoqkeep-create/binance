@@ -239,6 +239,22 @@ def _warm_market_klines_job():
 
 
 @_with_database_connections
+def _prewarm_major_histories_job():
+    """预热置顶+成交量前20币种的历史热窗，使首次切币也命中本地缓存而非请求内回源"""
+    try:
+        from django.core.cache import cache
+        from market_stream import repair
+        from trading.constants import PINNED_TRADING_SYMBOLS
+
+        tickers = cache.get("market:tickers") or {}
+        majors = sorted(tickers.values(), key=lambda row: row.get("quoteVolume24h", 0), reverse=True)[:20]
+        symbols = list(dict.fromkeys([*PINNED_TRADING_SYMBOLS, *(row["symbol"] for row in majors)]))
+        repair.prewarm_majors(symbols)
+    except Exception as e:
+        logger.error("定时预热主要币种历史失败: %s", safe_error_summary(e))
+
+
+@_with_database_connections
 def _prewarm_market_snapshots_job():
     """按周期节奏请求公开快照 URL，保持 CDN 副本常热，消除首屏跨境回源"""
     try:
@@ -511,6 +527,20 @@ def start_scheduler():
             name='公开快照CDN预热',
             replace_existing=True,
             next_run_time=now + timedelta(seconds=58),
+            jitter=5,
+            max_instances=1,
+            coalesce=True,
+        )
+
+    # 每60秒为置顶+成交量前20币种补历史预热任务，首次切币命中本地热窗
+    if settings.MARKET_STREAM_ENABLED:
+        _scheduler.add_job(
+            _prewarm_major_histories_job,
+            trigger=IntervalTrigger(seconds=60),
+            id='prewarm_major_histories',
+            name='主要币种历史预热',
+            replace_existing=True,
+            next_run_time=now + timedelta(seconds=20),
             jitter=5,
             max_instances=1,
             coalesce=True,
