@@ -63,8 +63,48 @@ final class DisplayNumberTests: XCTestCase {
   }
 }
 
+final class WebRefreshInteractionTests: XCTestCase {
+  func testReleaseBelowThresholdAndProgrammaticBounceDoNotRefresh() {
+    var interaction = WebRefreshInteraction()
+    interaction.update(distance: 100, dragging: false)
+    XCTAssertFalse(interaction.release())
+    interaction.update(distance: 55, dragging: true)
+    XCTAssertFalse(interaction.release())
+  }
+
+  func testFiftySixPointReleaseStartsOnlyOneReadUntilCompleted() {
+    var interaction = WebRefreshInteraction()
+    interaction.update(distance: 56, dragging: true)
+    XCTAssertTrue(interaction.release())
+    interaction.update(distance: 140, dragging: true)
+    XCTAssertFalse(interaction.release(), "A second release during the read must not start another")
+    interaction.complete()
+    interaction.update(distance: 56, dragging: true)
+    XCTAssertTrue(interaction.release())
+  }
+
+  func testPullingBackBeforeReleaseDisarmsRefresh() {
+    var interaction = WebRefreshInteraction()
+    interaction.update(distance: 95, dragging: true)
+    interaction.update(distance: 40, dragging: true)
+    XCTAssertFalse(interaction.release())
+    interaction.update(distance: -200, dragging: true)
+    XCTAssertEqual(interaction.distance, 0)
+  }
+
+  func testDeepPullClampsDisplayDistanceAtTheRetainedSlot() {
+    var interaction = WebRefreshInteraction()
+    interaction.update(distance: 200, dragging: true)
+    XCTAssertEqual(interaction.distance, WebRefreshInteraction.retainedHeight)
+    interaction.update(distance: 320, dragging: true)
+    XCTAssertEqual(interaction.distance, WebRefreshInteraction.retainedHeight,
+      "A deep held pull must stop changing the published distance")
+    XCTAssertTrue(interaction.release())
+  }
+}
+
 @MainActor
-final class WebNativeRefreshTests: XCTestCase {
+final class WebRefreshScrollViewTests: XCTestCase {
   private final class LayoutProbe {
     var measurements = 0
     var updates = 0
@@ -91,7 +131,17 @@ final class WebNativeRefreshTests: XCTestCase {
     }
   }
 
-  func testOrdinaryScrollingKeepsTheNativeHostWithoutContentRelayout() async throws {
+  private func releasePull(_ scroll: UIScrollView, distance: CGFloat, in host: UIView) {
+    scroll.contentOffset.y = -distance
+    let pan = scroll.panGestureRecognizer
+    let action = Selector(("panChanged:"))
+    pan.state = .ended
+    for view in descendants(host, UIView.self) where view.responds(to: action) {
+      view.perform(action, with: pan)
+    }
+  }
+
+  func testOrdinaryScrollingKeepsContentLayoutAndNeverReads() async throws {
     let probe = LayoutProbe()
     var reads = 0
     let root = WebRefreshScrollView { ContentProbe(probe: probe) }.webRefreshable { reads += 1 }
@@ -102,6 +152,7 @@ final class WebNativeRefreshTests: XCTestCase {
     defer { window.isHidden = true }
     await settle(window)
     let scroll = try XCTUnwrap(descendants(host.view, UIScrollView.self).first)
+    XCTAssertNil(scroll.refreshControl, "The custom component owns pull geometry, not a native control")
     let before = probe.measurements
     for step in 1...12 {
       scroll.contentOffset.y = CGFloat(step * 10)
@@ -110,58 +161,50 @@ final class WebNativeRefreshTests: XCTestCase {
     XCTAssertEqual(probe.measurements, before,
       "Ordinary scrolling must not invalidate the SwiftUI content's layout")
     XCTAssertEqual(reads, 0, "Scrolling a list must never submit a refresh")
-    XCTAssertNotNil(scroll.refreshControl,
-      "The vertical scroll host must own pull progress and its inset, before release starts the read")
   }
 
-  func testRefreshRetainsNativeHostUntilTheReadFinishesAndRejectsDuplicateRelease() async throws {
+  func testAccessibilityRefreshReadsOnceRetainsMarginThenReturns() async throws {
     var reads = 0
     var finish: CheckedContinuation<Void, Never>?
     let action: @MainActor () async -> Void = {
       reads += 1
       await withCheckedContinuation { finish = $0 }
     }
-    func root(_ version: Int, active: Bool = true) -> AnyView {
-      AnyView(WebRefreshScrollView(isActive: active) {
-        Text("Snapshot \(version)").frame(height: 1800)
-      }.webRefreshable(action))
-    }
-    let host = UIHostingController(rootView: root(1))
+    let root = WebRefreshScrollView { Text("Snapshot").frame(height: 1800) }.webRefreshable(action)
+    let host = UIHostingController(rootView: root)
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
     window.rootViewController = host
     window.makeKeyAndVisible()
     defer { window.isHidden = true }
     await settle(window)
     let scroll = try XCTUnwrap(descendants(host.view, UIScrollView.self).first)
-    let control = try XCTUnwrap(scroll.refreshControl)
-    let originalInset = scroll.contentInset
-    control.beginRefreshing()
-    control.sendActions(for: .valueChanged)
+    let originalInset = scroll.contentInset.top
+    releasePull(scroll, distance: 120, in: host.view)
     await settle(window)
     XCTAssertEqual(reads, 1)
-    XCTAssertTrue(control.isRefreshing)
-    let heldOffset = scroll.contentOffset
-    host.rootView = root(2)
+    XCTAssertGreaterThan(scroll.contentInset.top, originalInset + 30,
+      "The content margin must stay open while the read runs")
+    releasePull(scroll, distance: 120, in: host.view)
     await settle(window)
-    XCTAssertTrue(descendants(host.view, UIScrollView.self).first === scroll)
-    XCTAssertTrue(scroll.refreshControl === control)
-    XCTAssertEqual(scroll.contentOffset, heldOffset)
-    control.sendActions(for: .valueChanged)
-    await settle(window)
-    XCTAssertEqual(reads, 1)
+    XCTAssertEqual(reads, 1, "A duplicate trigger during the read must be rejected")
     finish?.resume()
-    await settle(window)
-    XCTAssertFalse(control.isRefreshing)
-    XCTAssertEqual(scroll.contentInset, originalInset)
+    let returned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      abs(scroll.contentInset.top - originalInset) < 1
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 3), .completed,
+      "After the fade and hold the margin must collapse to its original value")
   }
 
-  func testDeactivationDisablesFeedbackAndIgnoresALateReadCompletion() async throws {
+  func testDeactivationCancelsInFlightRefreshAndIgnoresLateCompletion() async throws {
+    var reads = 0
     var finish: CheckedContinuation<Void, Never>?
     let action: @MainActor () async -> Void = {
+      reads += 1
       await withCheckedContinuation { finish = $0 }
     }
     func root(_ active: Bool) -> AnyView {
-      AnyView(WebRefreshScrollView(isActive: active) { Text("Content") }.webRefreshable(action))
+      AnyView(WebRefreshScrollView(isActive: active) { Text("Content").frame(height: 1800) }
+        .webRefreshable(action))
     }
     let host = UIHostingController(rootView: root(true))
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
@@ -170,22 +213,18 @@ final class WebNativeRefreshTests: XCTestCase {
     defer { window.isHidden = true }
     await settle(window)
     let scroll = try XCTUnwrap(descendants(host.view, UIScrollView.self).first)
-    let control = try XCTUnwrap(scroll.refreshControl)
-    control.beginRefreshing()
-    control.sendActions(for: .valueChanged)
+    let originalInset = scroll.contentInset.top
+    releasePull(scroll, distance: 120, in: host.view)
     await settle(window)
+    XCTAssertEqual(reads, 1)
     host.rootView = root(false)
     await settle(window)
-    XCTAssertTrue(scroll.refreshControl === control)
-    XCTAssertFalse(control.isEnabled)
-    XCTAssertFalse(control.isRefreshing)
+    XCTAssertEqual(scroll.contentInset.top, originalInset, accuracy: 1,
+      "Deactivation must collapse the retained margin immediately")
     finish?.resume()
     await settle(window)
-    XCTAssertFalse(control.isEnabled)
-    host.rootView = root(true)
-    await settle(window)
-    XCTAssertNotNil(scroll.refreshControl)
-    XCTAssertFalse(try XCTUnwrap(scroll.refreshControl).isRefreshing)
+    XCTAssertEqual(reads, 1, "A late completion after deactivation must not start another read")
+    XCTAssertEqual(scroll.contentInset.top, originalInset, accuracy: 1)
   }
 }
 

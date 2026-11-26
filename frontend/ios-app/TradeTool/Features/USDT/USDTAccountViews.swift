@@ -662,6 +662,12 @@ struct USDTCapitalView: View {
   }
   private var walletFooter: some View {
     VStack(spacing: 12) {
+      if tab == .move {
+        Text(futuresCapLabel)
+          .font(.system(size: 13)).foregroundStyle(WebTheme.secondary)
+          .frame(maxWidth: .infinity, alignment: .center)
+          .accessibilityIdentifier("capital.futuresCap")
+      }
       Button(busy ? "处理中…" : completed ? "完成" : legacyPending ? "核对之前的归集" : pending ? "核对 / 继续原操作" : tab == .transfer ? "转账" : "确认划转") {
         if completed { dismiss() } else if legacyPending { legacy = true } else { Task { await execute() } }
       }.buttonStyle(WebButtonStyle(height: 48, radius: 12)).disabled(busy || loading || (!completed && !legacyPending && !canSubmit))
@@ -689,6 +695,10 @@ struct USDTCapitalView: View {
   }
   private var destinationBalance: String {
     preview.value(direction == "to_spot" ? "spot_available" : "futures_balance")
+  }
+  private var futuresCapLabel: String {
+    let amount = preview["maximum_futures_balance"]?.decimal ?? Decimal(5000)
+    return "合约资金上限 \(NSDecimalNumber(decimal: amount).stringValue) USDT"
   }
   private var unavailableReason: String? {
     guard !loading, !busy, !completed else { return nil }

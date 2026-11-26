@@ -1,5 +1,21 @@
 # 开发与验证
 
+## 持仓下拉刷新短阈值停留回位、划转上限提示与开仓超限文案（2026-11-26）
+
+iOS 共用 `WebRefreshScrollView` 由系统 `.refreshable` 改回显式自定义刷新，回应真机"偶发不触发、触发距离过远、回位偏卡"反馈：触发距离固定 **56 pt**（与保留槽等高），显示距离钳制在 56 pt，深拉持手不再逐帧发布 SwiftUI 状态；松手才发请求，读取期间 `contentMargins` 保持下压 56 pt，新数据在读取阶段就位；结束后先 0.16 s 淡出指示器、**停留 0.2 s**、再 0.24 s 单次动画收回边距让卡片上移。观察器只挂最近的非分页纵向滚动宿主（跳过横向 `PositionNativePager`），隐藏页／离开取消任务并以 `refreshID` 拒绝迟到完成；保留 20 pt 指示器、`refresh.indicator` 无障碍标识与"刷新"无障碍动作。`WebRefreshInteractionTests`／`WebRefreshScrollViewTests` 覆盖阈值／钳制／回拉撤销／去重／松手触发／保留与收回／停用拒绝迟到完成（原 `WebNativeRefreshTests` 紧耦合系统控件，已替换）。
+
+`USDTCapitalView` 划转页签在确认按钮上方居中显示弱化一行"合约资金上限 5000 USDT"（读服务端 `maximum_futures_balance`，未读取按固定 5000）。后端 `capital_precheck` 在 `futures_above_maximum` 随状态返回明确 `message`："合约资金超出 5000 USDT，请将超出部分转出后，再开仓。"（金额取 `maximum_futures_balance`）；iOS 预检失败直接展示该文案，命令路径 `_entry_capital_error` 同步措辞；`test_balance_cap` 增加文案断言。
+
+Web `KlineChart` 右上角加"自动／手动"二选一：滚轮缩放或拖动（wheel／pointer）自动切手动，点"自动"恢复首屏缩放比（`INITIAL_VISIBLE_BARS`）并跟随最新 bar，切币／切周期回到自动；主图与副图、两副图之间的分割线改用更明显的主题色（dark `#5C6675`／light `#B8BFC9`）；所有序列 `crosshairMarkerVisible=false` 去掉十字线小圆点（保留竖横参考线）。
+
+验证：后端 `trading.test_balance_cap trading.test_capital_wallet trading.tests.TradingApiTests` **223 项通过**（隔离 SQLite／LocMem＋交易所替身），`makemigrations --check` 无新增迁移；Web `npm test`／`npm run build` 通过，内置浏览器核对各序列十字线圆点已关闭、分割线色与自动／手动切换状态生效。iOS `TradeTool` Debug 模拟器编译与 `build-for-testing` 通过；刷新单测的模拟器 XCTest 执行因 CoreSimulator 设备目录／testmanagerd 环境故障多次未能启动（与历史多轮记录一致），不代表代码断言失败，待环境可用重跑。未执行真实交易、划转或保护单操作。
+
+## Web K 线填充／指标设置／自适应高度（2026-11-26）
+
+`lib/supertrendBand.ts` 以 `addCustomSeries` 自定义系列绘制收盘价与 Supertrend 之间的填充带（`update` 提供带 x 的 bars、`draw` 提供 priceConverter），反转处跳过四边形实现断开；填充色／透明度经闭包配置对象注入。`KlineChart` 的多／空线段在反转 bar 置 whitespace 留缺口。`lib/indicatorSettings.ts` 定义四指标配置与宽松合并（`mergeIndicatorSettings`），`IndicatorSettingsPanel` 提供启用勾选／参数／色值／填充透明度编辑，经 `usePreference("chart")` 持久化；`settings` 用 `useMemo` 稳定引用避免每渲染重跑 `setData`。副图比例用 `setStretchFactor(70/15/15)`，禁用副图置 0 折叠。首屏 64 根。
+
+验证：`npm test`（含配置合并与自定义参数单测）、`npm run build`、`git diff --check` 通过；浏览器实测填充／断开／比例／禁用重分配／透明度联动／面板编辑。**注意**：内置浏览器面板隐藏时 `requestAnimationFrame` 暂停，lightweight-charts 异步布局不执行，副图会量到 0 高——须先 `tab.activate()` 让页面 visible 再测量／截图，勿误判为 pane API 失效。lightweight-charts 无官方左侧绘图工具栏，不实现。本轮未部署。
+
 ## Web K 线改用 lightweight-charts 自建（2026-11-26）
 
 `frontend/trade-web` 新增 `KlineChart.tsx` 与 `lib/chartIndicators.ts`，以 `lightweight-charts` v5 自绘替换 `TradingViewWidget`（已删除）。主图蜡烛＋EMA 21/55/144＋Supertrend 10×6（Wilder ATR），副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3，参数与暗／浅配色对齐 iOS `ChartEngine`。副图高度用绝对 `setStretchFactor` 固定 72px（`setHeight` 连续调用会互相干扰），并以 ResizeObserver 维持；首屏 `setVisibleLogicalRange` 固定 32 根。图表实例只挂载一次，切币／切周期经 AbortController＋生成守卫单次 `getKlines` 后 `setData`，尾根由 `BinanceStream` kline 事件 `update` 合并。周期栏 3m/5m/15m/1h/4h/1d（默认 15m），偏好仍走 `usePreference("chart")`。

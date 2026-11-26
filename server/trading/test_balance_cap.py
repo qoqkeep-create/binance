@@ -436,6 +436,8 @@ class BalanceCapTests(TestCase):
         self.assertEqual(state["status"], "normalization_required")
         self.assertEqual(state["futures_collect"], "0.01")
         self.assertEqual(state["target_balance"], "5000.009")
+        self.assertEqual(state["reason"], "futures_above_maximum")
+        self.assertEqual(state["message"], "合约资金超出 5000 USDT，请将超出部分转出后，再开仓。")
 
     def test_stale_spot_pending_sweep_replans_futures_refill_before_collection(self):
         self.user.stop_loss_amount = Decimal("100")

@@ -1,4 +1,6 @@
 import { buildChartIndicators } from "../src/lib/chartIndicators.js";
+import { DEFAULT_INDICATORS, mergeIndicatorSettings } from "../src/lib/indicatorSettings.js";
+import { mergeCandle, mergeTicker } from "../src/lib/candleMerge.js";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -35,5 +37,29 @@ const upSeries = buildChartIndicators(uptrend);
 const upLast = upSeries.supertrend[uptrend.length - 1];
 assert(upLast.direction === 1, "a steady uptrend keeps Supertrend bullish");
 assert(upLast.value !== null && upLast.value < uptrend[uptrend.length - 1].close, "bullish Supertrend trails below price");
+
+const merged = mergeIndicatorSettings({ ema: { periods: [5, 10, 20] }, supertrend: { fillOpacity: 0.4 } });
+assert(merged.ema.periods[0] === 5 && merged.ema.periods[2] === 20, "custom EMA periods merge");
+assert(merged.ema.colors[0] === DEFAULT_INDICATORS.ema.colors[0], "missing colors fall back to defaults");
+assert(merged.supertrend.fillOpacity === 0.4, "fill opacity merges");
+assert(mergeIndicatorSettings(null).macd.fast === 12, "null settings fall back to defaults");
+const custom = buildChartIndicators(wave, merged);
+assert(custom.ema21.length === wave.length && custom.supertrend.length === wave.length, "custom parameters keep alignment");
+
+const baseCandles = [
+  { time: 900, open: 10, high: 12, low: 9, close: 11, volume: 1 },
+  { time: 1800, open: 11, high: 13, low: 10, close: 12, volume: 1 },
+];
+const updated = mergeCandle(baseCandles, { time: 1800, open: 11, high: 14, low: 10, close: 13, volume: 2 });
+assert(updated.length === 2 && updated[1].close === 13 && updated[1].high === 14, "same-time kline replaces the last candle");
+const appended = mergeCandle(baseCandles, { time: 2700, open: 13, high: 15, low: 12, close: 14, volume: 1 });
+assert(appended.length === 3 && appended[2].time === 2700, "newer kline appends");
+assert(mergeCandle(baseCandles, { time: 0, open: 1, high: 1, low: 1, close: 1, volume: 1 }) === baseCandles, "older kline is ignored");
+const ticked = mergeTicker(baseCandles, 15);
+assert(ticked[1].close === 15 && ticked[1].high === 15 && ticked[1].low === 10, "ticker lifts the last candle close/high");
+const tickedDown = mergeTicker(baseCandles, 8);
+assert(tickedDown[1].close === 8 && tickedDown[1].low === 8 && tickedDown[1].high === 13, "ticker drops the last candle close/low");
+assert(mergeTicker(baseCandles, 0) === baseCandles && mergeTicker(baseCandles, NaN) === baseCandles, "invalid ticker price is ignored");
+assert(mergeTicker(baseCandles, 12) === baseCandles, "unchanged ticker price is a no-op");
 
 console.log("chartIndicators: EMA/Supertrend/MACD/StochRSI checks passed");

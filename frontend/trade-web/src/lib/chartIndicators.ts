@@ -1,4 +1,5 @@
 import type { Candle } from "./binance";
+import { DEFAULT_INDICATORS, type IndicatorSettings } from "./indicatorSettings.js";
 
 export interface SupertrendPoint { value: number | null; direction: 1 | -1 | null }
 export interface MacdPoint { dif: number | null; dea: number | null; histogram: number | null }
@@ -134,17 +135,17 @@ function stochRsi(closes: number[], rsiLength = 14, stochLength = 14, kLength = 
 }
 
 /** Aligned EMA/Supertrend/MACD/StochRSI series mirroring the iOS chart parameters. */
-export function buildChartIndicators(candles: Candle[]): ChartIndicatorSeries {
+export function buildChartIndicators(candles: Candle[], settings: IndicatorSettings = DEFAULT_INDICATORS): ChartIndicatorSeries {
   const ordered = [...candles].sort((a, b) => a.time - b.time);
   const closes = ordered.map((candle) => candle.close);
-  const macdPoints = macd(closes);
-  const stochPoints = stochRsi(closes);
-  const supertrendPoints = supertrend(ordered);
+  const macdPoints = macd(closes, settings.macd.fast, settings.macd.slow, settings.macd.signal);
+  const stochPoints = stochRsi(closes, settings.stoch.rsi, settings.stoch.stoch, settings.stoch.k, settings.stoch.d);
+  const supertrendPoints = supertrend(ordered, settings.supertrend.period, settings.supertrend.multiplier);
   return {
     times: ordered.map((candle) => candle.time),
-    ema21: ema(closes, 21),
-    ema55: ema(closes, 55),
-    ema144: ema(closes, 144),
+    ema21: ema(closes, settings.ema.periods[0]),
+    ema55: ema(closes, settings.ema.periods[1]),
+    ema144: ema(closes, settings.ema.periods[2]),
     supertrend: supertrendPoints,
     macd: macdPoints,
     stoch: stochPoints,

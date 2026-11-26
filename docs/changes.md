@@ -1,5 +1,13 @@
 # 变更与验收记录
 
+## 2026-11-26：持仓下拉刷新手感、划转上限提示、开仓超限文案与 Web K 线交互
+
+iOS 持仓／共用列表下拉刷新改回显式自定义组件：56 pt 短触发距离、松手才读、读取期间保持下压、指示器淡出后停留 0.2 s 再单次动画收回边距，深拉持手不再逐帧刷状态；回应真机偶发不触发、距离过远、回位偏卡反馈。划转页签确认按钮上方显示"合约资金上限 5000 USDT"。开仓资金超限时预检与命令路径统一提示"合约资金超出 5000 USDT，请将超出部分转出后，再开仓。"。Web K 线右上角加自动／手动二选一（手动缩放／拖动自动切手动，点自动恢复首屏缩放比），主图与副图、副图之间分割线加深，十字线去掉各序列小圆点。后端 223 项隔离回归通过、无新增迁移；Web `npm test`／`build` 与内置浏览器核对通过；iOS Debug 编译与 build-for-testing 通过，模拟器 XCTest 执行受 CoreSimulator 环境故障阻塞待重跑。未执行真实交易或资金操作。发布范围见 [运维](operations.md)。
+
+## 2026-11-26：Web K 线 Supertrend 填充／断开、指标总设置与自适应高度
+
+Supertrend 增加收盘价与撑压线之间的填充带（自定义系列插件，多／空填充色与透明度可配），多头／空头线段在反转处留空 bar 明确断开。首屏可见根数 32→64。副图高度改为自适应比例：主图 70%、MACD／StochRSI 各 15%（stretch 70/15/15），禁用某副图时主图自动吸收其份额。顶部新增「指标」总入口，弹出设置面板：EMA／Supertrend／MACD／StochRSI 各带启用勾选、参数编辑与颜色色值编辑，Supertrend 另含多／空撑压线色、多／空填充色与填充透明度滑杆；配置随 chart 偏好持久化。lightweight-charts 为基础图表库，不含 TradingView 官方左侧绘图工具栏，按用户要求不强行实现。浏览器实测：填充带与反转断开、70/15/15（实测 441/95/95）、禁用 MACD 后主图≈85%、透明度 16%→60% 填充加深、面板勾选／参数／色值均生效。`npm test`、`npm run build`、`git diff --check` 通过；本轮未部署。
+
 ## 2026-11-26：Web K 线改为 lightweight-charts 自建
 
 Web K 线区域不再使用 TradingView 托管 iframe，改用 `lightweight-charts` v5 自绘（与 `work/Agu` 同库），指标参数、配色与副图布局对齐 iOS：主图蜡烛＋EMA 21/55/144＋Supertrend 10×6，副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3。两个副图固定 72px（约旧 108px 的 2/3，对齐 iOS 72pt），首屏可见 32 根（约旧 15m≈96 根的 1/3），切币／切周期只 `setData` 更新同一实例、单次加载。周期栏 3m/5m/15m/1h/4h/1d，默认 15m。新增 `chartIndicators` 单测与 `klineChart` 契约测试，移除 TradingView 组件与其契约测试。浏览器实测：主图／EMA／Supertrend／MACD／StochRSI 渲染、副图 72px、首屏约 32 根、切币与切周期各仅 1 条 klines 请求、深浅色主题、滚轮缩放均通过。Web `npm test`、`npm run build`、`git diff --check` 通过；本地浏览器验收使用隔离 SQLite 与只读行情。提交 `8472ec8` 已推送，静态 release `trade-web-20261126-lwcharts-8472ec8` 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希与 health 复核通过；未做真实交易或资金操作。实时推送依赖 ASGI 后端 WSS（本地 WSGI runserver 不提供 WebSocket）。

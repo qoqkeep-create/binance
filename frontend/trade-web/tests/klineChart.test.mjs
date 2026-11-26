@@ -22,11 +22,20 @@ if (!indicators.includes("2 * (dif[index]! - dea[index]!)")) {
 if (!indicators.includes("multiplier = 6") || !indicators.includes("length = 10")) {
   throw new Error("Supertrend must mirror the iOS 10/×6 parameters");
 }
-if (!source.includes("const SUB_PANE_HEIGHT = 72") || !source.includes("panes[1].setStretchFactor(SUB_PANE_HEIGHT)") || !source.includes("panes[2].setStretchFactor(SUB_PANE_HEIGHT)")) {
-  throw new Error("MACD and StochRSI sub-panes must use the compact 72px height");
+if (!source.includes("const PANE_STRETCH = { main: 70, sub: 15 }") || !source.includes("panes[1].setStretchFactor(settings.macd.enabled ? PANE_STRETCH.sub : 0)") || !source.includes("panes[2].setStretchFactor(settings.stoch.enabled ? PANE_STRETCH.sub : 0)")) {
+  throw new Error("Sub-panes must use the adaptive 70/15/15 stretch layout");
 }
-if (!source.includes("const INITIAL_VISIBLE_BARS = 32") || !source.includes("candles.length - INITIAL_VISIBLE_BARS")) {
-  throw new Error("First paint must show about one third of the previous bar count");
+if (!source.includes("const INITIAL_VISIBLE_BARS = 64") || !source.includes("candles.length - INITIAL_VISIBLE_BARS")) {
+  throw new Error("First paint must show 64 bars");
+}
+if (!source.includes('from "./lib/supertrendBand"') || !source.includes("bandRef.current?.setData(")) {
+  throw new Error("Supertrend must render a configurable fill band");
+}
+if (!source.includes("const isFlip = (index: number)") || !source.includes("!isFlip(index)")) {
+  throw new Error("Supertrend bull/bear segments must break at reversals");
+}
+if (!source.includes("IndicatorSettingsPanel") || !source.includes("mergeIndicatorSettings(preference.indicators)")) {
+  throw new Error("Indicator master settings panel must be wired to preferences");
 }
 if (!source.includes("}, 1);") || !source.includes("}, 2);")) {
   throw new Error("MACD and StochRSI must render in their own panes");

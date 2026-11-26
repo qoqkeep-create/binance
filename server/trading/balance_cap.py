@@ -1126,12 +1126,17 @@ def capital_precheck(
             reason = "futures_refill_available"
         else:
             reason = "collectible_wallet_balance"
-        return {
+        result = {
             **base,
             "status": "normalization_required",
             "reason": reason,
             "transfer_amount": format(plan["collection_total"], "f"),
         }
+        if reason == "futures_above_maximum":
+            result["message"] = (
+                f"合约资金超出 {format(maximum, 'f')} USDT，请将超出部分转出后，再开仓。"
+            )
+        return result
     return {**base, "status": "ready"}
 
 

@@ -839,7 +839,8 @@ def _entry_capital_error(
         return f"账户总资金低于开仓下限，至少还需补充 {shortfall} USDT，请先在“我的”页面处理"
     if status_value == "normalization_required":
         if state.get("reason") == "futures_above_maximum":
-            return "合约余额超过保留上限，请先在“我的”页面归集余额后再开仓"
+            cap = state.get("maximum_futures_balance") or "5000"
+            return f"合约资金超出 {cap} USDT，请将超出部分转出后，再开仓。"
         return "合约余额低于开仓下限，请先在币安将可用资金补入合约账户后再开仓"
     return "暂时无法确认账户资金是否满足开仓条件，请稍后重试"
 

@@ -352,186 +352,227 @@ extension View {
   }
 }
 
-/// Some OS versions begin native refresh before the finger lifts. Observe only
-/// the pan's terminal event so network work starts on release; native refresh
-/// still owns all progress, offsets, insets and animations.
-@MainActor
-private final class WebNativeRefreshRelease: NSObject {
-  private weak var scrollView: UIScrollView?
-  private var waiting: [CheckedContinuation<Bool, Never>] = []
-  private var isActive = true
+/// Pull distance is explicit and short rather than coupled to UIKit's private
+/// refresh threshold. The displayed distance clamps at the retained slot, so a
+/// deep held pull stops publishing new SwiftUI state once the spinner is fully
+/// revealed; the trigger still fires on release at that same distance.
+struct WebRefreshInteraction {
+  static let triggerDistance: CGFloat = 56
+  static let retainedHeight: CGFloat = 56
+  private(set) var distance: CGFloat = 0
+  private(set) var isRefreshing = false
+  private var dragging = false
 
-  func configure(scroll: UIScrollView, active: Bool) {
-    if scrollView !== scroll {
-      finish(false)
-      scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
-      scrollView = scroll
-      scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
-    }
-    isActive = active
-    if !active { finish(false) }
+  mutating func update(distance: CGFloat, dragging: Bool) {
+    guard !isRefreshing else { return }
+    let clamped = min(max(0, distance), Self.retainedHeight)
+    if clamped == self.distance && dragging == self.dragging { return }
+    self.distance = clamped
+    self.dragging = dragging
   }
 
-  func waitForRelease() async -> Bool {
-    guard isActive else { return false }
-    guard let scrollView else { return true }
-    let state = scrollView.panGestureRecognizer.state
-    if state == .cancelled || state == .failed { return false }
-    if state == .ended {
-      // The native refresh callback can arrive in the same turn as .ended,
-      // before UIKit clears isDragging. A main-queue turn completes release.
-      return await withCheckedContinuation { continuation in
-        DispatchQueue.main.async { [weak self] in
-          continuation.resume(returning: self?.isActive == true)
-        }
-      }
-    }
-    if state != .began && state != .changed { return true }
-    return await withCheckedContinuation { waiting.append($0) }
+  mutating func release() -> Bool {
+    let start = dragging && distance >= Self.triggerDistance && !isRefreshing
+    dragging = false
+    distance = 0
+    if start { isRefreshing = true }
+    return start
   }
 
-  func cancel() {
-    isActive = false
-    finish(false)
-  }
-
-  @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
-    switch pan.state {
-    case .ended:
-      // Let UIKit finish its release bookkeeping before the read publishes any
-      // loading state; no per-frame SwiftUI state or offset observer is needed.
-      DispatchQueue.main.async { [weak self] in
-        guard let self else { return }
-        self.finish(self.isActive)
-      }
-    case .cancelled, .failed:
-      finish(false)
-    default:
-      break
-    }
-  }
-
-  private func finish(_ released: Bool) {
-    let continuations = waiting
-    waiting.removeAll()
-    continuations.forEach { $0.resume(returning: released) }
+  mutating func complete() {
+    isRefreshing = false
+    dragging = false
+    distance = 0
   }
 }
 
-/// SwiftUI installs and retains the native UIRefreshControl. This bridge only
-/// supplies its accessibility name, disables hidden pages and observes release;
-/// it never replaces the control, delegate, gesture, content offset or inset.
-private struct WebNativeRefreshPresentation: UIViewRepresentable {
-  var isActive: Bool
-  let release: WebNativeRefreshRelease
+/// Observe the existing native scroll view without replacing its delegate or pan
+/// recognizer. The nearest non-paging scroll ancestor is the vertical list host;
+/// the horizontal position pager is skipped so its gestures never arm a refresh.
+private struct WebRefreshScrollObserver: UIViewRepresentable {
+  enum Event {
+    case moved(distance: CGFloat, dragging: Bool)
+    case released(distance: CGFloat)
+    case cancelled
+  }
+  var onEvent: (Event) -> Void
 
-  func makeUIView(context: Context) -> PresentationView {
-    let view = PresentationView()
+  func makeUIView(context: Context) -> ObserverView {
+    let view = ObserverView()
     view.isUserInteractionEnabled = false
+    view.onEvent = onEvent
     return view
   }
 
-  func updateUIView(_ view: PresentationView, context: Context) {
-    view.isActive = isActive
-    view.release = release
-    view.configureAfterLayout()
+  func updateUIView(_ uiView: ObserverView, context: Context) {
+    uiView.onEvent = onEvent
   }
+  static func dismantleUIView(_ uiView: ObserverView, coordinator: ()) { uiView.detach() }
 
-  final class PresentationView: UIView {
-    var isActive = true
-    var release: WebNativeRefreshRelease?
-    private weak var observedScroll: UIScrollView?
-    private var refreshControlObservation: NSKeyValueObservation?
+  final class ObserverView: UIView {
+    var onEvent: ((Event) -> Void)?
+    private weak var scrollView: UIScrollView?
+    private var observation: NSKeyValueObservation?
 
     override func didMoveToWindow() {
       super.didMoveToWindow()
-      if window != nil {
-        configureAfterLayout()
-      } else {
-        release?.cancel()
-        refreshControlObservation = nil
-        observedScroll = nil
-      }
+      if window == nil { detach() }
+      else { attach() }
     }
 
     override func layoutSubviews() {
       super.layoutSubviews()
-      if window != nil { configure() }
+      if window != nil { attach() }
     }
 
-    func configureAfterLayout() {
-      configure()
-      // The native refreshable modifier finishes installing its control after
-      // the representable's update in the same SwiftUI transaction.
-      DispatchQueue.main.async { [weak self] in self?.configure() }
-    }
-
-    private func configure() {
-      guard window != nil else { return }
+    private func attach() {
       var ancestor = superview
       while let view = ancestor {
         if let scroll = view as? UIScrollView, !scroll.isPagingEnabled {
-          release?.configure(scroll: scroll, active: isActive)
-          if observedScroll !== scroll {
-            observedScroll = scroll
-            // SwiftUI may install the control later than this view's first
-            // layout. Observe only control replacement, never scroll offsets.
-            refreshControlObservation = scroll.observe(\.refreshControl, options: [.initial, .new]) {
-              [weak self] scroll, _ in
-              MainActor.assumeIsolated { self?.configureControl(scroll.refreshControl) }
-            }
+          guard scrollView !== scroll else { return }
+          detach()
+          scrollView = scroll
+          scroll.alwaysBounceVertical = true
+          scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged))
+          observation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] scroll, _ in
+            self?.emit(.moved(distance: Self.distance(in: scroll), dragging: scroll.isDragging))
           }
-          configureControl(scroll.refreshControl)
           return
         }
         ancestor = view.superview
       }
     }
 
-    private func configureControl(_ control: UIRefreshControl?) {
-      guard let control else { return }
-      control.accessibilityIdentifier = "refresh.indicator"
-      control.accessibilityLabel = "正在刷新"
-      control.isAccessibilityElement = true
-      control.isEnabled = isActive
-      if !isActive { control.endRefreshing() }
+    func detach() {
+      scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged))
+      observation?.invalidate()
+      observation = nil
+      scrollView = nil
+    }
+
+    private static func distance(in scroll: UIScrollView) -> CGFloat {
+      max(0, -(scroll.contentOffset.y + scroll.adjustedContentInset.top))
+    }
+
+    @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
+      guard let scroll = scrollView else { return }
+      switch pan.state {
+      case .began, .changed: emit(.moved(distance: Self.distance(in: scroll), dragging: true))
+      case .ended: emit(.released(distance: Self.distance(in: scroll)))
+      case .cancelled, .failed: emit(.cancelled)
+      default: break
+      }
+    }
+
+    private func emit(_ event: Event) {
+      // Native layout can also change contentOffset; publish outside SwiftUI's update transaction.
+      DispatchQueue.main.async { [weak self, weak observedScroll = scrollView] in
+        guard let self, let observedScroll, self.scrollView === observedScroll,
+          self.window != nil else { return }
+        self.onEvent?(event)
+      }
     }
   }
 }
 
-/// Native refresh owns the pull threshold, release, retained inset and final
-/// bounce. There is no offset KVO, per-frame SwiftUI state or animated margin.
+/// A short explicit pull arms the refresh; release starts the read. The content
+/// stays lowered through the read and the indicator fade, holds briefly, then
+/// returns to its original margin in a single animated collapse.
 struct WebRefreshScrollView<Content: View>: View {
   var isActive = true
   @ViewBuilder var content: Content
   @Environment(\.webRefreshAction) private var action
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var interaction = WebRefreshInteraction()
   @State private var refreshTask: Task<Void, Never>?
-  @State private var release = WebNativeRefreshRelease()
+  @State private var retainedHeight: CGFloat = 0
+  @State private var indicatorOpacity: Double = 1
+  @State private var refreshID = UUID()
 
   var body: some View {
     ScrollView {
-      VStack(spacing: 0) { content }
-        .background {
-          WebNativeRefreshPresentation(isActive: isActive && action != nil, release: release)
-            .frame(width: 0, height: 0)
+      VStack(spacing: 0) {
+        content
+      }
+      .background {
+        if isActive, action != nil {
+          WebRefreshScrollObserver { event in
+            guard isActive, action != nil else { return }
+            switch event {
+            case let .moved(distance, dragging):
+              interaction.update(distance: dragging ? distance : 0, dragging: dragging)
+            case let .released(distance):
+              interaction.update(distance: distance, dragging: true)
+              if interaction.release() { startRefresh() }
+            case .cancelled: interaction.update(distance: 0, dragging: false)
+            }
+          }
         }
+      }
+    }.scrollBounceBehavior(.always)
+      .contentMargins(.top, retainedHeight, for: .scrollContent)
+      .overlay(alignment: .top) {
+        if isActive, action != nil, interaction.isRefreshing || interaction.distance > 0 {
+          indicator.frame(maxWidth: .infinity).frame(height: WebRefreshInteraction.retainedHeight)
+            .opacity(indicatorOpacity)
+            .offset(y: interaction.isRefreshing ? 0 : interaction.distance - WebRefreshInteraction.retainedHeight)
+            .allowsHitTesting(false).accessibilityHidden(!interaction.isRefreshing)
+        }
+      }
+      .clipped()
+      .accessibilityAction(named: Text("刷新")) {
+        guard isActive, action != nil, !interaction.isRefreshing else { return }
+        interaction.update(distance: WebRefreshInteraction.triggerDistance, dragging: true)
+        if interaction.release() { startRefresh() }
+      }
+      .onDisappear(perform: stopRefresh)
+      .onChange(of: isActive) { _, active in if !active { stopRefresh() } }
+  }
+
+  private var indicator: some View {
+    ProgressView().controlSize(.regular).frame(width: 20, height: 20)
+      .accessibilityLabel("正在刷新").accessibilityIdentifier("refresh.indicator")
+  }
+
+  private func startRefresh() {
+    guard isActive, let action else { interaction.complete(); return }
+    let id = UUID()
+    refreshID = id
+    indicatorOpacity = 1
+    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.24)) {
+      retainedHeight = WebRefreshInteraction.retainedHeight
     }
-    .scrollBounceBehavior(.always)
-    .refreshable {
-      guard isActive, let action else { return }
-      if let refreshTask {
-        await refreshTask.value
-        return
+    refreshTask = Task { @MainActor in
+      guard !Task.isCancelled else { return }
+      await action()
+      guard !Task.isCancelled, refreshID == id else { return }
+      // Fade the spinner first, hold a beat, then return the content margin.
+      withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16), completionCriteria: .removed) {
+        indicatorOpacity = 0
+      } completion: {
+        guard refreshID == id else { return }
+        Task { @MainActor in
+          try? await Task.sleep(for: .milliseconds(200))
+          guard !Task.isCancelled, refreshID == id else { return }
+          withAnimation(reduceMotion ? nil : .easeOut(duration: 0.24), completionCriteria: .removed) {
+            retainedHeight = 0
+          } completion: {
+            guard refreshID == id else { return }
+            interaction.complete()
+          }
+        }
       }
-      let task = Task { @MainActor in
-        guard await release.waitForRelease() else { return }
-        await action()
-      }
-      refreshTask = task
-      await task.value
       refreshTask = nil
     }
-    .clipped()
+  }
+
+  private func stopRefresh() {
+    refreshTask?.cancel()
+    refreshTask = nil
+    refreshID = UUID()
+    retainedHeight = 0
+    indicatorOpacity = 1
+    interaction.complete()
   }
 }
 
