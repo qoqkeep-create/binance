@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 按用户 Pine 复原 Supertrend Web 发布（2026-11-26，北京时间）
+
+源码 **`cd83b48`** 已推送。Web 静态 release **`trade-web-20261126-pine-cd83b48`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`34c22b70…`／`0333cd36…`／`fde5bbc9…`），`nginx -t` 通过并 reload。本轮仅前端（撑压线 linebr 平滑折线、hl2 填充锚、末根撑压），后端不切换。未执行真实交易/资金操作。
+
 ## 自动视图跨周期科学化＋Supertrend 对齐官方 Web 发布（2026-11-26，北京时间）
 
 源码 **`0601b54`** 已推送。Web 静态 release **`trade-web-20261126-auto-0601b54`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`d9b8ca52…`／`0333cd36…`／`b0ee30cc…`），`nginx -t` 通过并 reload。本轮仅前端（自动视图 bar 间距自适应、可见范围 autoscale、Supertrend 翻转对齐 ta.supertrend），后端不切换。未执行真实交易/资金操作。
