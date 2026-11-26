@@ -35,8 +35,8 @@ function validChartPreference(value: unknown): value is ChartPreference {
 }
 
 const THEMES = {
-  dark: { bg: "#212731", text: "#F0F0F4", grid: "#333B47", sep: "#5C6675", up: "#28A473", down: "#F63C55" },
-  light: { bg: "#FFFFFF", text: "#181A20", grid: "#EAECEF", sep: "#B8BFC9", up: "#2EBD85", down: "#F6465D" },
+  dark: { bg: "#212731", text: "#F0F0F4", grid: "rgba(240, 244, 250, 0.045)", zero: "#333B47", sep: "#5C6675", up: "#28A473", down: "#F63C55" },
+  light: { bg: "#FFFFFF", text: "#181A20", grid: "rgba(24, 26, 32, 0.045)", zero: "#EAECEF", sep: "#B8BFC9", up: "#2EBD85", down: "#F6465D" },
 };
 
 // 十字线只在各序列上保留竖横参考线，不显示小圆点标记。
@@ -114,11 +114,13 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
   const stochKRef = useRef<ISeriesApi<"Line"> | null>(null);
   const stochDRef = useRef<ISeriesApi<"Line"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
+  const paneLegendRefs = useRef<Array<HTMLDivElement | null>>([null, null]);
   // 当前 candlesRef 归属的币种；切币未加载完成前置 null，禁止新币 tick 合并进旧币尾根。
   const candlesSymbolRef = useRef<string | null>(null);
   const themeRef = useRef(theme);
   const settingsRef = useRef(settings);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [crosshair, setCrosshair] = useState<{ y: number; price: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
   const viewModeRef = useRef<"auto" | "manual">("auto");
@@ -184,7 +186,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     bandRef.current?.applyOptions({ visible: config.supertrend.enabled });
     macdConfigRef.current.upColor = config.macd.upColor;
     macdConfigRef.current.downColor = config.macd.downColor;
-    macdConfigRef.current.zeroColor = t.grid;
+    macdConfigRef.current.zeroColor = t.zero;
     macdHistRef.current?.setData(times.map((_, index) => macdPoint(index)));
     macdDifRef.current?.setData(lineData(times, indicators.macd.map((point) => point.dif)));
     macdDeaRef.current?.setData(lineData(times, indicators.macd.map((point) => point.dea)));
@@ -196,6 +198,26 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     stochKRef.current?.applyOptions({ color: config.stoch.kColor, visible: config.stoch.enabled });
     stochDRef.current?.applyOptions({ color: config.stoch.dColor, visible: config.stoch.enabled });
     applyPaneLayout(chart, config);
+    // TradingView 式附图图例：名称＋参数固定 pane 左上角，禁用时隐藏。
+    const panes = chart.panes();
+    const legendSpecs = [
+      { pane: panes[1], enabled: config.macd.enabled, text: `MACD(${config.macd.fast},${config.macd.slow},${config.macd.signal})` },
+      { pane: panes[2], enabled: config.stoch.enabled, text: `StochRSI(${config.stoch.rsi},${config.stoch.stoch},${config.stoch.k},${config.stoch.d})` },
+    ];
+    legendSpecs.forEach((spec, index) => {
+      // getHTMLElement 返回 tr，不能挂绝对定位子节点；取 pane 画布的 relative 容器。
+      const host = spec.pane?.getHTMLElement()?.querySelector("canvas")?.parentElement ?? null;
+      if (!host) return;
+      let legend = paneLegendRefs.current[index];
+      if (!legend || legend.parentElement !== host) {
+        legend = document.createElement("div");
+        legend.className = "pane-legend";
+        host.appendChild(legend);
+        paneLegendRefs.current[index] = legend;
+      }
+      legend.textContent = spec.text;
+      legend.style.display = spec.enabled ? "" : "none";
+    });
     if (resetView || viewModeRef.current === "auto") {
       chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - autoVisibleBars()), to: candles.length - 1 });
     }
@@ -215,7 +237,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: RIGHT_OFFSET, minBarSpacing: 0.5 },
-      crosshair: { mode: CrosshairMode.Normal },
+      crosshair: { mode: CrosshairMode.Normal, horzLine: { labelVisible: false } },
       localization: { locale: "zh-CN" },
     });
     chartRef.current = chart;
@@ -223,6 +245,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const liveRange = () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
     bandConfigRef.current.visibleRange = liveRange;
     macdConfigRef.current.visibleRange = liveRange;
+    stLineConfigRef.current.visibleRange = liveRange;
     const bandView = createSupertrendBandView(bandConfigRef.current);
     bandRef.current = chart.addCustomSeries(bandView.view, { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT, autoscaleInfoProvider: () => visiblePriceScale(bandView.visiblePriceRange()) }, 0);
     candleRef.current = chart.addSeries(CandlestickSeries, {
@@ -251,7 +274,19 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const onPointerMove = (event: PointerEvent) => { if (event.buttons > 0) markManual(); };
     container.addEventListener("wheel", onWheel, { passive: true });
     container.addEventListener("pointermove", onPointerMove);
+    const onCrosshair = (param: { point?: { x: number; y: number } }) => {
+      const candle = candleRef.current;
+      const api = chartRef.current;
+      if (!param.point || !candle || !api) { setCrosshair(null); return; }
+      const mainHeight = api.panes()[0]?.getHeight() ?? 0;
+      if (param.point.y > mainHeight) { setCrosshair(null); return; }
+      const price = candle.coordinateToPrice(param.point.y);
+      if (price === null) { setCrosshair(null); return; }
+      setCrosshair({ y: param.point.y, price });
+    };
+    chart.subscribeCrosshairMove(onCrosshair);
     return () => {
+      chart.unsubscribeCrosshairMove(onCrosshair);
       container.removeEventListener("wheel", onWheel);
       container.removeEventListener("pointermove", onPointerMove);
       resizeObserver.disconnect();
@@ -261,6 +296,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       candleRef.current = null;
       emaRefs.current = [null, null, null];
       stLineRef.current = null;
+      paneLegendRefs.current = [null, null];
       macdHistRef.current = macdDifRef.current = macdDeaRef.current = null;
       stochKRef.current = stochDRef.current = null;
     };
@@ -377,6 +413,15 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
         {status === "loading" && <div className="kline-loading" role="status" aria-label="K 线加载中"><span className="kline-bars" aria-hidden="true"><i /><i /><i /><i /></span></div>}
         {status === "error" && <div className="chart-widget-notice chart-widget-error"><p role="status">K 线加载失败</p><button className="chart-restore" type="button" onClick={() => setAttempt((previous) => previous + 1)}>重试</button></div>}
         <div ref={containerRef} className="kline-container" />
+        {crosshair && (() => {
+          const base = candlesRef.current[candlesRef.current.length - 1]?.close ?? crosshair.price;
+          const pct = base > 0 ? (crosshair.price - base) / base * 100 : 0;
+          const up = pct >= 0;
+          return <div className="kline-crosshair-tag" style={{ top: crosshair.y }}>
+            <span>{priceScaleFormatter(crosshair.price)}</span>
+            <span className={up ? "up" : "down"}>{up ? "+" : "-"}{Math.abs(pct).toFixed(2)}%</span>
+          </div>;
+        })()}
       </div>
       {showSettings && <IndicatorSettingsPanel settings={settings} onChange={(next) => setPreference({ ...preference, indicators: next })} onClose={() => setShowSettings(false)} />}
     </>
