@@ -130,6 +130,10 @@ async def application(scope, receive, send):
         return
     await receive()
     headers = dict(scope.get("headers", []))
+    # ASGI 把浏览器 bearer subprotocol 放在 scope["subprotocols"]，不一定在 headers；
+    # 补进 headers 供 _browser_subprotocol/authenticate 读取，否则 web 端永远 401/403。
+    if b"sec-websocket-protocol" not in headers and scope.get("subprotocols"):
+        headers[b"sec-websocket-protocol"] = ", ".join(scope["subprotocols"]).encode()
     protocol = None
     try:
         protocol = _browser_subprotocol(headers)
