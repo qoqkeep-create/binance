@@ -1,5 +1,33 @@
 # 整合环境部署与运维
 
+## 价格卡片重排 Web 发布（2026-11-26，北京时间）
+
+源码 **`4e9f8c6`** 已推送。Web 静态 release **`trade-web-20261126-pricecard-4e9f8c6`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`80969df0…`／`886f6e94…`／`02ec0b2f…`），`nginx -t` 通过并 reload。仅前端呈现，后端不切换。未执行真实交易/资金操作。
+
+## tt.wow211.com 域名接入（2026-11-26，北京时间）
+
+用户已将 **tt.wow211.com** 解析到 **47.80.22.243（首尔服务器）**。新增 `/etc/nginx/sites-enabled/tt-wow211`（仓库模板 `deploy/integrated/nginx-domain.conf`）：80 端口 ACME webroot＋301 跳 https；443 复用 `snippets/tradetools-integrated.conf` 全部 location，根路径 308 到 `/integrated/market/`。certbot（`/opt/certbot` venv）webroot 签发 LE 证书 `tt.wow211.com`（ECDSA，89 天），续签单元 `tradetools-integrated-cert-renew.service` 的 ExecStart 去掉 `--cert-name` 限定改为全量 renew（仓库 cert-renew.service 同步）。Django `ALLOWED_HOSTS` 原仅 IP，域名 health 400；server.env 加 `tt.wow211.com`（备份 `backups/server.env.bak-20261126-domain`）后 `up -d --no-build api market` 重建两容器（env 变更需 recreate），health database/migrations/scheduler 全 true。验证：`https://tt.wow211.com/` 308、`/integrated/market/` 哈希与线上 release 一致（`84fe37d7…`）、域名 health 200。IP 入口保持不变。
+
+## 网格变细＋副图 TradingView 式图例＋价格卡片三段式 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`ffaa1e6`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-legend-ffaa1e6`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`84fe37d7…`／`d2c56b5d…`／`7ac01688…`，`?cb=` 复核）。① 主/副图网格改低对比 rgba（深 rgba(240,244,250,.045)／浅 rgba(24,26,32,.045)）视觉更细，MACD 零轴保留原对比单独 zero 色；② 两副图左上角 TradingView 式图例 `MACD(12,26,9)`／`StochRSI(14,14,3,3)`，参数随指标设置联动、禁用隐藏；注意 `pane.getHTMLElement()` 返回 tr 不可挂绝对定位子节点，图例挂 pane 画布的 relative 容器（DOM 核对 offset 8/4）；③ 价格卡片改三段：头部币种＋24H、"当前价格"小标、大号价格数字。契约测试锁定。后端不切换，旧 release 保留可回退。视觉待用户线上验收。未执行真实交易/资金操作。
+
+## 切币加载改半透明浅白灰蒙层 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`ffaa1e6`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-veil-ffaa1e6`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`5d773abc…`／`f75bc303…`／`9490358a…`，`?cb=` 复核）。切币无缓存时不再用不透明底"清空"旧图：`.kline-loading` 改半透明浅白灰 veil（深色 rgba(240,243,247,.1)／浅色 rgba(255,255,255,.6)）＋2px 背景模糊＋.18s 淡入，保留 iOS 竖条动画；旧 K 线/副图数据本就保留到 setData，加载成功蒙层撤下显示新币。有缓存切币仍瞬时直达。契约测试锁定 veil。探针元素双主题核对渲染参数。后端不切换，旧 release 保留可回退。视觉待用户线上验收。未执行真实交易/资金操作。
+
+## 周期选中改绿色短下划线＋自动/手动绿色 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`ffaa1e6`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-tfline-ffaa1e6`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`95ba6cc9…`／`f75bc303…`／`47b4e907…`，`?cb=` 复核；JS 内容与上轮字节一致仅文件名随 CSS 变）。主导航保留实底胶囊后，周期选中态与其区分：去实底改**绿色短下划线（文字宽、2px、var(--green)）＋文字加粗**，删浅色实底覆盖；自动/手动选中改绿色加粗透明底。契约测试锁定。DOM 核对深浅两主题。后端不切换，旧 release 保留可回退。视觉待用户线上验收。未执行真实交易/资金操作。
+
+## 主导航胶囊分段样式＋顺序调整＋账户去色系开关 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`ffaa1e6`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-nav-ffaa1e6`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地构建一致（`ec348635…`／`f75bc303…`／`15e20287…`，`?cb=` 复核）。主导航改胶囊分段组（面板底＋圆角容器，选中实底绿 chip、14px/600，浅色主题深绿白字，与周期选中态同款），去 01–06 编号，顺序改 行情／信号／引擎／持仓／历史／账户；信号/引擎空态去 MODULE 编号；账户页移除颜色模式行（外层顶栏主题按钮保留）。契约测试锁定顺序／去编号／账户无色系开关。DOM 核对：顺序、无编号、深浅选中对比、账户页无颜色模式且退出登录在。后端不切换，旧 release 保留可回退。视觉待用户线上验收。未执行真实交易/资金操作。
+
+## 撑压线尾部断线根因修复＋价格卡片币种 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`ffaa1e6`**＋本会话未提交修复（`supertrendLine.ts`／`KlineChart.tsx`／`App.tsx`／`styles.css`／`klineChart.test.mjs`）。Web 静态 release **`trade-web-20261126-sttail-ffaa1e6`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地构建一致（`941cc1d0…`／`f97e723a…`／`71003771…`，`?cb=` 缓存破坏复核），`/integrated/v1/health` database/migrations/scheduler 全 true。根因：lightweight-charts 自定义系列 update 的 `visibleRange` 是 bars 数组下标，撑压线系列却拿逻辑序号（含头部 9 根空白偏移）做右侧裁剪，尾部最新根被误删；填充带因绘制时直读实时逻辑范围而正常，故"有填充无线"。修复对齐填充带模式：绘制时直读实时逻辑范围＋update 兜底范围下标→逻辑换算；契约测试新增回归断言。本地复现页 9 场景（自动视图／缩放右留白／左拖／tick／新根 rollover／缩容／右拖空白／全量缩放）像素级断言尾部撑压线全部在屏。价格卡片现价前加币种名称、字号 25→27px（clamp 上限 34→36）。含并行会话已提交的 tabs／加载动画（`615e304`），不回滚。后端容器不切换，旧 release 保留可回退。浏览器面板隐藏无法截图，尾部撑压线与卡片视觉待用户线上验收。未执行真实交易/资金操作。
+
 ## iOS 加载动画＋持仓/历史/账户标签 Web 发布（2026-11-26，北京时间）
 
 源码 **`615e304`** 已推送。Web 静态 release **`trade-web-20261126-tabs-615e304`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`448d9216…`／`a03b5f74…`／`416cff03…`），`/integrated/v1/health` 200，`nginx -t` 通过并 reload。新增持仓/历史/账户页走既有 `/v1` JWT 接口与 `/api/commands` 幂等命令，后端容器不切换。平仓等写操作仅在你点击确认后执行；本轮验收未执行真实交易/资金操作。
