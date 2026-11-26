@@ -1,5 +1,9 @@
 # 开发与验证
 
+## Web K 线切币重复加载修复（2026-11-26）
+
+主图 Web Component 的挂载 effect 不再依赖 `symbol`，切币由独立 effect 更新现有元素的 `symbol` 属性。主题、周期或账户偏好变化仍按原规则重建组件。契约测试锁定组件复用依赖，Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
 ## Web K 线顶部操作与底部空白修复（2026-11-26）
 
 移除 `TradingViewWidget` 内部的自建周期栏，重置按钮和盘面速览展开入口通过同一个顶部 `chart-actions` 容器并排渲染。`tradingview-widget` 改为 `inset: 0`，Web Component 直接填充 stage 到状态栏上方。Web `npm test`、`npm run build` 和 `git diff --check` 通过。

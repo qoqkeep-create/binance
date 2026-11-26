@@ -123,7 +123,7 @@ export default function TradingViewWidget({ symbol, actionsContainer, insightTog
       chart.remove();
       chartRef.current = null;
     };
-  }, [hydrating, options, preference.timeFrame, readOnly, selectedInterval, symbol, theme]);
+  }, [hydrating, options, preference.timeFrame, readOnly, selectedInterval, theme]);
 
   useEffect(() => {
     const chart = chartRef.current;

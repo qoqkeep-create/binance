@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：修复切币时 K 线重复加载
+
+TradingView Web Component 现在在交易对切换时保留现有实例，只更新 `symbol` 属性。移除了切币时的重复重建路径，避免同一个交易对请求两次 K 线。Web `npm test`、`npm run build` 和 `git diff --check` 通过。
+
 ## 2026-11-26：移除自建周期栏并补满 K 线区域
 
 K 线区域不再渲染页面自建周期栏，TradingView 官方周期栏保留在图表内部。重置和盘面速览展开按钮移动到页面顶部并排显示，图表容器取消底部安全留白并填充到状态栏上方。Web `npm test`、`npm run build` 和 `git diff --check` 通过。

@@ -9,6 +9,9 @@ if (!source.includes('const widgetTag = "tv-advanced-chart"') || !source.include
 if (!source.includes('className="tradingview-widget"') || !source.includes('chart.addEventListener("tv-widget-ready"')) {
   throw new Error("TradingView Web Component must use its official ready event");
 }
+if (!source.includes('}, [hydrating, options, preference.timeFrame, readOnly, selectedInterval, theme]);')) {
+  throw new Error("TradingView symbol changes must reuse the mounted Web Component");
+}
 if (!source.includes("options.interval !== selectedInterval || options.timeFrame !== preference.timeFrame")) {
   throw new Error("TradingView chart must wait for synchronized preferences before mounting");
 }
