@@ -199,7 +199,7 @@ function TerminalApp() {
     const symbols = tickerSymbolsKey ? tickerSymbolsKey.split(",") : [selectedSymbol];
     const unsubscribe = marketRealtime.subscribe({ symbol: selectedSymbol, interval: "15m", tickerSymbols: symbols, handler: (event: StreamEvent) => {
       if (event.type === "disconnected" || event.type === "error") { setConnection("disconnected"); setLatency(null); setTickerOk(false); setKlineOk(false); }
-      if (event.type === "latency") setLatency(event.ms);
+      if (event.type === "latency") { setLatency(event.ms); setConnection("live"); }
       if (event.type === "kline") setKlineOk(true);
       if (event.type === "ticker") {
         setConnection("live");
