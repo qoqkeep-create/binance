@@ -1,6 +1,6 @@
 /** Data adapters for the integrated Django market service. */
 
-import { getAccessToken, accountApi } from "./account.js";
+import { getAccessToken, ensureFreshToken, accountApi } from "./account.js";
 import { apiPath, websocketPath } from "./runtime.js";
 
 export type MarketGroup = "top20" | "alts";
@@ -75,9 +75,10 @@ export class BinanceStream {
   private requestId = 0;
   constructor(private readonly symbol: string, private readonly interval: string, private readonly onEvent: (event: StreamEvent) => void, private readonly tickerSymbols?: readonly string[]) {}
   connect() { this.stopped = false; this.open(); }
-  private open() {
+  private async open() {
     if (this.stopped) return;
-    const token = getAccessToken();
+    const token = await ensureFreshToken();
+    if (this.stopped) return;
     this.socket = token ? new WebSocket(websocketPath(), [`bearer.${token}`]) : new WebSocket(websocketPath());
     this.socket.onopen = () => {
       const id = `web-${++this.requestId}`;

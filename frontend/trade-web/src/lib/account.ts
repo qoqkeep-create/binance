@@ -82,9 +82,38 @@ function setAccessToken(token: string | null) {
     if (token) window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
     else window.localStorage.removeItem(ACCESS_TOKEN_KEY);
   } catch { /* an in-memory session remains usable when storage is blocked */ }
+  scheduleProactiveRefresh();
 }
 
 export function getAccessToken() { return accessToken; }
+
+let proactiveTimer: ReturnType<typeof setTimeout> | undefined;
+function tokenExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch { return null; }
+}
+// 主动在到期前 90s 续期，避免 WS/REST 持过期 token 被拒（连接中断根因之一）。
+function scheduleProactiveRefresh() {
+  if (proactiveTimer) clearTimeout(proactiveTimer);
+  const exp = accessToken ? tokenExpiry(accessToken) : null;
+  if (exp === null) return;
+  const delay = exp - Date.now() - 90_000;
+  if (delay <= 0) { void refreshToken().catch(() => undefined); return; }
+  proactiveTimer = setTimeout(() => { void refreshToken().catch(() => undefined); }, delay);
+}
+export async function ensureFreshToken(): Promise<string | null> {
+  if (!accessToken) {
+    try { await refreshToken(); } catch { /* remain signed-out */ }
+    return accessToken;
+  }
+  const exp = tokenExpiry(accessToken);
+  if (exp !== null && exp - Date.now() < 90_000) {
+    try { await refreshToken(); } catch { /* keep current token */ }
+  }
+  return accessToken;
+}
 
 type RequestOptions = { method?: string; body?: unknown; csrfToken?: string | null; signal?: AbortSignal; retryAuth?: boolean };
 
