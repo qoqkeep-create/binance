@@ -26,7 +26,7 @@
   border-radius: 4px;
   background: transparent;
   color: var(--muted);
-  font: 11px var(--font-ui);
+  font: 13px var(--font-ui);
 }
 .indicator-master:hover { color: var(--text); border-color: var(--line-bright); }
 
@@ -40,12 +40,12 @@
   border-radius: 4px;
 }
 .view-mode button {
-  padding: 4px 9px;
+  padding: 5px 11px;
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   color: var(--muted);
-  font: 10px var(--font-ui);
+  font: 12px var(--font-ui);
   cursor: pointer;
 }
 .view-mode button:hover { color: var(--text); }
@@ -175,3 +175,7 @@
 }
 .kline-crosshair-tag .up { color: var(--green); }
 .kline-crosshair-tag .down { color: var(--red); }
+
+.chart-refresh { display: grid; place-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); }
+.chart-refresh:hover { color: var(--text); border-color: var(--line-bright); }
+.chart-refresh:disabled { opacity: .6; }

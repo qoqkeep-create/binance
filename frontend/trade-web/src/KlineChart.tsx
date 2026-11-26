@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode,
   CandlestickSeries, LineSeries,
@@ -112,6 +112,11 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const stochDRef = useRef<ISeriesApi<"Line"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const paneLegendRefs = useRef<Array<HTMLDivElement | null>>([null, null]);
+  const symbolRef = useRef<string | null>(null);
+  const intervalRef = useRef<string>("15m");
+  const loadingOlderRef = useRef(false);
+  const hasMoreRef = useRef(true);
+  const loadOlderRef = useRef<() => Promise<void>>(async () => {});
   // 当前 candlesRef 归属的币种；切币未加载完成前置 null，禁止新币 tick 合并进旧币尾根。
   const candlesSymbolRef = useRef<string | null>(null);
   const themeRef = useRef(theme);
@@ -119,6 +124,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [crosshair, setCrosshair] = useState<{ y: number; price: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
   const viewModeRef = useRef<"auto" | "manual">("auto");
   const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
@@ -129,7 +135,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     return Math.min(AUTO_MAX_BARS, Math.max(AUTO_MIN_BARS, Math.round(plot / AUTO_BAR_SPACING)));
   };
 
-  const renderData = useCallback((candles: Candle[], resetView: boolean, tail = false) => {
+  const renderData = useCallback((candles: Candle[], resetView: boolean, tail = false, preserveView = false) => {
     const chart = chartRef.current;
     if (!chart || !candleRef.current || !candles.length) return;
     const t = THEMES[themeRef.current];
@@ -216,7 +222,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       legend.textContent = spec.text;
       legend.style.display = spec.enabled ? "" : "none";
     });
-    if (resetView || viewModeRef.current === "auto") {
+    if (resetView || (viewModeRef.current === "auto" && !preserveView)) {
       chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - autoVisibleBars()), to: candles.length - 1 });
     }
   }, []);
@@ -271,11 +277,36 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const applyViewMode = (mode: "auto" | "manual") => {
       chart.applyOptions({
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: mode === "manual" },
-        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: mode === "manual" ? true : { time: true, price: false }, axisDoubleClickReset: true },
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: mode === "manual" ? false : { time: true, price: false }, axisDoubleClickReset: true },
       });
     };
     applyViewMode("auto");
     viewModeApplyRef.current = applyViewMode;
+    // 手动模式左键拖动同时竖向平移价格轴；拖动期间不缩放（axisPressedMouseMove 关）。
+    let vdrag: { startY: number; from: number; to: number } | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      if (viewModeRef.current !== "manual" || event.button !== 0) return;
+      const scale = chart.priceScale("right", 0);
+      const range = scale.getVisibleRange();
+      if (!range) return;
+      scale.setAutoScale(false);
+      vdrag = { startY: event.clientY, from: range.from, to: range.to };
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!vdrag) return;
+      const height = chart.panes()[0]?.getHeight() ?? 1;
+      const perPixel = (vdrag.to - vdrag.from) / Math.max(1, height);
+      const shift = (event.clientY - vdrag.startY) * perPixel;
+      chart.priceScale("right", 0).setVisibleRange({ from: vdrag.from + shift, to: vdrag.to + shift });
+    };
+    const onPointerUp = () => { vdrag = null; };
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    const onRange = (range: { from: number; to: number } | null) => {
+      if (range && range.from < 24) void loadOlderRef.current();
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     const onCrosshair = (param: { point?: { x: number; y: number } }) => {
       const candle = candleRef.current;
       const api = chartRef.current;
@@ -289,6 +320,10 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     chart.subscribeCrosshairMove(onCrosshair);
     return () => {
       chart.unsubscribeCrosshairMove(onCrosshair);
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -323,6 +358,10 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   useEffect(() => {
     if (hydrating || !chartRef.current) return;
     let active = true;
+    symbolRef.current = symbol;
+    intervalRef.current = selectedInterval;
+    hasMoreRef.current = true;
+    loadingOlderRef.current = false;
     const controller = new AbortController();
     const cached = getCachedKlines(symbol, selectedInterval);
     candlesSymbolRef.current = null;
@@ -378,6 +417,30 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     return () => { active = false; controller.abort(); stream.close(); };
   }, [hydrating, symbol, selectedInterval, attempt, renderData]);
 
+  // 向左滚到历史边缘时补载更早 K 线（beforeOpenTime 分页），视口保持不跳。
+  const loadOlder = useCallback(async () => {
+    const chart = chartRef.current;
+    const symbol = symbolRef.current;
+    if (!chart || !symbol || loadingOlderRef.current || !hasMoreRef.current) return;
+    const current = candlesRef.current;
+    if (!current.length || current.length >= 3000) { hasMoreRef.current = false; return; }
+    loadingOlderRef.current = true;
+    try {
+      const older = await getKlines(symbol, intervalRef.current, 300, undefined, current[0].time * 1000);
+      const fresh = older.filter((candle) => candle.time < current[0].time);
+      if (older.length < 300) hasMoreRef.current = false;
+      if (!fresh.length) return;
+      const prev = chart.timeScale().getVisibleLogicalRange();
+      const merged = [...fresh, ...candlesRef.current];
+      candlesRef.current = merged;
+      putCachedKlines(symbol, intervalRef.current, merged);
+      renderData(merged, false, false, true);
+      if (prev) chart.timeScale().setVisibleLogicalRange({ from: prev.from + fresh.length, to: prev.to + fresh.length });
+    } catch { /* 保留现有历史，下次滚动再试 */ }
+    finally { loadingOlderRef.current = false; }
+  }, [renderData]);
+  loadOlderRef.current = loadOlder;
+
   function resetView() {
     viewModeRef.current = "auto";
     setViewMode("auto");
@@ -387,6 +450,23 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     // 手动期的价格轴缩放一并复位：恢复各 pane 自动价格域。
     chart.panes().forEach((_, index) => chart.priceScale("right", index).applyOptions({ autoScale: true }));
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, length - autoVisibleBars()), to: length - 1 });
+  }
+
+  async function refreshChart() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const candles = await getKlines(symbol, selectedInterval, HISTORY_LIMIT);
+      putCachedKlines(symbol, selectedInterval, candles);
+      candlesRef.current = candles;
+      candlesSymbolRef.current = symbol;
+      renderData(candles, true);
+      setStatus("ready");
+    } catch {
+      setStatus("error");
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   return (
@@ -400,6 +480,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
           ))}
         </div>
         <div className="toolbar-right">
+          <button type="button" className="chart-refresh" aria-label="刷新 K 线" title="刷新 K 线" disabled={refreshing} onClick={() => void refreshChart()}><RefreshCw size={14} className={refreshing ? "spin" : ""} /></button>
           <div className="view-mode" role="group" aria-label="缩放模式">
             <button type="button" className={viewMode === "auto" ? "active" : ""} aria-pressed={viewMode === "auto"} onClick={() => { viewModeApplyRef.current("auto"); resetView(); }}>自动</button>
             <button type="button" className={viewMode === "manual" ? "active" : ""} aria-pressed={viewMode === "manual"} onClick={() => { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); }}>手动</button>

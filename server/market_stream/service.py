@@ -201,9 +201,9 @@ def load_history(symbol, interval, limit=300, before=None, *, schedule_repair=Tr
 
     stale, gaps = tail_state()
     stale = before is None and stale
-    # SWR：已有本地历史时不同步回源（切币/回切毫秒级），缺口与过期尾根交给异步
-    # repair + 客户端 WSS/定时校对愈合；仅完全无历史的首屏才阻塞补一页。
-    if schedule_repair and before is None and not stored and sync_backfill(symbol, interval):
+    # 连续性优先：尾根过期或存在缺口时同步补一页，保证最新 K 线开盘与上根收盘衔接；
+    # 客户端缓存/预取承担切币速度，后端不为速度牺牲数据连续。
+    if schedule_repair and before is None and (stale or gaps) and sync_backfill(symbol, interval):
         now = int(time.time() * 1000)
         stored = warm_history(symbol, interval, before)[-limit:]
         current_open = bucket_open_time(now, interval)
