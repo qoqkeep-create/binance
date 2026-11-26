@@ -1,5 +1,13 @@
 # 变更与验收记录
 
+## 2026-11-26：右侧价格标尺鼠标拖拽缩放恢复
+
+ux4 误关 axisPressedMouseMove 致价格轴缩放消失。恢复 true（两模式）；图面拖动不缩放语义不变（pane drag 走 handleScroll）；手动竖向平移 onPointerDown 增守卫：clientX 落在 container 宽−右轴宽 之外即 return，轴区交还库缩放。测试断言改锁。release axiszoom-af642f7 上线首尔＋ba 哈希一致；轴拖拽手感待线上验收。
+
+## 2026-11-26：主导航按钮长度恢复（拉伸半宽）
+
+ux4 对齐改动误将 .main-nav 改 width:auto/flex:0 0 auto、.nav-item flex:0 0 auto → 选项按钮缩为自然宽，用户否决。恢复 ux3 规格：width clamp(320px,(100vw-480px)/2,860px)＋justify-content:space-between、.nav-item flex:1 居中；App 对齐 marginLeft 保留（首项仍与 K 线左缘对齐）。契约测试锁定拉伸规格。release navlen-af642f7 上线首尔＋ba 哈希一致。
+
 ## 2026-11-26：手动全向拖拽不缩放／历史左滚补载／列表 WS 持续刷新／字号升级／导航对齐与整行绿条
 
 ① 手动：pointerdown(button0)+pointermove 经 priceScale("right",0).setAutoScale(false)+setVisibleRange(start±dy*pricePerPx) 竖向平移，与库横向 pressedMouseMove 合成全向拖拽；manual handleScale.axisPressedMouseMove=false 保证拖动不缩放；pointerup 结束；切自动 resetView 恢复 autoScale。② 历史：subscribeVisibleLogicalRangeChange from<24 → loadOlder（getKlines beforeOpenTime=首根 time*1000，300/页，<300 停，上限 3000），prepend 后 renderData(preserveView=true)＋logical range +fresh.length 保持视口；symbol/interval/hasMore/loading refs 防并发与跨币串载。③ 列表刷新：BinanceStream 第四参 tickerSymbols；App 订阅 markets.all 全符号，ticker 入 pendingTickersRef，500ms interval 批 setMarkets；币安侧零新增负载（collector 单 !ticker@arr）。④ view-mode 12px、indicator-master 13px。⑤ App useLayoutEffect 实测 chart-workspace.left−nav.left 补 marginLeft（ResizeObserver+resize，<920 归零）；.main-nav flex-start 自然宽；.market-row.selected 整行 color-mix(green 26%)；.market-tabs button.active 绿描边+12% 底+600。契约测试锁定；本地 DOM 核对字号/芯片通过；对齐/拖拽/补载/WS 因隐藏面板视口 0 归线上验收。release ux4-2dd326e 上线首尔＋ba 哈希一致。

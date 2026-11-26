@@ -100,14 +100,14 @@ if (!klineCss.includes(".view-mode button.active { color: var(--green)")) {
 if (!klineCss.includes(".view-mode button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
   throw new Error("Auto/manual selection must show a rounded rectangle chip, not just text color");
 }
-if (source.includes("createPortal(") || source.includes(">重置</button>") || !source.includes('vertTouchDrag: mode === "manual"') || !source.includes('axisPressedMouseMove: mode === "manual"') || !source.includes("</button>\n          {insightToggle}")) {
+if (source.includes("createPortal(") || source.includes(">重置</button>") || !source.includes('vertTouchDrag: mode === "manual"') || !source.includes("</button>\n          {insightToggle}")) {
   throw new Error("Reset button removed; auto locks vertical drag/price-axis zoom while manual allows all; insight toggle right of 指标");
 }
 if (!source.includes('chart.priceScale("right", index).applyOptions({ autoScale: true })')) {
   throw new Error("Switching manual->auto must reset price-axis zoom too");
 }
-if (!source.includes("scale.setAutoScale(false)") || !source.includes("setVisibleRange({ from: vdrag.from + shift, to: vdrag.to + shift })") || !source.includes('axisPressedMouseMove: mode === "manual" ? false')) {
-  throw new Error("Manual left-drag must pan vertically via price scale range and never zoom while dragging");
+if (!source.includes("scale.setAutoScale(false)") || !source.includes("setVisibleRange({ from: vdrag.from + shift, to: vdrag.to + shift })") || !source.includes("axisPressedMouseMove: true") || !source.includes("rect.width - axisWidth")) {
+  throw new Error("Manual pane drag pans without zoom; right price scale must keep mouse drag-zoom in both modes");
 }
 if (!source.includes("subscribeVisibleLogicalRangeChange(onRange)") || !source.includes("current[0].time * 1000") || !source.includes("preserveView")) {
   throw new Error("Scrolling left must load older history via beforeOpenTime without jumping the viewport");
@@ -120,6 +120,9 @@ if (!styles.includes(".market-row.selected { background: color-mix(in srgb, var(
 }
 if (!app.includes("navRef") || !app.includes("chartRect.left - nav.getBoundingClientRect().left")) {
   throw new Error("Main nav first item must align vertically with the chart left edge");
+}
+if (!styles.includes(".main-nav .nav-item { flex: 1; justify-content: center; }") || !styles.includes("width: clamp(320px, calc((100vw - 480px) / 2), 860px)")) {
+  throw new Error("Nav items must stay stretched long (half-width clamp), not shrink to natural width");
 }
 const binance = readFileSync(fileURLToPath(new URL("../src/lib/binance.ts", import.meta.url)), "utf8");
 if (!binance.includes("this.tickerSymbols?.length ? [...this.tickerSymbols] : [this.symbol]") || !app.includes("pendingTickersRef")) {

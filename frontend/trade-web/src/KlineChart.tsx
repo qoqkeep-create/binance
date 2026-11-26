@@ -277,15 +277,18 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const applyViewMode = (mode: "auto" | "manual") => {
       chart.applyOptions({
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: mode === "manual" },
-        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: mode === "manual" ? false : { time: true, price: false }, axisDoubleClickReset: true },
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
       });
     };
     applyViewMode("auto");
     viewModeApplyRef.current = applyViewMode;
-    // 手动模式左键拖动同时竖向平移价格轴；拖动期间不缩放（axisPressedMouseMove 关）。
+    // 手动模式左键拖图面＝全向平移不缩放；右侧价格标尺区域留给轴拖拽缩放。
     let vdrag: { startY: number; from: number; to: number } | null = null;
     const onPointerDown = (event: PointerEvent) => {
       if (viewModeRef.current !== "manual" || event.button !== 0) return;
+      const rect = container.getBoundingClientRect();
+      const axisWidth = chart.priceScale("right", 0).width();
+      if (event.clientX - rect.left > rect.width - axisWidth) return;
       const scale = chart.priceScale("right", 0);
       const range = scale.getVisibleRange();
       if (!range) return;

@@ -30,6 +30,7 @@ import TradePanel from "./TradePanel";
 import { tradeApi } from "./lib/tradeApi";
 import { PositionsPage, HistoryPage, AccountPage } from "./Pages";
 import { prefetchKlines } from "./lib/klineCache";
+import { v1Path } from "./lib/runtime";
 import "./styles.css";
 import ContractAnalysisAssistant from "./ContractAnalysisAssistant";
 import { AccountProvider, useAccount, usePreference } from "./AccountProvider";
@@ -81,6 +82,10 @@ function TerminalApp() {
   const [connection, setConnection] = useState<"connecting" | "live" | "disconnected">("connecting");
   const [latency, setLatency] = useState<number | null>(null);
   const [positionCount, setPositionCount] = useState(0);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [tlsProbe, setTlsProbe] = useState<{ ok: boolean; ms: number } | null>(null);
+  const [tickerOk, setTickerOk] = useState(false);
+  const [klineOk, setKlineOk] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [insightMode, setInsightMode] = useState<"trade" | "pulse">("trade");
   const [accountFocus, setAccountFocus] = useState<{ kind: "stop-loss" | "strategy"; at: number } | null>(null);
@@ -166,6 +171,25 @@ function TerminalApp() {
     const timer = window.setInterval(loadCount, 10_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [user]);
+
+  async function probeTls() {
+    const started = performance.now();
+    try {
+      const response = await fetch(v1Path("/health"), { cache: "no-store", signal: AbortSignal.timeout(8000) });
+      setTlsProbe({ ok: response.ok, ms: Math.round(performance.now() - started) });
+    } catch {
+      setTlsProbe({ ok: false, ms: Math.round(performance.now() - started) });
+    }
+  }
+  useEffect(() => { if (diagOpen) void probeTls(); }, [diagOpen]);
+
+  const connStages = [
+    { name: "域名 / TLS / 证书", ok: tlsProbe?.ok ?? null, detail: tlsProbe ? (tlsProbe.ok ? `握手 ${tlsProbe.ms}ms` : "握手失败/超时") : "待检测" },
+    { name: "REST 行情目录", ok: marketStatus === "ready" ? true : marketStatus === "error" ? false : null, detail: marketStatus === "ready" ? "已同步" : marketStatus === "error" ? "同步失败" : "同步中" },
+    { name: "WS 握手 / 鉴权", ok: connection === "live" ? true : connection === "disconnected" ? false : null, detail: connection === "live" ? "已连接" : connection === "disconnected" ? "被拒/断开" : "连接中" },
+    { name: "WS ticker 推送", ok: tickerOk ? true : connection === "disconnected" ? false : null, detail: tickerOk ? "收到报价" : "未收到" },
+    { name: "WS kline 推送", ok: klineOk ? true : connection === "disconnected" ? false : null, detail: klineOk ? "收到K线" : "未收到" },
+  ];
   useEffect(() => {
     if (!user) {
       setConnection("connecting");
@@ -174,10 +198,12 @@ function TerminalApp() {
     setConnection("connecting");
     const symbols = tickerSymbolsKey ? tickerSymbolsKey.split(",") : [selectedSymbol];
     const stream = new BinanceStream(selectedSymbol, "15m", (event: StreamEvent) => {
-      if (event.type === "disconnected" || event.type === "error") { setConnection("disconnected"); setLatency(null); }
+      if (event.type === "disconnected" || event.type === "error") { setConnection("disconnected"); setLatency(null); setTickerOk(false); setKlineOk(false); }
       if (event.type === "latency") setLatency(event.ms);
+      if (event.type === "kline") setKlineOk(true);
       if (event.type === "ticker") {
         setConnection("live");
+        setTickerOk(true);
         pendingTickersRef.current.set(event.symbol, { price: event.price, change: event.changePercent });
       }
     }, symbols);
@@ -229,7 +255,15 @@ function TerminalApp() {
           {(["行情", "信号", "引擎", "持仓", "历史", "账户"] as NavItem[]).map((item) => <button key={item} className={`nav-item ${activeNav === item ? "active" : ""}`} onClick={() => setActiveNav(item)}>{item}{item === "信号" && <span className="nav-badge">LIVE</span>}{item === "持仓" && positionCount > 0 && <span className="nav-pos-count" aria-label={`${positionCount} 个持仓`}>{positionCount}</span>}</button>)}
         </nav>
         <div className="top-actions">
-          <div className={`connection-status is-${latencyInfo.tone}`}><span className={`status-light ${connection === "live" ? "is-live" : ""}`} /> {connectionLabel}<span className="conn-latency">{latencyInfo.text}</span></div>
+          <div className={`connection-status is-${latencyInfo.tone}`} role="button" tabIndex={0} title="点击查看连接分层诊断" onClick={() => setDiagOpen((open) => !open)} onKeyDown={(event) => { if (event.key === "Enter") setDiagOpen((open) => !open); }}><span className={`status-light ${connection === "live" ? "is-live" : ""}`} /> {connectionLabel}<span className="conn-latency">{latencyInfo.text}</span></div>
+          {diagOpen && <div className="conn-diag" role="dialog" aria-label="连接分层诊断">
+            <header><strong>连接分层诊断</strong><button type="button" onClick={() => void probeTls()}>重新检测</button><button type="button" aria-label="关闭" onClick={() => setDiagOpen(false)}><X size={13} /></button></header>
+            {connStages.map((stage) => <div key={stage.name} className="conn-diag-row">
+              <span className={`conn-dot ${stage.ok === true ? "ok" : stage.ok === false ? "bad" : "idle"}`} />
+              <span className="conn-diag-name">{stage.name}</span>
+              <span className={`conn-diag-detail ${stage.ok === false ? "bad" : ""}`}>{stage.detail}</span>
+            </div>)}
+          </div>}
           <button
             className="theme-toggle"
             type="button"
