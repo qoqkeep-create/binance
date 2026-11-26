@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 域名切换 ba.wow211.com 调通（2026-11-26，北京时间）
+
+用户改用 **ba.wow211.com**（DNS 已解析到 47.80.22.243）。原 nginx 仅有 tt/IP server block，ba 落到 IP 证书导致证书名不匹配无法访问。已：① 装 ba:80 block（acme webroot＋301 到 https）；② certbot webroot 签发 ba.wow211.com LE 证书；③ 装完整 ba:443 block（`deploy/integrated/nginx-domain.conf` 已改为 ba，安装为 sites-enabled/ba-wow211）；④ server.env `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS` 增加 ba（保留 tt/IP），按 quick_deploy 同参数重建 api/market/worker/scheduler 四容器（healthy）。核验：https://ba.wow211.com/ 308→/integrated/market/、market 200 且 `ssl_verify_result=0`、/integrated/v1/health 全 true。tt 与 IP 入口保留可用。cert-renew timer 覆盖 ba lineage 自动续期。
+
 ## Web HTTPS 证书与自动续期补齐（2026-11-26，北京时间）
 
 Web 两个入口均已持受信任 Let's Encrypt 证书：域名 **tt.wow211.com**（SAN DNS，89 天）与 IP **47.80.22.243**（SAN IP，短寿命），`curl` 校验 `ssl_verify_result=0`；域名 80→443 301、根路径 308 到 `/integrated/market/`。缺口为 **cert-renew.timer 此前未安装/未启用**（IP 证书仅 4 天到期不会自动续）：已从 `deploy/integrated/cert-renew.{service,timer}` 安装并 `enable --now`（每 6h 检查），service 加 `--deploy-hook "systemctl reload nginx"` 续期后自动重载；`certbot renew --dry-run` 通过（webroot authenticator）。IP 短寿命证书按 certbot 比例窗口在到期前由 timer 自动续。`quick_deploy_remote.py` 增加幂等安装/启用 cert-renew 单元，保证后续主机可复现。
