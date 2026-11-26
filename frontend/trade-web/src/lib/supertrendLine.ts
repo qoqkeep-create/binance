@@ -46,20 +46,23 @@ export function createSupertrendLineView(config: SupertrendLineConfig) {
           const ya = priceConverter(a.value);
           if (ya === null) continue;
           context.strokeStyle = a.direction === 1 ? config.upColor : config.downColor;
-          // 每根画水平段，保证末根（无后继）也显示撑压线。
-          context.beginPath();
-          context.moveTo(a.x - half, ya);
-          context.lineTo(a.x + half, ya);
-          context.stroke();
           const b = bars[index + 1];
-          if (b && b.direction === a.direction && b.index === a.index + 1) {
+          const connected = !!b && b.direction === a.direction && b.index === a.index + 1;
+          if (connected) {
+            // 官方 plot.style_linebr：相邻同向点用直线连接（平滑折线，非水平台阶）。
             const yb = priceConverter(b.value);
-            if (yb !== null && Math.abs(yb - ya) > 0.01) {
+            if (yb !== null) {
               context.beginPath();
-              context.moveTo(a.x + half, ya);
-              context.lineTo(a.x + half, yb);
+              context.moveTo(a.x, ya);
+              context.lineTo(b.x, yb);
               context.stroke();
             }
+          } else {
+            // 段末（含最新根／孤立反转根）向右延伸半根，保证末尾始终有撑压线。
+            context.beginPath();
+            context.moveTo(a.x, ya);
+            context.lineTo(a.x + half, ya);
+            context.stroke();
           }
         }
       });

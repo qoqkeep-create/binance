@@ -40,7 +40,7 @@ if (!indicators.includes("prevUpper !== null && candle.close > prevUpper")) {
 if (!source.includes('from "./lib/supertrendBand"') || !source.includes("bandRef.current?.setData(")) {
   throw new Error("Supertrend must render a configurable fill band");
 }
-if (!band.includes("a.direction !== b.direction") || !stline.includes("每根画水平段")) {
+if (!band.includes("a.direction !== b.direction") || !stline.includes("style_linebr")) {
   throw new Error("Supertrend bull/bear segments must break at reversals and show the tail bar");
 }
 if (!source.includes("IndicatorSettingsPanel") || !source.includes("mergeIndicatorSettings(preference.indicators)")) {
@@ -85,7 +85,7 @@ if (!app.includes("prefetchKlines(row.symbol, chartPreference.interval)")) {
 if (!source.includes("candlesSymbolRef.current !== symbol") || !source.includes("candlesSymbolRef.current = null")) {
   throw new Error("New-symbol ticks must never merge into the previous symbol's candles");
 }
-if (!source.includes('from "./lib/supertrendLine"') || !stline.includes("b.direction === a.direction") || !stline.includes("每根画水平段")) {
+if (!source.includes('from "./lib/supertrendLine"') || !stline.includes("b.direction === a.direction") || !stline.includes("段末")) {
   throw new Error("Supertrend support/resistance must break across opposite-direction regions and show the tail bar");
 }
 if (!source.includes("priceScaleFormatter") || !source.includes("abs < 1 ? 4 : abs < 100 ? 3 : abs < 10000 ? 2 : 1")) {

@@ -144,8 +144,9 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     };
     const bandPoint = (index: number): BandDataPoint => {
       const point = indicators.supertrend[index];
-      // 每根都填充（含趋势切换首两根）；断开仅靠渲染器不跨方向连接保证。
-      return point.value === null ? { time: times[index] as Time } : { time: times[index] as Time, close: candles[index].close, st: point.value, direction: point.direction ?? 1 };
+      // 对齐用户 Pine：fill(趋势线, src=hl2)，填充锚为 hl2 中价而非 close。
+      const mid = (candles[index].high + candles[index].low) / 2;
+      return point.value === null ? { time: times[index] as Time } : { time: times[index] as Time, close: mid, st: point.value, direction: point.direction ?? 1 };
     };
     const macdPoint = (index: number): MacdDataPoint => {
       const histogram = indicators.macd[index].histogram;

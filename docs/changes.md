@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：按用户 Pine 复原 Supertrend 平滑折线／hl2 填充／末根撑压
+
+用户提供其 TradingView v6 Pine（`ta.supertrend(6,10)`、`plot.style_linebr`、`fill(趋势线, src=hl2, 85%透明)`）。据此：① 撑压线改**相邻同向点直线连接的平滑折线**（linebr 语义），替换逐根水平台阶（锯齿来源）；段末／最新根／孤立反转根向右延伸半根保证末尾始终有线；多空仍断开。② 填充锚由 close 改 **hl2 中价**（对齐 `fill(plot, src)`），透明度默认 0.16≈官方 85% 透明。浏览器实测 ETH 1H 撑压线平滑无锯齿、多空断开、末根有线。`npm test`／`build`／`git diff --check` 通过。
+
 ## 2026-11-26：自动视图跨周期科学化＋Supertrend 对齐官方算法
 
 用户选定「自绘＋对齐官方算法」路线。① 自动模式改 iOS 式按 bar 间距（7.6px，clamp 10–164 根）定可见根数，替代固定 64 根，跨周期蜡烛疏密一致；resize 时自动重_fit。② 自定义系列（填充带/撑压线）默认按全量数据 autoscale 会把屏外极值算进价格域（5M 出现大片空白）；现暴露 `visiblePriceRange` 并经 `autoscaleInfoProvider` 仅按可见范围参与主图价格域，价格域收紧到可见 K 线+撑压。③ Supertrend 翻转改用「前一根最终轨」判断（对齐 TradingView `ta.supertrend`），band 递推/ATR(RMA) 与官方一致。浏览器实测 5M 价格域收紧、无空白、撑压线到末根。`npm test`／`build`／`git diff --check` 通过。
