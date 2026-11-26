@@ -1,5 +1,13 @@
 # 整合环境部署与运维
 
+## 手动全向拖拽／历史补载／列表 WS 持续刷新／字号与对齐 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`2dd326e`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-ux4-2dd326e`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地单链构建一致（`3dfc3d4e…`／`d5326c34…`／`849125eb…`），ba.wow211.com 复核同哈希。① 手动模式左键拖动＝横向（库）＋竖向（pointer 拖动经 priceScale.setAutoScale(false)+setVisibleRange 平移）全向移动，拖动期间不缩放（manual axisPressedMouseMove=false，滚轮/ pinch 仍可缩放）；切自动复位 autoScale。② 历史补载：可见范围 from<24 时经 getKlines beforeOpenTime 分页 prepend（300/页、上限 3000），视口 logical range 平移保持不跳；preserveView 参数防 auto 重置。③ 左侧列表持续刷新：BinanceStream 增 tickerSymbols 全列表订阅；**币安限额论证**：后端 collector 单条 `!ticker@arr` 已采集全合约（1 条 stream），web 订阅经内部 fanout 不新增币安连接/REST weight；UI 500ms 聚合批渲染防逐消息重渲染。④ 自动/手动 10→12px、指标 11→13px。⑤ 主导航首项与 K 线左缘对齐（useLayoutEffect 实测 margin＋ResizeObserver，<920px 归零）；列表选中改整行 26% 绿条；顶部筛选 active 改绿描边芯片（同自动手动强度）。本地 DOM 核对字号/筛选芯片通过；隐藏面板视口为 0 致对齐/拖拽/补载/WS 刷新不可本地实测，归线上验收。契约测试锁定全部。后端不切换，旧 release 保留可回退。
+
+## 图表拖拽语义／交易面板跳转／卡片与导航修正 Web 发布（2026-11-26，北京时间）
+
+源码基线 **`04c6d13`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-ux3-04c6d13`** 原子切换（目标 **47.80.22.243（首尔服务器）**），哈希 `dbbd7375…`／`644ab582…`／`767d95a0…`；并行会话随后的 connfix-04c6d13 同源同哈希接管 symlink，线上即本批 UI。① 图表：自动＝左右拖动＋滚轮缩放、锁上下（vertTouchDrag／价格轴按压缩放关），手动全向；手动→自动复位时间范围＋各 pane autoScale；删重置按钮与 wheel/pointermove 切手动监听。② 交易面板：市价/限价绿圆角芯片；空止损价按钮文案「输入止损价」；止损金额输入框同款框体＋右箭头跳账户页真实设置（删现场滑杆条）；开仓设置按钮移至开仓按钮下方同宽更矮；止盈策略行跳策略列表；账户页锚点＋focus 滚动、滑杆步长 1。③ 价格卡片涨跌两行竖排右上角与币种同行。④ 主导航加宽 clamp(320–860)、nowrap 单行、去容器底色/边框。浏览器实测跳转视口命中、重置消失、computed 正确；契约测试锁定。**连接中断**已由并行会话根因修复（ba 曾为 443 默认 server 致 IP/iOS 拿域名证书→IP 标 default_server；WS bearer subprotocol 未入鉴权 headers→websocket.py 合并 scope subprotocols），后端 integrated-quick-04c6d13 四容器 healthy；本轮复核 symlink/default_server/IP 证书（Dec 1 到期 IP lineage）/health 均正常。后端不重复切换，旧 release 保留可回退。
+
 ## 连接中断根因修复发布（2026-11-26，北京时间）
 
 源码 **`04c6d13`** 已推送。后端 **`integrated-quick-04c6d13`** 切换四容器（healthy、health 全 true）；Web **`trade-web-20261126-connfix-04c6d13`** 原子切换（ba/IP 双入口 200，哈希 `dbbd7375…`／`644ab582…`／`767d95a0…` 与本地一致）。根因与修复：① ba server block 曾成 443 默认 server 致 IP 直连（iOS）拿域名证书 TLS 失败→IP server 标 `default_server`（已 reload，IP 连接恢复 IP 证书）；② ASGI bearer subprotocol 在 scope["subprotocols"] 被 WS 鉴权忽略致 web 永远 403→合并进 headers。服务器内实测 Authorization 头与 subprotocol 均 101，经 nginx subprotocol 复测通过。iOS 与 web 连接恢复；未执行真实交易/资金操作。

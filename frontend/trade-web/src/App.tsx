@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowLeftRight,
@@ -84,6 +84,9 @@ function TerminalApp() {
   const [showAssistant, setShowAssistant] = useState(false);
   const [insightMode, setInsightMode] = useState<"trade" | "pulse">("trade");
   const [accountFocus, setAccountFocus] = useState<{ kind: "stop-loss" | "strategy"; at: number } | null>(null);
+  const pendingTickersRef = useRef(new Map<string, { price: number; change: number }>());
+  const tickerSymbolsKey = useMemo(() => markets.all.map((row) => row.symbol).join(","), [markets.all]);
+  const navRef = useRef<HTMLElement | null>(null);
   const [structuresContainer, setStructuresContainer] = useState<HTMLElement | null>(null);
   const assistantOpener = useRef<HTMLElement | null>(null);
 
@@ -169,20 +172,52 @@ function TerminalApp() {
       return;
     }
     setConnection("connecting");
+    const symbols = tickerSymbolsKey ? tickerSymbolsKey.split(",") : [selectedSymbol];
     const stream = new BinanceStream(selectedSymbol, "15m", (event: StreamEvent) => {
       if (event.type === "disconnected" || event.type === "error") { setConnection("disconnected"); setLatency(null); }
       if (event.type === "latency") setLatency(event.ms);
       if (event.type === "ticker") {
         setConnection("live");
-        setMarkets((current) => {
-          const update = (rows: MarketRow[]) => rows.map((row) => row.symbol === event.symbol ? { ...row, lastPrice: event.price, priceChangePercent: event.changePercent } : row);
-          return { top20: update(current.top20), alts: update(current.alts), all: update(current.all) };
-        });
+        pendingTickersRef.current.set(event.symbol, { price: event.price, change: event.changePercent });
       }
-    });
+    }, symbols);
     stream.connect();
-    return () => stream.close();
-  }, [selectedSymbol, user]);
+    // 后端单条 !ticker@arr 已采集全合约，此处订阅不新增币安负载；UI 500ms 聚合避免逐消息渲染。
+    const flush = window.setInterval(() => {
+      const pending = pendingTickersRef.current;
+      if (!pending.size) return;
+      const batch = new Map(pending);
+      pending.clear();
+      setMarkets((current) => {
+        const update = (rows: MarketRow[]) => rows.map((row) => {
+          const tick = batch.get(row.symbol);
+          return tick ? { ...row, lastPrice: tick.price, priceChangePercent: tick.change } : row;
+        });
+        return { top20: update(current.top20), alts: update(current.alts), all: update(current.all) };
+      });
+    }, 500);
+    return () => { window.clearInterval(flush); stream.close(); };
+  }, [selectedSymbol, user, tickerSymbolsKey]);
+
+  // 主导航首项与 K 线区左缘竖直对齐：按实测差值补 margin，随布局变化重算。
+  useLayoutEffect(() => {
+    const align = () => {
+      const nav = navRef.current;
+      const chart = document.querySelector(".chart-workspace");
+      if (!nav || !chart || window.innerWidth < 920) { if (nav) nav.style.marginLeft = "0px"; return; }
+      const chartRect = chart.getBoundingClientRect();
+      if (!chartRect.width) return;
+      nav.style.marginLeft = "0px";
+      const delta = chartRect.left - nav.getBoundingClientRect().left;
+      nav.style.marginLeft = `${Math.round(delta)}px`;
+    };
+    align();
+    const chart = document.querySelector(".chart-workspace");
+    const observer = new ResizeObserver(align);
+    if (chart) observer.observe(chart);
+    window.addEventListener("resize", align);
+    return () => { observer.disconnect(); window.removeEventListener("resize", align); };
+  }, [activeNav, panelVisible, showAssistant]);
 
   if (hydrating || !user) return <AccountGate loading={hydrating} />;
 
@@ -190,7 +225,7 @@ function TerminalApp() {
     <div className="terminal-shell">
       <header className="topbar">
         <div className="brand-lockup"><div className="brand-glyph"><span /><span /><span /></div><div><div className="brand-name">ORBITAL</div><div className="brand-sub">MARKET INTELLIGENCE</div></div></div>
-        <nav className="main-nav" aria-label="主导航">
+        <nav className="main-nav" aria-label="主导航" ref={navRef}>
           {(["行情", "信号", "引擎", "持仓", "历史", "账户"] as NavItem[]).map((item) => <button key={item} className={`nav-item ${activeNav === item ? "active" : ""}`} onClick={() => setActiveNav(item)}>{item}{item === "信号" && <span className="nav-badge">LIVE</span>}{item === "持仓" && positionCount > 0 && <span className="nav-pos-count" aria-label={`${positionCount} 个持仓`}>{positionCount}</span>}</button>)}
         </nav>
         <div className="top-actions">

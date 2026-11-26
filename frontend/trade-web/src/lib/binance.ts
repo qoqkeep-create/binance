@@ -73,7 +73,7 @@ export class BinanceStream {
   private latencySamples: number[] = [];
   private stopped = false;
   private requestId = 0;
-  constructor(private readonly symbol: string, private readonly interval: string, private readonly onEvent: (event: StreamEvent) => void) {}
+  constructor(private readonly symbol: string, private readonly interval: string, private readonly onEvent: (event: StreamEvent) => void, private readonly tickerSymbols?: readonly string[]) {}
   connect() { this.stopped = false; this.open(); }
   private open() {
     if (this.stopped) return;
@@ -82,7 +82,7 @@ export class BinanceStream {
     this.socket.onopen = () => {
       const id = `web-${++this.requestId}`;
       this.socket?.send(JSON.stringify({ version: 1, type: "subscribe", requestId: id, subscriptions: [
-        { channel: "market.ticker", filters: { symbols: [this.symbol], intervals: [] } },
+        { channel: "market.ticker", filters: { symbols: this.tickerSymbols?.length ? [...this.tickerSymbols] : [this.symbol], intervals: [] } },
         { channel: "market.kline", filters: { symbols: [this.symbol], intervals: [this.interval] } },
       ] }));
       this.pingTimer = window.setInterval(() => {

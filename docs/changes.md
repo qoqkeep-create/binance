@@ -1,5 +1,13 @@
 # 变更与验收记录
 
+## 2026-11-26：手动全向拖拽不缩放／历史左滚补载／列表 WS 持续刷新／字号升级／导航对齐与整行绿条
+
+① 手动：pointerdown(button0)+pointermove 经 priceScale("right",0).setAutoScale(false)+setVisibleRange(start±dy*pricePerPx) 竖向平移，与库横向 pressedMouseMove 合成全向拖拽；manual handleScale.axisPressedMouseMove=false 保证拖动不缩放；pointerup 结束；切自动 resetView 恢复 autoScale。② 历史：subscribeVisibleLogicalRangeChange from<24 → loadOlder（getKlines beforeOpenTime=首根 time*1000，300/页，<300 停，上限 3000），prepend 后 renderData(preserveView=true)＋logical range +fresh.length 保持视口；symbol/interval/hasMore/loading refs 防并发与跨币串载。③ 列表刷新：BinanceStream 第四参 tickerSymbols；App 订阅 markets.all 全符号，ticker 入 pendingTickersRef，500ms interval 批 setMarkets；币安侧零新增负载（collector 单 !ticker@arr）。④ view-mode 12px、indicator-master 13px。⑤ App useLayoutEffect 实测 chart-workspace.left−nav.left 补 marginLeft（ResizeObserver+resize，<920 归零）；.main-nav flex-start 自然宽；.market-row.selected 整行 color-mix(green 26%)；.market-tabs button.active 绿描边+12% 底+600。契约测试锁定；本地 DOM 核对字号/芯片通过；对齐/拖拽/补载/WS 因隐藏面板视口 0 归线上验收。release ux4-2dd326e 上线首尔＋ba 哈希一致。
+
+## 2026-11-26：图表自动/手动拖拽语义／去重置／交易面板跳转／卡片涨跌右上／导航去框底
+
+① handleScroll/handleScale 按模式：自动 pressedMouseMove+mouseWheel+horzTouchDrag 开、vertTouchDrag 与价格轴 axisPressedMouseMove.price 关；手动全开；手动→自动 resetView 复位＋各 pane priceScale autoScale:true；删重置按钮与 wheel/pointermove 切手动监听（模式仅按钮切换）。② TradePanel：市价/限价 active 绿描边圆角芯片；止损价空→按钮「输入止损价」；止损金额=.trade-field input 同款框体＋ChevronRight→onNavigate("stop-loss")；删 adjusting 滑杆条/saveRisk；止盈策略行 trade-strategy-link→onNavigate("strategy")；开仓设置按钮移提交按钮下方 width:100% 更矮。App accountFocus{kind,at}→AccountPage focus+ready scrollIntoView；账户页 id=account-stop-loss/account-strategy、滑杆 step 1。③ price-card-top 币种左＋涨跌两行右对齐，下 label＋number。④ 主导航 clamp(320,(100vw-480)/2,860)、nowrap、容器 transparent/0 边/0 padding。契约测试全锁定；浏览器实测两跳转视口命中、重置消失、芯片/框体/文案 computed 正确。release ux3-04c6d13 与并行 connfix 同源同哈希上线。连接中断根因（ba 默认 server 回归＋WS subprotocol 鉴权忽略）由并行会话修复并部署后端 04c6d13，本轮复核线上状态正常。
+
 ## 2026-11-26：修复 iOS TLS 回归与 web WS subprotocol 鉴权（连接中断根因）
 
 深度检查定位两个根因：① 新增 ba.wow211.com server block 后成为 443 默认 server，IP 直连（iOS）拿到域名证书→TLS 校验失败→"K线加载失败/连接中断"（加域名时引入的回归）。修：IP server 标记 `default_server`（80/443），IP 连接恢复 IP 证书。② web 的 bearer subprotocol 在 ASGI 位于 `scope["subprotocols"]`，后端只读 headers→web WS 永远 403（既有 bug，非本次改坏）。修：`websocket.py` 将 scope subprotocols 合并进 headers 供鉴权。服务器内直连验证：Authorization 头与 subprotocol 均 101；经 nginx 复测 subprotocol 通过。iOS 与 web 连接恢复。

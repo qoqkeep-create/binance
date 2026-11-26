@@ -106,6 +106,25 @@ if (source.includes("createPortal(") || source.includes(">重置</button>") || !
 if (!source.includes('chart.priceScale("right", index).applyOptions({ autoScale: true })')) {
   throw new Error("Switching manual->auto must reset price-axis zoom too");
 }
+if (!source.includes("scale.setAutoScale(false)") || !source.includes("setVisibleRange({ from: vdrag.from + shift, to: vdrag.to + shift })") || !source.includes('axisPressedMouseMove: mode === "manual" ? false')) {
+  throw new Error("Manual left-drag must pan vertically via price scale range and never zoom while dragging");
+}
+if (!source.includes("subscribeVisibleLogicalRangeChange(onRange)") || !source.includes("current[0].time * 1000") || !source.includes("preserveView")) {
+  throw new Error("Scrolling left must load older history via beforeOpenTime without jumping the viewport");
+}
+if (!klineCss.includes("font: 12px var(--font-ui);") || !klineCss.includes("font: 13px var(--font-ui);")) {
+  throw new Error("自动/手动/指标 labels must be one font level larger");
+}
+if (!styles.includes(".market-row.selected { background: color-mix(in srgb, var(--green) 26%, transparent)") || !styles.includes(".market-tabs button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
+  throw new Error("Selected market row must be a full green bar; group tabs must use chip-strength selection");
+}
+if (!app.includes("navRef") || !app.includes("chartRect.left - nav.getBoundingClientRect().left")) {
+  throw new Error("Main nav first item must align vertically with the chart left edge");
+}
+const binance = readFileSync(fileURLToPath(new URL("../src/lib/binance.ts", import.meta.url)), "utf8");
+if (!binance.includes("this.tickerSymbols?.length ? [...this.tickerSymbols] : [this.symbol]") || !app.includes("pendingTickersRef")) {
+  throw new Error("Left market list must refresh continuously from the WS ticker fanout, throttled");
+}
 if (!styles.includes(".main-nav { align-self: center; display: flex; align-items: center; gap: 4px; padding: 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {
   throw new Error("Main nav must sit on the topbar background without its own box and keep buttons single-line");
 }
