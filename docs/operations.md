@@ -1,5 +1,13 @@
 # 整合环境部署与运维
 
+## 主导航加宽去闪／历史时间堆叠／十字线百分比 Web 发布（2026-11-26，北京时间）
+
+源码 **`e8e97a0`** 已推送。Web 静态 release **`trade-web-20261126-nav-e8e97a0`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`52f51f02…`／`f835b56d…`／`298cdcc0…`），`nginx -t` 通过并 reload。仅前端呈现，后端不切换。十字线百分比价框待线上真实鼠标验收。未执行真实交易/资金操作。
+
+## 交易面板 v1（交易/盘面切换）Web 发布（2026-11-26，北京时间）
+
+源码基线 **`3b0207c`**＋本会话未提交改动（TradePanel.tsx 新增、tradeApi 策略列表/稳定幂等键、App 切换、styles、契约测试）。Web 静态 release **`trade-web-20261126-trade2-3b0207c`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**，域名 tt.wow211.com 同入口），线上 index/JS/CSS SHA-256 与本地构建一致（`52f51f02…`／`298cdcc0…`／`f835b56d…`，`?cb=` 复核＋关键标记 grep）。**并发教训**：首次上传误拿并行会话重建的共享 dist（哈希不符），改为 build→标记 grep→rsync→切换单链执行后一致。功能：盘面速览标题右侧「交易/盘面」切换（默认交易）；交易面板复刻 iOS USDTEntryDraft 公式（名义=止损额/(|现价-止损|/现价+0.001)、手续费=名义×0.001、止损<现价=多），止损金额 50–300 滑杆点击调整走 /v1/account/stop-loss，止盈策略取 /v1/strategy/list 的 is_active 三件套（未启用禁止开仓），开仓走 /api/commands action=open＋每次意图稳定幂等键＋二次确认弹窗＋UNKNOWN 不重发。浏览器实测：71.10/止损69/120U → 3929.81U／3.93U／2.95%／开多，与公式手算一致；滑杆、切换、无策略禁开均核对；**未执行真实开仓**（验收止于确认弹窗前）。后端不切换，旧 release 保留可回退。
+
 ## 价格卡片重排 Web 发布（2026-11-26，北京时间）
 
 源码 **`4e9f8c6`** 已推送。Web 静态 release **`trade-web-20261126-pricecard-4e9f8c6`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地一致（`80969df0…`／`886f6e94…`／`02ec0b2f…`），`nginx -t` 通过并 reload。仅前端呈现，后端不切换。未执行真实交易/资金操作。
