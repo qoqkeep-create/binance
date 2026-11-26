@@ -67,14 +67,14 @@ class MarketRealtime {
     socket.onopen = () => {
       if (generation !== this.generation) return;
       this.backoff = 1000;
-      const tickerSymbols = [...new Set([...this.subs].flatMap((s) => s.tickerSymbols?.length ? [...s.tickerSymbols] : [s.symbol]))];
       const kline = [...this.subs].map((s) => ({ symbol: s.symbol, interval: s.interval }));
       const klineSymbols = [...new Set(kline.map((k) => k.symbol))];
       const klineIntervals = [...new Set(kline.map((k) => k.interval))];
+      // ticker 用空 symbols＝后端通配单 topic 收全量；kline 用订阅符号并集，客户端再分发。
       socket.send(JSON.stringify({
         version: 1, type: "subscribe", requestId: `web-${++this.requestId}`,
         subscriptions: [
-          { channel: "market.ticker", filters: { symbols: tickerSymbols, intervals: [] } },
+          { channel: "market.ticker", filters: { symbols: [], intervals: [] } },
           { channel: "market.kline", filters: { symbols: klineSymbols, intervals: klineIntervals } },
         ],
       }));

@@ -25,11 +25,13 @@ const get = <T>(path: string, signal?: AbortSignal) => request<T>(v1Path(path), 
 const post = <T>(path: string, body: unknown, headers?: Record<string, string>) =>
   request<T>(v1Path(path), { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
 
+export interface PositionStrategyLevel { profitRR: number; reducePosition: number; stopLossType: string; stopLossRR: number | null; stopLossAbsoluteRR: number | null }
 export interface PositionRow {
   id: number; symbol: string; side: string; leverage: number; position_amount: number | string;
   margin: number | string; pnl: number | string; pnl_ratio: number | string; open_price: number | string;
   current_price: number | string; market_stop_price: number | string | null; manual_take_profit_price: number | string | null;
   estimated_total_fee: number | string; position_origin: string; opened_at: string; strategy_status?: number;
+  strategy_name?: string; strategy_config?: PositionStrategyLevel[] | null;
 }
 export interface MarginInfo {
   margin_ratio_percent: number | string; liquidation_reached: boolean;

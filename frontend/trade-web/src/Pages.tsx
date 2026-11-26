@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, ShieldAlert, X } from "lucide-react";
 import { useAccount } from "./AccountProvider";
-import { tradeApi, type PositionRow, type MarginInfo, type HistoryRow, type OrderRow, type AccountInfo, type Profile, type ApiInfo } from "./lib/tradeApi";
+import { tradeApi, type PositionRow, type PositionStrategyLevel, type MarginInfo, type HistoryRow, type OrderRow, type AccountInfo, type Profile, type ApiInfo } from "./lib/tradeApi";
 
 const num = (value: number | string | null | undefined) => {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -28,12 +28,21 @@ export function PositionsPage({ onOpenSymbol, prices }: { onOpenSymbol: (symbol:
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState("");
+  const [tpRow, setTpRow] = useState<PositionRow | null>(null);
+  const [marginOpen, setMarginOpen] = useState(false);
+  const [activeStrategy, setActiveStrategy] = useState<{ name: string; levels: PositionStrategyLevel[] } | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [list, marginInfo] = await Promise.all([tradeApi.positions(signal), tradeApi.margin(signal).catch(() => null)]);
+      const [list, marginInfo, strategies] = await Promise.all([
+        tradeApi.positions(signal),
+        tradeApi.margin(signal).catch(() => null),
+        tradeApi.strategyList(signal).catch(() => []),
+      ]);
       setRows(list);
       setMargin(marginInfo);
+      const active = strategies.find((row) => row.is_active);
+      setActiveStrategy(active ? { name: active.name, levels: active.levels as PositionStrategyLevel[] } : null);
       setState("ready");
     } catch (err) {
       if (signal?.aborted) return;
@@ -69,7 +78,7 @@ export function PositionsPage({ onOpenSymbol, prices }: { onOpenSymbol: (symbol:
   return <div className="pg-wrap">
     <header className="pg-head">
       <h2>持仓</h2>
-      {margin && <span className={`pg-margin ${ratio >= 80 ? "is-danger" : ratio >= 50 ? "is-warn" : ""}`}><ShieldAlert size={13} /> 保证金率 {fmt(ratio)}%</span>}
+      {margin && <button type="button" className={`pg-margin ${ratio >= 80 ? "is-danger" : ratio >= 50 ? "is-warn" : ""}`} onClick={() => setMarginOpen(true)} aria-label="查看保证金详情"><ShieldAlert size={13} /> 保证金率 {fmt(ratio)}%</button>}
       <button type="button" className="pg-refresh" onClick={() => void load()} aria-label="刷新持仓"><RefreshCw size={14} /></button>
     </header>
     {notice && <div className="pg-notice">{notice}</div>}
@@ -97,6 +106,12 @@ export function PositionsPage({ onOpenSymbol, prices }: { onOpenSymbol: (symbol:
           <div><span>市价止损</span><strong>{row.market_stop_price ? fmt(row.market_stop_price, 4) : "未设置"}</strong></div>
           <div><span>市价止盈</span><strong>{row.manual_take_profit_price ? fmt(row.manual_take_profit_price, 4) : "未设置"}</strong></div>
         </div>
+        <div className="pg-tp-module">
+          <span>止盈</span>
+          <button type="button" className={`pg-tp-btn ${row.strategy_status === 1 ? "is-running" : ""}`} onClick={() => setTpRow(row)}>
+            {row.strategy_status === 1 ? "自动止盈中" : "自动止盈"}
+          </button>
+        </div>
         <footer>
           <button type="button" className="pg-close-btn" onClick={() => setConfirmId(row.id)}>立即平仓</button>
         </footer>
@@ -110,6 +125,35 @@ export function PositionsPage({ onOpenSymbol, prices }: { onOpenSymbol: (symbol:
           <button type="button" onClick={() => setConfirmId(null)}>取消</button>
           <button type="button" className="is-danger" disabled={closing} onClick={() => void closePosition(confirmId)}>{closing ? "平仓中…" : "确认平仓"}</button>
         </footer>
+      </div>
+    </div>}
+    {tpRow && <div className="pg-confirm-backdrop">
+      <div className="pg-confirm" role="dialog" aria-modal="true">
+        <header><strong>自动止盈策略</strong><button type="button" aria-label="关闭" onClick={() => setTpRow(null)}><X size={15} /></button></header>
+        {tpRow.strategy_config?.length ? <>
+          <p className="pg-tp-name">{tpRow.strategy_name || "自动止盈"}{tpRow.strategy_status === 1 ? "（运行中）" : tpRow.strategy_status === 2 ? "（已取消）" : ""}</p>
+          <TpLevels levels={tpRow.strategy_config} />
+        </> : <>
+          <p>该持仓未绑定自动止盈策略。</p>
+          {activeStrategy ? <>
+            <p className="pg-tp-name">当前启用：{activeStrategy.name}</p>
+            <TpLevels levels={activeStrategy.levels} />
+          </> : <p>账户尚未启用止盈策略，可在账户页新建并启用。</p>}
+        </>}
+        <footer><button type="button" onClick={() => setTpRow(null)}>关闭</button></footer>
+      </div>
+    </div>}
+    {marginOpen && margin && <div className="pg-confirm-backdrop">
+      <div className="pg-confirm" role="dialog" aria-modal="true">
+        <header><strong>保证金详情</strong><button type="button" aria-label="关闭" onClick={() => setMarginOpen(false)}><X size={15} /></button></header>
+        <div className="pg-grid">
+          <div><span>保证金率</span><strong className={num(margin.margin_ratio_percent) >= 80 ? "down" : num(margin.margin_ratio_percent) >= 50 ? "" : "up"}>{fmt(num(margin.margin_ratio_percent))}%</strong></div>
+          <div><span>钱包余额</span><strong>{fmt(num(margin.wallet_balance))} U</strong></div>
+          <div><span>保证金余额</span><strong>{fmt(num(margin.margin_balance))} U</strong></div>
+          <div><span>可用余额</span><strong>{fmt(num(margin.available_balance))} U</strong></div>
+        </div>
+        {margin.liquidation_reached && <p className="pg-tp-name">已触及强平警示线，请尽快减仓或追加保证金。</p>}
+        <footer><button type="button" onClick={() => setMarginOpen(false)}>关闭</button></footer>
       </div>
     </div>}
   </div>;
