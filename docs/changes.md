@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：自动视图跨周期科学化＋Supertrend 对齐官方算法
+
+用户选定「自绘＋对齐官方算法」路线。① 自动模式改 iOS 式按 bar 间距（7.6px，clamp 10–164 根）定可见根数，替代固定 64 根，跨周期蜡烛疏密一致；resize 时自动重_fit。② 自定义系列（填充带/撑压线）默认按全量数据 autoscale 会把屏外极值算进价格域（5M 出现大片空白）；现暴露 `visiblePriceRange` 并经 `autoscaleInfoProvider` 仅按可见范围参与主图价格域，价格域收紧到可见 K 线+撑压。③ Supertrend 翻转改用「前一根最终轨」判断（对齐 TradingView `ta.supertrend`），band 递推/ATR(RMA) 与官方一致。浏览器实测 5M 价格域收紧、无空白、撑压线到末根。`npm test`／`build`／`git diff --check` 通过。
+
 ## 2026-11-26：反转首两根补填充／选中态深浅适配／撑压线补末尾
 
 填充带此前在趋势反转后跳过 2 根（`isFlip(index)||isFlip(index-1)`）导致切换后两根无填充；现每根都填充，断开仅靠渲染器不跨方向连接保证。周期选中态原 `color:#fff + var(--accent-strong)` 在深色模式下白底白字不可见；改为按 `html[data-theme]` 分配：深色绿底(#2DBD85)深字、浅色深绿底(#186a4e)白字。撑压线末根（无后继 bar）此前不画线；渲染器改为逐根水平段＋同向相邻竖直台阶，末根必显示。浏览器实测深色 4H 选中绿底深字、SOL 三位小数、反转填充与末尾撑压线正常。`npm test`／`build`／`git diff --check` 通过。

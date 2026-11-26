@@ -28,8 +28,14 @@ if (!indicators.includes("multiplier = 6") || !indicators.includes("length = 10"
 if (!source.includes("const PANE_STRETCH = { main: 70, sub: 15 }") || !source.includes("panes[1].setStretchFactor(settings.macd.enabled ? PANE_STRETCH.sub : 0)") || !source.includes("panes[2].setStretchFactor(settings.stoch.enabled ? PANE_STRETCH.sub : 0)")) {
   throw new Error("Sub-panes must use the adaptive 70/15/15 stretch layout");
 }
-if (!source.includes("const INITIAL_VISIBLE_BARS = 64") || !source.includes("candles.length - INITIAL_VISIBLE_BARS")) {
-  throw new Error("First paint must show 64 bars");
+if (!source.includes("const AUTO_BAR_SPACING = 7.6") || !source.includes("autoVisibleBars()")) {
+  throw new Error("Auto view must size visible bars by bar spacing (iOS-like), not a fixed count");
+}
+if (!source.includes("autoscaleInfoProvider: () => visiblePriceScale(")) {
+  throw new Error("Custom series must autoscale from the visible range only");
+}
+if (!indicators.includes("prevUpper !== null && candle.close > prevUpper")) {
+  throw new Error("Supertrend flip must use the previous final band (TradingView ta.supertrend)");
 }
 if (!source.includes('from "./lib/supertrendBand"') || !source.includes("bandRef.current?.setData(")) {
   throw new Error("Supertrend must render a configurable fill band");

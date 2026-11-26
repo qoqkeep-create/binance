@@ -23,8 +23,6 @@ import "./kline-chart.css";
 const INTERVALS = ["3m", "5m", "15m", "1h", "4h", "1d"];
 const VALID_INTERVALS = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"]);
 const HISTORY_LIMIT = 300;
-// 首屏可见根数：旧 TradingView 15m≈96 根的 1/3 再翻倍。
-const INITIAL_VISIBLE_BARS = 64;
 // 自适应高度比例：主图 70%，两个副图各 15%。
 const PANE_STRETCH = { main: 70, sub: 15 };
 const RIGHT_OFFSET = 5;
@@ -59,6 +57,15 @@ function priceScaleFormatter(price: number) {
 }
 // 主图右轴为共享 scale，须所有主图系列统一 priceFormat，否则被默认 precision 覆盖。
 const MAIN_PRICE_FORMAT = { type: "custom", formatter: priceScaleFormatter, minMove: 0.0001 } as const;
+// 自定义系列默认按全量数据 autoscale 会把屏外极值算进价格域（跨周期出现大片空白）；
+// 仅按可见范围参与主图价格域。
+function visiblePriceScale(range: { min: number; max: number } | null) {
+  return range ? { priceRange: { minValue: range.min, maxValue: range.max } } : null;
+}
+// iOS 式自动视图：按 bar 间距定可见根数（而非固定根数），跨周期蜡烛疏密一致。
+const AUTO_BAR_SPACING = 7.6;
+const AUTO_MIN_BARS = 10;
+const AUTO_MAX_BARS = 164;
 
 function linePoint(time: number, value: number | null): LinePoint {
   return value === null ? { time: time as Time } : { time: time as Time, value };
@@ -115,6 +122,12 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
   const [attempt, setAttempt] = useState(0);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
   const viewModeRef = useRef<"auto" | "manual">("auto");
+
+  const autoVisibleBars = () => {
+    const width = containerRef.current?.clientWidth ?? 800;
+    const plot = Math.max(120, width - 60);
+    return Math.min(AUTO_MAX_BARS, Math.max(AUTO_MIN_BARS, Math.round(plot / AUTO_BAR_SPACING)));
+  };
 
   const renderData = useCallback((candles: Candle[], resetView: boolean, tail = false) => {
     const chart = chartRef.current;
@@ -183,7 +196,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     stochDRef.current?.applyOptions({ color: config.stoch.dColor, visible: config.stoch.enabled });
     applyPaneLayout(chart, config);
     if (resetView || viewModeRef.current === "auto") {
-      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - INITIAL_VISIBLE_BARS), to: candles.length - 1 });
+      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - autoVisibleBars()), to: candles.length - 1 });
     }
   }, []);
 
@@ -209,20 +222,28 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const liveRange = () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
     bandConfigRef.current.visibleRange = liveRange;
     macdConfigRef.current.visibleRange = liveRange;
-    bandRef.current = chart.addCustomSeries(createSupertrendBandView(bandConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT }, 0);
+    const bandView = createSupertrendBandView(bandConfigRef.current);
+    bandRef.current = chart.addCustomSeries(bandView.view, { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT, autoscaleInfoProvider: () => visiblePriceScale(bandView.visiblePriceRange()) }, 0);
     candleRef.current = chart.addSeries(CandlestickSeries, {
       upColor: t.up, downColor: t.down, borderVisible: false, wickUpColor: t.up, wickDownColor: t.down, ...NO_CROSSHAIR_MARKER,
       priceFormat: MAIN_PRICE_FORMAT,
     });
     emaRefs.current = [0, 1, 2].map(() => chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT }));
-    stLineRef.current = chart.addCustomSeries(createSupertrendLineView(stLineConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT }, 0);
+    const stLineView = createSupertrendLineView(stLineConfigRef.current);
+    stLineRef.current = chart.addCustomSeries(stLineView.view, { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER, priceFormat: MAIN_PRICE_FORMAT, autoscaleInfoProvider: () => visiblePriceScale(stLineView.visiblePriceRange()) }, 0);
     macdHistRef.current = chart.addCustomSeries(createMacdHistogramView(macdConfigRef.current), { priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     macdDifRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     macdDeaRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...NO_CROSSHAIR_MARKER }, 1);
     const fixedRange = { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) };
     stochKRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...fixedRange, ...NO_CROSSHAIR_MARKER }, 2);
     stochDRef.current = chart.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, ...fixedRange, ...NO_CROSSHAIR_MARKER }, 2);
-    const resizeObserver = new ResizeObserver(() => { if (chartRef.current) applyPaneLayout(chartRef.current, settingsRef.current); });
+    const resizeObserver = new ResizeObserver(() => {
+      if (!chartRef.current) return;
+      applyPaneLayout(chartRef.current, settingsRef.current);
+      if (viewModeRef.current === "auto" && candlesRef.current.length) {
+        chartRef.current.timeScale().setVisibleLogicalRange({ from: Math.max(0, candlesRef.current.length - autoVisibleBars()), to: candlesRef.current.length - 1 });
+      }
+    });
     resizeObserver.observe(container);
     const markManual = () => { viewModeRef.current = "manual"; setViewMode("manual"); };
     const onWheel = () => markManual();
@@ -326,7 +347,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const chart = chartRef.current;
     const length = candlesRef.current.length;
     if (!chart || !length) return;
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, length - INITIAL_VISIBLE_BARS), to: length - 1 });
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, length - autoVisibleBars()), to: length - 1 });
   }
 
   return (

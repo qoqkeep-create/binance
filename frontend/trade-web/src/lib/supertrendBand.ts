@@ -26,9 +26,20 @@ function withAlpha(hex: string, alpha: number) {
 }
 
 /** Filled band between close and the Supertrend line, broken at direction reversals. */
-export function createSupertrendBandView(config: BandFillConfig): ICustomSeriesPaneView<Time, BandPoint, CustomSeriesOptions> {
+export function createSupertrendBandView(config: BandFillConfig) {
   let bars: StoredBar[] = [];
   let range: { from: number; to: number } | null = null;
+  const visiblePriceRange = () => {
+    const vr = (config.visibleRange ? config.visibleRange() : null) || range;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const bar of bars) {
+      if (vr && (bar.index < vr.from || bar.index > vr.to)) continue;
+      min = Math.min(min, bar.close, bar.st);
+      max = Math.max(max, bar.close, bar.st);
+    }
+    return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
+  };
   const renderer: ICustomSeriesPaneRenderer = {
     draw(target, priceConverter) {
       target.useMediaCoordinateSpace(({ context, mediaSize }) => {
@@ -62,7 +73,7 @@ export function createSupertrendBandView(config: BandFillConfig): ICustomSeriesP
       });
     },
   };
-  return {
+  const view: ICustomSeriesPaneView<Time, BandPoint, CustomSeriesOptions> = {
     renderer: () => renderer,
     update(data: PaneRendererCustomData<Time, BandPoint>) {
       range = data.visibleRange ? { from: data.visibleRange.from, to: data.visibleRange.to } : null;
@@ -77,4 +88,5 @@ export function createSupertrendBandView(config: BandFillConfig): ICustomSeriesP
     isWhitespace: (data): data is CustomSeriesWhitespaceData<Time> => (data as BandPoint).st === undefined,
     defaultOptions: () => ({ ...customSeriesDefaultOptions }),
   };
+  return { view, visiblePriceRange };
 }

@@ -69,10 +69,13 @@ function supertrend(candles: Candle[], length = 10, multiplier = 6): SupertrendP
     const basicUpper = mid + multiplier * atrValue;
     const basicLower = mid - multiplier * atrValue;
     const previousClose = index > 0 ? candles[index - 1].close : candle.close;
+    const prevUpper = upper;
+    const prevLower = lower;
     upper = upper === null || basicUpper < upper || previousClose > upper ? basicUpper : upper;
     lower = lower === null || basicLower > lower || previousClose < lower ? basicLower : lower;
-    if (candle.close > upper) direction = 1;
-    else if (candle.close < lower) direction = -1;
+    // 对齐 TradingView ta.supertrend：翻转用「前一根」最终轨判断，而非当根更新后的轨。
+    if (prevUpper !== null && candle.close > prevUpper) direction = 1;
+    else if (prevLower !== null && candle.close < prevLower) direction = -1;
     result[index] = { value: direction === 1 ? lower : upper, direction };
   }
   return result;

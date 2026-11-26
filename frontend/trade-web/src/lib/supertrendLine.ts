@@ -18,10 +18,20 @@ interface StoredBar { x: number; index: number; value: number; direction: 1 | -1
 
 // LineSeries 的 whitespace 不会真正断开（相邻有效点仍被连线），故用自定义系列
 // 只描「原始序号相邻且同向」的线段，多→空→多时中间空头区域必然断开。
-export function createSupertrendLineView(config: SupertrendLineConfig): ICustomSeriesPaneView<Time, SupertrendLinePoint, CustomSeriesOptions> {
+export function createSupertrendLineView(config: SupertrendLineConfig) {
   let bars: StoredBar[] = [];
   let barSpacing = 6;
   let range: { from: number; to: number } | null = null;
+  const visiblePriceRange = () => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const bar of bars) {
+      if (range && (bar.index < range.from || bar.index > range.to)) continue;
+      min = Math.min(min, bar.value);
+      max = Math.max(max, bar.value);
+    }
+    return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
+  };
   const renderer: ICustomSeriesPaneRenderer = {
     draw(target, priceConverter) {
       target.useMediaCoordinateSpace(({ context, mediaSize }) => {
@@ -55,7 +65,7 @@ export function createSupertrendLineView(config: SupertrendLineConfig): ICustomS
       });
     },
   };
-  return {
+  const view: ICustomSeriesPaneView<Time, SupertrendLinePoint, CustomSeriesOptions> = {
     renderer: () => renderer,
     update(data: PaneRendererCustomData<Time, SupertrendLinePoint>) {
       barSpacing = data.barSpacing;
@@ -71,4 +81,5 @@ export function createSupertrendLineView(config: SupertrendLineConfig): ICustomS
     isWhitespace: (data): data is CustomSeriesWhitespaceData<Time> => (data as SupertrendLinePoint).value === undefined,
     defaultOptions: () => ({ ...customSeriesDefaultOptions }),
   };
+  return { view, visiblePriceRange };
 }
