@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## K 线连续性修复＋刷新按钮发布（2026-11-26，北京时间）
+
+源码 **`a52f77b`** 已推送。后端 **`integrated-quick-a52f77b`**、Web **`trade-web-20261126-refresh-a52f77b`** 均已上线（ba/IP 200、哈希 `e38dd53e…`／`9867a379…`／`5e73db37…` 与本地一致、health 全 true）。① 恢复尾根过期/缺口的同步补线（修 SWR 跳过补线导致的最新开盘与上根收盘不衔接）；② 自动/手动左侧新增刷新按钮（强制重拉数据并复位视图）。实测相邻收盘/开盘仅 ±1 tick 差（下一根开盘=区间首笔、上根收盘=末笔，属正常市场微观结构），大缺口已消除。未执行真实交易/资金操作。
+
 ## 手动全向拖拽／历史补载／列表 WS 持续刷新／字号与对齐 Web 发布（2026-11-26，北京时间）
 
 源码基线 **`2dd326e`**＋本会话未提交改动。Web 静态 release **`trade-web-20261126-ux4-2dd326e`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地单链构建一致（`3dfc3d4e…`／`d5326c34…`／`849125eb…`），ba.wow211.com 复核同哈希。① 手动模式左键拖动＝横向（库）＋竖向（pointer 拖动经 priceScale.setAutoScale(false)+setVisibleRange 平移）全向移动，拖动期间不缩放（manual axisPressedMouseMove=false，滚轮/ pinch 仍可缩放）；切自动复位 autoScale。② 历史补载：可见范围 from<24 时经 getKlines beforeOpenTime 分页 prepend（300/页、上限 3000），视口 logical range 平移保持不跳；preserveView 参数防 auto 重置。③ 左侧列表持续刷新：BinanceStream 增 tickerSymbols 全列表订阅；**币安限额论证**：后端 collector 单条 `!ticker@arr` 已采集全合约（1 条 stream），web 订阅经内部 fanout 不新增币安连接/REST weight；UI 500ms 聚合批渲染防逐消息重渲染。④ 自动/手动 10→12px、指标 11→13px。⑤ 主导航首项与 K 线左缘对齐（useLayoutEffect 实测 margin＋ResizeObserver，<920px 归零）；列表选中改整行 26% 绿条；顶部筛选 active 改绿描边芯片（同自动手动强度）。本地 DOM 核对字号/筛选芯片通过；隐藏面板视口为 0 致对齐/拖拽/补载/WS 刷新不可本地实测，归线上验收。契约测试锁定全部。后端不切换，旧 release 保留可回退。
