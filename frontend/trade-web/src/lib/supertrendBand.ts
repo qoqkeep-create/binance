@@ -38,8 +38,8 @@ export function createSupertrendBandView(config: BandFillConfig): ICustomSeriesP
           // 仅连接原始序号相邻且同向的 bar：反转留空或单根反向趋势造成的缺口都断开，
           // 避免两段同向趋势被填充带边缘连成一条线。
           if (a.direction !== b.direction || b.index !== a.index + 1) continue;
-          // 只画可见范围内的 bar，避免屏外 bar 的 x 被夹到边缘造成左／右堆积。
-          if (range && (b.index < range.from - 1 || a.index > range.to + 1)) continue;
+          // 左侧按可见范围裁剪防边缘堆积；右侧按像素 x 裁剪，避免误删最新段填充。
+          if (range && b.index < range.from - 1) continue;
           if (b.x < 0 || a.x > mediaSize.width) continue;
           const closeA = priceConverter(a.close);
           const stA = priceConverter(a.st);

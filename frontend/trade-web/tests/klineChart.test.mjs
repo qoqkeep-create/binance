@@ -68,8 +68,12 @@ if (!source.includes("renderData(candlesRef.current, false, true)") || !source.i
 if (!source.includes("kline-loading") || !source.includes("kline-spinner")) {
   throw new Error("An iOS-style loading overlay must cover the chart while loading");
 }
-if (!source.includes("const klineCache = new Map") || !source.includes("klineCache.get(cacheKey)")) {
-  throw new Error("Symbol switches must use a client SWR cache for instant revisits");
+if (!source.includes('from "./lib/klineCache"') || !source.includes("getCachedKlines(symbol, selectedInterval)")) {
+  throw new Error("Symbol switches must use the shared client SWR cache for instant revisits");
+}
+const app = readFileSync(fileURLToPath(new URL("../src/App.tsx", import.meta.url)), "utf8");
+if (!app.includes("prefetchKlines(row.symbol, chartPreference.interval)")) {
+  throw new Error("Market rows must prefetch klines on hover for instant switches");
 }
 if (!source.includes("candlesSymbolRef.current !== symbol") || !source.includes("candlesSymbolRef.current = null")) {
   throw new Error("New-symbol ticks must never merge into the previous symbol's candles");

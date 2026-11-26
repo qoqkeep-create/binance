@@ -12,6 +12,7 @@ import { useAccount, usePreference } from "./AccountProvider";
 import { BinanceStream, getKlines, type Candle } from "./lib/binance";
 import { buildChartIndicators } from "./lib/chartIndicators";
 import { mergeCandle, mergeTicker } from "./lib/candleMerge";
+import { getCachedKlines, putCachedKlines } from "./lib/klineCache";
 import { DEFAULT_INDICATORS, mergeIndicatorSettings, type IndicatorSettings } from "./lib/indicatorSettings";
 import { createSupertrendBandView, type BandPoint, type BandFillConfig } from "./lib/supertrendBand";
 import { createMacdHistogramView, type MacdBarPoint, type MacdHistogramConfig } from "./lib/macdHistogram";
@@ -20,14 +21,12 @@ import "./kline-chart.css";
 
 const INTERVALS = ["3m", "5m", "15m", "1h", "4h", "1d"];
 const VALID_INTERVALS = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"]);
-const HISTORY_LIMIT = 500;
+const HISTORY_LIMIT = 300;
 // 首屏可见根数：旧 TradingView 15m≈96 根的 1/3 再翻倍。
 const INITIAL_VISIBLE_BARS = 64;
 // 自适应高度比例：主图 70%，两个副图各 15%。
 const PANE_STRETCH = { main: 70, sub: 15 };
 const RIGHT_OFFSET = 5;
-// 客户端 SWR 缓存：回切已看过的币种瞬时出图，后台再拉新数据校正。
-const klineCache = new Map<string, Candle[]>();
 
 interface ChartPreference { interval: string; indicators?: unknown }
 const defaultChartPreference: ChartPreference = { interval: "15m", indicators: DEFAULT_INDICATORS };
@@ -255,8 +254,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     if (hydrating || !chartRef.current) return;
     let active = true;
     const controller = new AbortController();
-    const cacheKey = `${symbol}|${selectedInterval}`;
-    const cached = klineCache.get(cacheKey);
+    const cached = getCachedKlines(symbol, selectedInterval);
     candlesSymbolRef.current = null;
     if (cached && cached.length) {
       candlesRef.current = cached;
@@ -270,8 +268,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     }
     getKlines(symbol, selectedInterval, HISTORY_LIMIT, controller.signal).then((candles) => {
       if (!active) return;
-      if (klineCache.size > 12) klineCache.delete(klineCache.keys().next().value as string);
-      klineCache.set(cacheKey, candles);
+      putCachedKlines(symbol, selectedInterval, candles);
       candlesRef.current = candles;
       candlesSymbolRef.current = symbol;
       if (!cached) {

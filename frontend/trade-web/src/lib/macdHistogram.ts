@@ -34,12 +34,13 @@ export function createMacdHistogramView(config: MacdHistogramConfig): ICustomSer
         const half = Math.max(1, barSpacing * 0.35);
         for (let i = 0; i < bars.length; i += 1) {
           const bar = bars[i];
-          if (range && (bar.index < range.from - 1 || bar.index > range.to + 1)) continue;
+          // 左侧按可见范围裁剪防边缘堆积；右侧按像素 x 裁剪，避免误删最新 bar。
+          if (range && bar.index < range.from - 1) continue;
           if (bar.x < -half || bar.x > mediaSize.width + half) continue;
           const y = priceConverter(bar.value);
           if (y === null) continue;
           const top = Math.min(zero, y);
-          const height = Math.max(1, Math.abs(y - zero));
+          const height = Math.max(2, Math.abs(y - zero));
           // 能量柱增长（绝对值变大）实心、缩短空心；颜色仍按正负。
           const prev = i > 0 ? bars[i - 1].value : undefined;
           const growing = prev === undefined || Math.abs(bar.value) >= Math.abs(prev);

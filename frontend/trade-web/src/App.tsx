@@ -25,6 +25,7 @@ import {
   type StreamEvent,
 } from "./lib/binance";
 import KlineChart from "./KlineChart";
+import { prefetchKlines } from "./lib/klineCache";
 import "./styles.css";
 import ContractAnalysisAssistant from "./ContractAnalysisAssistant";
 import { AccountProvider, useAccount, usePreference } from "./AccountProvider";
@@ -68,6 +69,7 @@ function TerminalApp() {
   const [group, setGroup] = usePreference<MarketGroup>("marketGroup", "top20", isGroup);
   const [markets, setMarkets] = useState<{ top20: MarketRow[]; alts: MarketRow[]; all: MarketRow[] }>({ top20: [], alts: [], all: [] });
   const [selectedSymbol, setSelectedSymbol] = usePreference("selectedSymbol", "BTCUSDT", isSymbol);
+  const [chartPreference] = usePreference<{ interval: string }>("chart", { interval: "15m" });
   const [query, setQuery] = usePreference("marketQuery", "", isQuery);
   const [showInsightPanel, setShowInsightPanel] = usePreference("showInsightPanel", true, isBoolean);
   const [marketStatus, setMarketStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -119,6 +121,13 @@ function TerminalApp() {
     if (!user || hydrating || marketStatus !== "ready" || !markets.all.length) return;
     setSelectedSymbol((current) => markets.all.some((row) => row.symbol === current) ? current : markets.top20[0]?.symbol ?? current);
   }, [hydrating, marketStatus, markets.all, markets.top20, setSelectedSymbol, user]);
+
+  useEffect(() => {
+    if (marketStatus !== "ready") return;
+    const timers = markets.top20.slice(0, 5).map((row, index) =>
+      window.setTimeout(() => prefetchKlines(row.symbol, chartPreference.interval), 400 + index * 250));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [marketStatus, chartPreference.interval]);
 
   const activeMarkets = useMemo(() => {
     const rows = group === "top20" ? markets.top20 : group === "alts" ? markets.alts : [...markets.all].sort((a, b) => group === "gainers" ? b.priceChangePercent - a.priceChangePercent : a.priceChangePercent - b.priceChangePercent);
@@ -202,7 +211,7 @@ function TerminalApp() {
                 }}>重试</button>
               </div>
             )}
-            {activeMarkets.map((row, index) => <button key={row.symbol} className={`market-row ${selectedSymbol === row.symbol ? "selected" : ""}`} onClick={() => setSelectedSymbol(row.symbol)}><div className="market-rank">{row.rank ?? String(index + 1).padStart(2, "0")}</div><div className="market-name"><strong>{row.baseAsset}<span>/USDT</span></strong><small>{compact.format(row.quoteVolume)} vol</small></div><div className="market-quote"><strong>{formatPrice(row.lastPrice)}</strong><small className={row.priceChangePercent >= 0 ? "positive" : "negative"}>{formatDelta(row.priceChangePercent)}</small></div></button>)}</div>
+            {activeMarkets.map((row, index) => <button key={row.symbol} className={`market-row ${selectedSymbol === row.symbol ? "selected" : ""}`} onClick={() => setSelectedSymbol(row.symbol)} onMouseEnter={() => prefetchKlines(row.symbol, chartPreference.interval)}><div className="market-rank">{row.rank ?? String(index + 1).padStart(2, "0")}</div><div className="market-name"><strong>{row.baseAsset}<span>/USDT</span></strong><small>{compact.format(row.quoteVolume)} vol</small></div><div className="market-quote"><strong>{formatPrice(row.lastPrice)}</strong><small className={row.priceChangePercent >= 0 ? "positive" : "negative"}>{formatDelta(row.priceChangePercent)}</small></div></button>)}</div>
           <div className="rail-footer"><div><span className={`status-light ${marketStatus === "ready" ? "is-live" : ""}`} /> Binance Futures</div><span>{activeMarkets.length} 个合约</span></div>
         </aside>
         <main className="chart-workspace">
