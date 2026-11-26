@@ -16,6 +16,10 @@ Web `KlineChart` 右上角加"自动／手动"二选一：滚轮缩放或拖动�
 
 验证：`npm test`（含配置合并与自定义参数单测）、`npm run build`、`git diff --check` 通过；浏览器实测填充／断开／比例／禁用重分配／透明度联动／面板编辑。**注意**：内置浏览器面板隐藏时 `requestAnimationFrame` 暂停，lightweight-charts 异步布局不执行，副图会量到 0 高——须先 `tab.activate()` 让页面 visible 再测量／截图，勿误判为 pane API 失效。lightweight-charts 无官方左侧绘图工具栏，不实现。本轮未部署。
 
+## 撑压线尾部断线根因：visibleRange 下标≠逻辑序号（2026-11-26）
+
+lightweight-charts v5 自定义系列 `PaneRendererCustomData.visibleRange` 的 from/to 是 **bars 数组下标**（`CustomBarItemData.time` 才是逻辑序号）。`supertrendLine.ts` 曾把下标范围与逻辑序号混用做右侧裁剪，Supertrend 预热空白根（约 9 根）造成偏移，尾部最新根被误删——表现为"填充在、撑压线没"（填充带 `supertrendBand.ts` 绘制时直读 `getVisibleLogicalRange()`，语义一致故正常）。现行规则：各自定义系列绘制裁剪与 autoscale 一律用实时逻辑范围（config.visibleRange 读取器），update 兜底范围须按 `data.bars` 把下标换算成逻辑序号；相邻同向连接判断继续用逻辑序号。复现方法：独立 harness 页仪表化 view.update/draw＋`chart.takeScreenshot()` 强制同步渲染（面板隐藏 rAF 暂停时异步布局不跑）＋canvas 像素探针断言尾部线段。契约测试 `klineChart.test.mjs` 锁定该模式。
+
 ## Web K 线改用 lightweight-charts 自建（2026-11-26）
 
 `frontend/trade-web` 新增 `KlineChart.tsx` 与 `lib/chartIndicators.ts`，以 `lightweight-charts` v5 自绘替换 `TradingViewWidget`（已删除）。主图蜡烛＋EMA 21/55/144＋Supertrend 10×6（Wilder ATR），副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3，参数与暗／浅配色对齐 iOS `ChartEngine`。副图高度用绝对 `setStretchFactor` 固定 72px（`setHeight` 连续调用会互相干扰），并以 ResizeObserver 维持；首屏 `setVisibleLogicalRange` 固定 32 根。图表实例只挂载一次，切币／切周期经 AbortController＋生成守卫单次 `getKlines` 后 `setData`，尾根由 `BinanceStream` kline 事件 `update` 合并。周期栏 3m/5m/15m/1h/4h/1d（默认 15m），偏好仍走 `usePreference("chart")`。

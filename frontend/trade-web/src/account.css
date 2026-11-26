@@ -88,7 +88,6 @@
 .account-auth-note > svg { flex: none; margin-top: 3px; }
 .account-control button:focus-visible, .account-dialog button:focus-visible { outline: 2px solid var(--assistant-button-bg); outline-offset: 3px; }
 .account-control button:disabled, .account-dialog button:disabled { cursor: default; opacity: .6; }
-.chart-actions { display: flex; align-items: center; gap: 6px; }
 .insight-toggle { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: transparent; }
 .insight-toggle:hover { color: var(--text); background: var(--panel-hover); }
 .workspace.without-insight { grid-template-columns: 256px minmax(450px, 1fr); }

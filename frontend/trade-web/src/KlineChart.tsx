@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { SlidersHorizontal } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode,
@@ -86,13 +85,11 @@ function applyPaneLayout(chart: IChartApi, settings: IndicatorSettings) {
   panes[2].setStretchFactor(settings.stoch.enabled ? PANE_STRETCH.sub : 0);
 }
 
-export default function KlineChart({ symbol, actionsContainer, insightToggle, theme = "dark", readOnly = false }: {
+export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   symbol: string;
-  actionsContainer: HTMLElement | null;
   insightToggle?: ReactNode;
   theme?: "dark" | "light";
   onSymbolChange?: (symbol: string) => void;
-  readOnly?: boolean;
 }) {
   const { hydrating } = useAccount();
   const [preference, setPreference] = usePreference("chart", defaultChartPreference, validChartPreference);
@@ -124,6 +121,7 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
   const [attempt, setAttempt] = useState(0);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
   const viewModeRef = useRef<"auto" | "manual">("auto");
+  const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
 
   const autoVisibleBars = () => {
     const width = containerRef.current?.clientWidth ?? 800;
@@ -269,11 +267,15 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       }
     });
     resizeObserver.observe(container);
-    const markManual = () => { viewModeRef.current = "manual"; setViewMode("manual"); };
-    const onWheel = () => markManual();
-    const onPointerMove = (event: PointerEvent) => { if (event.buttons > 0) markManual(); };
-    container.addEventListener("wheel", onWheel, { passive: true });
-    container.addEventListener("pointermove", onPointerMove);
+    // 自动：左右拖动＋滚轮缩放可用，上下（价格轴／触摸竖向）锁定；手动：全向。
+    const applyViewMode = (mode: "auto" | "manual") => {
+      chart.applyOptions({
+        handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: mode === "manual" },
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: mode === "manual" ? true : { time: true, price: false }, axisDoubleClickReset: true },
+      });
+    };
+    applyViewMode("auto");
+    viewModeApplyRef.current = applyViewMode;
     const onCrosshair = (param: { point?: { x: number; y: number } }) => {
       const candle = candleRef.current;
       const api = chartRef.current;
@@ -287,8 +289,6 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     chart.subscribeCrosshairMove(onCrosshair);
     return () => {
       chart.unsubscribeCrosshairMove(onCrosshair);
-      container.removeEventListener("wheel", onWheel);
-      container.removeEventListener("pointermove", onPointerMove);
       resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -384,13 +384,13 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     const chart = chartRef.current;
     const length = candlesRef.current.length;
     if (!chart || !length) return;
+    // 手动期的价格轴缩放一并复位：恢复各 pane 自动价格域。
+    chart.panes().forEach((_, index) => chart.priceScale("right", index).applyOptions({ autoScale: true }));
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, length - autoVisibleBars()), to: length - 1 });
   }
 
   return (
     <>
-      {actionsContainer && !readOnly && createPortal(<button className="chart-restore" type="button" onClick={resetView}>重置</button>, actionsContainer)}
-      {actionsContainer && insightToggle && createPortal(insightToggle, actionsContainer)}
       <div className="chart-toolbar">
         <div className="toolbar-left">
           {INTERVALS.map((interval) => (
@@ -401,12 +401,13 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
         </div>
         <div className="toolbar-right">
           <div className="view-mode" role="group" aria-label="缩放模式">
-            <button type="button" className={viewMode === "auto" ? "active" : ""} aria-pressed={viewMode === "auto"} onClick={resetView}>自动</button>
-            <button type="button" className={viewMode === "manual" ? "active" : ""} aria-pressed={viewMode === "manual"} onClick={() => { viewModeRef.current = "manual"; setViewMode("manual"); }}>手动</button>
+            <button type="button" className={viewMode === "auto" ? "active" : ""} aria-pressed={viewMode === "auto"} onClick={() => { viewModeApplyRef.current("auto"); resetView(); }}>自动</button>
+            <button type="button" className={viewMode === "manual" ? "active" : ""} aria-pressed={viewMode === "manual"} onClick={() => { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); }}>手动</button>
           </div>
           <button type="button" className="indicator-master" aria-label="指标设置" title="指标设置" aria-expanded={showSettings} onClick={() => setShowSettings(true)}>
             <SlidersHorizontal size={15} /> 指标
           </button>
+          {insightToggle}
         </div>
       </div>
       <div className="kline-stage" data-chart-theme={theme}>

@@ -83,6 +83,7 @@ function TerminalApp() {
   const [positionCount, setPositionCount] = useState(0);
   const [showAssistant, setShowAssistant] = useState(false);
   const [insightMode, setInsightMode] = useState<"trade" | "pulse">("trade");
+  const [accountFocus, setAccountFocus] = useState<{ kind: "stop-loss" | "strategy"; at: number } | null>(null);
   const [structuresContainer, setStructuresContainer] = useState<HTMLElement | null>(null);
   const assistantOpener = useRef<HTMLElement | null>(null);
 
@@ -236,7 +237,7 @@ function TerminalApp() {
           <div className="rail-footer"><div><span className={`status-light ${marketStatus === "ready" ? "is-live" : ""}`} /> Binance Futures</div><span>{activeMarkets.length} 个合约</span></div>
         </aside>
         <main className="chart-workspace">
-          <div className="chart-underlay" inert={showAssistant ? true : undefined}><KlineChart symbol={selectedSymbol} insightToggle={!showAssistant && <button className="insight-toggle" type="button" aria-label={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} title={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} aria-pressed={showInsightPanel} onClick={() => setShowInsightPanel((show) => !show)}>{showInsightPanel ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>} theme={theme} onSymbolChange={setSelectedSymbol} readOnly={user.role === "guest"} /></div>
+          <div className="chart-underlay" inert={showAssistant ? true : undefined}><KlineChart symbol={selectedSymbol} insightToggle={!showAssistant && <button className="insight-toggle" type="button" aria-label={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} title={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} aria-pressed={showInsightPanel} onClick={() => setShowInsightPanel((show) => !show)}>{showInsightPanel ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>} theme={theme} onSymbolChange={setSelectedSymbol} /></div>
           {showAssistant && <ContractAnalysisAssistant key={selectedSymbol} symbol={selectedSymbol} baseAsset={selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")} structuresContainer={structuresContainer} returnFocusTo={assistantOpener.current} onClose={() => setShowAssistant(false)} />}
         </main>
         {panelVisible && <aside className="insight-panel" ref={setStructuresContainer} aria-labelledby={showAssistant ? "assistant-structures-title" : "market-pulse-title"}>
@@ -248,18 +249,18 @@ function TerminalApp() {
             </div>
             <button className="pulse-mode-toggle" type="button" aria-pressed={insightMode === "trade"} title={insightMode === "trade" ? "切换到盘面" : "切换到交易"} onClick={() => { setInsightMode((mode) => (mode === "trade" ? "pulse" : "trade")); setShowAssistant(false); }}><ArrowLeftRight size={13} aria-hidden="true" /><span>{insightMode === "trade" ? "盘面" : "交易"}</span></button>
           </header>
-          <div hidden={insightMode !== "trade"}><TradePanel symbol={selectedSymbol} price={selectedPrice} canTrade={user.role !== "guest"} /></div>
+          <div hidden={insightMode !== "trade"}><TradePanel symbol={selectedSymbol} price={selectedPrice} canTrade={user.role !== "guest"} visible={insightMode === "trade" && activeNav === "行情"} onNavigate={(kind) => { setAccountFocus({ kind, at: Date.now() }); setActiveNav("账户"); }} /></div>
           <div hidden={insightMode !== "pulse"}>
           <div className="price-card" aria-label="当前价格与涨跌">
-            <div className="price-card-coin">{selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")}</div>
-            <div className="price-card-label">当前价格</div>
-            <div className="price-card-row">
-              <strong className="price-card-number">{formatPrice(selectedPrice)}</strong>
+            <div className="price-card-top">
+              <div className="price-card-coin">{selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")}</div>
               <div className={`price-card-change ${selectedPercent !== undefined && selectedPercent >= 0 ? "positive" : "negative"}`}>
                 <span>{formatPointChange(selectedPointChange)}</span>
                 <span>{selectedPercent === undefined ? "—" : formatDelta(selectedPercent)}</span>
               </div>
             </div>
+            <div className="price-card-label">当前价格</div>
+            <strong className="price-card-number">{formatPrice(selectedPrice)}</strong>
           </div>
           <div className="sentiment-card">
             <div className="sentiment-top"><span>短线情绪</span><span className="sentiment-status">偏多</span></div>
@@ -296,7 +297,7 @@ function TerminalApp() {
       </div>
       {activeNav === "持仓" && <div className="pg-scroll"><PositionsPage prices={priceMap} onOpenSymbol={(symbol) => { setSelectedSymbol(symbol); setActiveNav("行情"); }} /></div>}
       {activeNav === "历史" && <div className="pg-scroll"><HistoryPage /></div>}
-      {activeNav === "账户" && <div className="pg-scroll"><AccountPage /></div>}
+      {activeNav === "账户" && <div className="pg-scroll"><AccountPage focus={accountFocus} /></div>}
       {(activeNav === "信号" || activeNav === "引擎") && <section className="empty-state"><div className="empty-orbit"><Cpu size={34} /></div><h1>{activeNav}模块即将上线</h1><p>核心数据层已连接 Binance Futures。切换回行情查看实时盘面。</p><button onClick={() => setActiveNav("行情")}><LayoutDashboard size={15} /> 返回行情</button></section>}
       <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span><span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
     </div>

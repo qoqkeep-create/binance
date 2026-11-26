@@ -11,16 +11,27 @@ if (!panel.includes("const FEE_RATE = 0.001") || !panel.includes("risk / (ratio 
 if (!panel.includes("const isLong = stop < entry")) {
   throw new Error("Side must auto-derive: stop below entry = long, above = short");
 }
-if (!panel.includes('min={50} max={300} step={1}') || !panel.includes("tradeApi.setStopLoss(draftRisk)")) {
-  throw new Error("Stop-loss amount must adjust via 50-300 slider and persist through /account/stop-loss");
+if (!panel.includes('onNavigate("stop-loss")') || !panel.includes("trade-risk-box") || !panel.includes('onNavigate("strategy")')) {
+  throw new Error("Stop-loss amount box and strategy row must navigate to the real account settings sections");
 }
-for (const marker of ["strategy_id", "strategy_name", "strategy_config", "include_fee: true", 'submitCommand("open", payload, attemptKeyRef.current)', "pollCommand(id)"]) {
+const pages = readFileSync(fileURLToPath(new URL("../src/Pages.tsx", import.meta.url)), "utf8");
+if (!pages.includes('min={50} max={300} step={1}') || !pages.includes('id="account-stop-loss"') || !pages.includes('id="account-strategy"')) {
+  throw new Error("Account page must host the 50-300 step-1 stop-loss slider and strategy list anchors");
+}
+if (!panel.includes("输入止损价") || panel.indexOf("trade-settings-btn") < panel.indexOf("trade-submit")) {
+  throw new Error("Open button must read 输入止损价 before stop entry; settings button sits below it");
+}
+const styles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+if (!styles.includes(".trade-type-row button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
+  throw new Error("Market/limit selection must use the same rounded green chip as auto/manual");
+}
+for (const marker of ["strategy_id", "strategy_name", "strategy_config", "include_fee: true", "payload, attemptKeyRef.current)", "pollCommand(id)"]) {
   if (!panel.includes(marker)) throw new Error(`Open command payload/flow missing ${marker}`);
 }
-if (!panel.includes("开仓结果待确认，请勿重复提交")) {
+if (!panel.includes("请勿重复提交")) {
   throw new Error("UNKNOWN open outcome must not auto-resubmit");
 }
-if (!panel.includes("确认开仓") || !panel.includes("pg-confirm-backdrop")) {
+if (!panel.includes("确认继续？") || !panel.includes("pg-confirm-backdrop")) {
   throw new Error("Real open submission requires a second confirmation dialog");
 }
 if (!api.includes("idempotencyKey?: string") || !api.includes('"/strategy/list"')) {

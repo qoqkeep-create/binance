@@ -12,6 +12,7 @@ export interface SupertrendLineConfig {
   upColor: string;
   downColor: string;
   lineWidth: number;
+  visibleRange?: () => { from: number; to: number } | null;
 }
 
 interface StoredBar { x: number; index: number; value: number; direction: 1 | -1 }
@@ -23,10 +24,11 @@ export function createSupertrendLineView(config: SupertrendLineConfig) {
   let barSpacing = 6;
   let range: { from: number; to: number } | null = null;
   const visiblePriceRange = () => {
+    const vr = (config.visibleRange ? config.visibleRange() : null) || range;
     let min = Infinity;
     let max = -Infinity;
     for (const bar of bars) {
-      if (range && (bar.index < range.from || bar.index > range.to)) continue;
+      if (vr && (bar.index < vr.from || bar.index > vr.to)) continue;
       min = Math.min(min, bar.value);
       max = Math.max(max, bar.value);
     }
@@ -39,9 +41,12 @@ export function createSupertrendLineView(config: SupertrendLineConfig) {
         context.lineJoin = "round";
         context.lineCap = "round";
         const half = Math.max(1, barSpacing / 2);
+        // 绘制时直读实时逻辑可见范围：update 的 visibleRange 是 bars 数组下标，
+        // 与逻辑序号（含头部空白根偏移）不一致，会误删尾部最新根。
+        const vr = (config.visibleRange ? config.visibleRange() : null) || range;
         for (let index = 0; index < bars.length; index += 1) {
           const a = bars[index];
-          if (range && (a.index < range.from - 1 || a.index > range.to + 1)) continue;
+          if (vr && (a.index < vr.from - 1 || a.index > vr.to + 1)) continue;
           if (a.x < -half || a.x > mediaSize.width + half) continue;
           const ya = priceConverter(a.value);
           if (ya === null) continue;
@@ -72,7 +77,14 @@ export function createSupertrendLineView(config: SupertrendLineConfig) {
     renderer: () => renderer,
     update(data: PaneRendererCustomData<Time, SupertrendLinePoint>) {
       barSpacing = data.barSpacing;
-      range = data.visibleRange ? { from: data.visibleRange.from, to: data.visibleRange.to } : null;
+      // visibleRange 为 bars 下标区间，换算成逻辑序号供兜底裁剪／autoscale 使用。
+      if (data.visibleRange && data.bars.length) {
+        const fromItem = data.bars[Math.max(0, Math.min(data.bars.length - 1, data.visibleRange.from))];
+        const toItem = data.bars[Math.max(0, Math.min(data.bars.length - 1, data.visibleRange.to - 1))];
+        range = { from: fromItem.time as number, to: toItem.time as number };
+      } else {
+        range = null;
+      }
       bars = [];
       for (const bar of data.bars) {
         const point = bar.originalData;

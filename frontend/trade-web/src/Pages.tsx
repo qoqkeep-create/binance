@@ -199,7 +199,7 @@ export function HistoryPage() {
   </div>;
 }
 
-export function AccountPage() {
+export function AccountPage({ focus }: { focus?: { kind: "stop-loss" | "strategy"; at: number } | null }) {
   const { logout } = useAccount();
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -242,6 +242,14 @@ export function AccountPage() {
     void load(false, controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (!focus || state !== "ready") return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(focus.kind === "stop-loss" ? "account-stop-loss" : "account-strategy")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focus, state]);
 
   async function saveStopLoss() {
     setSaving(true);
@@ -314,7 +322,7 @@ export function AccountPage() {
           <div className="pg-row"><span>服务端将校验权限与 IP 白名单</span><button type="button" disabled={busy || !bindForm.api_key || !bindForm.secret_key} onClick={() => void runBusy(() => tradeApi.apiBind(bindForm), "绑定成功").then(() => setBindOpen(false))}>{busy ? "绑定中…" : "确认绑定"}</button></div>
         </div>}
       </section>
-      <section className="pg-card">
+      <section className="pg-card" id="account-strategy">
         <header><strong>止盈止损策略</strong><button type="button" disabled={busy} onClick={() => setEditing({ name: "", levels: [emptyLevel()] })}>新建</button></header>
         {strategies.length === 0 && <div className="pg-empty"><span>暂无策略</span></div>}
         {strategies.map((s) => <div key={s.id} className="pg-strategy-row">
@@ -340,9 +348,9 @@ export function AccountPage() {
           </div>
         </div>}
       </section>
-      <section className="pg-card">
+      <section className="pg-card" id="account-stop-loss">
         <header><strong>单笔止损额 (U)</strong></header>
-        <input type="range" min={50} max={300} step={10} value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} />
+        <input type="range" min={50} max={300} step={1} value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} />
         <div className="pg-row"><span>{stopLoss} U</span><button type="button" disabled={saving} onClick={() => void saveStopLoss()}>{saving ? "保存中…" : "保存"}</button></div>
       </section>
       <section className="pg-card">

@@ -1,5 +1,21 @@
 # 变更与验收记录
 
+## 2026-11-26：修复 iOS TLS 回归与 web WS subprotocol 鉴权（连接中断根因）
+
+深度检查定位两个根因：① 新增 ba.wow211.com server block 后成为 443 默认 server，IP 直连（iOS）拿到域名证书→TLS 校验失败→"K线加载失败/连接中断"（加域名时引入的回归）。修：IP server 标记 `default_server`（80/443），IP 连接恢复 IP 证书。② web 的 bearer subprotocol 在 ASGI 位于 `scope["subprotocols"]`，后端只读 headers→web WS 永远 403（既有 bug，非本次改坏）。修：`websocket.py` 将 scope subprotocols 合并进 headers 供鉴权。服务器内直连验证：Authorization 头与 subprotocol 均 101；经 nginx 复测 subprotocol 通过。iOS 与 web 连接恢复。
+
+## 2026-11-26：价格卡片三段式修正／涨跌右置／防溢出
+
+用户否决并行会话的横排（币种左、价格右上）：右列数字超出卡片框体。按用户口径重排为竖三段：① 币种（13px/600）② 「当前价格」9px 弱标 ③ 价格数字行——数字左、增减数值＋百分比竖排右置（baseline 对齐、space-between）。防溢出组合：.price-card 块级；.price-card-row flex＋gap 8；数字 white-space:nowrap＋min-width:0（clamp 22–30px 保留）；涨跌列 flex:none＋nowrap。浏览器压测 296/260/232px 卡宽 row 无内部溢出、涨跌确在数字右侧；BTC 六位数价格解析核算 30px 上限亦在 268px 内宽内。契约测试改锁 price-card-row/label、禁 price-card-right/24H。并发同期演进：TradePanel 限价单（limit-create）、切换按钮标签改显示目标态、Pages 策略编辑在制品瞬时撕裂构建一次（其会话自行修复）；tradePanel 断言对齐演进后调用与文案，安全语义断言保留。release trade-web-20261126-pricecard2-3e1949b 上线首尔＋ba 域名哈希一致。
+
+## 2026-11-26：工具栏按钮归位／自动手动圆角选中框
+
+① 重置按钮从顶栏 portal 移入图表工具栏 toolbar-right 首位（自动/手动左侧）；insight-toggle（向右拓展 K 线）从顶栏移到「指标」右侧；KlineChart 删除 actionsContainer prop 与 createPortal，App 删除 chart-actions 容器与状态、account.css 删除 .chart-actions 规则。② 自动/手动选中态由纯绿字改圆角矩形芯片：基础按钮 1px 透明描边＋5px 圆角（防选中漂移），选中绿描边＋color-mix 12% 绿底＋绿字 600。契约测试锁定顺序与芯片样式。浏览器实测（本地隔离库验收户）：toolbar-right 顺序 重置/自动手动/指标/insight-toggle，选中框 border rgb(0,168,143)、radius 5px、12% 底；拓展按钮新位置收放面板正常。release trade-web-20261126-toolbar-3e1949b 上线首尔哈希一致；tt.wow211.com 验证时 DNS NXDOMAIN（记录缺失，服务器 SNI 自核正常），待用户恢复 A 记录。
+
+## 2026-11-26：tt.wow211.com 域名接入＋盘面速览「交易/盘面」切换与开仓面板 v1
+
+① 域名：nginx 新增 tt-wow211 server block（80 ACME＋301、443 复用 integrated snippet、根 308 到 /integrated/market/），certbot webroot 签 LE ECDSA 证书，续签单元改全量 renew；Django ALLOWED_HOSTS 加域名（server.env 备份后重建 api/market 容器）。② 盘面速览标题右侧切换按钮：默认「交易」、切换后「盘面」；交易态隐藏脉冲内容（hidden 保留状态不卸载）。③ TradePanel v1 复刻 iOS USDTEntryDraft：方向自动（止损<现价=多）、名义仓位=止损额/(ratio+0.001)、手续费=名义×0.001、回撤%=ratio×100；止损价手输、止损金额点击出 50–300 步长1 滑杆保存（/v1/account/stop-loss）；展示当前价/预估仓位/手续费/回撤/止盈策略名；开仓 payload 带 strategy 三件套（/v1/strategy/list is_active，未启用禁开并提示），action=open 走 /api/commands，幂等键每次开仓意图生成、重试复用、参数变作废；二次确认弹窗列全字段；UNKNOWN 不自动重发提示持仓页核对；游客禁交易。契约测试 tests/tradePanel.test.mjs 入 runner。浏览器核对计算与 iOS 手算一致、滑杆/切换/禁开正确；未真实下单。release trade-web-20261126-trade2-3b0207c 上线首尔（含域名入口）哈希一致。并发会话重建共享 dist 曾致首次上传错包，已改单链 build→上传→切换并标记复核。
+
 ## 2026-11-26：主导航加宽去闪烁／历史时间左下堆叠／十字线右价框百分比
 
 ① 主导航加宽（gap 6/padding 4、item padding 8x18/13px），并移除 `.nav-item` 的 color/background transition——切换时上一个选中项不再淡出闪烁；active 配色按主题（深绿底深字／浅深绿底白字）。② 历史持仓卡片开/平仓时间改左下角上下堆叠。③ K 线十字线右侧价格框：隐藏库自带横轴标签，自绘 overlay 显示十字线价格＋其下「距当前价百分比」，正绿负红带加减号（`subscribeCrosshairMove`+`coordinateToPrice`，仅主图 pane 显示）。合成事件无法驱动图表十字线，该项待线上真实鼠标验收。`npm test`／`build`／`git diff --check` 通过。

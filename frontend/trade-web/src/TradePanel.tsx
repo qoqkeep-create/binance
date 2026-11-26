@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Settings2, X } from "lucide-react";
+import { ChevronRight, Settings2, X } from "lucide-react";
 import { tradeApi, type AccountInfo } from "./lib/tradeApi";
 
 const FEE_RATE = 0.001;
@@ -27,7 +27,10 @@ function fmt(value: number, digits = 2) {
   return value.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-export default function TradePanel({ symbol, price, canTrade }: { symbol: string; price: number | undefined; canTrade: boolean }) {
+export default function TradePanel({ symbol, price, canTrade, visible, onNavigate }: {
+  symbol: string; price: number | undefined; canTrade: boolean; visible: boolean;
+  onNavigate: (target: "stop-loss" | "strategy") => void;
+}) {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [strategy, setStrategy] = useState<StrategyRow | null>(null);
   const [strategyState, setStrategyState] = useState<"loading" | "ready" | "error">("loading");
@@ -37,9 +40,6 @@ export default function TradePanel({ symbol, price, canTrade }: { symbol: string
   const [limitInput, setLimitInput] = useState("");
   const [maker, setMaker] = useState<MakerPrefs>(readMakerPrefs);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [adjusting, setAdjusting] = useState(false);
-  const [draftRisk, setDraftRisk] = useState(120);
-  const [savingRisk, setSavingRisk] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
@@ -62,10 +62,11 @@ export default function TradePanel({ symbol, price, canTrade }: { symbol: string
   }, []);
 
   useEffect(() => {
+    if (!visible) return;
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [load, symbol]);
+  }, [load, symbol, visible]);
 
   function setMakerPref(key: keyof MakerPrefs, value: boolean) {
     setMaker((current) => ({ ...current, [key]: value }));
@@ -92,21 +93,6 @@ export default function TradePanel({ symbol, price, canTrade }: { symbol: string
       : { limit_price: limitInput.trim() }),
     ...(strategy ? { strategy_id: strategy.id, strategy_name: strategy.name, strategy_config: strategy.levels } : {}),
   }), [symbol, stopInput, risk, strategy, orderType, limitInput, maker.market]);
-
-  async function saveRisk() {
-    setSavingRisk(true);
-    setNotice("");
-    try {
-      await tradeApi.setStopLoss(draftRisk);
-      setRisk(draftRisk);
-      setAdjusting(false);
-      setNotice("止损金额已保存");
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "止损金额保存失败");
-    } finally {
-      setSavingRisk(false);
-    }
-  }
 
   async function submitOpen() {
     setSubmitting(true);
@@ -163,17 +149,21 @@ export default function TradePanel({ symbol, price, canTrade }: { symbol: string
     </label>
     <div className="trade-field">
       <span>止损金额</span>
-      <button type="button" className="trade-risk-btn" onClick={() => { setDraftRisk(risk); setAdjusting((open) => !open); }}>{risk} U</button>
+      <button type="button" className="trade-risk-box" onClick={() => onNavigate("stop-loss")} aria-label="设置止损金额">
+        <span>{risk} U</span><ChevronRight size={13} aria-hidden="true" />
+      </button>
     </div>
-    {adjusting && <div className="trade-risk-adjust">
-      <input type="range" min={50} max={300} step={1} value={draftRisk} onChange={(event) => setDraftRisk(Number(event.target.value))} />
-      <div className="pg-row"><span>{draftRisk} U</span><span><button type="button" disabled={savingRisk} onClick={() => void saveRisk()}>{savingRisk ? "保存中…" : "保存"}</button><button type="button" onClick={() => setAdjusting(false)}>取消</button></span></div>
-    </div>}
     <div className="trade-strategy">
       <span>止盈策略</span>
-      <strong>{strategyState === "loading" ? "读取中…" : strategyState === "error" ? "读取失败" : strategy?.name ?? "未启用"}</strong>
+      <button type="button" className="trade-strategy-link" onClick={() => onNavigate("strategy")}>
+        <strong>{strategyState === "loading" ? "读取中…" : strategyState === "error" ? "读取失败" : strategy?.name ?? "未启用"}</strong>
+        <ChevronRight size={13} aria-hidden="true" />
+      </button>
       {strategyState === "error" && <button type="button" onClick={() => void load()}>重试</button>}
     </div>
+    <button type="button" className="trade-submit" disabled={!valid || !strategy || !canTrade || submitting} onClick={() => { setNotice(""); setConfirmOpen(true); }}>
+      {submitting ? "提交中…" : stopInput.trim() === "" ? "输入止损价" : orderType === "market" ? (isLong ? "市价开多" : "市价开空") : (isLong ? "限价挂多" : "限价挂空")}
+    </button>
     <button type="button" className="trade-settings-btn" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}><Settings2 size={13} /> 开仓设置</button>
     {settingsOpen && <div className="trade-settings">
       <label className="trade-maker-row"><span>市价开仓用 Maker</span><input type="checkbox" checked={maker.market} onChange={(event) => setMakerPref("market", event.target.checked)} /></label>
@@ -181,9 +171,6 @@ export default function TradePanel({ symbol, price, canTrade }: { symbol: string
       <label className="trade-maker-row"><span>预挂止盈用 Maker</span><input type="checkbox" checked={maker.takeProfit} onChange={(event) => setMakerPref("takeProfit", event.target.checked)} /></label>
       <div className="trade-maker-row is-fixed"><span>止损</span><strong>触发后市价</strong></div>
     </div>}
-    <button type="button" className="trade-submit" disabled={!valid || !strategy || !canTrade || submitting} onClick={() => { setNotice(""); setConfirmOpen(true); }}>
-      {submitting ? "提交中…" : orderType === "market" ? (valid ? (isLong ? "市价开多" : "市价开空") : "市价开仓") : (valid ? (isLong ? "限价挂多" : "限价挂空") : "限价挂单")}
-    </button>
     {confirmOpen && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认{orderType === "market" ? "开仓" : "挂单"}</strong><button type="button" aria-label="关闭" onClick={() => setConfirmOpen(false)}><X size={15} /></button></header>

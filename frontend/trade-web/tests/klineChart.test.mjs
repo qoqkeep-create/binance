@@ -97,6 +97,18 @@ if (!styles.includes(".timeframe.active::after") || styles.includes(".timeframe.
 if (!klineCss.includes(".view-mode button.active { color: var(--green)")) {
   throw new Error("Auto/manual view-mode selection must be green");
 }
+if (!klineCss.includes(".view-mode button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
+  throw new Error("Auto/manual selection must show a rounded rectangle chip, not just text color");
+}
+if (source.includes("createPortal(") || source.includes(">重置</button>") || !source.includes('vertTouchDrag: mode === "manual"') || !source.includes('axisPressedMouseMove: mode === "manual"') || !source.includes("</button>\n          {insightToggle}")) {
+  throw new Error("Reset button removed; auto locks vertical drag/price-axis zoom while manual allows all; insight toggle right of 指标");
+}
+if (!source.includes('chart.priceScale("right", index).applyOptions({ autoScale: true })')) {
+  throw new Error("Switching manual->auto must reset price-axis zoom too");
+}
+if (!styles.includes(".main-nav { align-self: center; display: flex; align-items: center; gap: 4px; padding: 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {
+  throw new Error("Main nav must sit on the topbar background without its own box and keep buttons single-line");
+}
 if (!klineCss.includes("background: rgba(240, 243, 247, 0.1)") || !klineCss.includes('.kline-stage[data-chart-theme="light"] .kline-loading')) {
   throw new Error("Symbol-switch loading must veil the old chart with a translucent light-gray overlay, not clear it");
 }
@@ -106,8 +118,11 @@ if (!source.includes("pane-legend") || !source.includes("getHTMLElement()") || !
 if (!source.includes('grid: "rgba(240, 244, 250, 0.045)"')) {
   throw new Error("Chart grid must stay finer than the pane separators");
 }
-if (!app.includes("price-card-coin") || !app.includes("price-card-right") || app.includes(">24H<")) {
-  throw new Error("Price card must put price top-right with stacked change after it, no 24H label");
+if (!app.includes("price-card-coin") || !app.includes("price-card-label") || !app.includes("price-card-top") || app.includes("price-card-right") || app.includes("price-card-row") || app.includes(">24H<")) {
+  throw new Error("Price card must put the two-line change top-right aligned with the coin, then label, then number");
+}
+if (!styles.includes(".price-card-top") || !styles.includes(".price-card-label")) {
+  throw new Error("Price card top row must fit inside the card (change column flex-none, number nowrap)");
 }
 if (!source.includes("candlesSymbolRef.current !== symbol") || !source.includes("candlesSymbolRef.current = null")) {
   throw new Error("New-symbol ticks must never merge into the previous symbol's candles");
