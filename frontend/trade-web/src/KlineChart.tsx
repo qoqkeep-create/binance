@@ -122,8 +122,10 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
     };
     const bandPoint = (index: number): BandDataPoint => {
       const point = indicators.supertrend[index];
-      // 反转 bar 留空，避免填充带画出跨趋势的竖直连接段。
-      return point.value === null || isFlip(index) ? { time: times[index] as Time } : { time: times[index] as Time, close: candles[index].close, st: point.value, direction: point.direction ?? 1 };
+      // 反转 bar 及其后一根留空：新趋势首两根撑压值仍在远端，会画出竖直窄带／
+      // 短反向 dip 的灰色残影；填充带从每段第三根开始，保证干净断开与无残影。
+      const skip = isFlip(index) || isFlip(index - 1);
+      return point.value === null || skip ? { time: times[index] as Time } : { time: times[index] as Time, close: candles[index].close, st: point.value, direction: point.direction ?? 1 };
     };
     const macdPoint = (index: number): MacdDataPoint => {
       const histogram = indicators.macd[index].histogram;
@@ -281,6 +283,8 @@ export default function KlineChart({ symbol, actionsContainer, insightToggle, th
       }
       renderData(candles, !cached);
       setStatus("ready");
+      // 首屏 autoSize／面板比例稳定后强制重绘一次，消除自定义系列首屏残影。
+      requestAnimationFrame(() => { if (active) renderData(candlesRef.current, false); });
     }).catch((error: unknown) => {
       if (active && !(error instanceof DOMException && error.name === "AbortError")) setStatus("error");
     });

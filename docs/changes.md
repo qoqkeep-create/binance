@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：消除超级趋势填充带首屏残影
+
+首屏残影来自反转后前两根 bar 的远端撑压值（竖直窄带）与单根反向 dip 的灰色小块，叠加首屏布局未定时的绘制。修复：填充带跳过每段趋势的前两根 bar（`isFlip(index) || isFlip(index-1)` 留空），从第三根开始填充，窄带与短 dip 残影消除且断开更干净；首屏 `setStatus("ready")` 后 `requestAnimationFrame` 强制重绘一次，待 autoSize／面板比例稳定后再画自定义系列。`npm run build`／`npm test` 通过；浏览器面板隐藏未能截图，待线上首屏验收。静态 release 见 [运维](operations.md)。
+
 ## 2026-11-26：修复左拖时 MACD／超级趋势填充带左缘堆积
 
 根因：自定义系列 renderer 依赖 update 传入的 visibleRange，拖动时陈旧／缺失，左侧序号裁剪失效，屏外 bar 的 x 被夹到左缘堆叠成竖直色块。修复：KlineChart 注入 `visibleRange` getter（绘制时直读 `chart.timeScale().getVisibleLogicalRange()`），MACD 与填充带 renderer 按实时范围双侧序号裁剪（保留 ±1 边界），叠加像素 x 裁剪。`npm run build`／`npm test`（含边缘堆积契约）通过；浏览器面板隐藏未能真实拖动截图，待线上左拖验收。静态 release 见 [运维](operations.md)。
