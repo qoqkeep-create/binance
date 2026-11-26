@@ -63,8 +63,14 @@ export const tradeApi = {
   profile: (signal?: AbortSignal) => get<Profile>("/account/profile", signal),
   apiInfo: (signal?: AbortSignal) => get<ApiInfo>("/api/info", signal),
   setStopLoss: (amount: number) => post<unknown>("/account/stop-loss", { stop_loss_amount: amount }),
-  async submitCommand(action: string, payload: Record<string, unknown>) {
-    const key = `web-${action}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  strategyList: (signal?: AbortSignal) => get<Array<{ id: string; name: string; is_active: boolean; levels: unknown[] }>>("/strategy/list", signal),
+  strategySave: (body: { strategy_id?: string; name: string; levels: unknown[] }) => post<unknown>("/strategy/save", body),
+  strategyDelete: (strategyId: string) => post<unknown>("/strategy/delete", { strategy_id: strategyId }),
+  strategySetActive: (strategyId: string) => post<unknown>("/strategy/set-active", { strategy_id: strategyId }),
+  apiBind: (body: { api_key: string; secret_key: string; alias: string }) => post<unknown>("/api/bind", body),
+  apiUnbind: () => post<unknown>("/api/unbind", {}),
+  async submitCommand(action: string, payload: Record<string, unknown>, idempotencyKey?: string) {
+    const key = idempotencyKey ?? `web-${action}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const data = await request<{ id: string; status: string }>(apiPath("/commands"), {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": key },

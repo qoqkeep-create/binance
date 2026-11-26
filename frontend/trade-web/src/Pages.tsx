@@ -8,6 +8,8 @@ const num = (value: number | string | null | undefined) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 const fmt = (value: number | string | null | undefined, digits = 2) => num(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+interface StrategyLevel { profitRR: number; reducePosition: number; stopLossType: "none" | "fixedRR" | "absoluteRR"; stopLossRR: number; stopLossAbsoluteRR: number }
+const emptyLevel = (): StrategyLevel => ({ profitRR: 1, reducePosition: 50, stopLossType: "none", stopLossRR: 1, stopLossAbsoluteRR: 1 });
 const isLong = (side: string) => side === "0" || side === "long" || side === "BUY";
 
 function SideBadge({ side }: { side: string }) {
@@ -197,7 +199,7 @@ export function HistoryPage() {
   </div>;
 }
 
-export function AccountPage({ theme, onToggleTheme }: { theme: "dark" | "light"; onToggleTheme: () => void }) {
+export function AccountPage() {
   const { logout } = useAccount();
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -207,17 +209,25 @@ export function AccountPage({ theme, onToggleTheme }: { theme: "dark" | "light";
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [strategies, setStrategies] = useState<Array<{ id: string; name: string; is_active: boolean; levels: StrategyLevel[] }>>([]);
+  const [editing, setEditing] = useState<{ id?: string; name: string; levels: StrategyLevel[] } | null>(null);
+  const [bindOpen, setBindOpen] = useState(false);
+  const [bindForm, setBindForm] = useState({ alias: "", api_key: "", secret_key: "" });
+  const [confirmUnbind, setConfirmUnbind] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (fresh: boolean, signal?: AbortSignal) => {
     try {
-      const [account, prof, apiInfo] = await Promise.all([
+      const [account, prof, apiInfo, strat] = await Promise.all([
         tradeApi.accountInfo(fresh, signal),
         tradeApi.profile(signal).catch(() => null),
         tradeApi.apiInfo(signal).catch(() => null),
+        tradeApi.strategyList(signal).catch(() => []),
       ]);
       setInfo(account);
       setProfile(prof);
       setApi(apiInfo);
+      setStrategies(strat as Array<{ id: string; name: string; is_active: boolean; levels: StrategyLevel[] }>);
       setStopLoss(num(account.stop_loss_amount) || 120);
       setState("ready");
     } catch (err) {
@@ -247,6 +257,31 @@ export function AccountPage({ theme, onToggleTheme }: { theme: "dark" | "light";
     }
   }
 
+  async function runBusy(fn: () => Promise<unknown>, ok: string) {
+    setBusy(true);
+    setNotice("");
+    try {
+      await fn();
+      setNotice(ok);
+      await load(false);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveStrategy() {
+    if (!editing) return;
+    const levels = editing.levels;
+    const sum = levels.reduce((acc, l) => acc + l.reducePosition, 0);
+    if (!editing.name.trim()) { setNotice("策略名称不能为空"); return; }
+    if (!levels.length || sum > 100) { setNotice("至少一档且减仓比例合计不超过 100%"); return; }
+    for (let i = 1; i < levels.length; i++) if (levels[i].profitRR <= levels[i - 1].profitRR) { setNotice("止盈 RR 需严格递增"); return; }
+    await runBusy(() => tradeApi.strategySave({ strategy_id: editing.id, name: editing.name.trim(), levels }), "策略已保存");
+    setEditing(null);
+  }
+
   return <div className="pg-wrap">
     <header className="pg-head"><h2>账户</h2><button type="button" className="pg-refresh" onClick={() => void load(true)} aria-label="刷新余额"><RefreshCw size={14} /></button></header>
     {state === "loading" && <div className="pg-empty"><RefreshCw size={14} className="spin" /> 正在加载账户…</div>}
@@ -267,6 +302,43 @@ export function AccountPage({ theme, onToggleTheme }: { theme: "dark" | "light";
           <div><span>API 绑定</span><strong>{api?.status === 1 ? `已绑定 ${api.api_key_masked}` : "未绑定"}</strong></div>
           <div><span>别名</span><strong>{api?.alias || "—"}</strong></div>
         </div>
+        {api?.status === 1 ? (
+          <div className="pg-row"><span>解除绑定将停止实盘交易能力</span><button type="button" className="is-danger" disabled={busy} onClick={() => setConfirmUnbind(true)}>解除绑定</button></div>
+        ) : (
+          <div className="pg-row"><span>绑定 Binance Futures 实盘 API 后可交易</span><button type="button" disabled={busy} onClick={() => setBindOpen((open) => !open)}>{bindOpen ? "收起" : "绑定 API"}</button></div>
+        )}
+        {bindOpen && api?.status !== 1 && <div className="pg-bind-form">
+          <label className="trade-field"><span>API 别名</span><input value={bindForm.alias} onChange={(e) => setBindForm((f) => ({ ...f, alias: e.target.value }))} placeholder="如 主账户" /></label>
+          <label className="trade-field"><span>API Key</span><input value={bindForm.api_key} onChange={(e) => setBindForm((f) => ({ ...f, api_key: e.target.value.trim() }))} placeholder="Binance API Key" /></label>
+          <label className="trade-field"><span>Secret Key</span><input type="password" value={bindForm.secret_key} onChange={(e) => setBindForm((f) => ({ ...f, secret_key: e.target.value.trim() }))} placeholder="Binance Secret Key" /></label>
+          <div className="pg-row"><span>服务端将校验权限与 IP 白名单</span><button type="button" disabled={busy || !bindForm.api_key || !bindForm.secret_key} onClick={() => void runBusy(() => tradeApi.apiBind(bindForm), "绑定成功").then(() => setBindOpen(false))}>{busy ? "绑定中…" : "确认绑定"}</button></div>
+        </div>}
+      </section>
+      <section className="pg-card">
+        <header><strong>止盈止损策略</strong><button type="button" disabled={busy} onClick={() => setEditing({ name: "", levels: [emptyLevel()] })}>新建</button></header>
+        {strategies.length === 0 && <div className="pg-empty"><span>暂无策略</span></div>}
+        {strategies.map((s) => <div key={s.id} className="pg-strategy-row">
+          <span className="pg-strategy-name">{s.name}{s.is_active && <em className="pg-tag is-active">启用中</em>}</span>
+          <span className="pg-strategy-actions">
+            {!s.is_active && <button type="button" disabled={busy} onClick={() => void runBusy(() => tradeApi.strategySetActive(s.id), "已启用")}>启用</button>}
+            <button type="button" disabled={busy} onClick={() => setEditing({ id: s.id, name: s.name, levels: s.levels?.length ? s.levels : [emptyLevel()] })}>编辑</button>
+            <button type="button" className="is-danger" disabled={busy} onClick={() => void runBusy(() => tradeApi.strategyDelete(s.id), "已删除")}>删除</button>
+          </span>
+        </div>)}
+        {editing && <div className="pg-strategy-editor">
+          <label className="trade-field"><span>策略名称</span><input value={editing.name} onChange={(e) => setEditing((cur) => cur && { ...cur, name: e.target.value })} /></label>
+          {editing.levels.map((level, index) => <div key={index} className="pg-level-row">
+            <label><span>止盈RR</span><input type="number" step="0.1" value={level.profitRR} onChange={(e) => setEditing((cur) => cur && { ...cur, levels: cur.levels.map((l, i) => i === index ? { ...l, profitRR: Number(e.target.value) } : l) })} /></label>
+            <label><span>减仓%</span><input type="number" step="5" value={level.reducePosition} onChange={(e) => setEditing((cur) => cur && { ...cur, levels: cur.levels.map((l, i) => i === index ? { ...l, reducePosition: Number(e.target.value) } : l) })} /></label>
+            <label><span>止损类型</span><select value={level.stopLossType} onChange={(e) => setEditing((cur) => cur && { ...cur, levels: cur.levels.map((l, i) => i === index ? { ...l, stopLossType: e.target.value as StrategyLevel["stopLossType"] } : l) })}><option value="none">不动</option><option value="fixedRR">固定RR</option><option value="absoluteRR">绝对RR</option></select></label>
+            {level.stopLossType !== "none" && <label><span>止损RR</span><input type="number" step="0.1" value={level.stopLossType === "fixedRR" ? level.stopLossRR : level.stopLossAbsoluteRR} onChange={(e) => setEditing((cur) => cur && { ...cur, levels: cur.levels.map((l, i) => i === index ? (l.stopLossType === "fixedRR" ? { ...l, stopLossRR: Number(e.target.value) } : { ...l, stopLossAbsoluteRR: Number(e.target.value) }) : l) })} /></label>}
+            <button type="button" className="is-danger" onClick={() => setEditing((cur) => cur && { ...cur, levels: cur.levels.filter((_, i) => i !== index) })}>删</button>
+          </div>)}
+          <div className="pg-row">
+            <button type="button" disabled={editing.levels.length >= 5} onClick={() => setEditing((cur) => cur && { ...cur, levels: [...cur.levels, emptyLevel()] })}>加档</button>
+            <span><button type="button" disabled={busy} onClick={() => void saveStrategy()}>{busy ? "保存中…" : "保存策略"}</button><button type="button" onClick={() => setEditing(null)}>取消</button></span>
+          </div>
+        </div>}
       </section>
       <section className="pg-card">
         <header><strong>单笔止损额 (U)</strong></header>
@@ -274,9 +346,18 @@ export function AccountPage({ theme, onToggleTheme }: { theme: "dark" | "light";
         <div className="pg-row"><span>{stopLoss} U</span><button type="button" disabled={saving} onClick={() => void saveStopLoss()}>{saving ? "保存中…" : "保存"}</button></div>
       </section>
       <section className="pg-card">
-        <div className="pg-row"><span>颜色模式</span><button type="button" onClick={onToggleTheme}>{theme === "dark" ? "切换浅色" : "切换深色"}</button></div>
         <div className="pg-row"><span>退出登录</span><button type="button" className="is-danger" onClick={() => { void logout().catch(() => undefined).finally(() => window.location.reload()); }}>退出</button></div>
       </section>
+      {confirmUnbind && <div className="pg-confirm-backdrop">
+        <div className="pg-confirm" role="dialog" aria-modal="true">
+          <header><strong>解除绑定</strong><button type="button" aria-label="关闭" onClick={() => setConfirmUnbind(false)}><X size={15} /></button></header>
+          <p>解除后实盘开平仓/保护单能力停止；如有持仓或待成交委托将被服务端拒绝。确认解除？</p>
+          <footer>
+            <button type="button" onClick={() => setConfirmUnbind(false)}>取消</button>
+            <button type="button" className="is-danger" disabled={busy} onClick={() => void runBusy(() => tradeApi.apiUnbind(), "已解除绑定").then(() => setConfirmUnbind(false))}>{busy ? "解除中…" : "确认解除"}</button>
+          </footer>
+        </div>
+      </div>}
       {notice && <div className="pg-notice">{notice}</div>}
     </>}
   </div>;

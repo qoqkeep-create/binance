@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  ArrowLeftRight,
   ArrowUpRight,
   Bell,
   CircleHelp,
@@ -25,6 +26,8 @@ import {
   type StreamEvent,
 } from "./lib/binance";
 import KlineChart from "./KlineChart";
+import TradePanel from "./TradePanel";
+import { tradeApi } from "./lib/tradeApi";
 import { PositionsPage, HistoryPage, AccountPage } from "./Pages";
 import { prefetchKlines } from "./lib/klineCache";
 import "./styles.css";
@@ -76,9 +79,10 @@ function TerminalApp() {
   const [marketStatus, setMarketStatus] = useState<"loading" | "ready" | "error">("loading");
   const [marketAttempt, setMarketAttempt] = useState(0);
   const [connection, setConnection] = useState<"connecting" | "live" | "disconnected">("connecting");
+  const [latency, setLatency] = useState<number | null>(null);
+  const [positionCount, setPositionCount] = useState(0);
   const [showAssistant, setShowAssistant] = useState(false);
   const [insightMode, setInsightMode] = useState<"trade" | "pulse">("trade");
-  const [chartActions, setChartActions] = useState<HTMLDivElement | null>(null);
   const [structuresContainer, setStructuresContainer] = useState<HTMLElement | null>(null);
   const assistantOpener = useRef<HTMLElement | null>(null);
 
@@ -144,6 +148,20 @@ function TerminalApp() {
     ? selectedPrice * selectedPercent / (100 + selectedPercent) : undefined;
   const panelVisible = showInsightPanel || showAssistant;
   const connectionLabel = { connecting: "连接中", live: "实时连接", disconnected: "连接中断" }[connection];
+  const latencyInfo = (() => {
+    if (connection === "disconnected") return { text: "-- ms", tone: "bad" };
+    if (latency === null) return { text: "-- ms", tone: "fair" };
+    const ms = Math.min(999, Math.max(0, Math.round(latency)));
+    return { text: `${ms} ms`, tone: ms < 200 ? "good" : ms < 500 ? "fair" : "bad" };
+  })();
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const loadCount = () => tradeApi.positions().then((rows) => { if (!cancelled) setPositionCount(rows.length); }).catch(() => undefined);
+    void loadCount();
+    const timer = window.setInterval(loadCount, 10_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [user]);
   useEffect(() => {
     if (!user) {
       setConnection("connecting");
@@ -151,7 +169,8 @@ function TerminalApp() {
     }
     setConnection("connecting");
     const stream = new BinanceStream(selectedSymbol, "15m", (event: StreamEvent) => {
-      if (event.type === "disconnected" || event.type === "error") setConnection("disconnected");
+      if (event.type === "disconnected" || event.type === "error") { setConnection("disconnected"); setLatency(null); }
+      if (event.type === "latency") setLatency(event.ms);
       if (event.type === "ticker") {
         setConnection("live");
         setMarkets((current) => {
@@ -171,11 +190,10 @@ function TerminalApp() {
       <header className="topbar">
         <div className="brand-lockup"><div className="brand-glyph"><span /><span /><span /></div><div><div className="brand-name">ORBITAL</div><div className="brand-sub">MARKET INTELLIGENCE</div></div></div>
         <nav className="main-nav" aria-label="主导航">
-          {(["行情", "信号", "引擎", "持仓", "历史", "账户"] as NavItem[]).map((item) => <button key={item} className={`nav-item ${activeNav === item ? "active" : ""}`} onClick={() => setActiveNav(item)}>{item}{item === "信号" && <span className="nav-badge">LIVE</span>}</button>)}
+          {(["行情", "信号", "引擎", "持仓", "历史", "账户"] as NavItem[]).map((item) => <button key={item} className={`nav-item ${activeNav === item ? "active" : ""}`} onClick={() => setActiveNav(item)}>{item}{item === "信号" && <span className="nav-badge">LIVE</span>}{item === "持仓" && positionCount > 0 && <span className="nav-pos-count" aria-label={`${positionCount} 个持仓`}>{positionCount}</span>}</button>)}
         </nav>
         <div className="top-actions">
-          <div className="connection-status"><span className={`status-light ${connection === "live" ? "is-live" : ""}`} /> {connectionLabel}</div>
-          <div className="chart-actions" ref={setChartActions} hidden={activeNav !== "行情" || showAssistant} />
+          <div className={`connection-status is-${latencyInfo.tone}`}><span className={`status-light ${connection === "live" ? "is-live" : ""}`} /> {connectionLabel}<span className="conn-latency">{latencyInfo.text}</span></div>
           <button
             className="theme-toggle"
             type="button"
@@ -196,7 +214,7 @@ function TerminalApp() {
           <div className="rail-heading">
             <div><div className="eyebrow">MARKETS</div><h2>市场扫描</h2></div>
             <div className="rail-heading-actions">
-              <button className="assistant-entry market-assistant-entry" type="button" onClick={openAssistant} aria-expanded={showAssistant} aria-controls="contract-analysis-assistant">合约分析助手</button>
+              {insightMode === "pulse" && <button className="assistant-entry market-assistant-entry" type="button" onClick={openAssistant} aria-expanded={showAssistant} aria-controls="contract-analysis-assistant">合约分析助手</button>}
               <button className="rail-config" aria-label="筛选"><SlidersHorizontal size={15} /></button>
             </div>
           </div>
@@ -218,18 +236,24 @@ function TerminalApp() {
           <div className="rail-footer"><div><span className={`status-light ${marketStatus === "ready" ? "is-live" : ""}`} /> Binance Futures</div><span>{activeMarkets.length} 个合约</span></div>
         </aside>
         <main className="chart-workspace">
-          <div className="chart-underlay" inert={showAssistant ? true : undefined}><KlineChart symbol={selectedSymbol} actionsContainer={chartActions} insightToggle={!showAssistant && <button className="insight-toggle" type="button" aria-label={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} title={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} aria-pressed={showInsightPanel} onClick={() => setShowInsightPanel((show) => !show)}>{showInsightPanel ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>} theme={theme} onSymbolChange={setSelectedSymbol} readOnly={user.role === "guest"} /></div>
+          <div className="chart-underlay" inert={showAssistant ? true : undefined}><KlineChart symbol={selectedSymbol} insightToggle={!showAssistant && <button className="insight-toggle" type="button" aria-label={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} title={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} aria-pressed={showInsightPanel} onClick={() => setShowInsightPanel((show) => !show)}>{showInsightPanel ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>} theme={theme} onSymbolChange={setSelectedSymbol} readOnly={user.role === "guest"} /></div>
           {showAssistant && <ContractAnalysisAssistant key={selectedSymbol} symbol={selectedSymbol} baseAsset={selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")} structuresContainer={structuresContainer} returnFocusTo={assistantOpener.current} onClose={() => setShowAssistant(false)} />}
         </main>
         {panelVisible && <aside className="insight-panel" ref={setStructuresContainer} aria-labelledby={showAssistant ? "assistant-structures-title" : "market-pulse-title"}>
           <div hidden={showAssistant}>
           <header className="panel-heading">
-            <div className="eyebrow">MARKET PULSE</div>
-            <h2 id="market-pulse-title">盘面速览</h2>
+            <div>
+              <div className="eyebrow">MARKET PULSE</div>
+              <h2 id="market-pulse-title">{insightMode === "trade" ? "交易" : "盘面速览"}</h2>
+            </div>
+            <button className="pulse-mode-toggle" type="button" aria-pressed={insightMode === "trade"} title={insightMode === "trade" ? "切换到盘面" : "切换到交易"} onClick={() => { setInsightMode((mode) => (mode === "trade" ? "pulse" : "trade")); setShowAssistant(false); }}><ArrowLeftRight size={13} aria-hidden="true" /><span>{insightMode === "trade" ? "盘面" : "交易"}</span></button>
           </header>
+          <div hidden={insightMode !== "trade"}><TradePanel symbol={selectedSymbol} price={selectedPrice} canTrade={user.role !== "guest"} /></div>
+          <div hidden={insightMode !== "pulse"}>
           <div className="price-card" aria-label="当前价格与涨跌">
-            <span className="price-card-coin">{selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")}</span>
-            <div className="price-card-right">
+            <div className="price-card-coin">{selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")}</div>
+            <div className="price-card-label">当前价格</div>
+            <div className="price-card-row">
               <strong className="price-card-number">{formatPrice(selectedPrice)}</strong>
               <div className={`price-card-change ${selectedPercent !== undefined && selectedPercent >= 0 ? "positive" : "negative"}`}>
                 <span>{formatPointChange(selectedPointChange)}</span>
@@ -263,9 +287,10 @@ function TerminalApp() {
               <span className="signal-time">2m 前</span>
             </div>
           </div>
-          <button className="assistant-entry panel-more" type="button" onClick={openAssistant} aria-expanded={showAssistant} aria-controls="contract-analysis-assistant">
+          </div>
+          {insightMode === "pulse" && <button className="assistant-entry panel-more" type="button" onClick={openAssistant} aria-expanded={showAssistant} aria-controls="contract-analysis-assistant">
             合约分析助手 <ArrowUpRight size={16} aria-hidden="true" />
-          </button>
+          </button>}
           </div>
         </aside>}
       </div>

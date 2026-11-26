@@ -61,6 +61,7 @@ export async function getKlines(symbol: string, interval = "15m", limit = 500, s
 export type StreamEvent =
   | { type: "ticker"; symbol: string; price: number; changePercent: number; eventTime?: number }
   | { type: "kline"; symbol: string; candle: Candle; closed: boolean; eventTime?: number }
+  | { type: "latency"; ms: number }
   | { type: "disconnected" }
   | { type: "error"; error: Event | Error };
 
@@ -68,6 +69,8 @@ export type StreamEvent =
 export class BinanceStream {
   private socket?: WebSocket;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private pingTimer?: ReturnType<typeof setInterval>;
+  private latencySamples: number[] = [];
   private stopped = false;
   private requestId = 0;
   constructor(private readonly symbol: string, private readonly interval: string, private readonly onEvent: (event: StreamEvent) => void) {}
@@ -82,11 +85,24 @@ export class BinanceStream {
         { channel: "market.ticker", filters: { symbols: [this.symbol], intervals: [] } },
         { channel: "market.kline", filters: { symbols: [this.symbol], intervals: [this.interval] } },
       ] }));
+      this.pingTimer = window.setInterval(() => {
+        this.socket?.send(JSON.stringify({ version: 1, type: "ping", requestId: `ping-${++this.requestId}`, timestamp: Date.now() }));
+      }, 2000);
     };
     this.socket.onmessage = (message) => {
       try {
         const envelope = JSON.parse(message.data as string) as { type?: string; channel?: string; data?: Record<string, unknown> };
         const data = envelope.data ?? {};
+        if (envelope.type === "pong") {
+          const sent = Number(data.clientTimestamp);
+          if (Number.isFinite(sent) && sent > 0) {
+            this.latencySamples.push(Date.now() - sent);
+            if (this.latencySamples.length > 3) this.latencySamples.shift();
+            const sorted = [...this.latencySamples].sort((a, b) => a - b);
+            this.onEvent({ type: "latency", ms: sorted[Math.floor(sorted.length / 2)] });
+          }
+          return;
+        }
         const symbol = String(data.symbol ?? "");
         if (envelope.type !== "event" || symbol !== this.symbol) return;
         if (envelope.channel === "market.ticker") this.onEvent({ type: "ticker", symbol, price: toNumber(data.lastPrice), changePercent: toNumber(data.priceChangePercent24h), eventTime: toNumber(data.eventTime) });
@@ -96,10 +112,13 @@ export class BinanceStream {
     this.socket.onerror = (error) => this.onEvent({ type: "error", error });
     this.socket.onclose = (event) => {
       if (this.stopped) return;
+      if (this.pingTimer) clearInterval(this.pingTimer);
+      this.latencySamples = [];
       this.onEvent({ type: "disconnected" });
-      const recover = event.code === 4401 ? accountApi.session().catch(() => undefined) : Promise.resolve();
+      // 异常断开（含 token 过期被拒 403/1006）先刷新会话再重连，避免持过期 token 死循环。
+      const recover = event.code !== 1000 ? accountApi.session().catch(() => undefined) : Promise.resolve();
       void recover.finally(() => { if (!this.stopped) this.reconnectTimer = setTimeout(() => this.open(), 2000); });
     };
   }
-  close() { this.stopped = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.socket?.close(); }
+  close() { this.stopped = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); if (this.pingTimer) clearInterval(this.pingTimer); this.socket?.close(); }
 }
