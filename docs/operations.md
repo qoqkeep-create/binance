@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 历史卡开平仓时间左下＋全量提交 Web 发布（2026-11-27，北京时间）
+
+历史仓位卡开/平仓时间原被 `.pg-card footer` 的 align-items:center 覆盖居中；改 `.pg-card footer.pg-times` 提 specificity＝column＋flex-start＋justify-end＝左下角。Web release **`trade-web-20261127-histleft-b342a82`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `229a3412…`／`4e3dfc9f…` 与本地单链构建一致，ba 复核同哈希。**按用户指令全量提交 b342a82**（18 文件：测量工具/右键菜单/复制粘贴/面板与列表样式/历史左下/切币 autoScale 与 hang 重试/tiny 价格/方框偏移/线序＋契约与单测），未推送。后端不切换，旧 release 保留可回退。
+
 ## 导航芯片加高／去列表编号／币名加粗 USDT 缩小 Web 发布（2026-11-27，北京时间）
 
 ① 主导航选中圆角芯片加高：main-nav align-self:stretch＋padding 4px 0、nav-item height:100% → 芯片比顶栏上下各窄 4px（实测栏 56/芯片 47）；② 去掉所有筛选组（市值前20/山寨/涨幅/跌幅）交易对编号（market-rank 全删含 CSS）；③ 币名 strong 700 加粗、"/USDT" span 9px 缩小弱化。本地实测 ranks=0（山寨组）、nameWeight 700、usdtSize 9px。Web release **`trade-web-20261127-navlist-94b3ee3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `a3252c71…`／`aafd20fb…`／`bb380b21…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。

@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：历史卡开平仓时间左下＋全量提交 b342a82
+
+.pg-card footer.pg-times 提 specificity 覆盖 align-items:center → column/flex-start/justify-end＝左下。release histleft-b342a82 上线首尔＋ba 哈希一致。用户指令全量提交 b342a82（18 文件 732+/64-），未推送。
+
 ## 2026-11-27：导航芯片加高至近顶栏／去全部列表编号／币名 700＋USDT 9px
 
 main-nav stretch＋4px 0、nav-item height:100%（芯片=栏高-8）；market-rank markup＋CSS 全删（所有筛选组）；.market-name strong 700、span 9px/500 muted。实测 bar56/chip47/ranks0/700/9px。契约测试锁定。release navlist-94b3ee3 上线首尔＋ba 哈希一致。
