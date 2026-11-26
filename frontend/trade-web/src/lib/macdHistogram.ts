@@ -15,7 +15,7 @@ export interface MacdHistogramConfig {
 
 interface StoredBar { x: number; index: number; value: number }
 
-/** MACD 柱：正柱实心、负柱空心描边，并绘制零轴。 */
+/** MACD 柱：能量柱增长实心、缩短空心（颜色按正负），并绘制零轴。 */
 export function createMacdHistogramView(config: MacdHistogramConfig): ICustomSeriesPaneView<Time, MacdBarPoint, CustomSeriesOptions> {
   let bars: StoredBar[] = [];
   let barSpacing = 6;
@@ -32,18 +32,23 @@ export function createMacdHistogramView(config: MacdHistogramConfig): ICustomSer
         context.lineTo(mediaSize.width, zero);
         context.stroke();
         const half = Math.max(1, barSpacing * 0.35);
-        for (const bar of bars) {
+        for (let i = 0; i < bars.length; i += 1) {
+          const bar = bars[i];
           if (range && (bar.index < range.from - 1 || bar.index > range.to + 1)) continue;
           if (bar.x < -half || bar.x > mediaSize.width + half) continue;
           const y = priceConverter(bar.value);
           if (y === null) continue;
           const top = Math.min(zero, y);
           const height = Math.max(1, Math.abs(y - zero));
-          if (bar.value >= 0) {
-            context.fillStyle = config.upColor;
+          // 能量柱增长（绝对值变大）实心、缩短空心；颜色仍按正负。
+          const prev = i > 0 ? bars[i - 1].value : undefined;
+          const growing = prev === undefined || Math.abs(bar.value) >= Math.abs(prev);
+          const color = bar.value >= 0 ? config.upColor : config.downColor;
+          if (growing) {
+            context.fillStyle = color;
             context.fillRect(bar.x - half, top, half * 2, height);
           } else {
-            context.strokeStyle = config.downColor;
+            context.strokeStyle = color;
             context.lineWidth = 1;
             context.strokeRect(bar.x - half + 0.5, top + 0.5, Math.max(1, half * 2 - 1), Math.max(1, height - 1));
           }
