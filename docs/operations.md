@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## K 线切币提速完整同源发布（2026-11-26，北京时间）
+
+源码 **`5a130d1`** 已推送并完整交付。Web 静态 release **`trade-web-20261126-latency-5a130d1`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地构建一致（`78c1a78c…`／`6520c946…`／`33c746d5…`），SPA 深层 200。后端经 `quick_deploy.py` 发布为 **`integrated-quick-5a130d1`**：`load_history` SWR（有本地历史立即返回＋异步 repair）、scheduler `prewarm_major_histories`（60s，置顶+成交量前20）、客户端共享 SWR 缓存/悬停与空闲预取/首屏 300 根。四容器 healthy，MySQL/Redis 未替换，切换前活动命令 0，health database/migrations/scheduler 全 true；`nginx -t` 通过并 reload。`market_stream` 回归 0 失败（仅本地缺 redis 二进制的环境性跳过/错误）。未执行真实开平仓/划转/撤保护。
+
 ## MACD 右侧柱与超级趋势末段填充修复 Web 发布（2026-11-26，北京时间）
 
 源码 **`dbb0b28`** 已推送。Web 静态 release **`trade-web-20261126-indicator-fix-dbb0b28`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `6520c946…` 与本地构建一致，页面 200、`/integrated/v1/health` 全 true。修复自定义系列右侧序号裁剪误删最新 bar（MACD 右侧能量柱缺失、超级趋势末段填充空白），改左侧序号＋右侧像素裁剪。StochRSI 计算与呈现核对无误。一并含并行会话 Web SWR 缓存／悬停预取。**本轮仅 Web，未部署后端**；并行会话的后端在制品（market_stream／scheduler）保留本地未提交，由其会话自行交付。旧 release 保留可回退。
