@@ -2,7 +2,7 @@
 
 ## 2026-11-26：Web K 线改为 lightweight-charts 自建
 
-Web K 线区域不再使用 TradingView 托管 iframe，改用 `lightweight-charts` v5 自绘（与 `work/Agu` 同库），指标参数、配色与副图布局对齐 iOS：主图蜡烛＋EMA 21/55/144＋Supertrend 10×6，副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3。两个副图固定 72px（约旧 108px 的 2/3，对齐 iOS 72pt），首屏可见 32 根（约旧 15m≈96 根的 1/3），切币／切周期只 `setData` 更新同一实例、单次加载。周期栏 3m/5m/15m/1h/4h/1d，默认 15m。新增 `chartIndicators` 单测与 `klineChart` 契约测试，移除 TradingView 组件与其契约测试。浏览器实测：主图／EMA／Supertrend／MACD／StochRSI 渲染、副图 72px、首屏约 32 根、切币与切周期各仅 1 条 klines 请求、深浅色主题、滚轮缩放均通过。Web `npm test`、`npm run build`、`git diff --check` 通过；本地浏览器验收使用隔离 SQLite 与只读行情，未部署静态产物、未做真实交易或资金操作。实时推送依赖 ASGI 后端 WSS（本地 WSGI runserver 不提供 WebSocket）。
+Web K 线区域不再使用 TradingView 托管 iframe，改用 `lightweight-charts` v5 自绘（与 `work/Agu` 同库），指标参数、配色与副图布局对齐 iOS：主图蜡烛＋EMA 21/55/144＋Supertrend 10×6，副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3。两个副图固定 72px（约旧 108px 的 2/3，对齐 iOS 72pt），首屏可见 32 根（约旧 15m≈96 根的 1/3），切币／切周期只 `setData` 更新同一实例、单次加载。周期栏 3m/5m/15m/1h/4h/1d，默认 15m。新增 `chartIndicators` 单测与 `klineChart` 契约测试，移除 TradingView 组件与其契约测试。浏览器实测：主图／EMA／Supertrend／MACD／StochRSI 渲染、副图 72px、首屏约 32 根、切币与切周期各仅 1 条 klines 请求、深浅色主题、滚轮缩放均通过。Web `npm test`、`npm run build`、`git diff --check` 通过；本地浏览器验收使用隔离 SQLite 与只读行情。提交 `8472ec8` 已推送，静态 release `trade-web-20261126-lwcharts-8472ec8` 已部署到 **47.80.22.243（首尔服务器）**，线上资源哈希与 health 复核通过；未做真实交易或资金操作。实时推送依赖 ASGI 后端 WSS（本地 WSGI runserver 不提供 WebSocket）。
 
 ## 2026-11-26：压缩初始 K 线可见数量
 
