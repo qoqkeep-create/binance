@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 超级趋势首屏残影修复 Web 发布（2026-11-26，北京时间）
+
+源码 **`13ffd3c`** 已推送。Web 静态 release **`trade-web-20261126-ghost-13ffd3c`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `b5a773cf…` 与本地构建一致，页面 200。填充带跳过每段趋势前两根 bar 消除竖直窄带／短 dip 残影，首屏就绪后 rAF 强制重绘。后端不切换，旧 release 保留可回退。浏览器面板隐藏未能截图，待用户线上首屏验收。
+
 ## 左拖边缘堆积修复 Web 发布（2026-11-26，北京时间）
 
 源码 **`0d807c7`** 已推送。Web 静态 release **`trade-web-20261126-pan-clip-0d807c7`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `95f5624a…` 与本地构建一致，页面 200、`/integrated/v1/health` 全 true。自定义系列（MACD 柱／Supertrend 填充带）绘制时直读图表实时可见范围做双侧裁剪，修复左拖时屏外 bar 夹到左缘的堆积色块。后端已由并行会话随切币提速完整同源发布，本轮不重复切换；旧 release 保留可回退。浏览器面板隐藏未能真实拖动截图，待用户线上左拖验收。
