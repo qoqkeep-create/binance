@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 超级趋势反转断开 Web 发布（2026-11-26，北京时间）
+
+源码 **`0c104d0`** 已推送。Web 静态 release **`trade-web-20261126-st-break-0c104d0`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `8ebb9c4c…` 与本地构建一致，页面 200、`/integrated/v1/health` 全 true。修复超级趋势填充带在趋势反转处的竖直连接段（反转 bar 留空）。一并含并行会话 MACD 实心空心／左拖堆积／切币提速。后端容器与 Nginx 不切换，旧 release 保留可回退。浏览器面板隐藏未能截图，反转断开待用户线上验收。
+
 ## Web K 线顶部周期按钮加大发布（2026-11-26，北京时间）
 
 源码 **`074de4e`** 已推送。仅 Web 静态变更：顶部周期按钮字号 13 px／内边距 8x13 px／圆角 4 px。静态 release **`trade-web-20261126-timeframe-074de4e`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 CSS SHA-256 `28570ba1…` 与本地构建一致且含 `.timeframe{…padding:8px 13px}`，页面 200、`/integrated/v1/health` 全 true。后端容器与 Nginx 不切换（无后端改动），旧 release 保留可回退。
