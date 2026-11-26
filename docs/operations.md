@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 价格分档／撑压线断开／周期选中态 Web 发布（2026-11-26，北京时间）
+
+源码 **`b9aa796`** 已推送。Web 静态 release **`trade-web-20261126-present-b9aa796`** 原子切换到 `/opt/trade-tools-integrated/web/integrated/market`（目标 **47.80.22.243（首尔服务器）**），线上 index/JS/CSS SHA-256 与本地构建一致（`857652e4…`／`3f76626c…`／`9d4e2df7…`），SPA 深层 200，`/integrated/v1/health` 全 true；`nginx -t` 通过并 reload。本轮仅前端呈现（右轴分档、撑压线自定义系列断开、周期选中实底），后端容器不切换。未执行真实交易/资金操作。
+
 ## 超级趋势首屏残影修复 Web 发布（2026-11-26，北京时间）
 
 源码 **`13ffd3c`** 已推送。Web 静态 release **`trade-web-20261126-ghost-13ffd3c`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**；线上 JS SHA-256 `b5a773cf…` 与本地构建一致，页面 200。填充带跳过每段趋势前两根 bar 消除竖直窄带／短 dip 残影，首屏就绪后 rAF 强制重绘。后端不切换，旧 release 保留可回退。浏览器面板隐藏未能截图，待用户线上首屏验收。
