@@ -86,7 +86,10 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
     style: "1",
     locale: "zh_CN",
     enable_publishing: false,
-    hide_top_toolbar: true,
+    // Editable accounts keep TradingView's official toolbar, including its
+    // settings entry. Read-only guest mode still uses the local period row
+    // and the native right-bottom settings control without drawing controls.
+    hide_top_toolbar: readOnly,
     hide_side_toolbar: readOnly,
     hide_legend: false,
     hide_volume: true,
@@ -96,7 +99,7 @@ function createWidgetScript(symbol: string, { interval, timeFrame, attempt }: Ch
     details: false,
     hotlist: false,
     calendar: false,
-    enabled_features: ["main_series_scale_menu", "show_chart_property_page"],
+    enabled_features: ["main_series_scale_menu", "show_chart_property_page", "header_settings"],
     studies,
     support_host: "https://www.tradingview.com",
     backgroundColor: theme === "light" ? "#eef0f3" : "#0c0d0f",

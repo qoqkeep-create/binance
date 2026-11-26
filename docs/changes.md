@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-26：恢复 TradingView 官方设置工具栏
+
+定位到设置按钮缺失来自 `TradingViewWidget` 固定传入 `hide_top_toolbar: true`。可编辑账号现在保留 TradingView 官方顶部工具栏，游客只读模式继续隐藏绘图工具。自建周期栏、主图和附图 studies、右下角官方设置入口继续启用。新增官方 `header_settings` featureset 契约测试。
+
 ## 2026-11-26：Web K 线区域跟随深浅色主题
 
 TradingView 官方 iframe 继续使用 `theme: "dark"`／`theme: "light"`，外层 K 线 stage、周期栏、图表容器和 iframe 占位区新增统一的主题表面色变量，白色模式不再留下深色 K 线背景。主题变化会重建官方 iframe，确保图表内部背景和页面主题同步。Web `npm test`、`npm run build` 和 `git diff --check` 通过。

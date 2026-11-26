@@ -1,5 +1,11 @@
 # 整合环境部署与运维
 
+## Web TradingView 官方设置入口恢复（2026-11-26，北京时间）
+
+确认设置入口缺失的根因是整合版把 `hide_top_toolbar` 固定为 `true`，可编辑账号的 TradingView 官方工具栏因此被一并隐藏。现按原 Web 行为恢复可编辑账号的官方工具栏，同时保留自建周期栏、右下角 `main_series_scale_menu` 设置入口和只读游客模式的绘图限制。新增 `header_settings` 与 `show_chart_property_page` 官方 featureset 配置。
+
+静态 release **`trade-web-20261126-tv-settings-<commit>`** 将在本次验证后原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，部署目标为 **47.80.22.243（首尔服务器）**。后端容器和 Nginx 配置不切换。
+
 ## Web TradingView 深浅色主题同步发布（2026-11-26，北京时间）
 
 Web 页面主题现在同时驱动 TradingView 官方 iframe 和外层 K 线工作区。浅色模式使用 Web 的 `#eef0f3` 图表表面色，深色模式使用 `#0c0d0f`，周期栏、iframe 占位区和图表容器共享同一主题表面色。主题切换会按 TradingView 官方 `theme` 参数重新创建图表，主图、MACD、StochRSI、官方设置入口和画线能力保持原有链路。

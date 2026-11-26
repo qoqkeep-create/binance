@@ -1,5 +1,15 @@
 # 开发与验证
 
+## Web TradingView 官方设置入口恢复（2026-11-26）
+
+对照官方 legacy iframe 发现，整合版固定设置 `hide_top_toolbar: true`，会隐藏可编辑账号原本使用的 TradingView 官方工具栏。恢复为 `hide_top_toolbar: readOnly` 后，可编辑账号保留官方顶部工具栏，右下角 `main_series_scale_menu` 和 `show_chart_property_page` 继续负责官方设置页面，游客模式仍限制绘图操作。`header_settings` 一并加入启用 featureset。
+
+验证结果如下。
+
+- 隐藏工具栏和保留工具栏的官方 loader 对照探针均成功加载主图、MACD、StochRSI 和右下角官方设置入口。
+- Web `npm test` 通过，包含 `hide_top_toolbar: readOnly` 和官方设置 featureset 契约。
+- Web `npm run build` 和 `git diff --check` 通过。
+
 ## Web K 线区域跟随深浅色主题（2026-11-26）
 
 `TerminalApp` 将页面主题传给 `TradingViewWidget`。官方 iframe 使用对应的 `theme`、`backgroundColor` 和 `gridColor`，图表 stage 通过 `data-chart-theme` 和 `--chart-surface` 同步外层周期栏、容器和占位区。主题变化会触发一次官方 iframe 重建，避免 TradingView 内部仍保留旧主题。

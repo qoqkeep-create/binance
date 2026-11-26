@@ -25,10 +25,10 @@ if (!source.includes('"STD;MACD"') || !source.includes('"StochasticRSI@tv-basics
 if (!source.includes('{ id: "STD;MACD", overlay: false, inputs: {} }') || !source.includes('{ id: "StochasticRSI@tv-basicstudies", overlay: false, inputs: {} }')) {
   throw new Error("TradingView pane studies must use object descriptors to survive mixed study layouts");
 }
-if (!source.includes('theme === "light" ? "#eef0f3" : "#0c0d0f"') || !source.includes('data-chart-theme={theme}') || !source.includes('"--chart-surface": chartSurface') || !source.includes("hide_top_toolbar: true")) {
+if (!source.includes('theme === "light" ? "#eef0f3" : "#0c0d0f"') || !source.includes('data-chart-theme={theme}') || !source.includes('"--chart-surface": chartSurface') || !source.includes("hide_top_toolbar: readOnly")) {
   throw new Error("TradingView chart must keep the Web dark background and native settings controls");
 }
-if (!source.includes('"main_series_scale_menu"') || !source.includes('"show_chart_property_page"')) {
+if (!source.includes('"main_series_scale_menu"') || !source.includes('"show_chart_property_page"') || !source.includes('"header_settings"')) {
   throw new Error("TradingView official chart settings features must stay enabled");
 }
 if (!source.includes('...(interval === "D" ? {} : { range: timeFrame || "2d" })')) {
