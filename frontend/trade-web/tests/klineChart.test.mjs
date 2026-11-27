@@ -168,19 +168,19 @@ if ((source.match(/resetView\(\);/g) || []).length < 2 || !source.includes("klin
 if (!source.includes('container.addEventListener("contextmenu", onContextMenu)') || !source.includes("event.preventDefault();") || source.includes("downAt") || !klineCss.includes(".kline-click-menu { position: absolute; z-index: 6; display: flex; flex-direction: column;")) {
   throw new Error("Menu must open on right-click only (native context menu suppressed) and stack vertically");
 }
-if (!source.includes('import PositionToolOverlay from "./PositionToolOverlay"') || !source.includes("<PositionToolOverlay") || source.includes("MeasureKind") || source.includes("FIB_LEVELS") || source.includes("measure-layer") || source.includes("清除测量")) {
+if (!source.includes("import PositionToolOverlay") || !source.includes('from "./PositionToolOverlay"') || !source.includes("<PositionToolOverlay") || !source.includes("api={chartRef.current}") || source.includes("MeasureKind") || source.includes("FIB_LEVELS") || source.includes("measure-layer") || source.includes("清除测量")) {
   throw new Error("KlineChart must use the shared position tool overlay and remove the old long/short/fib implementation");
 }
-for (const marker of ["calculatePositionMetrics", "localStorage", "MIN_POSITION_DISTANCE", "setMoveDrag", "position-tool-resize-handle top-left", "position-tool-resize-handle bottom-left", "position-tool-resize-handle middle-left", "position-tool-resize-handle middle-right", "position-tool-edge left-edge", "position-tool-edge right-edge", "const interactive = selected;"]) {
+for (const marker of ["calculatePositionMetrics", "localStorage", "coordinateToPrice", "timeToCoordinate", "getVisibleRange", "requestAnimationFrame(sync)", "setMoveDrag", "position-tool-resize-handle top-left", "position-tool-resize-handle bottom-left", "position-tool-resize-handle middle-left", "position-tool-resize-handle middle-right", "position-tool-edge left-edge", "position-tool-edge right-edge", "const interactive = selected;", "ChartLineOrientation", "LINE_STORAGE_KEY", "chart-line-editor", "粗细/线型", "LINE_COLORS"]) {
   if (!positionOverlay.includes(marker)) throw new Error(`Position tool overlay is missing ${marker}`);
 }
-for (const marker of ["position-tool-trigger long", "position-tool-trigger short", "TrendingUp", "TrendingDown", "activePositionTool"]) {
+for (const marker of ["position-tool-trigger long", "position-tool-trigger short", "position-tool-trigger guide-line", "TrendingUp", "TrendingDown", "Minus", "MoveVertical", "activePositionTool", "activeLineTool", "activeLineTool={activeLineTool}"]) {
   if (!source.includes(marker)) throw new Error(`KlineChart is missing ${marker}`);
 }
-for (const marker of ["PositionDirection", "defaultPositionToolDefaults", "priceAtChartY", "riskReward", "profitPnl", "lossPnl"]) {
+for (const marker of ["PositionDirection", "defaultPositionToolDefaults", "startTime", "entryPrice", "riskReward", "profitPnl", "lossPnl"]) {
   if (!positionTools.includes(marker)) throw new Error(`Position tool calculations are missing ${marker}`);
 }
-for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", "cursor:grab", "pointer-events:none"]) {
+for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", "cursor:grab", "pointer-events:none", ".chart-line-editor", ".chart-line-menu", ".chart-line-tool.horizontal", ".chart-line-tool.vertical"]) {
   if (!positionCss.includes(marker) && !source.includes(marker)) throw new Error(`Position tool styling is missing ${marker}`);
 }
 if (positionOverlay.includes('usePreference("positionTools"') || positionOverlay.includes("position-tool-settings-panel")) {
@@ -254,8 +254,8 @@ if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-i
   throw new Error("History open/close times must sit at the card bottom-left");
 }
 const positionToolsCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
-if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !positionToolsCss.includes("width:11px; height:11px;") || !positionToolsCss.includes(".position-tool-line.stop-line span { background:var(--red); color:#ffffff; border-radius:3px; }") || !positionToolsCss.includes("font-size:16px")) {
-  throw new Error("Stats chip right-aligned green/white rounded; stop label red/white; handles half size; label text doubled to 16px");
+if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !positionToolsCss.includes("width:11px; height:11px;") || !positionToolsCss.includes(".position-tool-line.stop-line span { background:var(--red); color:#ffffff; border-radius:3px; }") || !positionToolsCss.includes("font-size:8px")) {
+  throw new Error("Stats chip right-aligned green/white rounded; stop label red/white; handles half size; label text 8px");
 }
 const overlaySrc2 = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
 if (overlaySrc2.includes("浮动盈亏") || !overlaySrc2.includes("入场 {formatPrice(metrics.entryPrice)} · RR") || !overlaySrc2.includes('aria-label="自由移动左点"') || !overlaySrc2.includes('"leftFree"') || !overlaySrc2.includes('beginHandle(event, position.id, "rightX")')) {
@@ -264,7 +264,7 @@ if (overlaySrc2.includes("浮动盈亏") || !overlaySrc2.includes("入场 {forma
 if (!positionToolsCss.includes(".position-tool-resize-handle { position:absolute; z-index:3;") || !overlaySrc2.includes("event.preventDefault();") || !positionToolsCss.includes(".position-tool-resize-handle.middle-left { left:-5.5px; transform:translateY(-50%); cursor:move; }")) {
   throw new Error("Handles above edges (z3); tool drag preventDefault; middle-left cursor move (4-arrow)");
 }
-if (!overlaySrc2.includes("区外点击取消选中") || overlaySrc2.includes("position-tool-empty") || overlaySrc2.includes("hoveredId")) {
+if (!overlaySrc2.includes("px.x >= x1 && px.x <= x2 && px.y >= yTop && px.y <= yBottom") || overlaySrc2.includes("position-tool-empty") || overlaySrc2.includes("hoveredId")) {
   throw new Error("Selection only inside zone; outside click deselects; empty hint and hover-selection removed");
 }
 const overlaySrc = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");

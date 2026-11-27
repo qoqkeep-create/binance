@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2, X } from "lucide-react";
+import { ChevronDown, Trash2, X } from "lucide-react";
+import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
 import {
   calculatePositionMetrics,
   defaultPositionToolDefaults,
@@ -16,15 +17,22 @@ interface PositionToolOverlayProps {
   readOnly?: boolean;
   activeTool: PositionDirection | null;
   onActiveToolChange: (tool: PositionDirection | null) => void;
+  activeLineTool: ChartLineOrientation | null;
+  onActiveLineToolChange: (tool: ChartLineOrientation | null) => void;
+  api: IChartApi | null;
 }
 
-type Draft = { direction: PositionDirection; startX: number; startY: number; endX: number; endY: number };
+export type ChartLineOrientation = "horizontal" | "vertical";
+type ChartLineStyle = "solid" | "dashed";
+type ChartLine = { id: string; orientation: ChartLineOrientation; time?: number; price?: number; color: string; lineWidth: number; lineStyle: ChartLineStyle; createdAt: number };
+type Draft = Omit<PositionTool, "id" | "createdAt">;
 type PositionToolState = { defaults: PositionToolDefaults; positions: PositionTool[] };
 type ResizeHandle = "entryY" | "targetY" | "stopY" | "leftX" | "rightX" | "leftFree";
-type MoveDrag = { id: string; startX: number; startY: number; origin: PositionTool };
+type MoveDrag = { id: string; startTime: number; startPrice: number; origin: PositionTool };
 const toolsPreferenceFallback: PositionToolState = { defaults: defaultPositionToolDefaults, positions: [] };
-const LOCAL_STORAGE_KEY = "trade-web-position-tools";
-const MIN_POSITION_DISTANCE = 0.1;
+const LOCAL_STORAGE_KEY = "trade-web-position-tools-v2";
+const LINE_STORAGE_KEY = "trade-web-chart-lines-v1";
+const LINE_COLORS = ["#2EBD85", "#F6465D", "#2D7FF9", "#F5B942", "#FFFFFF"];
 const formatPrice = (value: number) => value >= 1000 ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : value >= 1 ? value.toFixed(4) : value.toFixed(6);
 const formatMoney = (value: number) => `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}`;
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
@@ -44,16 +52,36 @@ function readLocalToolState(): PositionToolState {
     return toolsPreferenceFallback;
   }
 }
+function isChartLine(value: unknown): value is ChartLine {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const line = value as Partial<ChartLine>;
+  return typeof line.id === "string" && line.id.length > 0 && line.id.length <= 80
+    && (line.orientation === "horizontal" || line.orientation === "vertical")
+    && (line.orientation === "horizontal" ? typeof line.price === "number" && Number.isFinite(line.price) && line.price > 0 : typeof line.time === "number" && Number.isFinite(line.time))
+    && typeof line.color === "string" && LINE_COLORS.includes(line.color)
+    && typeof line.lineWidth === "number" && [1, 2, 3, 4].includes(line.lineWidth)
+    && (line.lineStyle === "solid" || line.lineStyle === "dashed")
+    && typeof line.createdAt === "number" && Number.isFinite(line.createdAt);
+}
+function readLocalChartLines(): ChartLine[] {
+  try {
+    const raw = window.localStorage.getItem(LINE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length <= 48 && parsed.every(isChartLine) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 function newId() { return `position-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
-function sanitizeDraft(draft: Draft, direction: PositionDirection): PositionTool {
-  const left = clamp(Math.min(draft.startX, draft.endX), 0.02, 0.95);
-  const right = clamp(Math.max(draft.startX, draft.endX), left + 0.05, 0.98);
-  const entryY = clamp(draft.startY, 0.05, 0.95);
-  const availableDistance = Math.max(0.01, Math.min(entryY - 0.01, 0.99 - entryY));
-  const distance = Math.min(availableDistance, Math.max(MIN_POSITION_DISTANCE, Math.abs(draft.endY - entryY)));
-  const targetY = direction === "long" ? entryY - distance : entryY + distance;
-  const stopY = direction === "long" ? entryY + distance : entryY - distance;
-  return { id: newId(), direction, left, right, entryY, targetY, stopY, createdAt: Date.now() };
+function sanitizeDraft(draft: Draft): PositionTool {
+  const minDistance = Math.max(0.00000001, draft.entryPrice * 0.002);
+  const distance = Math.max(minDistance, Math.abs(draft.targetPrice - draft.entryPrice));
+  const targetPrice = draft.direction === "long" ? draft.entryPrice + distance : draft.entryPrice - distance;
+  const stopPrice = draft.direction === "long" ? draft.entryPrice - distance : draft.entryPrice + distance;
+  const startTime = Math.min(draft.startTime, draft.endTime);
+  const endTime = Math.max(draft.startTime, draft.endTime);
+  return { id: newId(), direction: draft.direction, startTime, endTime: endTime > startTime ? endTime : startTime + 60, entryPrice: draft.entryPrice, targetPrice, stopPrice, createdAt: Date.now() };
 }
 
 function ToolCard({ position, currentPrice, defaults, selected, onSelect, onDelete }: { position: PositionTool; currentPrice: number; defaults: PositionToolDefaults; selected: boolean; onSelect: () => void; onDelete: () => void }) {
@@ -66,56 +94,113 @@ function ToolCard({ position, currentPrice, defaults, selected, onSelect, onDele
   </button>;
 }
 
-export default function PositionToolOverlay({ currentPrice, readOnly = false, activeTool, onActiveToolChange }: PositionToolOverlayProps) {
+export default function PositionToolOverlay({ currentPrice, readOnly = false, activeTool, onActiveToolChange, activeLineTool, onActiveLineToolChange, api }: PositionToolOverlayProps) {
   const [toolState, setToolState] = useState<PositionToolState>(() => readLocalToolState());
+  const [chartLines, setChartLines] = useState<ChartLine[]>(() => readLocalChartLines());
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dragHandle, setDragHandle] = useState<{ id: string; handle: ResizeHandle } | null>(null);
   const [moveDrag, setMoveDrag] = useState<MoveDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [lineMenu, setLineMenu] = useState<{ id: string; kind: "style" | "color" } | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef<{ draft: Draft | null; dragHandle: { id: string; handle: ResizeHandle } | null; moveDrag: MoveDrag | null; activeTool: PositionDirection | null; readOnly: boolean; positions: PositionTool[] }>({ draft: null, dragHandle: null, moveDrag: null, activeTool: null, readOnly: false, positions: [] });
-  liveRef.current = { draft, dragHandle, moveDrag, activeTool, readOnly, positions: toolState.positions };
+  const liveRef = useRef<{ draft: Draft | null; dragHandle: { id: string; handle: ResizeHandle } | null; moveDrag: MoveDrag | null; activeTool: PositionDirection | null; activeLineTool: ChartLineOrientation | null; readOnly: boolean; positions: PositionTool[] }>({ draft: null, dragHandle: null, moveDrag: null, activeTool: null, activeLineTool: null, readOnly: false, positions: [] });
+  liveRef.current = { draft, dragHandle, moveDrag, activeTool, activeLineTool, readOnly, positions: toolState.positions };
   const defaults = toolState.defaults;
   const selectedPosition = toolState.positions.find((position) => position.id === selectedId) ?? null;
   const selectedMetrics = selectedPosition ? calculatePositionMetrics(selectedPosition, currentPrice, defaults) : null;
 
+  const candleSeries: ISeriesApi<"Candlestick"> | undefined = api?.panes()[0]?.getSeries().find((s): s is ISeriesApi<"Candlestick"> => s.seriesType() === "Candlestick");
+  const timeScale = api?.timeScale();
+  const xToTime = (x: number): number | null => {
+    const t = timeScale?.coordinateToTime(x);
+    return t === null || t === undefined ? null : Number(t);
+  };
+  const yToPrice = (y: number): number | null => candleSeries?.coordinateToPrice(y) ?? null;
+  const timeToX = (t: number): number | null => timeScale?.timeToCoordinate(t as Time) ?? null;
+  const priceToY = (p: number): number | null => candleSeries?.priceToCoordinate(p) ?? null;
+
+  const [, setViewTick] = useState(0);
+  useEffect(() => {
+    if (!api || !candleSeries) return;
+    let raf = 0;
+    let lastKey = "";
+    const sync = () => {
+      const vr = api.timeScale().getVisibleLogicalRange();
+      const pr = candleSeries.priceScale().getVisibleRange();
+      const key = `${vr?.from},${vr?.to},${pr?.from},${pr?.to}`;
+      if (key !== lastKey) { lastKey = key; setViewTick((tick) => tick + 1); }
+      raf = requestAnimationFrame(sync);
+    };
+    raf = requestAnimationFrame(sync);
+    return () => cancelAnimationFrame(raf);
+  }, [api, candleSeries]);
+
   useEffect(() => {
     try { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(toolState)); } catch { /* storage can be unavailable in private contexts */ }
   }, [toolState]);
+  useEffect(() => {
+    try { window.localStorage.setItem(LINE_STORAGE_KEY, JSON.stringify(chartLines)); } catch { /* storage can be unavailable in private contexts */ }
+  }, [chartLines]);
 
   useEffect(() => {
-    if (!activeTool) return;
-    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") { onActiveToolChange(null); setDraft(null); } };
+    if (!activeTool && !activeLineTool) return;
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") { onActiveToolChange(null); onActiveLineToolChange(null); setDraft(null); setLineMenu(null); } };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [activeTool, onActiveToolChange]);
-  function pointerPosition(event: { clientX: number; clientY: number }) {
+  }, [activeTool, activeLineTool, onActiveToolChange, onActiveLineToolChange]);
+
+  function pixelPoint(event: { clientX: number; clientY: number }) {
     const rect = surfaceRef.current?.getBoundingClientRect();
     if (!rect) return null;
-    return { x: clamp((event.clientX - rect.left) / rect.width, 0, 1), y: clamp((event.clientY - rect.top) / rect.height, 0, 1) };
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
-  // 覆盖层 pointer-events:none，真实鼠标事件直达图表保留十字线；工具交互走 window 级指针监听。
+  function dataPoint(event: { clientX: number; clientY: number }) {
+    const point = pixelPoint(event);
+    if (!point) return null;
+    const t = xToTime(point.x);
+    const p = yToPrice(point.y);
+    if (t === null || p === null) return null;
+    return { t, p };
+  }
   useEffect(() => {
     const down = (event: PointerEvent) => {
-      if ((event.target as HTMLElement).closest(".position-tool-resize-handle, .position-tool-edge, .position-tool-line, .position-tool-list, .position-tool-detail")) return;
+      if ((event.target as HTMLElement).closest(".position-tool-resize-handle, .position-tool-edge, .position-tool-line, .position-tool-list, .position-tool-detail, .chart-line-tool, .chart-line-editor")) return;
       const live = liveRef.current;
-      const point = pointerPosition(event);
+      const point = dataPoint(event);
       if (!point) return;
-      if (live.activeTool) {
-        // 阻断兼容鼠标事件，避免绘制时图表跟着平移。
+      if (live.activeLineTool) {
         event.preventDefault();
-        setDraft({ direction: live.activeTool, startX: point.x, startY: point.y, endX: point.x, endY: point.y });
+        const line: ChartLine = live.activeLineTool === "horizontal"
+          ? { id: newId(), orientation: "horizontal", price: point.p, color: LINE_COLORS[0], lineWidth: 1, lineStyle: "solid", createdAt: Date.now() }
+          : { id: newId(), orientation: "vertical", time: point.t, color: LINE_COLORS[0], lineWidth: 1, lineStyle: "solid", createdAt: Date.now() };
+        setChartLines((current) => [...current.slice(-47), line]);
+        setSelectedLineId(line.id);
+        onActiveLineToolChange(null);
+        return;
+      }
+      if (live.activeTool) {
+        event.preventDefault();
+        setDraft({ direction: live.activeTool, startTime: point.t, endTime: point.t, entryPrice: point.p, targetPrice: point.p, stopPrice: point.p });
         return;
       }
       if (live.readOnly) return;
-      const hit = live.positions.find((p) => point.x >= p.left && point.x <= p.right && point.y >= Math.min(p.entryY, p.targetY, p.stopY) && point.y <= Math.max(p.entryY, p.targetY, p.stopY));
+      const hit = live.positions.find((pos) => {
+        const x1 = timeToX(pos.startTime); const x2 = timeToX(pos.endTime);
+        const yTop = priceToY(Math.max(pos.entryPrice, pos.targetPrice, pos.stopPrice));
+        const yBottom = priceToY(Math.min(pos.entryPrice, pos.targetPrice, pos.stopPrice));
+        const px = pixelPoint(event);
+        if (x1 === null || x2 === null || yTop === null || yBottom === null || !px) return false;
+        return px.x >= x1 && px.x <= x2 && px.y >= yTop && px.y <= yBottom;
+      });
       if (hit) {
         event.preventDefault();
         setSelectedId(hit.id);
-        setMoveDrag({ id: hit.id, startX: point.x, startY: point.y, origin: hit });
+        setMoveDrag({ id: hit.id, startTime: point.t, startPrice: point.p, origin: hit });
       } else {
-        // 区外点击取消选中。
         setSelectedId(null);
+        setSelectedLineId(null);
+        setLineMenu(null);
       }
     };
     const move = (event: PointerEvent) => handlePointerMove(event);
@@ -133,70 +218,47 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     const container = surfaceRef.current?.closest(".kline-container") as HTMLElement | null;
     if (container) container.style.cursor = activeTool ? "crosshair" : "";
   }, [activeTool]);
+
   function handlePointerMove(event: { clientX: number; clientY: number }) {
     const live = liveRef.current;
+    const point = dataPoint(event);
     if (live.dragHandle) {
-      const point = pointerPosition(event);
       if (!point) return;
       updatePosition(live.dragHandle.id, (position) => {
-        if (live.dragHandle!.handle === "leftX") {
-          return { ...position, left: clamp(point.x, 0.02, position.right - 0.05) };
+        switch (live.dragHandle!.handle) {
+          case "leftX": return { ...position, startTime: Math.min(point.t, position.endTime - 60) };
+          case "rightX": return { ...position, endTime: Math.max(point.t, position.startTime + 60) };
+          case "leftFree": return { ...position, startTime: Math.min(point.t, position.endTime - 60), entryPrice: point.p };
+          case "entryY": return { ...position, entryPrice: point.p };
+          case "targetY": return { ...position, targetPrice: point.p };
+          default: return { ...position, stopPrice: point.p };
         }
-        if (live.dragHandle!.handle === "leftFree") {
-          const nextY = clamp(point.y, 0.02, 0.98);
-          return { ...position, left: clamp(point.x, 0.02, position.right - 0.05), entryY: nextY };
-        }
-        if (live.dragHandle!.handle === "rightX") {
-          return { ...position, right: clamp(point.x, position.left + 0.05, 0.98) };
-        }
-        const nextY = clamp(point.y, 0.02, 0.98);
-        if (live.dragHandle!.handle === "entryY") {
-          const delta = nextY - position.entryY;
-          return { ...position, entryY: nextY, targetY: clamp(position.targetY + delta, 0.02, 0.98), stopY: clamp(position.stopY + delta, 0.02, 0.98) };
-        }
-        if (live.dragHandle!.handle === "targetY") {
-          const constrained = position.direction === "long" ? Math.min(nextY, position.entryY - .01) : Math.max(nextY, position.entryY + .01);
-          return { ...position, targetY: clamp(constrained, 0.02, 0.98) };
-        }
-        const constrained = position.direction === "long" ? Math.max(nextY, position.entryY + .01) : Math.min(nextY, position.entryY - .01);
-        return { ...position, stopY: clamp(constrained, 0.02, 0.98) };
       });
       return;
     }
     if (live.moveDrag) {
-      const point = pointerPosition(event);
       if (!point) return;
       const origin = live.moveDrag.origin;
-      const width = origin.right - origin.left;
-      const verticalMinimum = Math.min(origin.entryY, origin.targetY, origin.stopY);
-      const verticalMaximum = Math.max(origin.entryY, origin.targetY, origin.stopY);
-      const shiftX = clamp(point.x - live.moveDrag.startX, -origin.left, 1 - origin.right);
-      const shiftY = clamp(point.y - live.moveDrag.startY, -verticalMinimum, 1 - verticalMaximum);
+      const dt = point.t - live.moveDrag.startTime;
+      const dp = point.p - live.moveDrag.startPrice;
       setToolState((state) => ({
         ...state,
         positions: state.positions.map((position) => position.id === live.moveDrag!.id
-          ? { ...origin, left: origin.left + shiftX, right: origin.left + shiftX + width, entryY: origin.entryY + shiftY, targetY: origin.targetY + shiftY, stopY: origin.stopY + shiftY }
+          ? { ...origin, startTime: origin.startTime + dt, endTime: origin.endTime + dt, entryPrice: Math.max(0.00000001, origin.entryPrice + dp), targetPrice: Math.max(0.00000001, origin.targetPrice + dp), stopPrice: Math.max(0.00000001, origin.stopPrice + dp) }
           : position),
       }));
       return;
     }
     if (!live.draft) return;
-    const point = pointerPosition(event);
-    if (point) setDraft((previous) => previous ? { ...previous, endX: point.x, endY: point.y } : previous);
+    if (point) setDraft((previous) => previous ? { ...previous, endTime: point.t, targetPrice: point.p, stopPrice: point.p } : previous);
   }
   function handlePointerUp(event: { clientX: number; clientY: number }) {
     const live = liveRef.current;
-    if (live.dragHandle) {
-      setDragHandle(null);
-      return;
-    }
-    if (live.moveDrag) {
-      setMoveDrag(null);
-      return;
-    }
+    if (live.dragHandle) { setDragHandle(null); return; }
+    if (live.moveDrag) { setMoveDrag(null); return; }
     if (!live.draft) return;
-    const point = pointerPosition(event);
-    const completed = point ? sanitizeDraft({ ...live.draft, endX: point.x, endY: point.y }, live.draft.direction) : null;
+    const point = dataPoint(event);
+    const completed = point ? sanitizeDraft({ ...live.draft, endTime: point.t, targetPrice: point.p, stopPrice: point.p }) : null;
     if (completed) {
       setToolState((state) => ({ ...state, positions: [...state.positions.slice(-11), completed] }));
       setSelectedId(completed.id);
@@ -205,51 +267,86 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     onActiveToolChange(null);
   }
   function updatePosition(id: string, update: (position: PositionTool) => PositionTool) { setToolState((state) => ({ ...state, positions: state.positions.map((position) => position.id === id ? update(position) : position) })); }
+  function updateChartLine(id: string, update: (line: ChartLine) => ChartLine) { setChartLines((lines) => lines.map((line) => line.id === id ? update(line) : line)); }
+  function deleteChartLine(id: string) {
+    setChartLines((lines) => lines.filter((line) => line.id !== id));
+    if (selectedLineId === id) setSelectedLineId(null);
+    setLineMenu(null);
+  }
   function beginHandle(event: React.PointerEvent, id: string, handle: ResizeHandle) {
-    if (previewPosition) return;
+    if (draft) return;
     event.stopPropagation();
     event.preventDefault();
     setSelectedId(id);
     setDragHandle({ id, handle });
   }
-  const previewPosition = draft ? sanitizeDraft(draft, draft.direction) : null;
+  const previewPosition = draft ? sanitizeDraft(draft) : null;
   const renderedPositions = previewPosition ? [...toolState.positions, previewPosition] : toolState.positions;
 
   return <div className="position-tool-layer">
     <div className={`position-tool-surface ${activeTool ? "is-drawing" : ""}`} ref={surfaceRef}>
+      {chartLines.map((line) => {
+        const coordinate = line.orientation === "horizontal" && line.price !== undefined ? priceToY(line.price) : line.time !== undefined ? timeToX(line.time) : null;
+        if (coordinate === null) return null;
+        const selected = selectedLineId === line.id;
+        const lineStyle = line.orientation === "horizontal"
+          ? { top: coordinate, borderTop: `${line.lineWidth}px ${line.lineStyle} ${line.color}` }
+          : { left: coordinate, borderLeft: `${line.lineWidth}px ${line.lineStyle} ${line.color}` };
+        const editorStyle = line.orientation === "horizontal"
+          ? { left: 8, top: -42 }
+          : { left: 8, top: 8 };
+        return <div key={line.id} className={`chart-line-tool ${line.orientation} ${selected ? "is-selected" : ""}`} style={lineStyle} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLineId(line.id); setSelectedId(null); }}>
+          {selected && <div className="chart-line-editor" style={editorStyle} onPointerDown={(event) => event.stopPropagation()}>
+            <button type="button" onClick={() => setLineMenu((current) => current?.id === line.id && current.kind === "style" ? null : { id: line.id, kind: "style" })}>粗细/线型 <ChevronDown size={12} /></button>
+            <button type="button" onClick={() => setLineMenu((current) => current?.id === line.id && current.kind === "color" ? null : { id: line.id, kind: "color" })}>颜色 <ChevronDown size={12} /></button>
+            <button type="button" className="chart-line-delete" aria-label="删除线条" onClick={() => deleteChartLine(line.id)}><Trash2 size={13} /></button>
+            {lineMenu?.id === line.id && lineMenu.kind === "style" && <div className="chart-line-menu">
+              <span>粗细</span><div className="chart-line-options">{[1, 2, 3, 4].map((width) => <button key={width} type="button" className={line.lineWidth === width ? "is-active" : ""} onClick={() => updateChartLine(line.id, (current) => ({ ...current, lineWidth: width }))}>{width}px</button>)}</div>
+              <span>线型</span><div className="chart-line-options"><button type="button" className={line.lineStyle === "solid" ? "is-active" : ""} onClick={() => updateChartLine(line.id, (current) => ({ ...current, lineStyle: "solid" }))}>实线</button><button type="button" className={line.lineStyle === "dashed" ? "is-active" : ""} onClick={() => updateChartLine(line.id, (current) => ({ ...current, lineStyle: "dashed" }))}>虚线</button></div>
+            </div>}
+            {lineMenu?.id === line.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={line.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`选择颜色 ${color}`} onClick={() => updateChartLine(line.id, (current) => ({ ...current, color }))} />)}</div></div>}
+          </div>}
+        </div>;
+      })}
       {renderedPositions.map((position) => {
         const metrics = calculatePositionMetrics(position, currentPrice, defaults);
         const selected = position.id === selectedId;
-        const left = `${position.left * 100}%`;
-        const width = `${(position.right - position.left) * 100}%`;
-        const targetTop = `${Math.min(position.targetY, position.entryY) * 100}%`;
-        const targetHeight = `${Math.abs(position.targetY - position.entryY) * 100}%`;
-        const stopTop = `${Math.min(position.stopY, position.entryY) * 100}%`;
-        const stopHeight = `${Math.abs(position.stopY - position.entryY) * 100}%`;
-        const boxTop = `${Math.min(position.targetY, position.stopY, position.entryY) * 100}%`;
-        const boxHeight = `${(Math.max(position.targetY, position.stopY, position.entryY) - Math.min(position.targetY, position.stopY, position.entryY)) * 100}%`;
-        const topHandle: "targetY" | "stopY" = position.targetY < position.stopY ? "targetY" : "stopY";
+        const x1 = timeToX(position.startTime);
+        const x2 = timeToX(position.endTime);
+        const yEntry = priceToY(position.entryPrice);
+        const yTarget = priceToY(position.targetPrice);
+        const yStop = priceToY(position.stopPrice);
+        if (x1 === null || x2 === null || yEntry === null || yTarget === null || yStop === null) return null;
+        const left = `${x1}px`;
+        const width = `${Math.max(8, x2 - x1)}px`;
+        const targetTop = `${Math.min(yTarget, yEntry)}px`;
+        const targetHeight = `${Math.abs(yTarget - yEntry)}px`;
+        const stopTop = `${Math.min(yStop, yEntry)}px`;
+        const stopHeight = `${Math.abs(yStop - yEntry)}px`;
+        const boxTop = `${Math.min(yTarget, yStop, yEntry)}px`;
+        const boxHeight = `${Math.max(yTarget, yStop, yEntry) - Math.min(yTarget, yStop, yEntry)}px`;
+        const topHandle: "targetY" | "stopY" = yTarget < yStop ? "targetY" : "stopY";
         const bottomHandle: "targetY" | "stopY" = topHandle === "targetY" ? "stopY" : "targetY";
-        const topHandleY = Math.min(position.targetY, position.stopY);
-        const bottomHandleY = Math.max(position.targetY, position.stopY);
+        const topHandleY = Math.min(yTarget, yStop);
+        const bottomHandleY = Math.max(yTarget, yStop);
         const interactive = selected;
         return <div key={position.id} className={`position-tool-drawing ${position.direction} ${selected ? "is-selected" : ""}`} style={{ left, width }}>
           <div className="position-tool-zone target" style={{ top: targetTop, height: targetHeight }} /><div className="position-tool-zone stop" style={{ top: stopTop, height: stopHeight }} />
           <div className="position-tool-edge left-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "leftX")} />
           <div className="position-tool-edge right-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
-          <div className="position-tool-line entry" style={{ top: `${position.entryY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "entryY")} />
-          <div className="position-tool-line target-line" style={{ top: `${position.targetY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "targetY")}>
+          <div className="position-tool-line entry" style={{ top: `${yEntry}px` }} onPointerDown={(event) => beginHandle(event, position.id, "entryY")} />
+          <div className="position-tool-line target-line" style={{ top: `${yTarget}px` }} onPointerDown={(event) => beginHandle(event, position.id, "targetY")}>
             {interactive && <span>止盈 {formatPrice(metrics.targetPrice)}</span>}
           </div>
-          <div className="position-tool-line stop-line" style={{ top: `${position.stopY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "stopY")}>
+          <div className="position-tool-line stop-line" style={{ top: `${yStop}px` }} onPointerDown={(event) => beginHandle(event, position.id, "stopY")}>
             {interactive && <span>止损 {formatPrice(metrics.stopPrice)}</span>}
           </div>
-          <div className="position-tool-stats" style={{ top: `${position.entryY * 100}%` }}>入场 {formatPrice(metrics.entryPrice)} · RR {metrics.riskReward.toFixed(2)} · {formatMoney(metrics.openPnl)}</div>
+          <div className="position-tool-stats" style={{ top: `${yEntry}px` }}>入场 {formatPrice(metrics.entryPrice)} · RR {metrics.riskReward.toFixed(2)} · {formatMoney(metrics.openPnl)}</div>
           {selected && !previewPosition && <div className="position-tool-handles">
-            <button type="button" className="position-tool-resize-handle top-left" style={{ top: `${topHandleY * 100}%` }} aria-label="调整上方高度" onPointerDown={(event) => beginHandle(event, position.id, topHandle)} />
-            <button type="button" className="position-tool-resize-handle bottom-left" style={{ top: `${bottomHandleY * 100}%` }} aria-label="调整下方高度" onPointerDown={(event) => beginHandle(event, position.id, bottomHandle)} />
-            <button type="button" className="position-tool-resize-handle middle-left" style={{ top: `${position.entryY * 100}%` }} aria-label="自由移动左点" onPointerDown={(event) => beginHandle(event, position.id, "leftFree")} />
-            <button type="button" className="position-tool-resize-handle middle-right" style={{ top: `${position.entryY * 100}%` }} aria-label="左右调整宽度" onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
+            <button type="button" className="position-tool-resize-handle top-left" style={{ top: `${topHandleY}px` }} aria-label="调整上方高度" onPointerDown={(event) => beginHandle(event, position.id, topHandle)} />
+            <button type="button" className="position-tool-resize-handle bottom-left" style={{ top: `${bottomHandleY}px` }} aria-label="调整下方高度" onPointerDown={(event) => beginHandle(event, position.id, bottomHandle)} />
+            <button type="button" className="position-tool-resize-handle middle-left" style={{ top: `${yEntry}px` }} aria-label="自由移动左点" onPointerDown={(event) => beginHandle(event, position.id, "leftFree")} />
+            <button type="button" className="position-tool-resize-handle middle-right" style={{ top: `${yEntry}px` }} aria-label="左右调整宽度" onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
           </div>}
         </div>;
       })}

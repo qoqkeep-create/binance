@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量工具数据坐标同层锚定、标签字号减半 8px、主图裁剪
+
+PositionTool 存时间+价格锚点（v2 存储键），渲染/拖拽/命中经库坐标换算；rAF 同步环补价格轴变化重排（库无价格轴订阅 API）；surface overflow:hidden 防溢入副图；line span/stats 16→8px、偏移 -22/4。实测横向×2 宽精确加倍、DOM 与库换算误差<0.01px、纵向压窗同比、三柄轴向语义不变、三标签 8px。契约测试改锁数据坐标标记＋8px。release toolanchor-ef0568a 上线 47.80.22.243（首尔服务器）＋ba/IP 哈希一致；含并发会话画线工具同源交付。
+
 ## 2026-11-27：止损/止盈/入场 chip 文字加倍 16px、条放大
 
 line span 与 stats 字号 8→16、padding 3/6（chip 3/7 圆角 5）、target/stop 偏移 -32/6。实测 16px/chip 高 28。契约测试锁定。release labelsize-c0364e1 上线首尔＋ba 哈希一致。

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
+import { Minus, MoveVertical, RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
@@ -22,7 +22,7 @@ import { createSupertrendBandView, type BandPoint, type BandFillConfig } from ".
 import { createSupertrendLineView, type SupertrendLinePoint, type SupertrendLineConfig } from "./lib/supertrendLine";
 import { createMacdHistogramView, type MacdBarPoint, type MacdHistogramConfig } from "./lib/macdHistogram";
 import IndicatorSettingsPanel from "./IndicatorSettingsPanel";
-import PositionToolOverlay from "./PositionToolOverlay";
+import PositionToolOverlay, { type ChartLineOrientation } from "./PositionToolOverlay";
 import type { PositionDirection } from "./lib/positionTools";
 import "./kline-chart.css";
 
@@ -143,11 +143,13 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const [, setChartTick] = useState(0);
   const [mainPaneHeight, setMainPaneHeight] = useState(0);
   const [activePositionTool, setActivePositionTool] = useState<PositionDirection | null>(null);
+  const [activeLineTool, setActiveLineTool] = useState<ChartLineOrientation | null>(null);
   const viewModeRef = useRef<"auto" | "manual">("auto");
   const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
 
   useEffect(() => {
     setActivePositionTool(null);
+    setActiveLineTool(null);
   }, [symbol, selectedInterval]);
 
   const autoVisibleBars = () => {
@@ -738,8 +740,10 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
             </button>
           ))}
           <span className="divider" aria-hidden="true" />
-          <button type="button" className={`position-tool-trigger long ${activePositionTool === "long" ? "is-active" : ""}`} aria-label="多头测量" title="多头测量" aria-pressed={activePositionTool === "long"} disabled={status !== "ready"} onClick={() => setActivePositionTool((current) => current === "long" ? null : "long")}><TrendingUp size={15} /></button>
-          <button type="button" className={`position-tool-trigger short ${activePositionTool === "short" ? "is-active" : ""}`} aria-label="空头测量" title="空头测量" aria-pressed={activePositionTool === "short"} disabled={status !== "ready"} onClick={() => setActivePositionTool((current) => current === "short" ? null : "short")}><TrendingDown size={15} /></button>
+          <button type="button" className={`position-tool-trigger long ${activePositionTool === "long" ? "is-active" : ""}`} aria-label="多头测量" title="多头测量" aria-pressed={activePositionTool === "long"} disabled={status !== "ready"} onClick={() => { setActiveLineTool(null); setActivePositionTool((current) => current === "long" ? null : "long"); }}><TrendingUp size={15} /></button>
+          <button type="button" className={`position-tool-trigger short ${activePositionTool === "short" ? "is-active" : ""}`} aria-label="空头测量" title="空头测量" aria-pressed={activePositionTool === "short"} disabled={status !== "ready"} onClick={() => { setActiveLineTool(null); setActivePositionTool((current) => current === "short" ? null : "short"); }}><TrendingDown size={15} /></button>
+          <button type="button" className={`position-tool-trigger guide-line ${activeLineTool === "horizontal" ? "is-active" : ""}`} aria-label="横线工具" title="横线工具" aria-pressed={activeLineTool === "horizontal"} disabled={status !== "ready"} onClick={() => { setActivePositionTool(null); setActiveLineTool((current) => current === "horizontal" ? null : "horizontal"); }}><Minus size={16} /></button>
+          <button type="button" className={`position-tool-trigger guide-line ${activeLineTool === "vertical" ? "is-active" : ""}`} aria-label="竖线工具" title="竖线工具" aria-pressed={activeLineTool === "vertical"} disabled={status !== "ready"} onClick={() => { setActivePositionTool(null); setActiveLineTool((current) => current === "vertical" ? null : "vertical"); }}><MoveVertical size={16} /></button>
         </div>
         <div className="toolbar-right">
           <button type="button" className="chart-refresh" aria-label="刷新 K 线" title="刷新 K 线" disabled={refreshing} onClick={() => void refreshChart()}><RefreshCw size={14} className={refreshing ? "spin" : ""} /></button>
@@ -763,7 +767,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
             <button type="button" onClick={() => { void copyCurrentPrice(); setClickMenu(null); }}>复制当前价格</button>
           </div>}
         </div>
-        {status === "ready" && <PositionToolOverlay currentPrice={candlesRef.current[candlesRef.current.length - 1]?.close ?? 0} readOnly={false} activeTool={activePositionTool} onActiveToolChange={setActivePositionTool} />}
+        {status === "ready" && <PositionToolOverlay currentPrice={candlesRef.current[candlesRef.current.length - 1]?.close ?? 0} readOnly={false} activeTool={activePositionTool} onActiveToolChange={setActivePositionTool} activeLineTool={activeLineTool} onActiveLineToolChange={setActiveLineTool} api={chartRef.current} />}
         {crosshair && (() => {
           const base = candlesRef.current[candlesRef.current.length - 1]?.close ?? crosshair.price;
           const pct = base > 0 ? (crosshair.price - base) / base * 100 : 0;

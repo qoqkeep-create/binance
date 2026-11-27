@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 测量工具改数据坐标同层锚定＋标签字号减半 8px Web 发布（2026-11-27，北京时间）
+
+用户口径：字号太大缩为现在一半（16→8px）；测量工具不是浮层，尺寸随 K 线同比缩放、与蜡烛同一层。实现：`PositionTool` 改存 `startTime/endTime/entryPrice/targetPrice/stopPrice`（弃屏幕比例字段），渲染经 `timeToCoordinate/priceToCoordinate` 换算，拖拽/绘制/命中全走数据坐标（localStorage 键升 `trade-web-position-tools-v2`）；库价格轴无订阅 API，覆盖层加 rAF 同步环比对 `getVisibleLogicalRange`＋`priceScale().getVisibleRange` 变化即重排；surface 加 `overflow:hidden`，手动压价窗时止损区不再溢入 MACD 副图。实测：barSpacing×2 工具宽 205.875→411.75px 精确加倍；DOM left/width/三线 y 与库换算误差 <0.01px；纵向压窗后 y 随价格窗同比移动；中左柄 dStart+4500s/dEntry+0.0085 其余 0、右柄 dEnd+3600s 其余 0、左上柄 dTarget+0.0056 其余 0；三标签 computed 8px。Web release **`trade-web-20261127-toolanchor-ef0568a`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `38d20547…`／`e04b6988…`／`e7f3e274…` 与本地单链构建一致，ba 与 IP 双入口复核同哈希。并发会话同期给覆盖层加横/竖画线工具，一并纳入同源构建与契约测试。后端不切换，旧 release 保留可回退。
+
 ## 止损/止盈/入场 chip 文字加倍（8→16px）条放大 Web 发布（2026-11-27，北京时间）
 
 三条文字条（止损/止盈线标签＋中线入场 chip）字号 8→16px（加倍），条 padding 2/4→3/6（chip 3/7、圆角 5），止盈/止损标签偏移适配（-32/6px）。实测三条 computed 16px、chip 高 28px。Web release **`trade-web-20261127-labelsize-c0364e1`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `7a06405f…`／`e8a5af3b…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 16px。后端不切换，旧 release 保留可回退。
