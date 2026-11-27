@@ -20,6 +20,7 @@ interface PositionToolOverlayProps {
 
 type Draft = { direction: PositionDirection; startX: number; startY: number; endX: number; endY: number };
 type PositionToolState = { defaults: PositionToolDefaults; positions: PositionTool[] };
+type ResizeHandle = "entryY" | "targetY" | "stopY" | "leftX" | "rightX";
 type MoveDrag = { id: string; startX: number; startY: number; origin: PositionTool };
 const toolsPreferenceFallback: PositionToolState = { defaults: defaultPositionToolDefaults, positions: [] };
 const LOCAL_STORAGE_KEY = "trade-web-position-tools";
@@ -68,9 +69,10 @@ function ToolCard({ position, currentPrice, defaults, selected, onSelect, onDele
 export default function PositionToolOverlay({ currentPrice, readOnly = false, activeTool, onActiveToolChange }: PositionToolOverlayProps) {
   const [toolState, setToolState] = useState<PositionToolState>(() => readLocalToolState());
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [dragHandle, setDragHandle] = useState<{ id: string; handle: "entryY" | "targetY" | "stopY" } | null>(null);
+  const [dragHandle, setDragHandle] = useState<{ id: string; handle: ResizeHandle } | null>(null);
   const [moveDrag, setMoveDrag] = useState<MoveDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const defaults = toolState.defaults;
   const selectedPosition = toolState.positions.find((position) => position.id === selectedId) ?? null;
@@ -103,6 +105,12 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       const point = pointerPosition(event);
       if (!point) return;
       updatePosition(dragHandle.id, (position) => {
+        if (dragHandle.handle === "leftX") {
+          return { ...position, left: clamp(point.x, 0.02, position.right - 0.05) };
+        }
+        if (dragHandle.handle === "rightX") {
+          return { ...position, right: clamp(point.x, position.left + 0.05, 0.98) };
+        }
         const nextY = clamp(point.y, 0.02, 0.98);
         if (dragHandle.handle === "entryY") {
           const delta = nextY - position.entryY;
@@ -157,7 +165,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     onActiveToolChange(null);
   }
   function updatePosition(id: string, update: (position: PositionTool) => PositionTool) { setToolState((state) => ({ ...state, positions: state.positions.map((position) => position.id === id ? update(position) : position) })); }
-  function beginHandle(event: React.PointerEvent, id: string, handle: "entryY" | "targetY" | "stopY") {
+  function beginHandle(event: React.PointerEvent, id: string, handle: ResizeHandle) {
     if (previewPosition) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -187,13 +195,33 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         const targetHeight = `${Math.abs(position.targetY - position.entryY) * 100}%`;
         const stopTop = `${Math.min(position.stopY, position.entryY) * 100}%`;
         const stopHeight = `${Math.abs(position.stopY - position.entryY) * 100}%`;
-        return <div key={position.id} className={`position-tool-drawing ${position.direction} ${selected ? "is-selected" : ""}`} style={{ left, width }} onPointerDown={(event) => beginMove(event, position)}>
+        const boxTop = `${Math.min(position.targetY, position.stopY, position.entryY) * 100}%`;
+        const boxHeight = `${(Math.max(position.targetY, position.stopY, position.entryY) - Math.min(position.targetY, position.stopY, position.entryY)) * 100}%`;
+        const topHandle: "targetY" | "stopY" = position.targetY < position.stopY ? "targetY" : "stopY";
+        const bottomHandle: "targetY" | "stopY" = topHandle === "targetY" ? "stopY" : "targetY";
+        const topHandleY = Math.min(position.targetY, position.stopY);
+        const bottomHandleY = Math.max(position.targetY, position.stopY);
+        const interactive = selected || hoveredId === position.id;
+        return <div key={position.id} className={`position-tool-drawing ${position.direction} ${selected ? "is-selected" : ""} ${hoveredId === position.id ? "is-hovered" : ""}`} style={{ left, width }} onPointerDown={(event) => beginMove(event, position)} onPointerEnter={() => setHoveredId(position.id)} onPointerLeave={() => setHoveredId((current) => current === position.id ? null : current)}>
           <div className="position-tool-zone target" style={{ top: targetTop, height: targetHeight }} /><div className="position-tool-zone stop" style={{ top: stopTop, height: stopHeight }} />
-          <div className="position-tool-line entry" style={{ top: `${position.entryY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "entryY")}><span>入场 {formatPrice(metrics.entryPrice)}</span></div>
-          <div className="position-tool-line target-line" style={{ top: `${position.targetY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "targetY")}><span>止盈 {formatPrice(metrics.targetPrice)} · +{metrics.profitPercent.toFixed(2)}%</span></div>
-          <div className="position-tool-line stop-line" style={{ top: `${position.stopY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "stopY")}><span>止损 {formatPrice(metrics.stopPrice)} · −{metrics.lossPercent.toFixed(2)}%</span></div>
-          <div className="position-tool-stats"><strong>{position.direction === "long" ? "多头" : "空头"} · RR {metrics.riskReward.toFixed(2)}</strong><span>浮动盈亏 {formatMoney(metrics.openPnl)}</span><span>数量 {metrics.quantity.toFixed(defaults.qtyPrecision)} · 风险 {formatMoney(metrics.riskAmount)}</span></div>
-          {selected && !previewPosition && <div className="position-tool-handles"><button type="button" aria-label="上移止盈" onPointerDown={(event) => event.stopPropagation()} onClick={() => updatePosition(position.id, (current) => ({ ...current, targetY: clamp(current.targetY - .02, .02, .98) }))}>↑</button><button type="button" aria-label="下移止损" onPointerDown={(event) => event.stopPropagation()} onClick={() => updatePosition(position.id, (current) => ({ ...current, stopY: clamp(current.stopY + .02, .02, .98) }))}>↓</button></div>}
+          <div className="position-tool-edge left-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "leftX")} />
+          <div className="position-tool-edge right-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
+          <div className="position-tool-line entry" style={{ top: `${position.entryY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "entryY")}>
+            {interactive && <span>入场 {formatPrice(metrics.entryPrice)}</span>}
+          </div>
+          <div className="position-tool-line target-line" style={{ top: `${position.targetY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "targetY")}>
+            {interactive && <span>止盈 {formatPrice(metrics.targetPrice)}</span>}
+          </div>
+          <div className="position-tool-line stop-line" style={{ top: `${position.stopY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "stopY")}>
+            {interactive && <span>止损 {formatPrice(metrics.stopPrice)}</span>}
+          </div>
+          <div className="position-tool-stats" style={{ top: `${position.entryY * 100}%` }}><strong>RR {metrics.riskReward.toFixed(2)}</strong>{interactive && <span>{position.direction === "long" ? "多头" : "空头"} · 浮动盈亏 {formatMoney(metrics.openPnl)}</span>}</div>
+          {selected && !previewPosition && <div className="position-tool-handles">
+            <button type="button" className="position-tool-resize-handle top-left" style={{ top: `${topHandleY * 100}%` }} aria-label="调整上方高度" onPointerDown={(event) => beginHandle(event, position.id, topHandle)} />
+            <button type="button" className="position-tool-resize-handle bottom-left" style={{ top: `${bottomHandleY * 100}%` }} aria-label="调整下方高度" onPointerDown={(event) => beginHandle(event, position.id, bottomHandle)} />
+            <button type="button" className="position-tool-resize-handle middle-left" style={{ top: `${position.entryY * 100}%` }} aria-label="向左调整测量宽度" onPointerDown={(event) => beginHandle(event, position.id, "leftX")} />
+            <button type="button" className="position-tool-resize-handle middle-right" style={{ top: `${position.entryY * 100}%` }} aria-label="向右调整测量宽度" onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
+          </div>}
         </div>;
       })}
       {!renderedPositions.length && !activeTool && <div className="position-tool-empty">选择多头或空头，然后在 K 线区域拖出测量区间</div>}
