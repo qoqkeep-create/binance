@@ -102,12 +102,15 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       const point = pointerPosition(event);
       if (!point) return;
       if (live.activeTool) {
+        // 阻断兼容鼠标事件，避免绘制时图表跟着平移。
+        event.preventDefault();
         setDraft({ direction: live.activeTool, startX: point.x, startY: point.y, endX: point.x, endY: point.y });
         return;
       }
       if (live.readOnly) return;
       const hit = live.positions.find((p) => point.x >= p.left && point.x <= p.right && point.y >= Math.min(p.entryY, p.targetY, p.stopY) && point.y <= Math.max(p.entryY, p.targetY, p.stopY));
       if (hit) {
+        event.preventDefault();
         setSelectedId(hit.id);
         setMoveDrag({ id: hit.id, startX: point.x, startY: point.y, origin: hit });
       } else {
@@ -206,6 +209,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   function beginHandle(event: React.PointerEvent, id: string, handle: ResizeHandle) {
     if (previewPosition) return;
     event.stopPropagation();
+    event.preventDefault();
     setSelectedId(id);
     setDragHandle({ id, handle });
   }

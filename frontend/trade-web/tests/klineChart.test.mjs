@@ -261,6 +261,9 @@ const overlaySrc2 = readFileSync(fileURLToPath(new URL("../src/PositionToolOverl
 if (overlaySrc2.includes("浮动盈亏") || !overlaySrc2.includes("入场 {formatPrice(metrics.entryPrice)} · RR") || !overlaySrc2.includes('aria-label="自由移动左点"') || !overlaySrc2.includes('"leftFree"') || !overlaySrc2.includes('beginHandle(event, position.id, "rightX")')) {
   throw new Error("Handles: top/bottom-left vertical only, right horizontal only, left free 2D drag");
 }
+if (!positionToolsCss.includes(".position-tool-resize-handle { position:absolute; z-index:3;") || !overlaySrc2.includes("event.preventDefault();")) {
+  throw new Error("Handles above edges (z3); tool drag must preventDefault so chart does not pan");
+}
 if (!overlaySrc2.includes("区外点击取消选中") || overlaySrc2.includes("position-tool-empty") || overlaySrc2.includes("hoveredId")) {
   throw new Error("Selection only inside zone; outside click deselects; empty hint and hover-selection removed");
 }

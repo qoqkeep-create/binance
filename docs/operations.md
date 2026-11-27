@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 左柄被边线遮挡＋拖工具带动图表 双修 Web 发布（2026-11-27，北京时间）
+
+① 左柄无法上下根因：左边线条 z-index:2 盖住柄（无 z），点击命中 leftX 边线而非 leftFree 柄；柄提 z-index:3 后自由四向生效（实测上下 24/横向 0 的纯竖向拖拽✓）。② 拖工具时图表跟平移根因：真实 mousedown 落到图表画布启动 pan；在 window down 命中/绘制分支与 beginHandle 加 preventDefault 阻断兼容鼠标事件（mousemove 仍供十字线）。实测区内拖拽工具 +40 且图表 visibleLogicalRange 不变✓。Web release **`trade-web-20261127-dragfix-c59d1eb`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `bea2bca4…`／`ec98a4d1…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 z3＋preventDefault。后端不切换，旧 release 保留可回退。
+
 ## 测量四柄轴向规则定案 Web 发布（2026-11-27，北京时间）
 
 用户明确四柄规则：左上/左下仅上下；右仅左右；左自由四向（按住即拖、光标不变箭头）。实现：top-left/bottom-left 保持 targetY/stopY；middle-right 改 rightX（仅宽度）；middle-left 新增 leftFree（leftX＋entryY 联动，止盈/止损随中线平移）；middle-left 光标 grab。本地实测：top-left dTarget20/dx0；bottom-left dStop14/dWidth0；middle-right dWidth30/dStop0；middle-left dx30/dEntry20/dTarget20。Web release **`trade-web-20261127-handles-e1218f6`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `a6286976…`／`e8a9a063…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定四柄。后端不切换，旧 release 保留可回退。
