@@ -132,8 +132,8 @@ const merge = readFileSync(fileURLToPath(new URL("../src/lib/candleMerge.ts", im
 if (!merge.includes("mergeTicker(candles: Candle[], price: number, bucketTime: number)") || !merge.includes("if (bucketTime < last.time) return candles;") || !merge.includes("bucketTime > last.time")) {
   throw new Error("Ticker merge must target the current time bucket only and seed a new bar at roll, never mutate closed history");
 }
-if (!source.includes("volume: event.closed ? last.volume + incoming.volume : last.volume") || !source.includes("Math.floor(ts / 1000 / width) * width")) {
-  throw new Error("Bucket volume must count closed 1m only; ticker bucket must derive from event time");
+if (!source.includes("mergeBucketKline(candlesRef.current, incoming, bucket, event.closed)") || !source.includes("Math.floor(ts / 1000 / width) * width") || !merge.includes("volume: closed ? last.volume + incoming.volume : last.volume") || !merge.includes("if (last.seeded)") || !merge.includes("open: last.close")) {
+  throw new Error("Bucket merge must count closed 1m only, seed open at previous close, and let first real 1m take over seeded open/high/low");
 }
 if (!source.includes("last - bars * 0.8 + 0.5") || !source.includes("last + bars * 0.2 - 0.5")) {
   throw new Error("Auto/reset view must leave 1/5 right blank with unchanged bar density");

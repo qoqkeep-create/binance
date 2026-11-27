@@ -7,7 +7,7 @@ export type MarketGroup = "top20" | "alts";
 
 export interface FuturesSymbol { symbol: string; baseAsset: string; quoteAsset: string; status: string; contractType: string; onboardDate?: number }
 export interface Ticker24h { symbol: string; lastPrice: number; priceChangePercent: number; quoteVolume: number; highPrice: number; lowPrice: number; volume: number; count?: number; eventTime?: number }
-export interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
+export interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number; seeded?: boolean }
 export interface MarketRow extends Ticker24h { baseAsset: string; rank?: number }
 interface Envelope<T> { code: number; message?: string; data: T }
 interface TickerPayload { symbol: string; lastPrice: number | string; quoteVolume24h: number | string; priceChangePercent24h: number | string; eventTime?: number }

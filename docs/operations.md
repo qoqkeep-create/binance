@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 桶滚种子根开收盘错位根因修复（mergeBucketKline 单源重构）Web 发布（2026-11-27，北京时间）
+
+用户报：K 线开盘/收盘不对齐、实体间非常大重叠区（崩溃段填充带大块错位），要求深度解决可重构。根因：大周期桶滚时 **ticker 先于首根 1m 种子新根**（旧代码 open=high=low=close=现价），随后真实 1m 到达只并 high/low/close、**永不纠正 open**→open 停在滚桶瞬间价、与前根收盘脱节＝开收盘错位＋快市实体互相重叠；种子 high/low 混入前根收盘又污染 hl2 填充锚＝大块重叠填充区。重构：合并逻辑收进 `lib/candleMerge.ts` 纯函数 `mergeBucketKline`（KlineChart 不再内联）；种子根 `open=前根收盘`（连续）、`high/low=现价`（不污染 hl2）、显式 `seeded` 标记；首根真实 1m **整体接管 open/high/low** 并清标记；forming 1m 不重复累加成交量保留。实测：单元测试锁种子连续/接管/成交量/旧桶忽略；浏览器内动态 import 真实模块跑序列 seedOpen=12=prevClose、takenOpen/High/Low=首根 1m 真值；崩溃段喂数目检因 Browser 面板隐藏激活失败归线上验收（结构/序列已实证）。Web release **`trade-web-20261127-candleopen-cc6f277`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `f4c1bdf7…`／`27629ec4…` 与本地单链构建一致，ba 复核同哈希。契约测试改锁 mergeBucketKline＋seeded＋open: last.close。后端不切换，旧 release 保留可回退。
+
 ## 持仓/历史/委托多空徽标修正（整数 side 0=多）Web 发布（2026-11-27，北京时间）
 
 用户报：开多单在 web 历史与持仓界面显示空单。根因：后端 `side` 为**整数** 0=多 1=空（positions/models.py），web `isLong` 只比字符串 `"0"`，`0 === "0"` 恒假→全部显示空；KlineChart 持仓三线盈亏符号同误。修：tradeApi 增统一 `isLongSide`（String(side).toLowerCase() ∈ {0,long,buy}），PositionRow/HistoryRow/OrderRow 类型改 `number | string`，Pages 徽标与 KlineChart 三线共用。实测（fetch 替身注入整数 side＋{code:200,data} 信封）：持仓 [多,空]、历史 [多,空]、委托 [多] 全对。Web release **`trade-web-20261127-sidefix-0e82157`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `67604a7f…`／`f995cdea…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 isLongSide 单源。后端不切换，旧 release 保留可回退。

@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：桶滚种子根开收盘错位根因修复（mergeBucketKline 重构）
+
+根因：ticker 先种子新桶（open=现价）后真实 1m 只并 high/low/close 不纠正 open→开收盘错位＋实体重叠；种子 high/low 混前根收盘污染 hl2 填充锚→大块重叠区。重构合并为 lib/candleMerge.mergeBucketKline 纯函数：种子 open=前根收盘、high/low=现价、seeded 标记；首根 1m 整体接管 open/high/low；forming 不重复计 volume。单元测试＋浏览器内真实模块序列实证；崩溃段目检归线上（面板隐藏）。release candleopen-cc6f277 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-27：持仓/历史/委托多空徽标修正（整数 side 0=多 1=空）
 
 根因：后端 side 整数，web 只比字符串 "0" 致全显空。tradeApi 统一 isLongSide（0/long/buy 归一化），三 Row 类型改 number|string，Pages 徽标与 KlineChart 持仓三线盈亏符号共用。替身实测持仓/历史/委托徽标 多/空 正确。契约测试锁定单源。release sidefix-0e82157 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。

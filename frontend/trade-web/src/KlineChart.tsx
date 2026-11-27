@@ -15,7 +15,7 @@ import { priceScaleFormatter, minMoveFor } from "./lib/priceFormat";
 import { intervalSeconds } from "./lib/analysisIndicators";
 import { marketRealtime } from "./lib/realtime";
 import { buildChartIndicators } from "./lib/chartIndicators";
-import { mergeCandle, mergeTicker } from "./lib/candleMerge";
+import { mergeCandle, mergeTicker, mergeBucketKline } from "./lib/candleMerge";
 import { getCachedKlines, putCachedKlines } from "./lib/klineCache";
 import { DEFAULT_INDICATORS, mergeIndicatorSettings, type IndicatorSettings } from "./lib/indicatorSettings";
 import { createSupertrendBandView, type BandPoint, type BandFillConfig } from "./lib/supertrendBand";
@@ -629,14 +629,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
         } else {
           // 后端仅推 1m 实时 K 线；大周期客户端聚合到对应桶，保证尾根实时且带影线。
           const bucket = Math.floor(incoming.time / width) * width;
-          const list = candlesRef.current;
-          const last = list[list.length - 1];
-          if (last && last.time === bucket) {
-            // forming 1m 不重复累加成交量：仅收盘 1m 计入桶成交量。
-            candlesRef.current = [...list.slice(0, -1), { ...last, high: Math.max(last.high, incoming.high), low: Math.min(last.low, incoming.low), close: incoming.close, volume: event.closed ? last.volume + incoming.volume : last.volume }];
-          } else if (!last || bucket > last.time) {
-            candlesRef.current = [...list, { time: bucket, open: incoming.open, high: incoming.high, low: incoming.low, close: incoming.close, volume: incoming.volume }].slice(-1500);
-          }
+          candlesRef.current = mergeBucketKline(candlesRef.current, incoming, bucket, event.closed);
         }
         scheduleTail();
       } else if (event.type === "ticker") {
