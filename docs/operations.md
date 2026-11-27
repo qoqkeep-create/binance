@@ -1,5 +1,11 @@
 # 整合环境部署与运维
 
+## iOS sequence 兼容修复发布（2026-11-28，北京时间）
+
+针对首轮实时分流发布后发现的 iOS ingress 兼容风险，完整提交 **`cf8756b`** 已部署到 **47.80.22.243（首尔服务器）**。后端 release 为 **`integrated-quick-cf8756b`**，四个应用容器 healthy，health 三项通过。K 线保留旧的全局 `sequence`，closed 事件额外增加 `closedSequence`，旧 iOS 客户端继续按原序列处理。
+
+Web 静态 release 已切换为 **`trade-web-20261128-realtime-cf8756b`**。IP 和 `ba.wow211.com` 双入口返回 JS 哈希 `d767f43e…`、CSS 哈希 `b27473e1…`，线上 JS 含 `closedSequence`。上一版 `trade-web-20261128-realtime-744fb64` 和后端 `integrated-quick-744fb64` 保留可回退。
+
 ## Web 实时行情分流发布（2026-11-28，北京时间）
 
 完整工作区提交 **`744fb64`** 已部署到 **47.80.22.243（首尔服务器）**。后端 release 为 **`integrated-quick-744fb64`**，api、market、worker、scheduler 四个容器均 healthy，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。数据库、Redis 和 MySQL 未替换，没有应用 migration，也没有执行真实交易或资金操作。

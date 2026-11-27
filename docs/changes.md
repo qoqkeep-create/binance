@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：iOS K 线 sequence 兼容修复上线
+
+首轮 Web 实时分流发布后发现 iOS ingress 依赖全局连续 sequence。提交 `cf8756b` 已发布到 47.80.22.243（首尔服务器）的 `integrated-quick-cf8756b`，恢复全局 K 线 sequence 并增加 `closedSequence` 给 Web 缺口恢复使用。Web 静态 release `trade-web-20261128-realtime-cf8756b` 已切换，IP 与 `ba.wow211.com` 双入口资源一致，health 三项通过。
+
 ## 2026-11-28：Web 实时行情分流与 ticker 批量发布上线
 
 完整工作区提交 `744fb64` 已发布到 47.80.22.243（首尔服务器）的 `integrated-quick-744fb64`。Web 使用 `market.ticker.batch` 批量 ticker、独立 K 线 WebSocket、K 线优先出站队列和 closed sequence 缺口恢复。静态 release `trade-web-20261128-realtime-744fb64` 已切换，IP 与 `ba.wow211.com` 双入口资源哈希一致，health 三项通过。后续兼容修复保留原 K 线全局 sequence，并增加 `closedSequence`，部署在下一版 release。iOS 仍使用兼容展开的旧 ticker 协议，下一轮单独评估客户端 K 线链路重构。

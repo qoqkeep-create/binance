@@ -22,6 +22,7 @@ HOT_WINDOW_SIZE = {interval: 1500 for interval in INTERVAL_MS}
 # All live-cache writers run in the single collector process. Keep its cache
 # comparison/write/publication ordered, without holding this lock for DB I/O.
 LIVE_STATE_LOCK = RLock()
+LIVE_PUBLISH_CHUNK_SIZE = 32
 
 
 def public_request(path, query=None, *, budget_priority="background", timeout=None):
@@ -291,7 +292,8 @@ def publish_live_batch(rows, *, emit=True):
             events.append((f"{row['symbol']}:{row['interval']}", wire_candle(row)))
         cache.set_many(updates, 180)
         if emit:
-            bus.publish_batch("market.kline", events)
+            for start in range(0, len(events), LIVE_PUBLISH_CHUNK_SIZE):
+                bus.publish_batch("market.kline", events[start:start + LIVE_PUBLISH_CHUNK_SIZE])
 
 
 def consume_batch(rows):

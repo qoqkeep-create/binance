@@ -100,6 +100,13 @@ class LiveFastPathTests(SimpleTestCase):
         service.publish_live_batch([candle()])
         self.assertEqual(publish.call_args.args[1][0][1]["openTime"], 0)
 
+    @patch("market_stream.bus.publish_batch")
+    def test_live_kline_publish_is_chunked_for_redis_interleaving(self, publish):
+        rows = [{**candle(index), "symbol": f"S{index}USDT"} for index in range(65)]
+        service.publish_live_batch(rows)
+        self.assertEqual(publish.call_count, 3)
+        self.assertEqual([len(call.args[1]) for call in publish.call_args_list], [32, 32, 1])
+
     def test_market_topics_filter_before_each_websocket_receives_the_event(self):
         subscriptions = {"market.kline": {"symbols": {"BTCUSDT"}, "intervals": {"1m"}}}
         topics = bus.subscription_topics(subscriptions)
@@ -115,7 +122,7 @@ class LiveFastPathTests(SimpleTestCase):
         service.publish_live_batch([candle(closed=True)])
         publish.reset_mock()
         service.publish_live_batch([candle()])
-        self.assertEqual(publish.call_args.args[1], [])
+        publish.assert_not_called()
         self.assertTrue(cache.get("market:live:BTCUSDT:1m")["closed"])
 
     @patch("market_stream.bus.publish_batch")
