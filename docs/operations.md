@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 表单顺序再调（策略→止损金额→含手续费）＋三预估改三行左右＋持仓按钮居右 Web 发布（2026-11-28，北京时间）
+
+用户三件：① 含手续费移到止损金额下方、止盈策略移到止损价下方（市价与限价同顺序）；② 预估仓位/预估手续费/止损回撤改**三行、每行左右结构**（标签左值右，弃三列上下卡）；③ 持仓列表止盈/平仓按钮居右。实现：TradePanel 顺序＝现价→限价→止损价→止盈策略→止损金额→含手续费→trade-info→提交；.trade-info 改 column、子行 row＋space-between；.pd-actions justify-end（持仓页 footer 原已 flex-end）。实测：orderOk=true（stop<strat<risk<fee<info<submit）、三行各 17px 同线左右、坞按钮 flex-end 且距行右<20px。Web release **`trade-web-20261128-formorder-38bc936`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `ab0b6d6f…`／`5ff401e0…`／`54c875f0…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定顺序与行结构。后端不切换，旧 release 保留可回退。
+
 ## 交易面板四件：隐藏滚动条／分档价位／表单重排／设置弹窗 Web 发布（2026-11-28，北京时间）
 
 用户四件：① 市价/限价切换时右栏出现滚动条致宽度缩窄→隐藏滚动条（保留可滚）；② 价位遵从分档小数；③ 表单重排：当前价格/止损价/止损金额/止盈策略为可操作区，「止损含手续费」勾选条移到止损价正下方，预估仓位/预估手续费/止损回撤三项移到可操作区下方、开仓按钮上方的独立信息区；④ 开仓设置改弹窗（不再内联在按钮下）。实现：insight-panel/pg-scroll `scrollbar-width:none`＋webkit 隐藏；当前价格与确认弹窗限价/止损价改 priceScaleFormatter；TradePanel 重排（trade-static 行、trade-fee-row、trade-info 三格区）；settingsOpen 渲染 pg-confirm 弹窗（3 Maker＋止损触发后市价固定行，含手续费已移主表单）。实测：切换前后右栏宽均 705px、scrollbarWidth none、feeBelowStop/infoAboveSubmit true、设置弹窗 4 行且不含手续费项。Web release **`trade-web-20261128-tradeflow-369ec3d`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `273a2d87…`／`96ae0e8a…`／`3f57b257…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定顺序与弹窗。后端不切换，旧 release 保留可回退。

@@ -154,13 +154,6 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
         <button type="button" className="trade-paste-icon" title="粘贴" aria-label="粘贴止损价" onClick={() => { const v = getCopiedPrice(); if (v !== null) { setStopInput(v); attemptKeyRef.current = null; } }}><ClipboardPaste size={13} aria-hidden="true" /></button>
       </span>
     </label>
-    <label className="trade-maker-row trade-fee-row"><span>止损含手续费</span><input type="checkbox" checked={includeFee} onChange={(event) => { setIncludeFee(event.target.checked); try { localStorage.setItem(INCLUDE_FEE_KEY, String(event.target.checked)); } catch { /* keep session value */ } }} /></label>
-    <div className="trade-field">
-      <span>止损金额</span>
-      <button type="button" className="trade-risk-box" onClick={() => setStopDialogOpen(true)} aria-label="设置止损金额">
-        <span>{risk} U</span><ChevronRight size={13} aria-hidden="true" />
-      </button>
-    </div>
     <div className="trade-strategy">
       <span>止盈策略</span>
       <button type="button" className="trade-strategy-link" onClick={() => setStrategyDialogOpen(true)}>
@@ -169,6 +162,13 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
       </button>
       {strategyState === "error" && <button type="button" onClick={() => void load()}>重试</button>}
     </div>
+    <div className="trade-field">
+      <span>止损金额</span>
+      <button type="button" className="trade-risk-box" onClick={() => setStopDialogOpen(true)} aria-label="设置止损金额">
+        <span>{risk} U</span><ChevronRight size={13} aria-hidden="true" />
+      </button>
+    </div>
+    <label className="trade-maker-row trade-fee-row"><span>止损含手续费</span><input type="checkbox" checked={includeFee} onChange={(event) => { setIncludeFee(event.target.checked); try { localStorage.setItem(INCLUDE_FEE_KEY, String(event.target.checked)); } catch { /* keep session value */ } }} /></label>
     <div className="trade-info">
       <div><span>预估仓位</span><strong>{valid ? `${fmt(notional)} U` : "—"}</strong></div>
       <div><span>预估手续费</span><strong>{valid ? `${fmt(fee)} U` : "—"}</strong></div>
