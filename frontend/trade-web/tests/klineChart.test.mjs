@@ -214,11 +214,11 @@ if (!styles.includes(".market-row.selected { background: color-mix(in srgb, var(
   throw new Error("Selected market row must be a full green bar; group tabs must use chip-strength selection");
 }
 const realtimeSrc = readFileSync(fileURLToPath(new URL("../src/lib/realtime.ts", import.meta.url)), "utf8");
-if (!realtimeSrc.includes("sendSubscribe(socket)") || !realtimeSrc.includes("socket.readyState === WebSocket.OPEN") || !realtimeSrc.includes('sub.symbol !== "*" && sub.symbol !== symbol') || !app.includes('symbol: "*"') || !app.includes("tickerSymbolsRef") || !app.includes("(mark - entry) / entry * notional * (long ? 1 : -1)")) {
+if (!realtimeSrc.includes("sendSubscribe(socket)") || !realtimeSrc.includes("socket.readyState === WebSocket.OPEN") || !realtimeSrc.includes('sub.symbol !== "*" && sub.symbol !== symbol') || !app.includes('symbol: "*"') || !app.includes("tickerSymbolsRef") || !readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("(mark - entry) / entry * notional * (long ? 1 : -1)")) {
   throw new Error("Subscription changes must reuse the live socket; dock pnl computed from WS mark price");
 }
-if (!app.includes("positions-dock") || !app.includes("statusbar-dock-toggle") || !app.includes("ChevronUp") || !app.includes("setDockOpen") || !styles.includes(".positions-dock.is-open { height: 30%;")) {
-  throw new Error("Positions dock below chart toggled from statusbar, open height about two sub-panes");
+if (!app.includes("<PositionsDock") || !app.includes("PositionsDock") || !styles.includes(".positions-dock-bar { flex: none; height: 24px; display: flex; align-items: center; justify-content: center;") || !styles.includes(".positions-dock { flex: none; display: flex; flex-direction: column; background: var(--panel);") || !readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("positions-dock-head")) {
+  throw new Error("Positions dock: centered bar below chart, titled columns, panel-black background, row actions");
 }
 if (!app.includes("navRef") || !app.includes("chartRect.left - nav.getBoundingClientRect().left")) {
   throw new Error("Main nav first item must align vertically with the chart left edge");

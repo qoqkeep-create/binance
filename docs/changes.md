@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓坞居中正下方条＋标题列＋行操作（自动止盈/立即平仓）＋面板同黑
+
+PositionsDock.tsx：内容＋24px 居中条；九列表头；行操作复用持仓页按钮与确认/快照弹窗（TpLevels 共享导出）；盈亏 WS 推算；背景 var(--panel) 与左 rail 同色；展开 30% workspace 高（ResizeObserver）。实测居中/同黑/211px/表头/操作齐全。release dockbar-855b988 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：实时层订阅变化不重连（修断续断档）、持仓坞盈亏 WS 实时推算
 
 根因：subscribe 集合变化整条重连→断档。改活连接重发 subscribe 帧；App 订阅仅随登录一次（通配 kline＋ref ticker 列表）；坞盈亏=(WS mark−entry)/entry×名义×方向。假 WS 实证 opens 恒 1/closes 0。release wslive-d58775e 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。

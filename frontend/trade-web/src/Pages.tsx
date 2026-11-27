@@ -19,7 +19,7 @@ function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void 
   return <div className="pg-empty"><span>{message}</span><button type="button" onClick={onRetry}>重试</button></div>;
 }
 
-function TpLevels({ levels }: { levels: PositionStrategyLevel[] }) {
+export function TpLevels({ levels }: { levels: PositionStrategyLevel[] }) {
   return <div className="pg-tp-levels">{levels.map((level, index) => <div key={index} className="pg-tp-level">
     <span>L{index + 1}</span>
     <strong>止盈 RR {level.profitRR}</strong>

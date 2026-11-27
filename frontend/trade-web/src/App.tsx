@@ -1,11 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowLeftRight,
   ArrowUpRight,
   Bell,
-  ChevronDown,
-  ChevronUp,
   CircleHelp,
   Cpu,
   LayoutDashboard,
@@ -31,6 +29,7 @@ import KlineChart from "./KlineChart";
 import TradePanel from "./TradePanel";
 import { tradeApi, isLongSide, type PositionRow } from "./lib/tradeApi";
 import { PositionsPage, HistoryPage, AccountPage } from "./Pages";
+import { PositionsDock } from "./PositionsDock";
 import { prefetchKlines } from "./lib/klineCache";
 import { priceScaleFormatter } from "./lib/priceFormat";
 import { v1Path } from "./lib/runtime";
@@ -87,6 +86,8 @@ function TerminalApp() {
   const [positionCount, setPositionCount] = useState(0);
   const [dockOpen, setDockOpen] = useState(false);
   const [dockPositions, setDockPositions] = useState<PositionRow[]>([]);
+  const [wsH, setWsH] = useState(0);
+  const wsRef = useRef<HTMLElement | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [tlsProbe, setTlsProbe] = useState<{ ok: boolean; ms: number } | null>(null);
   const [tickerOk, setTickerOk] = useState(false);
@@ -173,10 +174,11 @@ function TerminalApp() {
     const ms = Math.min(999, Math.max(0, Math.round(latency)));
     return { text: `${ms} ms`, tone: ms < 200 ? "good" : ms < 500 ? "fair" : "bad" };
   })();
+  const refreshPositions = useCallback(() => tradeApi.positions().then((rows) => { setPositionCount(rows.length); setDockPositions(rows); }).catch(() => undefined), []);
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    const loadCount = () => tradeApi.positions().then((rows) => { if (!cancelled) { setPositionCount(rows.length); setDockPositions(rows); } }).catch(() => undefined);
+    const loadCount = () => { if (!cancelled) void refreshPositions(); };
     void loadCount();
     const timer = window.setInterval(loadCount, 10_000);
     return () => { cancelled = true; window.clearInterval(timer); };
@@ -235,6 +237,14 @@ function TerminalApp() {
     return () => { window.clearInterval(flush); unsubscribe(); };
   }, [user]);
 
+  useEffect(() => {
+    const el = wsRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWsH(el.clientHeight));
+    ro.observe(el);
+    setWsH(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
   // 主导航首项与 K 线区左缘竖直对齐：按实测差值补 margin，随布局变化重算。
   useLayoutEffect(() => {
     const align = () => {
@@ -315,33 +325,9 @@ function TerminalApp() {
             {activeMarkets.map((row) => <button key={row.symbol} className={`market-row ${selectedSymbol === row.symbol ? "selected" : ""}`} onClick={() => setSelectedSymbol(row.symbol)} onMouseEnter={() => prefetchKlines(row.symbol, chartPreference.interval)}><div className="market-name"><strong>{row.baseAsset}<span>/USDT</span></strong><small>{compact.format(row.quoteVolume)} vol</small></div><div className="market-quote"><strong>{formatPrice(row.lastPrice)}</strong><small className={row.priceChangePercent >= 0 ? "positive" : "negative"}>{formatDelta(row.priceChangePercent)}</small></div></button>)}</div>
           <div className="rail-footer"><div><span className={`status-light ${marketStatus === "ready" ? "is-live" : ""}`} /> Binance Futures</div><span>{activeMarkets.length} 个合约</span></div>
         </aside>
-        <main className="chart-workspace">
+        <main className="chart-workspace" ref={wsRef}>
           <div className="chart-underlay" inert={showAssistant ? true : undefined}><KlineChart symbol={selectedSymbol} insightToggle={!showAssistant && <button className="insight-toggle" type="button" aria-label={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} title={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} aria-pressed={showInsightPanel} onClick={() => setShowInsightPanel((show) => !show)}>{showInsightPanel ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>} theme={theme} onSymbolChange={setSelectedSymbol} onStopPrice={(p) => setStopPriceRequest({ value: priceScaleFormatter(p), at: Date.now() })} /></div>
-          <div className={`positions-dock ${dockOpen ? "is-open" : ""}`} aria-hidden={!dockOpen}>
-            {dockOpen && <div className="positions-dock-inner">
-              <header><strong>持仓</strong><span>{dockPositions.length} 笔</span></header>
-              <div className="positions-dock-list">
-                {dockPositions.length === 0 && <p className="positions-dock-empty">暂无持仓</p>}
-                {dockPositions.map((row) => {
-                  const long = isLongSide(row.side);
-                  const mark = priceMap[row.symbol] ?? Number(row.current_price);
-                  const entry = Number(row.open_price);
-                  const notional = Number(row.position_amount);
-                  // 展示层盈亏用 WS 实时价推算（iOS 口径），不等 10s REST 轮询。
-                  const pnl = entry > 0 && Number.isFinite(mark) ? (mark - entry) / entry * notional * (long ? 1 : -1) : Number(row.pnl);
-                  return <button key={row.id} type="button" className="positions-dock-row" onClick={() => setSelectedSymbol(row.symbol)} aria-label={`查看 ${row.symbol} K线`}>
-                    <span className="pd-symbol">{row.symbol.replace(/USDT$/, "")}</span>
-                    <span className={`pd-side ${long ? "long" : "short"}`}>{long ? "多" : "空"}</span>
-                    <span>{Number(row.position_amount).toFixed(2)} U</span>
-                    <span>开 {priceScaleFormatter(Number(row.open_price))}</span>
-                    <span>现 {priceScaleFormatter(mark)}</span>
-                    <span className={pnl >= 0 ? "pd-up" : "pd-down"}>{pnl >= 0 ? "+" : "-"}{Math.abs(pnl).toFixed(2)} U</span>
-                    <span>损 {row.market_stop_price ? priceScaleFormatter(Number(row.market_stop_price)) : "—"}</span>
-                  </button>;
-                })}
-              </div>
-            </div>}
-          </div>
+          <PositionsDock rows={dockPositions} prices={priceMap} open={dockOpen} height={Math.round(wsH * 0.3)} onToggle={() => setDockOpen((open) => !open)} onOpenSymbol={setSelectedSymbol} onChanged={() => void refreshPositions()} />
           {showAssistant && <ContractAnalysisAssistant key={selectedSymbol} symbol={selectedSymbol} baseAsset={selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")} structuresContainer={structuresContainer} returnFocusTo={assistantOpener.current} onClose={() => setShowAssistant(false)} />}
         </main>
         {panelVisible && <aside className="insight-panel" ref={setStructuresContainer} aria-labelledby={showAssistant ? "assistant-structures-title" : "market-pulse-title"}>
@@ -403,7 +389,7 @@ function TerminalApp() {
       {activeNav === "历史" && <div className="pg-scroll"><HistoryPage /></div>}
       {activeNav === "账户" && <div className="pg-scroll"><AccountPage focus={accountFocus} /></div>}
       {(activeNav === "信号" || activeNav === "引擎") && <section className="empty-state"><div className="empty-orbit"><Cpu size={34} /></div><h1>{activeNav}模块即将上线</h1><p>核心数据层已连接 Binance Futures。切换回行情查看实时盘面。</p><button onClick={() => setActiveNav("行情")}><LayoutDashboard size={15} /> 返回行情</button></section>}
-      <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span><button type="button" className="statusbar-dock-toggle" aria-expanded={dockOpen} aria-label={dockOpen ? "收起持仓列表" : "展开持仓列表"} onClick={() => setDockOpen((open) => !open)}>{dockOpen ? <ChevronDown size={13} /> : <ChevronUp size={13} />} 持仓</button><span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
+      <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span><span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
     </div>
   );
 }
