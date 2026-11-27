@@ -69,7 +69,7 @@ export const tradeApi = {
   accountInfo: (fresh: boolean, signal?: AbortSignal) => get<AccountInfo>(`/account/info${fresh ? "?fresh=1" : ""}`, signal),
   profile: (signal?: AbortSignal) => get<Profile>("/account/profile", signal),
   apiInfo: (signal?: AbortSignal) => get<ApiInfo>("/api/info", signal),
-  setStopLoss: (amount: number) => post<unknown>("/account/stop-loss", { stop_loss_amount: amount }),
+  setStopLoss: (amount: number) => post<unknown>("/account/stop-loss", { amount: String(amount) }),
   strategyList: (signal?: AbortSignal) => get<Array<{ id: string; name: string; is_active: boolean; levels: unknown[] }>>("/strategy/list", signal),
   strategySave: (body: { strategy_id?: string; name: string; levels: unknown[] }) => post<unknown>("/strategy/save", body),
   strategyDelete: (strategyId: string) => post<unknown>("/strategy/delete", { strategy_id: strategyId }),

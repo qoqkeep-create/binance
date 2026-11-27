@@ -24,6 +24,10 @@ if (!panel.includes("输入止损价") || panel.indexOf("trade-settings-btn") < 
 if (!panel.includes("trade-paste-icon") || !panel.includes("trade-input-wrap") || panel.includes("pg-notice") || !panel.includes("stopPriceRequest")) {
   throw new Error("Paste icon inside stop input; no notices in right panel; stop price injectable from chart right-click");
 }
+const apiSrc = readFileSync(fileURLToPath(new URL("../src/lib/tradeApi.ts", import.meta.url)), "utf8");
+if (!apiSrc.includes('setStopLoss: (amount: number) => post<unknown>("/account/stop-loss", { amount: String(amount) })')) {
+  throw new Error("Stop-loss save must post the backend-required amount field, not stop_loss_amount");
+}
 const cssSrc = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
 if (panel.includes("trade-side-row") || panel.includes("止损价低于现价为多") || !panel.includes('className={`trade-submit ${isLong ? "is-long" : "is-short"}`}') || !cssSrc.includes(".trade-submit.is-short { background: var(--red); color: #ffffff; }")) {
   throw new Error("No long/short hint row; submit button itself shows 市价开多/开空 and colors green/red");

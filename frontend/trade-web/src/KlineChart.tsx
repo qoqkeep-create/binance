@@ -135,7 +135,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const themeRef = useRef(theme);
   const settingsRef = useRef(settings);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [crosshair, setCrosshair] = useState<{ x: number; y: number; price: number } | null>(null);
+  const [crosshair, setCrosshair] = useState<{ x: number; y: number; price: number; pane: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
@@ -494,15 +494,31 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       const rect = container.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      const mainHeight = api.panes()[0]?.getHeight() ?? 0;
-      if (y < 0 || y > mainHeight || x < 0 || x > rect.width) { setCrosshair(null); return; }
+      // 十字线穿透全部 pane（含 MACD/StochRSI）：竖线全高，横线/价签取鼠标所在 pane 的价格轴。
+      if (y < 0 || y > rect.height || x < 0 || x > rect.width) { setCrosshair(null); return; }
       const ts = api.timeScale();
       const logical = ts.coordinateToLogical(x);
       if (logical === null) { setCrosshair(null); return; }
       const barX = ts.logicalToCoordinate(Math.round(logical) as Logical);
-      const price = candle.coordinateToPrice(y);
-      if (barX === null || price === null) { setCrosshair(null); return; }
-      setCrosshair({ x: barX, y, price });
+      if (barX === null) { setCrosshair(null); return; }
+      const panes = api.panes();
+      let pane = 0;
+      let price: number | null = null;
+      for (let i = 0; i < panes.length; i += 1) {
+        const paneApi = panes[i];
+        if (!paneApi) continue;
+        const paneEl = paneApi.getHTMLElement();
+        if (!paneEl) continue;
+        const paneRect = paneEl.getBoundingClientRect();
+        if (event.clientY >= paneRect.top && event.clientY <= paneRect.bottom) {
+          pane = i;
+          const series = paneApi.getSeries()[0];
+          price = series ? series.coordinateToPrice(event.clientY - paneRect.top) : null;
+          break;
+        }
+      }
+      if (price === null) { setCrosshair(null); return; }
+      setCrosshair({ x: barX, y, price, pane });
     };
     const onCrosshairLeave = () => setCrosshair(null);
     // pointermove 不受 pointerdown preventDefault 抑制（兼容 mousemove 会停发），拖拽柄/工具期间十字线仍跟随鼠标。
@@ -790,8 +806,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
             <div className="kline-crosshair-v" style={{ left: crosshair.x }} />
             <div className="kline-crosshair-h" style={{ top: crosshair.y }} />
             <div className="kline-crosshair-tag" style={{ top: crosshair.y }}>
-              <span>{priceScaleFormatter(crosshair.price)}</span>
-              <span className={up ? "up" : "down"}>{up ? "+" : "-"}{Math.abs(pct).toFixed(2)}%</span>
+              <span>{crosshair.pane === 0 ? priceScaleFormatter(crosshair.price) : crosshair.pane === 1 ? crosshair.price.toFixed(4) : crosshair.price.toFixed(2)}</span>
+              {crosshair.pane === 0 && <span className={up ? "up" : "down"}>{up ? "+" : "-"}{Math.abs(pct).toFixed(2)}%</span>}
             </div>
           </>;
         })()}

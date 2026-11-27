@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：十字线穿透副图（pane 感知价签）、止损额保存改发 amount 字段
+
+十字线竖线全高、横线/价签取鼠标所在 pane 价格轴（MACD 4dp/Stoch 2dp/主图分档＋pct）；setStopLoss 误发 stop_loss_amount 致后端必填报错，改 { amount: String }。实测副图价签与竖线全高、200 保存成功。release crosspane-0277255 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-27：横线右轴仿十字线价签、开仓按钮直接市价开多/开空且绿/红
 
 horizontal 线渲染 chart-line-axis-tag（贴右标尺、线色底、分档价格、出主图隐藏）；删 trade-side-row 提示行；submit is-long/is-short（空＝红底白字）。实测价签 rightGap 0、多绿空红、提示行无。release axistag-170c6de 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

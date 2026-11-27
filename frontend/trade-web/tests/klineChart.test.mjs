@@ -153,7 +153,7 @@ if (!source.includes("last - bars * 0.8 + 0.5") || !source.includes("last + bars
 if (!source.includes("createPriceLine") || !source.includes("止损 -") || !source.includes("开仓 ") || !source.includes("浮盈") || !source.includes("removePriceLine")) {
   throw new Error("Chart must draw entry/stop(loss box)/live-PnL price lines for open positions");
 }
-if (!source.includes("const leftEdge = 8") || !source.includes("const base = leftEdge + strip;") || !source.includes("base + strip + 8") || !source.includes("container.clientWidth / 6") || !source.includes("pos-label-layer") || !source.includes("axisLabelVisible: false") || !source.includes("tickDirRef.current = close >= refClose ? 1 : -1") || !source.includes("labelColor: pnlColor") || !source.includes("spec.labelColor ?? spec.color") || !source.includes('order.kind.endsWith("take_profit")')) {
+if (!source.includes("const leftEdge = 8") || !source.includes("const base = leftEdge + strip;") || !source.includes("base + strip + 8") || !source.includes("container.clientWidth / 6") || !source.includes("pos-label-layer") || !source.includes("axisLabelVisible: false") || !source.includes("tickDirRef.current = close >= refClose ? 1 : -1") || !source.includes("paneEl.getBoundingClientRect()") || !source.includes("crosshair.pane === 0") || !source.includes("labelColor: pnlColor") || !source.includes("spec.labelColor ?? spec.color") || !source.includes('order.kind.endsWith("take_profit")')) {
   throw new Error("Entry/stop at left edge+2 strips, PnL one strip right of them, TP at 1/6; tick-colored price line; TP orders drawn");
 }
 if (!source.includes("kline-attempt-timeout") || !source.includes("Promise.race([getKlines(symbol, selectedInterval, HISTORY_LIMIT, controller.signal), guard])")) {

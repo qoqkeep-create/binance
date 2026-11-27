@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 十字线穿透副图＋止损额保存字段修正 Web 发布（2026-11-27，北京时间）
+
+用户两报：① 十字线不能穿透 MACD/StochRSI 副图；② 止损额调 200 保存报"必填项"。根因①：自绘十字线边界限制 y≤主图高且价格只取主图序列；改 pane 感知——竖线全容器高（CSS height:100%），横线/价签按鼠标所在 pane（getHTMLElement rect 命中）取该 pane 首序列 coordinateToPrice；价签主图＝分档价＋涨跌幅、MACD＝4 位小数、Stoch＝2 位小数。根因②：后端序列化器字段为 **amount**（必填 50–300），web 误发 `stop_loss_amount`→恒报必填；改发 `{ amount: String(amount) }`。实测：MACD pane 价签 -0.0006、竖线高 655＝容器全高；Stoch 价签 56.48；滑杆 200 保存→「止损额已保存」、行显 200 U。Web release **`trade-web-20261127-crosspane-0277255`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `995fc9ef…`／`f1861d21…`／`84a0b4f0…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 pane 命中与 amount 字段。后端不切换，旧 release 保留可回退。
+
 ## 横线右轴价格标签＋开仓按钮直接多空红绿 Web 发布（2026-11-27，北京时间）
 
 用户两件：① 画的横线要在右侧价格标尺上显示仿十字线价签的信息条；② 开仓模块上方"开多/开空＋止损低于现价为多"提示行删除，按钮直接按现价与止损价关系显示「市价开多/市价开空」（限价同理挂多/挂空），开多绿、开空红。实现：覆盖层为每条 horizontal 线渲染 `.chart-line-axis-tag`（right:0 贴标尺、translateY(-50%)、底色＝线色、白字/白线深字、priceScaleFormatter 分档精度、超出主图隐藏）；TradePanel 删 trade-side-row 整块与 CSS，submit 加 `is-long/is-short` 类（is-short 红底白字）。实测：价签 text=1.346、bg=线绿、rightGap=0；止损低于现价→「市价开多」rgb(0,168,143)、高于→「市价开空」rgb(255,86,105)；提示行不存在；截图右轴绿签贴线。Web release **`trade-web-20261127-axistag-170c6de`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `aa230b4c…`／`33dc8232…`／`d57a96b4…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
