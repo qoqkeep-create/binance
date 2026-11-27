@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：精简稳固批次（删游客/死代码/fee 单源/workers2/模式头）
+
+用户授权自决架构推进。Web：游客入口与 guest 概念全删（server 本无 guest，共享账号登录生产 400 实证）；CompactIndicatorStrip 死链删；REST 显式 X-Trading-Mode ordinary。Server：common/fees.py 单源 TOTAL_FEE_RATE（trading/positions 导入＋内联字面量收敛）；uvicorn workers 2（饱和证据触发既有审查 P2）。web 测试全绿＋build；server 849 例定向复核。release lean-85bc0dc 上线首尔＋ba 哈希一致、游客 0 命中。
+
 ## 2026-11-27：接入 trade-web 新版多空测量工具
 
 当前整合 Web 前端接入 `PositionToolOverlay`、`lib/positionTools` 和持久化设置面板，复用现有 `KlineChart` 主图容器。新版支持多头／空头绘制、入场／止盈／止损拖动、RR、数量、风险和浮动盈亏计算，测量对象通过 iOS 账号体系的 `positionTools` 偏好保存。当前 Django Web 设置接口增加对应字段校验和大小、数量、数值范围限制。旧 `KlineChart` 内的做多、做空、斐波那契测量状态、工具栏按钮、覆盖层和右键清除入口已删除。新增 positionTools 计算、前端契约和后端设置测试。部署前完成 Web `npm test`、`npm run build`、Django `web` 测试和 `git diff --check`。

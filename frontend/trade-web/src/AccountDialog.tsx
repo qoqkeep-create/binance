@@ -6,7 +6,7 @@ import { AccountApiError } from "./lib/account";
 import "./account.css";
 
 type DialogMode = "login" | "register";
-const syncLabels = { "signed-out": "尚未登录", loading: "正在读取云端设置", syncing: "正在保存设置", saved: "云端已保存", guest: "游客只读 · 不保存设置", error: "同步未完成" };
+const syncLabels = { "signed-out": "尚未登录", loading: "正在读取云端设置", syncing: "正在保存设置", saved: "云端已保存", error: "同步未完成" };
 
 export function AccountControl() {
   const { user, hydrating, authPending, syncStatus, error, logout, retrySync } = useAccount();
@@ -41,15 +41,14 @@ export function AccountControl() {
     <div className="account-control" ref={menuRef}>
       {user ? <>
         <button ref={triggerRef} type="button" className="account-profile-trigger" onClick={() => setProfileOpen((open) => !open)} aria-expanded={profileOpen} aria-controls="account-profile-panel" aria-label={`${user.displayName}，账户与云端设置`}>
-          <span className="account-avatar">{user.role === "guest" ? "游" : user.displayName.slice(0, 1).toUpperCase()}</span><span className="account-trigger-name">{user.displayName}</span><span className={`account-sync-dot is-${syncStatus}`} /><ChevronDown size={12} />
+          <span className="account-avatar">{user.displayName.slice(0, 1).toUpperCase()}</span><span className="account-trigger-name">{user.displayName}</span><span className={`account-sync-dot is-${syncStatus}`} /><ChevronDown size={12} />
         </button>
         {profileOpen && <section className="account-profile-panel" id="account-profile-panel" aria-label="账户与云端同步">
-          <div className="account-profile-heading"><span className="account-avatar large">{user.role === "guest" ? "游" : user.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{user.displayName}</strong><span>{user.email ?? `@${user.username}`}</span></div><span className="account-role">{user.role === "guest" ? "游客" : "个人账户"}</span></div>
-          <div className={`account-cloud-status is-${syncStatus}`} role="status"><Cloud size={15} /><span>{syncLabels[syncStatus]}</span>{syncStatus === "saved" && <Check size={13} />}{syncStatus === "guest" && <UserRound size={13} />}{(syncStatus === "syncing" || syncStatus === "loading") && <RefreshCw size={12} className="spin" />}</div>
+          <div className="account-profile-heading"><span className="account-avatar large">{user.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{user.displayName}</strong><span>{user.email ?? `@${user.username}`}</span></div><span className="account-role">个人账户</span></div>
+          <div className={`account-cloud-status is-${syncStatus}`} role="status"><Cloud size={15} /><span>{syncLabels[syncStatus]}</span>{syncStatus === "saved" && <Check size={13} />}{(syncStatus === "syncing" || syncStatus === "loading") && <RefreshCw size={12} className="spin" />}</div>
           {error && <div className="account-profile-error"><span>{error}</span><button type="button" onClick={retrySync} disabled={hydrating || authPending}><RefreshCw size={11} /> 重试同步</button></div>}
           {syncStatus === "error" && !error && <button className="account-retry-sync" type="button" onClick={retrySync}>重试同步 <RefreshCw size={12} /></button>}
-          <p className="account-sync-description">{user.role === "guest" ? "游客可以浏览行情与分析；主题、交易对和筛选仅在本次浏览中生效，不会写入账户。" : "本页面的主题、交易对、筛选、助手周期与图表周期随账户保存。图表的缩放与临时视图状态不包含在此同步中。"}</p>
-          {user.role === "guest" && <p className="account-guest-note">游客模式只读，当前浏览中的筛选和界面变化不会保存；注册独立账户可保存个人偏好。</p>}
+          <p className="account-sync-description">本页面的主题、交易对、筛选、助手周期与图表周期随账户保存。图表的缩放与临时视图状态不包含在此同步中。</p>
           <button className="account-logout" type="button" disabled={authPending} onClick={() => { void logout().then(() => setProfileOpen(false)).catch(() => undefined); }}><LogOut size={14} />{authPending ? "正在退出…" : "退出登录"}</button>
         </section>}
       </> : <button ref={triggerRef} type="button" className="account-login-entry" onClick={() => openDialog("login")} aria-haspopup="dialog"><UserRound size={15} /><span>{hydrating ? "账户" : "登录 / 注册"}</span></button>}
@@ -137,15 +136,6 @@ export default function AccountDialog({ initialMode, onClose, returnFocusTo, pre
     finally { setSubmitting(false); }
   }
 
-  async function enterGuest() {
-    if (busy) return;
-    setError("");
-    setSubmitting(true);
-    try { await login("88888888", "88888888"); onClose(); }
-    catch (error) { setError(error instanceof AccountApiError ? error.message : "游客登录暂时不可用，请稍后重试。"); }
-    finally { setSubmitting(false); }
-  }
-
   return createPortal(<div className={`account-modal-backdrop ${presentation === "page" ? "account-page-backdrop" : ""}`} onPointerDown={(event) => { if (presentation !== "page" && event.target === event.currentTarget) onClose(); }}>
     {presentation === "page" && <div className="account-page-brand" aria-hidden="true"><div className="account-page-glyph"><span /><span /><span /></div><div><strong>ORBITAL</strong><small>MARKET INTELLIGENCE</small></div></div>}
     <div className="account-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -159,8 +149,7 @@ export default function AccountDialog({ initialMode, onClose, returnFocusTo, pre
         {error && <div id={errorId} className="account-form-error" role="alert"><AlertCircle size={14} /><span>{error}</span></div>}
         <button className="account-submit" type="submit" disabled={busy}>{busy ? <><RefreshCw size={15} className="spin" /> 正在处理…</> : <>{mode === "login" ? "登录账户" : "注册并登录"}<ArrowRight size={15} /></>}</button>
       </form>
-      <div className="account-guest-divider"><span />或<span /></div><button className="account-guest-login" type="button" disabled={busy} onClick={() => { void enterGuest(); }}><UserRound size={15} /> 游客登录 <span>共享体验账户</span></button>
-      <p className="account-auth-note"><Cloud size={13} /><span>登录后保存主题、交易对、筛选、助手周期与图表周期。游客模式仅浏览，不保存设置。图表的缩放与临时视图状态不包含在此同步中。</span></p>
+      <p className="account-auth-note"><Cloud size={13} /><span>登录后保存主题、交易对、筛选、助手周期与图表周期。图表的缩放与临时视图状态不包含在此同步中。</span></p>
     </div>
   </div>, document.body);
 }
@@ -170,6 +159,6 @@ export function AccountGate({ loading }: { loading: boolean }) {
   if (loading) return <div className="account-gate-loading" role="status"><div className="account-page-glyph"><span /><span /><span /></div><strong>正在检查账户会话</strong><small>准备你的市场观察台…</small></div>;
   if (showForm) return <AccountDialog initialMode="login" onClose={() => setShowForm(false)} returnFocusTo={null} presentation="page" />;
   return <>
-    <div className="account-gate-backdrop"><div className="account-page-brand" aria-hidden="true"><div className="account-page-glyph"><span /><span /><span /></div><div><strong>ORBITAL</strong><small>MARKET INTELLIGENCE</small></div></div><div className="account-gate-copy"><span className="account-eyebrow">PRIVATE MARKET WORKSPACE</span><h1>登录后开始观察市场</h1><p>行情、合约分析和你的页面偏好都在同一个工作区中。游客可以浏览只读行情，不会保存设置。</p><button type="button" className="account-gate-cta" onClick={() => setShowForm(true)}><UserRound size={16} /> 登录 / 注册</button></div><div className="account-gate-footer">安全会话 · 个人偏好云端保存 · 图表视图本地管理</div></div>
+    <div className="account-gate-backdrop"><div className="account-page-brand" aria-hidden="true"><div className="account-page-glyph"><span /><span /><span /></div><div><strong>ORBITAL</strong><small>MARKET INTELLIGENCE</small></div></div><div className="account-gate-copy"><span className="account-eyebrow">PRIVATE MARKET WORKSPACE</span><h1>登录后开始观察市场</h1><p>行情、合约分析和你的页面偏好都在同一个工作区中。</p><button type="button" className="account-gate-cta" onClick={() => setShowForm(true)}><UserRound size={16} /> 登录 / 注册</button></div><div className="account-gate-footer">安全会话 · 个人偏好云端保存 · 图表视图本地管理</div></div>
   </>;
 }

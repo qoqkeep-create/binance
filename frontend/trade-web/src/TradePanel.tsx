@@ -28,8 +28,8 @@ function fmt(value: number, digits = 2) {
   return value.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-export default function TradePanel({ symbol, price, canTrade, visible, onNavigate }: {
-  symbol: string; price: number | undefined; canTrade: boolean; visible: boolean;
+export default function TradePanel({ symbol, price, visible, onNavigate }: {
+  symbol: string; price: number | undefined; visible: boolean;
   onNavigate: (target: "stop-loss" | "strategy") => void;
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null);
@@ -121,7 +121,7 @@ export default function TradePanel({ symbol, price, canTrade, visible, onNavigat
     }
   }
 
-  const blocked = !canTrade ? "游客模式仅浏览，登录后可编辑交易" : strategyState === "ready" && !strategy ? "尚未启用止盈策略，请先在账户页启用" : "";
+  const blocked = strategyState === "ready" && !strategy ? "尚未启用止盈策略，请先在账户页启用" : "";
 
   return <div className="trade-panel">
     {blocked && <div className="trade-hint">{blocked}</div>}
@@ -164,7 +164,7 @@ export default function TradePanel({ symbol, price, canTrade, visible, onNavigat
       </button>
       {strategyState === "error" && <button type="button" onClick={() => void load()}>重试</button>}
     </div>
-    <button type="button" className="trade-submit" disabled={!valid || !strategy || !canTrade || submitting} onClick={() => { setNotice(""); setConfirmOpen(true); }}>
+    <button type="button" className="trade-submit" disabled={!valid || !strategy || submitting} onClick={() => { setNotice(""); setConfirmOpen(true); }}>
       {submitting ? "提交中…" : stopInput.trim() === "" ? "输入止损价" : orderType === "market" ? (isLong ? "市价开多" : "市价开空") : (isLong ? "限价挂多" : "限价挂空")}
     </button>
     <button type="button" className="trade-settings-btn" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}><Settings2 size={13} /> 开仓设置</button>

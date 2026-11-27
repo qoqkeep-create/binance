@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountApiError, accountApi, acknowledgePreferencePatch, isPreferenceObject, mergePreferenceSettings, preferenceKeys, preferencePatch, type AccountSession, type AccountSettings, type AccountUser } from "./lib/account";
 
-export type SyncStatus = "signed-out" | "loading" | "syncing" | "saved" | "guest" | "error";
+export type SyncStatus = "signed-out" | "loading" | "syncing" | "saved" | "error";
 interface AccountView {
   user: AccountUser | null;
   settings: AccountSettings;
@@ -90,7 +90,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       settings.current = mergePreferenceSettings(response.settings, dirty.current);
       hydrated.current = true;
       hydrating.current = false;
-      publish(user.current?.role === "guest" ? "guest" : Object.keys(dirty.current).length ? "syncing" : "saved");
+      publish(Object.keys(dirty.current).length ? "syncing" : "saved");
       schedule();
     } catch (error) {
       if (expected !== generation.current) return;
@@ -117,13 +117,6 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     dirty.current = {};
     version.current = 0;
     hydrated.current = false;
-    if (session.user.role === "guest") {
-      // Visitor mode never hydrates or writes the shared preference row.
-      hydrated.current = true;
-      hydrating.current = false;
-      publish("guest");
-      return;
-    }
     await loadSettings(expected);
   }
 
@@ -216,7 +209,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     } finally {
       if (expected === generation.current) {
         authPending.current = false;
-        publish(hydrated.current && user.current ? user.current.role === "guest" ? "guest" : Object.keys(dirty.current).length ? "syncing" : "saved" : user.current ? "error" : "signed-out", user.current && !hydrated.current ? lastError.current : null);
+        publish(hydrated.current && user.current ? Object.keys(dirty.current).length ? "syncing" : "saved" : user.current ? "error" : "signed-out", user.current && !hydrated.current ? lastError.current : null);
         schedule();
       }
     }
@@ -236,7 +229,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     } finally {
       if (expected === generation.current) {
         authPending.current = false;
-        publish(hydrated.current && user.current ? user.current.role === "guest" ? "guest" : Object.keys(dirty.current).length ? "syncing" : "saved" : user.current ? "error" : "signed-out", user.current && !hydrated.current ? lastError.current : null);
+        publish(hydrated.current && user.current ? Object.keys(dirty.current).length ? "syncing" : "saved" : user.current ? "error" : "signed-out", user.current && !hydrated.current ? lastError.current : null);
         schedule();
       }
     }
@@ -289,7 +282,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         csrf.current = session.csrfToken;
         if (!hydrated.current) await loadSettings(expected);
         else if (Object.keys(dirty.current).length) await flushRef.current();
-        else publish(user.current.role === "guest" ? "guest" : "saved");
+        else publish("saved");
       } catch (error) { if (expected === generation.current) publish("error", messageFor(error)); }
       finally { if (expected === generation.current) retrying.current = false; }
     })();
@@ -303,8 +296,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       ? { ...fallback, ...(isPreferenceObject(settings.current[key]) ? settings.current[key] : {}) } : settings.current[key];
     const patch = preferencePatch(key, previous, next);
     settings.current = { ...settings.current, [key]: next };
-    if (user.current?.role === "user") dirty.current = mergePreferenceSettings(dirty.current, patch);
-    publish(user.current ? user.current.role === "guest" ? "guest" : hydrated.current ? Object.keys(dirty.current).length ? "syncing" : "saved" : "loading" : "signed-out");
+    if (user.current) dirty.current = mergePreferenceSettings(dirty.current, patch);
+    publish(user.current ? hydrated.current ? Object.keys(dirty.current).length ? "syncing" : "saved" : "loading" : "signed-out");
     schedule();
   }, [publish]);
 

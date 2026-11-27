@@ -1,4 +1,5 @@
 from common.trading_mode import TradingMode, request_trading_mode
+from common.fees import TOTAL_FEE_RATE as _TOTAL_FEE_RATE
 from trading.adapters import trading_adapter
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -118,7 +119,7 @@ from trading.balance_cap import (
 logger = logging.getLogger(__name__)
 TV_MESSAGE_API_TOKEN = os.getenv("TV_MESSAGE_API_TOKEN", "").strip()
 TV_MESSAGE_RETENTION_DAYS = 3
-TOTAL_FEE_RATE = Decimal("0.001")
+TOTAL_FEE_RATE = _TOTAL_FEE_RATE
 MARKET_KLINE_INTERVALS = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"}
 
 
@@ -2210,7 +2211,7 @@ class TradeOpenView(APIView):
                         )
 
                     if data["include_fee"]:
-                        effective_ratio = abs(entry_price - stop_loss_price) / entry_price + Decimal("0.001")
+                        effective_ratio = abs(entry_price - stop_loss_price) / entry_price + TOTAL_FEE_RATE
                         size = calc_contract_size(
                             entry_price=str(entry_price),
                             notional_usdt=str(stop_loss_amount / effective_ratio),

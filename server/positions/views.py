@@ -1,4 +1,5 @@
 from common.trading_mode import TradingMode, request_trading_mode
+from common.fees import TOTAL_FEE_RATE as _TOTAL_FEE_RATE
 from decimal import Decimal
 from typing import Any, Optional
 from datetime import datetime, timedelta, timezone as dt_timezone
@@ -77,7 +78,7 @@ from trading.services import (
 from trading.locks import serialized_exchange_mutation, user_trading_activity_lock
 
 logger = logging.getLogger(__name__)
-TOTAL_FEE_RATE = Decimal("0.001")
+TOTAL_FEE_RATE = _TOTAL_FEE_RATE
 POSITION_SIZE_TOLERANCE = Decimal("0.00000001")
 HISTORY_DEFAULT_PAGE_SIZE = 20
 HISTORY_MAX_PAGE_SIZE = 100

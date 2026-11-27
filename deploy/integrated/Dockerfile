@@ -7,4 +7,4 @@ COPY server/ /app/
 RUN useradd --create-home --uid 10001 trade && chown -R trade:trade /app
 USER trade
 EXPOSE 8787
-CMD ["uvicorn", "riskon.asgi:application", "--host", "0.0.0.0", "--port", "8787", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "riskon.asgi:application", "--host", "0.0.0.0", "--port", "8787", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]

@@ -6,6 +6,8 @@ interface Envelope<T> { code: number; message?: string; data: T }
 async function request<T>(url: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("accept", "application/json");
+  // 契约要求显式模式头；web 仅普通合约（带单入口未开放）。
+  headers.set("X-Trading-Mode", "ordinary");
   const token = getAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(url, { ...init, headers, credentials: "include", signal: init.signal ?? AbortSignal.timeout(15_000) });

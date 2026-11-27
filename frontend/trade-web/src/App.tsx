@@ -111,7 +111,7 @@ function TerminalApp() {
     try {
       // Cache only signed-out/personal theme for first paint. Guest browsing
       // must not persist a preference locally or to the shared account.
-      if (user?.role !== "guest") localStorage.setItem("market-theme", theme);
+      localStorage.setItem("market-theme", theme);
     } catch {
       // Keep the active theme even if the browser blocks saving preferences.
     }
@@ -317,7 +317,7 @@ function TerminalApp() {
             </div>
             <button className="pulse-mode-toggle" type="button" aria-pressed={insightMode === "trade"} title={insightMode === "trade" ? "切换到盘面" : "切换到交易"} onClick={() => { setInsightMode((mode) => (mode === "trade" ? "pulse" : "trade")); setShowAssistant(false); }}><ArrowLeftRight size={13} aria-hidden="true" /><span>{insightMode === "trade" ? "盘面" : "交易"}</span></button>
           </header>
-          <div hidden={insightMode !== "trade"}><TradePanel symbol={selectedSymbol} price={selectedPrice} canTrade={user.role !== "guest"} visible={insightMode === "trade" && activeNav === "行情"} onNavigate={(kind) => { setAccountFocus({ kind, at: Date.now() }); setActiveNav("账户"); }} /></div>
+          <div hidden={insightMode !== "trade"}><TradePanel symbol={selectedSymbol} price={selectedPrice} visible={insightMode === "trade" && activeNav === "行情"} onNavigate={(kind) => { setAccountFocus({ kind, at: Date.now() }); setActiveNav("账户"); }} /></div>
           <div hidden={insightMode !== "pulse"}>
           <div className="price-card" aria-label="当前价格与涨跌">
             <div className="price-card-top">

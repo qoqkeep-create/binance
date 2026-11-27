@@ -8,7 +8,6 @@
 .account-sync-dot { width: 4px; height: 4px; flex: none; border-radius: 50%; background: var(--muted); }
 .account-sync-dot.is-saved { background: var(--green); }
 .account-sync-dot.is-syncing, .account-sync-dot.is-loading { background: #c8a45a; }
-.account-sync-dot.is-guest { background: var(--muted); }
 .account-sync-dot.is-error { background: var(--red); }
 .account-profile-panel { position: absolute; top: calc(100% + 11px); right: 0; z-index: 80; width: 300px; max-width: calc(100vw - 24px); padding: 17px; border: 1px solid var(--line-bright); border-radius: 7px; color: var(--text); background: var(--bg-elevated); box-shadow: 0 12px 40px #0003; }
 .account-profile-heading { display: flex; align-items: center; gap: 9px; }
@@ -19,12 +18,9 @@
 .account-role { margin-left: auto; flex: none; padding: 3px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 8px; }
 .account-cloud-status { display: flex; align-items: center; gap: 7px; margin-top: 18px; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 .account-cloud-status.is-saved { color: var(--green); }
-.account-cloud-status.is-guest { color: var(--muted); }
 .account-cloud-status.is-error { color: var(--red); }
 .account-cloud-status > svg:last-child { margin-left: auto; }
-.account-sync-description, .account-guest-note { color: var(--muted); font-size: 10px; line-height: 1.9; margin: 10px 0 0; }
-.account-guest-note { padding: 9px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-hover); }
-.account-logout { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 15px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; font-size: 11px; }
+.account-sync-description, .account-logout { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 15px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; font-size: 11px; }
 .account-logout:hover { border-color: var(--line-bright); background: var(--panel-hover); }
 .account-profile-error { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 10px; color: var(--red); font-size: 10px; line-height: 1.7; }
 .account-profile-error button, .account-retry-sync { display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--text); background: transparent; font-size: 10px; }
@@ -79,11 +75,6 @@
 .account-submit { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; margin-top: 5px; border-radius: 4px; color: var(--assistant-button-text); background: var(--assistant-button-bg); font-size: 12px; font-weight: 600; }
 .account-submit:hover:not(:disabled) { filter: brightness(1.06); }
 .account-submit:disabled { opacity: .6; cursor: default; }
-.account-guest-divider { display: flex; align-items: center; gap: 10px; margin: 19px 0 14px; color: var(--muted-dark); font-size: 10px; }
-.account-guest-divider span { height: 1px; flex: 1; background: var(--line); }
-.account-guest-login { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-height: 38px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; font-size: 11px; }
-.account-guest-login > span { color: var(--muted); font-size: 9px; }
-.account-guest-login:hover:not(:disabled) { background: var(--panel-hover); border-color: var(--line-bright); }
 .account-auth-note { display: flex; gap: 7px; color: var(--muted-dark); font-size: 9px; line-height: 1.9; margin: 17px 0 0; }
 .account-auth-note > svg { flex: none; margin-top: 3px; }
 .account-control button:focus-visible, .account-dialog button:focus-visible { outline: 2px solid var(--assistant-button-bg); outline-offset: 3px; }
