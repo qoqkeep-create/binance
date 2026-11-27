@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：十字线时间轴标签条（中文周几＋日期＋时分，本站芯片配色，居竖线贴轴）
+
+crosshair 增 time（吸附序号取 data 时间/越界外推）；.kline-crosshair-time bottom:2px translateX(-50%) clamp 78px。实测文本/居中/样式命中。release crosstime-f5e94c8 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：画线可拖动（pointer/grabbing 手形）、编辑条图例化（粗细px/实虚/色块）、设置持久化
 
 lineDrag 入 liveRef；chart-line-tool cursor:pointer＋:active grabbing；三按钮带线段图例与色块；changeLineStyle 写 trade-web-chart-line-defaults，新建继承。实测拖动/持久化/继承/截图全过。release linedrag-758819b 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

@@ -190,3 +190,4 @@
 .kline-click-menu { position: absolute; z-index: 6; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; border: 1px solid var(--line-bright); border-radius: 6px; background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .kline-click-menu button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--text); font: 500 11px var(--font-ui); white-space: nowrap; text-align: left; }
 .kline-click-menu button:hover { border-color: var(--green); color: var(--green); }
+.kline-crosshair-time { position: absolute; bottom: 2px; transform: translateX(-50%); z-index: 4; padding: 2px 8px; border: 1px solid var(--line-bright); border-radius: 4px; background: var(--bg-elevated); color: var(--text); font: 10px var(--font-ui); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }

@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 十字线时间轴标签条 Web 发布（2026-11-28，北京时间）
+
+用户要求在十字线竖线与时间轴交点处加具体时间条（参考 TradingView 样式但适配本站配色）。实现：crosshair state 增 time（吸附 bar 序号→data()[idx].time，越界按周期外推）；`.kline-crosshair-time` 芯片贴时间轴底部（bottom:2px、translateX(-50%) 居竖线、左右 clamp 78px），格式"周六 2026-11-28 00:30"（中文周几＋日期＋时分，tabular-nums）；本站样式＝bg-elevated 深底＋line-bright 描边＋4px 圆角＋白字 10px（非参考图的纯黑块）。实测：竖线处标签文本正确、居中贴轴、样式命中。Web release **`trade-web-20261128-crosstime-f5e94c8`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `0c3b4990…`／`360fd78c…`／`41b3049c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 画线可拖动＋指针手形/抓握＋编辑条图例化＋设置持久化 Web 发布（2026-11-28，北京时间）
 
 用户两件：① 横线无法上下拖动；悬停要手形指针（非上下箭头），按下拖动要 grabbing 抓握形；② 粗细与颜色分开设置且直接显示（色块、线段图例＋几px、实/虚图例），并保存上次设置。实现：lineDrag 状态入 liveRef，线 onPointerDown 选中同时起拖（preventDefault 防 pan），move 按方向更新 price/time，up 清 body cursor；.chart-line-tool cursor:pointer＋:active grabbing（拖动中 body grabbing＝苹果闭手形）；编辑条三按钮＝粗细（当前色线段图例＋Npx）、线型（实/虚图例）、颜色（当前色块），菜单分别带图例；changeLineStyle 同步写 localStorage `trade-web-chart-line-defaults`，新建线继承（lineDefaultsRef 防闭包过期）。实测：拖动 price 61091.7→60375.3 下移✓、hover computed cursor=pointer、松手 body 复原；编辑条 labels 粗细/线型/颜色＋sample/swatch；改金色虚线后 stored 正确、删线重画自动继承；截图目检金色虚线与图例条在位。Web release **`trade-web-20261128-linedrag-758819b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `889743e4…`／`7e0a1ad2…`／`f5a0e764…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。

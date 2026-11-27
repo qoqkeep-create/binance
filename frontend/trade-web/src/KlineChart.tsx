@@ -88,6 +88,13 @@ function applyPaneLayout(chart: IChartApi, settings: IndicatorSettings) {
   panes[2].setStretchFactor(settings.stoch.enabled ? PANE_STRETCH.sub : 0);
 }
 
+const crosshairWeekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const formatCrosshairTime = (seconds: number) => {
+  const d = new Date(seconds * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${crosshairWeekdays[d.getDay()]} ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 export default function KlineChart({ symbol, insightToggle, theme = "dark", onStopPrice }: {
   symbol: string;
   insightToggle?: ReactNode;
@@ -135,7 +142,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const themeRef = useRef(theme);
   const settingsRef = useRef(settings);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [crosshair, setCrosshair] = useState<{ x: number; y: number; price: number; pane: number } | null>(null);
+  const [crosshair, setCrosshair] = useState<{ x: number; y: number; price: number; pane: number; time: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
@@ -501,6 +508,18 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       if (logical === null) { setCrosshair(null); return; }
       const barX = ts.logicalToCoordinate(Math.round(logical) as Logical);
       if (barX === null) { setCrosshair(null); return; }
+      const gridData = candle.data();
+      let time = 0;
+      if (gridData.length) {
+        const idx = Math.round(logical);
+        if (idx >= 0 && idx < gridData.length) time = Number(gridData[idx].time);
+        else {
+          const lastIdx = gridData.length - 1;
+          const lastTime = Number(gridData[lastIdx].time);
+          const interval = gridData.length > 1 ? Number(gridData[1].time) - Number(gridData[0].time) : 60;
+          time = lastTime + (idx - lastIdx) * interval;
+        }
+      }
       const panes = api.panes();
       let pane = 0;
       let price: number | null = null;
@@ -518,7 +537,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
         }
       }
       if (price === null) { setCrosshair(null); return; }
-      setCrosshair({ x: barX, y, price, pane });
+      setCrosshair({ x: barX, y, price, pane, time });
     };
     const onCrosshairLeave = () => setCrosshair(null);
     // pointermove 不受 pointerdown preventDefault 抑制（兼容 mousemove 会停发），拖拽柄/工具期间十字线仍跟随鼠标。
@@ -804,6 +823,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
           const up = pct >= 0;
           return <>
             <div className="kline-crosshair-v" style={{ left: crosshair.x }} />
+            <div className="kline-crosshair-time" style={{ left: Math.min(Math.max(crosshair.x, 78), (containerRef.current?.clientWidth ?? 0) - 78) }}>{formatCrosshairTime(crosshair.time)}</div>
             <div className="kline-crosshair-h" style={{ top: crosshair.y }} />
             <div className="kline-crosshair-tag" style={{ top: crosshair.y }}>
               <span>{crosshair.pane === 0 ? priceScaleFormatter(crosshair.price) : crosshair.pane === 1 ? crosshair.price.toFixed(4) : crosshair.price.toFixed(2)}</span>
