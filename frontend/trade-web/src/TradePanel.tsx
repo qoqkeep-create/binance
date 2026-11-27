@@ -28,9 +28,10 @@ function fmt(value: number, digits = 2) {
   return value.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-export default function TradePanel({ symbol, price, visible, onNavigate }: {
+export default function TradePanel({ symbol, price, visible, onNavigate, stopPriceRequest }: {
   symbol: string; price: number | undefined; visible: boolean;
   onNavigate: (target: "stop-loss" | "strategy") => void;
+  stopPriceRequest?: { value: string; at: number } | null;
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [strategy, setStrategy] = useState<StrategyRow | null>(null);
@@ -43,7 +44,6 @@ export default function TradePanel({ symbol, price, visible, onNavigate }: {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [notice, setNotice] = useState("");
   const attemptKeyRef = useRef<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -68,6 +68,11 @@ export default function TradePanel({ symbol, price, visible, onNavigate }: {
     void load(controller.signal);
     return () => controller.abort();
   }, [load, symbol, visible]);
+  useEffect(() => {
+    if (!stopPriceRequest) return;
+    setStopInput(stopPriceRequest.value);
+    attemptKeyRef.current = null;
+  }, [stopPriceRequest]);
 
   function setMakerPref(key: keyof MakerPrefs, value: boolean) {
     setMaker((current) => ({ ...current, [key]: value }));
@@ -97,7 +102,6 @@ export default function TradePanel({ symbol, price, visible, onNavigate }: {
 
   async function submitOpen() {
     setSubmitting(true);
-    setNotice("");
     if (!attemptKeyRef.current) {
       attemptKeyRef.current = `web-${orderType}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     }
@@ -105,17 +109,13 @@ export default function TradePanel({ symbol, price, visible, onNavigate }: {
       const id = await tradeApi.submitCommand(orderType === "market" ? "open" : "limit-create", payload, attemptKeyRef.current);
       const result = await tradeApi.pollCommand(id);
       if (result.status === "SUCCEEDED") {
-        setNotice(orderType === "market" ? "开仓命令已确认，保护单由服务端跟进" : "限价挂单已确认，可在持仓页委托中查看");
         setConfirmOpen(false);
         attemptKeyRef.current = null;
       } else if (result.status === "FAILED") {
-        setNotice(`${orderType === "market" ? "开仓" : "挂单"}失败：${result.result?.message ?? "请重试"}`);
       } else {
-        setNotice("结果待确认，请勿重复提交，可在持仓页核对");
         setConfirmOpen(false);
       }
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "请求失败");
     } finally {
       setSubmitting(false);
     }
@@ -147,7 +147,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate }: {
       <span>止损价</span>
       <span className="trade-input-wrap">
         <input value={stopInput} inputMode="decimal" placeholder="输入止损价" onChange={(event) => { setStopInput(event.target.value.replace(/[^\d.]/g, "")); attemptKeyRef.current = null; }} />
-        <button type="button" className="trade-paste-icon" title="粘贴" aria-label="粘贴止损价" onClick={() => { const v = getCopiedPrice(); if (v !== null) { setStopInput(v); attemptKeyRef.current = null; setNotice("已粘贴止损价"); } }}><ClipboardPaste size={13} aria-hidden="true" /></button>
+        <button type="button" className="trade-paste-icon" title="粘贴" aria-label="粘贴止损价" onClick={() => { const v = getCopiedPrice(); if (v !== null) { setStopInput(v); attemptKeyRef.current = null; } }}><ClipboardPaste size={13} aria-hidden="true" /></button>
       </span>
     </label>
     <div className="trade-field">
@@ -164,7 +164,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate }: {
       </button>
       {strategyState === "error" && <button type="button" onClick={() => void load()}>重试</button>}
     </div>
-    <button type="button" className="trade-submit" disabled={!valid || !strategy || submitting} onClick={() => { setNotice(""); setConfirmOpen(true); }}>
+    <button type="button" className="trade-submit" disabled={!valid || !strategy || submitting} onClick={() => setConfirmOpen(true)}>
       {submitting ? "提交中…" : stopInput.trim() === "" ? "输入止损价" : orderType === "market" ? (isLong ? "市价开多" : "市价开空") : (isLong ? "限价挂多" : "限价挂空")}
     </button>
     <button type="button" className="trade-settings-btn" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}><Settings2 size={13} /> 开仓设置</button>
@@ -174,7 +174,6 @@ export default function TradePanel({ symbol, price, visible, onNavigate }: {
       <label className="trade-maker-row"><span>预挂止盈用 Maker</span><input type="checkbox" checked={maker.takeProfit} onChange={(event) => setMakerPref("takeProfit", event.target.checked)} /></label>
       <div className="trade-maker-row is-fixed"><span>止损</span><strong>触发后市价</strong></div>
     </div>}
-    {notice && <div className="pg-notice trade-notice">{notice}<button type="button" className="pg-notice-close" aria-label="关闭提示" onClick={() => setNotice("")}><X size={12} /></button></div>}
     {confirmOpen && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认{orderType === "market" ? "开仓" : "挂单"}</strong><button type="button" aria-label="关闭" onClick={() => setConfirmOpen(false)}><X size={15} /></button></header>

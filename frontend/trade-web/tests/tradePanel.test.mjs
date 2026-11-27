@@ -21,8 +21,8 @@ if (!pages.includes('min={50} max={300} step={1}') || !pages.includes('id="accou
 if (!panel.includes("输入止损价") || panel.indexOf("trade-settings-btn") < panel.indexOf("trade-submit")) {
   throw new Error("Open button must read 输入止损价 before stop entry; settings button sits below it");
 }
-if (!panel.includes("trade-paste-icon") || !panel.includes("trade-input-wrap") || !panel.includes("pg-notice-close") || panel.indexOf("pg-notice trade-notice") < panel.indexOf('className="trade-settings"')) {
-  throw new Error("Paste must be an icon inside the stop input; notice sits at panel bottom with a close button");
+if (!panel.includes("trade-paste-icon") || !panel.includes("trade-input-wrap") || panel.includes("pg-notice") || !panel.includes("stopPriceRequest")) {
+  throw new Error("Paste icon inside stop input; no notices in right panel; stop price injectable from chart right-click");
 }
 const cssSrc = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
 if (!cssSrc.includes(".trade-field > span:first-child { flex: none; white-space: nowrap; }")) {
@@ -44,8 +44,8 @@ if (!styles.includes(".nav-item.active .nav-pos-count { background: color-mix(in
 for (const marker of ["strategy_id", "strategy_name", "strategy_config", "include_fee: true", "payload, attemptKeyRef.current)", "pollCommand(id)"]) {
   if (!panel.includes(marker)) throw new Error(`Open command payload/flow missing ${marker}`);
 }
-if (!panel.includes("请勿重复提交")) {
-  throw new Error("UNKNOWN open outcome must not auto-resubmit");
+if ((panel.match(/void submitOpen\(\)/g) || []).length !== 1) {
+  throw new Error("UNKNOWN open outcome must not auto-resubmit (submit only via confirm button)");
 }
 if (!panel.includes("确认继续？") || !panel.includes("pg-confirm-backdrop")) {
   throw new Error("Real open submission requires a second confirmation dialog");

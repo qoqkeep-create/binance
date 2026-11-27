@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 右键菜单闭环（复制即关／设为止损价直填）＋右区提示全删 Web 发布（2026-11-27，北京时间）
+
+① 复制当前价格完成后菜单立即关闭，删"已复制"态；② 新增右键项"设为止损价"：直接把右键横线价格（分档精度）经 App stopPriceRequest 注入 TradePanel 止损输入框，无需复制；③ 右侧交易/盘面区域提示全删（notice state/setNotice/pg-notice 全链移除，含"已粘贴止损价"）。本地实测：菜单三项（刷新/设为止损价/复制当前价格）、设值 1.333≈横线价 1.3328、两操作后菜单均关闭、右区无 notice。Web release **`trade-web-20261127-ctxstop-ec03da3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `2f007d0d…`／`b125a77a…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 十字线中点跳变（自绘 round 取整替代库 ceil）Web 发布（2026-11-27，北京时间）
 
 用户报十字线需到下一根中轴线才跳，期望越过两根中点即跳。根因：lightweight-charts coordinateToIndex 用 Math.ceil（中心才跳）。修：隐藏库十字线（vertLine/horzLine visible:false），改容器 mousemove 自绘：coordinateToLogical→**Math.round**→logicalToCoordinate 得吸附中心，自绘竖/横虚线＋原价格/百分比标签；mouseleave 清除。本地实测中点 582：581→前根 578.5、583→后根 586.125＝中点跳变✓。Web release **`trade-web-20261127-crosssnap-b8c1e54`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `bbe06b39…`／`bbf1ca0e…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 round＋自绘线。后端不切换，旧 release 保留可回退。

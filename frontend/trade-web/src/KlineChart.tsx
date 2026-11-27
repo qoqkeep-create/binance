@@ -88,11 +88,12 @@ function applyPaneLayout(chart: IChartApi, settings: IndicatorSettings) {
   panes[2].setStretchFactor(settings.stoch.enabled ? PANE_STRETCH.sub : 0);
 }
 
-export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
+export default function KlineChart({ symbol, insightToggle, theme = "dark", onStopPrice }: {
   symbol: string;
   insightToggle?: ReactNode;
   theme?: "dark" | "light";
   onSymbolChange?: (symbol: string) => void;
+  onStopPrice?: (price: number) => void;
 }) {
   const { hydrating, user } = useAccount();
   const [preference, setPreference] = usePreference("chart", defaultChartPreference, validChartPreference);
@@ -139,7 +140,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
   const [clickMenu, setClickMenu] = useState<{ x: number; y: number; price: number | null } | null>(null);
-  const [copied, setCopied] = useState(false);
   const [, setChartTick] = useState(0);
   const [mainPaneHeight, setMainPaneHeight] = useState(0);
   const [activePositionTool, setActivePositionTool] = useState<PositionDirection | null>(null);
@@ -465,7 +465,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       const rect = container.getBoundingClientRect();
       // 复制语义＝鼠标所处横线价格，非最新市价。
       const pRaw = candleRef.current?.coordinateToPrice(event.clientY - rect.top) ?? null;
-      setCopied(false);
       setClickMenu({
         x: Math.min(Math.max(8, event.clientX - rect.left), Math.max(8, rect.width - 130)),
         y: Math.min(Math.max(8, event.clientY - rect.top), Math.max(8, rect.height - 76)),
@@ -706,7 +705,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       ok = document.execCommand("copy");
       ta.remove();
     }
-    setCopied(ok);
   }
 
   async function refreshChart() {
@@ -761,7 +759,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
         <div ref={containerRef} className="kline-container">
           {clickMenu && <div className="kline-click-menu" style={{ left: clickMenu.x, top: clickMenu.y }}>
             <button type="button" onClick={() => { setClickMenu(null); void refreshChart(); }}>刷新</button>
-            <button type="button" onClick={() => void copyCurrentPrice()}>{copied ? "已复制" : "复制当前价格"}</button>
+            <button type="button" onClick={() => { if (clickMenu.price !== null) onStopPrice?.(clickMenu.price); setClickMenu(null); }}>设为止损价</button>
+            <button type="button" onClick={() => { void copyCurrentPrice(); setClickMenu(null); }}>复制当前价格</button>
           </div>}
         </div>
         {status === "ready" && <PositionToolOverlay currentPrice={candlesRef.current[candlesRef.current.length - 1]?.close ?? 0} readOnly={false} activeTool={activePositionTool} onActiveToolChange={setActivePositionTool} />}

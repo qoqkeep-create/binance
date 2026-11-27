@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：右键复制即关／设为止损价直填／右区提示全删
+
+复制后 setClickMenu(null)、删 copied 态；新增"设为止损价"→onStopPrice→App stopPriceRequest{value,at}→TradePanel effect 填 stopInput；TradePanel notice 全链删（state/setNotice/pg-notice）。实测菜单三项/设值/即关/无 notice。契约测试锁定（submitOpen 仅确认按钮一次调用保 UNKNOWN 不重发）。release ctxstop-ec03da3 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：十字线中点跳变（自绘 round 替代库 ceil）
 
 库 coordinateToIndex ceil＝到中心才跳；隐藏库十字线，容器 mousemove 自绘：coordinateToLogical→round→logicalToCoordinate 吸附中心＋竖/横虚线＋价格/百分比标签；mouseleave 清除。实测中点两侧分别吸附前/后根。契约测试锁定。release crosssnap-b8c1e54 上线首尔＋ba 哈希一致。

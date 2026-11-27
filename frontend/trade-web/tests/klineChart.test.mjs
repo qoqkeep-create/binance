@@ -268,5 +268,8 @@ const overlaySrc = readFileSync(fileURLToPath(new URL("../src/PositionToolOverla
 if (!overlaySrc.includes('window.addEventListener("pointermove", move)') || !positionToolsCss.includes(".position-tool-drawing { position:absolute; top:0; bottom:0; pointer-events:none; }")) {
   throw new Error("Overlay must not intercept chart mouse events (crosshair survives hover/drag); tool drag via window pointer listeners");
 }
+if (!source.includes("设为止损价") || source.includes("已复制") || !source.includes("onStopPrice?.(clickMenu.price)") || pasteSrc.includes("pg-notice") || pasteSrc.includes("setNotice")) {
+  throw new Error("Right-click menu: copy closes menu, 设为止损价 fills stop directly; right panel shows no notices");
+}
 
 console.log("KlineChart self-rendered contract tests passed");
