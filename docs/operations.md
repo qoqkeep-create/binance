@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 做多/做空信息条统一为画线编辑条样式＋选中互斥 Web 发布（2026-11-27，北京时间）
+
+用户两件：① 测量顶部信息条样式与横线/竖线选中编辑条完全一致；② 选中一个工具时另一个的选中态与信息条必须消失（当前两条可同显）。实现：测量详情复用 `chart-line-editor` 容器（5px 圆角/line-bright 描边/阴影/深底），字段改 `chart-line-editor-item` 芯片（1px 描边 3px 圆角 9px 字），标题芯片加粗、删除钮红色、关闭 ×；新增 `clearLineSelection()`，在区域点击选中、手柄按下（beginHandle）、新框落定三处同步清除画线选中与弹层（画线→测量方向原已互斥）。实测：先选横线（编辑条在）再点测量区——详情条出现且 `editorGone:true`；详情 computed 圆角 5px/阴影在位/芯片 1px 描边；截图目检同款。Web release **`trade-web-20261127-barmutex-f6a5e3d`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `9588aa9d…`／`e1faecac…`／`52a4dec0…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定统一类与 clearLineSelection。后端不切换，旧 release 保留可回退。
+
 ## 中左滑点不可突破右线（最小跨度改一根K线）＋细条工具命中容错 Web 发布（2026-11-27，北京时间）
 
 用户报：做多/做空左侧中间滑点可拖过右边线，框瞬间变无限长。根因：leftFree/leftX 夹持用 `endTime − 60s`，60s 不在 15m/1H 网格上，取整后左右边落同一根序号→宽度塌成 8px 细条贴右线（＝视觉突破＋畸形）；且命中测试用真实 x1==x2 零宽，历史遗留细条永远无法再选中。修：夹持最小跨度改**一根周期**（`timeGrid().interval`，leftX/leftFree/rightX 三分支＋sanitizeDraft minSpan 同步）；命中测试与渲染一致取 `Math.max(x2, x1+8)`。实测：旧细条点击即选中（4 柄）；中左点猛拖 500px 后 span 锁在 900s＝一根，start<end 恒成立。Web release **`trade-web-20261127-minspan-3fe6f0d`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `c5ebc63e…`／`e5015648…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 minSpan 与命中容错。后端不切换，旧 release 保留可回退。

@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量信息条统一画线编辑条样式、选中互斥
+
+详情条复用 chart-line-editor 容器＋字段改 chart-line-editor-item 芯片（标题加粗/删除红/关闭×）；clearLineSelection 在区域点击、beginHandle、新框落定三处清除画线选中。实测先选横线再点测量：editorGone true、样式 computed 一致、截图同款。release barmutex-f6a5e3d 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-27：中左滑点最小跨度一根K线、细条命中容错
 
 夹持 60s 不在网格→取整后左右同根、宽塌 8px 贴右线＝"突破变无限长"；最小跨度改 timeGrid().interval（leftX/leftFree/rightX＋sanitizeDraft），命中测试 Math.max(x2,x1+8) 与渲染一致。实测旧细条可选中、拖 500px span 锁 900s。release minspan-3fe6f0d 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。

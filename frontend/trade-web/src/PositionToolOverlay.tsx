@@ -229,6 +229,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       if (hit) {
         event.preventDefault();
         setSelectedId(hit.id);
+        clearLineSelection();
         setMoveDrag({ id: hit.id, startTime: point.t, startPrice: point.p, origin: hit });
       } else {
         setSelectedId(null);
@@ -311,6 +312,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     if (completed) {
       setToolState((state) => ({ ...state, positions: [...state.positions.slice(-11), completed] }));
       setSelectedId(completed.id);
+      clearLineSelection();
     }
     setDraft(null);
     onActiveToolChange(null);
@@ -327,8 +329,10 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     event.stopPropagation();
     event.preventDefault();
     setSelectedId(id);
+    clearLineSelection();
     setDragHandle({ id, handle });
   }
+  function clearLineSelection() { setSelectedLineId(null); setLineMenu(null); }
   const previewPosition = draft ? sanitizeDraft(draft, timeGrid()?.interval ?? 60) : null;
   const renderedPositions = previewPosition ? [...toolState.positions, previewPosition] : toolState.positions;
   const selectedLine = chartLines.find((line) => line.id === selectedLineId) ?? null;
@@ -396,7 +400,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         </div>}
         {lineMenu?.id === selectedLine.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={selectedLine.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`选择颜色 ${color}`} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, color }))} />)}</div></div>}
       </div>}
-      {selectedPosition && selectedMetrics && <div className="position-tool-detail"><div><strong>{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</strong><span>入场 {formatPrice(selectedMetrics.entryPrice)}</span></div><div><span>止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span>止损 {formatPrice(selectedMetrics.stopPrice)}</span><span>RR {selectedMetrics.riskReward.toFixed(2)}</span></div><button type="button" aria-label="删除测量工具" onClick={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== selectedPosition.id) })); setSelectedId(null); }}><Trash2 size={13} /></button><button type="button" aria-label="关闭测量详情" onClick={() => setSelectedId(null)}><X size={13} /></button></div>}
+      {selectedPosition && selectedMetrics && <div className="chart-line-editor position-tool-detail"><span className="chart-line-editor-item is-title">{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</span><span className="chart-line-editor-item">入场 {formatPrice(selectedMetrics.entryPrice)}</span><span className="chart-line-editor-item">止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span className="chart-line-editor-item">止损 {formatPrice(selectedMetrics.stopPrice)}</span><span className="chart-line-editor-item">RR {selectedMetrics.riskReward.toFixed(2)}</span><button type="button" aria-label="删除测量工具" onClick={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== selectedPosition.id) })); setSelectedId(null); }}><Trash2 size={13} /></button><button type="button" aria-label="关闭测量详情" onClick={() => setSelectedId(null)}><X size={13} /></button></div>}
     </div>
   </div>;
 }
