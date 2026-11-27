@@ -5,11 +5,14 @@ const panel = readFileSync(fileURLToPath(new URL("../src/TradePanel.tsx", import
 const api = readFileSync(fileURLToPath(new URL("../src/lib/tradeApi.ts", import.meta.url)), "utf8");
 const app = readFileSync(fileURLToPath(new URL("../src/App.tsx", import.meta.url)), "utf8");
 
-if (!panel.includes("const FEE_RATE = 0.001") || !panel.includes("risk / (ratio + FEE_RATE)")) {
-  throw new Error("Position estimate must mirror iOS: risk / (|entry-stop|/entry + 0.001)");
+if (!panel.includes("const FEE_RATE = 0.001") || !panel.includes("risk / (ratio + (includeFee ? FEE_RATE : 0))")) {
+  throw new Error("Position estimate must mirror iOS: risk / (ratio + fee only when include-fee on)");
 }
 if (!panel.includes("const isLong = stop < entry")) {
   throw new Error("Side must auto-derive: stop below entry = long, above = short");
+}
+if (!panel.includes("include_fee: includeFee") || !panel.includes("止损含手续费") || !panel.includes("ratio + (includeFee ? FEE_RATE : 0)") || !panel.includes("return raw === null ? false : raw === \"true\";")) {
+  throw new Error("Include-fee toggle must default off (iOS parity) and drive both preview sizing and payload");
 }
 if (!panel.includes("trade-risk-box") || !panel.includes("setStopDialogOpen(true)") || !panel.includes("<StopLossDialog") || !panel.includes("<StrategyDialog") || !panel.includes('onNavigate("strategy")')) {
   throw new Error("Stop-loss box and strategy row must open the shared dialogs; create scrolls to account form");
@@ -56,7 +59,7 @@ if (!pages.includes("marginOpen") || !styles.includes(".pg-card footer { justify
 if (!styles.includes(".nav-item.active .nav-pos-count { background: color-mix(in srgb, var(--text) 92%, transparent); color: var(--green); }")) {
   throw new Error("Position count badge must invert when the nav item is selected");
 }
-for (const marker of ["strategy_id", "strategy_name", "strategy_config", "include_fee: true", "payload, attemptKeyRef.current)", "pollCommand(id)"]) {
+for (const marker of ["strategy_id", "strategy_name", "strategy_config", "include_fee: includeFee", "payload, attemptKeyRef.current)", "pollCommand(id)"]) {
   if (!panel.includes(marker)) throw new Error(`Open command payload/flow missing ${marker}`);
 }
 if ((panel.match(/void submitOpen\(\)/g) || []).length !== 1) {

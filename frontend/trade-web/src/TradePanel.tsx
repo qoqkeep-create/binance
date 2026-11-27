@@ -10,6 +10,11 @@ const MAKER_KEYS = {
   limit: "integrated.chart.order-settings.limit-entry-maker",
   takeProfit: "integrated.chart.order-settings.take-profit-maker",
 } as const;
+const INCLUDE_FEE_KEY = "integrated.chart.order-settings.include-fee";
+
+function readIncludeFee(): boolean {
+  try { const raw = localStorage.getItem(INCLUDE_FEE_KEY); return raw === null ? false : raw === "true"; } catch { return false; }
+}
 
 interface StrategyRow { id: string; name: string; is_active: boolean; levels: unknown[] }
 interface MakerPrefs { market: boolean; limit: boolean; takeProfit: boolean }
@@ -42,6 +47,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
   const [orderType, setOrderType] = useState<"market" | "limit">("market");
   const [limitInput, setLimitInput] = useState("");
   const [maker, setMaker] = useState<MakerPrefs>(readMakerPrefs);
+  const [includeFee, setIncludeFee] = useState(readIncludeFee);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
@@ -90,7 +96,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
   const valid = baseValid && limitValid;
   const isLong = stop < entry;
   const ratio = valid ? Math.abs(entry - stop) / entry : 0;
-  const notional = valid ? risk / (ratio + FEE_RATE) : 0;
+  const notional = valid ? risk / (ratio + (includeFee ? FEE_RATE : 0)) : 0;
   const fee = notional * FEE_RATE;
 
   const payload = useMemo(() => ({
@@ -98,10 +104,10 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
     stop_loss_price: stopInput.trim(),
     stop_loss_amount: String(risk),
     ...(orderType === "market"
-      ? { include_fee: true, ...(maker.market ? { execution_mode: "maker" } : {}) }
+      ? { include_fee: includeFee, ...(maker.market ? { execution_mode: "maker" } : {}) }
       : { limit_price: limitInput.trim() }),
     ...(strategy ? { strategy_id: strategy.id, strategy_name: strategy.name, strategy_config: strategy.levels } : {}),
-  }), [symbol, stopInput, risk, strategy, orderType, limitInput, maker.market]);
+  }), [symbol, stopInput, risk, strategy, orderType, limitInput, maker.market, includeFee]);
 
   async function submitOpen() {
     setSubmitting(true);
@@ -171,6 +177,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
       <label className="trade-maker-row"><span>市价开仓用 Maker</span><input type="checkbox" checked={maker.market} onChange={(event) => setMakerPref("market", event.target.checked)} /></label>
       <label className="trade-maker-row"><span>限价开仓用 Maker</span><input type="checkbox" checked={maker.limit} onChange={(event) => setMakerPref("limit", event.target.checked)} /></label>
       <label className="trade-maker-row"><span>预挂止盈用 Maker</span><input type="checkbox" checked={maker.takeProfit} onChange={(event) => setMakerPref("takeProfit", event.target.checked)} /></label>
+      <label className="trade-maker-row"><span>止损含手续费</span><input type="checkbox" checked={includeFee} onChange={(event) => { setIncludeFee(event.target.checked); try { localStorage.setItem(INCLUDE_FEE_KEY, String(event.target.checked)); } catch { /* keep session value */ } }} /></label>
       <div className="trade-maker-row is-fixed"><span>止损</span><strong>触发后市价</strong></div>
     </div>}
     <StopLossDialog open={stopDialogOpen} onClose={() => setStopDialogOpen(false)} onSaved={() => void load()} />
@@ -178,7 +185,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
     {confirmOpen && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认{orderType === "market" ? "开仓" : "挂单"}</strong><button type="button" aria-label="关闭" onClick={() => setConfirmOpen(false)}><X size={15} /></button></header>
-        <p>{symbol.replace(/USDT$/, "")}/USDT {isLong ? "开多" : "开空"}{orderType === "limit" ? `，限价 ${limitInput}` : ""}，预估仓位 {fmt(notional)} U，手续费约 {fmt(fee)} U；止损价 {stopInput}，止损金额 {risk} U（回撤 {fmt(ratio * 100)}%），止盈策略「{strategy?.name}」。实际成交与数量以交易所为准，确认继续？</p>
+        <p>{symbol.replace(/USDT$/, "")}/USDT {isLong ? "开多" : "开空"}{orderType === "limit" ? `，限价 ${limitInput}` : ""}，预估仓位 {fmt(notional)} U，手续费约 {fmt(fee)} U（止损{includeFee ? "含" : "不含"}手续费）；止损价 {stopInput}，止损金额 {risk} U（回撤 {fmt(ratio * 100)}%），止盈策略「{strategy?.name}」。实际成交与数量以交易所为准，确认继续？</p>
         <footer>
           <button type="button" onClick={() => setConfirmOpen(false)}>取消</button>
           <button type="button" className={isLong ? "is-long" : "is-danger"} disabled={submitting} onClick={() => void submitOpen()}>{submitting ? "提交中…" : "确认"}</button>

@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：web 补「止损含手续费」开关（默认不含对齐 iOS，用户批准）
+
+根因：web 硬编码 include_fee:true（iOS 默认 false 带开关）→含手续费分摊使触止损价格亏损<预设。TradePanel 加开关（localStorage 持久化默认 false）、预览/payload/确认文案随开关。实测 250U/2.01%：关 12441.73U／开 11851.90U。release inclfee-6a7d75c 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。旧含手续费单不受影响。
+
 ## 2026-11-27：K 线下方持仓坞（状态栏向上展开钮，展开≈两附图高，再点收回）
 
 .positions-dock 收起 0/展开 30%（≈MACD+StochRSI），行含币种/多空/金额/开/现/盈亏/损，10s 轮询，点击行切币；状态栏 ChevronUp/Down 切换。实测 211px 展开、2 行、收回 0、截图。release posdock-eed325a 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## web 补「止损含手续费」开关（默认不含，对齐 iOS；用户批准）Web 发布（2026-11-28，北京时间）
+
+用户报：web 两笔订单止损金额均小于预设。定位：iOS `includeFee=false` 默认＋「止损含手续费」开关（仓位=止损额÷(距离比+含?0.001:0)）；web 硬编码 `include_fee:true` 且预览固定加 0.001→含手续费分摊使触止损**价格亏损**=预设×距离比/(距离比+0.001)<预设（例 200U/2%→190.48U）；后端 trading/views.py:2213 同公式。经 AskUserQuestion 批准「加开关默认不含」后实现：TradePanel 增 includeFee state（localStorage `integrated.chart.order-settings.include-fee` 默认 false）、开仓设置面板「止损含手续费」勾选、预览与 payload 均按开关、确认文案注明含/不含。实测：默认关 250U/2.01%→12,441.73U；开→11,851.90U；存储 true 持久化。Web release **`trade-web-20261127-inclfee-6a7d75c`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `f189d09f…`／`f7114618…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定开关默认与公式。后端不切换，旧 release 保留可回退。**注意：已开的两笔含手续费旧单不受影响，新单默认不含。**
+
 ## K 线下方持仓坞＋状态栏展开钮 Web 发布（2026-11-27，北京时间）
 
 用户要求：开仓持仓列表加到行情 K 线图下方，最下边缘条加向上展开钮；展开高度≈两个附图高，再点收回。实现：`main.chart-workspace` 内 K 线之下新增 `.positions-dock`（收起 height:0，展开 height:30%≈MACD+StochRSI 两附图，.18s 过渡）；内含持仓行（币种/多空芯片/金额/开仓/现价/浮盈亏绿红/止损），10s 轮询复用 loadCount 同时喂 dock；点击行切到该币 K 线；状态栏右端 `.statusbar-dock-toggle`（ChevronUp/ChevronDown＋"持仓"，aria-expanded）切换。实测：展开 dockH=211px（workspace 704 的 30%，与展开前两附图合计≈197px 同量级）、2 行信息齐全（RAYSOL 多 +12.50 绿／HAEDAL 空 −3.20 红）、再点 dockH=0；截图目检坞在图下。Web release **`trade-web-20261127-posdock-eed325a`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `b98da2d0…`／`ee058efe…`／`806dd130…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
