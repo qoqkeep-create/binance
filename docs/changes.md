@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量工具区保留十字线（覆盖层 pointer-events:none＋window 指针监听）
+
+覆盖层拦截鼠标致库十字线消失；合成转发不可靠（库 mouseenter 后才订阅 mousemove、挂 topCanvas）。改 surface/drawing pointer-events:none，真实事件直达图表；工具拖拽/绘制改 window pointerdown/move/up＋命中测试（liveRef 镜像）；手柄/边/线 auto。实测悬停/拖拽十字线 true、平移 40px。契约测试锁定。release crosshair-2ebd87b 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：测量工具中面板置分割线上方＋拖拽柄减半
 
 .position-tool-stats transform 改 translate(-50%,calc(-100% - 4px))（不再压盈亏分割线）；resize-handle 22→11px、border 1.5、radius 3、offset -5.5。实测面板底 318≤分割线 322、柄 11×11。契约测试锁定。release postool-ed9da75 上线首尔＋ba 哈希一致。

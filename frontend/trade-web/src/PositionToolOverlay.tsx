@@ -74,6 +74,8 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const liveRef = useRef<{ draft: Draft | null; dragHandle: { id: string; handle: ResizeHandle } | null; moveDrag: MoveDrag | null; activeTool: PositionDirection | null; readOnly: boolean; positions: PositionTool[] }>({ draft: null, dragHandle: null, moveDrag: null, activeTool: null, readOnly: false, positions: [] });
+  liveRef.current = { draft, dragHandle, moveDrag, activeTool, readOnly, positions: toolState.positions };
   const defaults = toolState.defaults;
   const selectedPosition = toolState.positions.find((position) => position.id === selectedId) ?? null;
   const selectedMetrics = selectedPosition ? calculatePositionMetrics(selectedPosition, currentPrice, defaults) : null;
@@ -88,35 +90,69 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [activeTool, onActiveToolChange]);
-  function pointerPosition(event: React.PointerEvent) {
+  function pointerPosition(event: { clientX: number; clientY: number }) {
     const rect = surfaceRef.current?.getBoundingClientRect();
     if (!rect) return null;
     return { x: clamp((event.clientX - rect.left) / rect.width, 0, 1), y: clamp((event.clientY - rect.top) / rect.height, 0, 1) };
   }
-  function handlePointerDown(event: React.PointerEvent) {
-    if (!activeTool) return;
-    const point = pointerPosition(event);
-    if (!point) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDraft({ direction: activeTool, startX: point.x, startY: point.y, endX: point.x, endY: point.y });
-  }
-  function handlePointerMove(event: React.PointerEvent) {
-    if (dragHandle) {
+  // 覆盖层 pointer-events:none，真实鼠标事件直达图表保留十字线；工具交互走 window 级指针监听。
+  useEffect(() => {
+    const down = (event: PointerEvent) => {
+      if ((event.target as HTMLElement).closest(".position-tool-resize-handle, .position-tool-edge, .position-tool-line, .position-tool-list, .position-tool-detail")) return;
+      const live = liveRef.current;
       const point = pointerPosition(event);
       if (!point) return;
-      updatePosition(dragHandle.id, (position) => {
-        if (dragHandle.handle === "leftX") {
+      if (live.activeTool) {
+        setDraft({ direction: live.activeTool, startX: point.x, startY: point.y, endX: point.x, endY: point.y });
+        return;
+      }
+      if (live.readOnly) return;
+      const hit = live.positions.find((p) => point.x >= p.left && point.x <= p.right && point.y >= Math.min(p.entryY, p.targetY, p.stopY) && point.y <= Math.max(p.entryY, p.targetY, p.stopY));
+      if (hit) {
+        setSelectedId(hit.id);
+        setMoveDrag({ id: hit.id, startX: point.x, startY: point.y, origin: hit });
+      }
+    };
+    const move = (event: PointerEvent) => handlePointerMove(event);
+    const up = (event: PointerEvent) => handlePointerUp(event);
+    window.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, []);
+  useEffect(() => {
+    const container = surfaceRef.current?.closest(".kline-container") as HTMLElement | null;
+    if (container) container.style.cursor = activeTool ? "crosshair" : "";
+  }, [activeTool]);
+  function handlePointerMove(event: { clientX: number; clientY: number }) {
+    const live = liveRef.current;
+    if (!live.dragHandle && !live.moveDrag && !live.draft) {
+      const rect = surfaceRef.current?.getBoundingClientRect();
+      const inside = !!rect && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+      const point = inside ? pointerPosition(event) : null;
+      const hit = point ? live.positions.find((p) => point.x >= p.left && point.x <= p.right && point.y >= Math.min(p.entryY, p.targetY, p.stopY) && point.y <= Math.max(p.entryY, p.targetY, p.stopY)) : null;
+      setHoveredId(hit ? hit.id : null);
+    }
+    if (live.dragHandle) {
+      const point = pointerPosition(event);
+      if (!point) return;
+      updatePosition(live.dragHandle.id, (position) => {
+        if (live.dragHandle!.handle === "leftX") {
           return { ...position, left: clamp(point.x, 0.02, position.right - 0.05) };
         }
-        if (dragHandle.handle === "rightX") {
+        if (live.dragHandle!.handle === "rightX") {
           return { ...position, right: clamp(point.x, position.left + 0.05, 0.98) };
         }
         const nextY = clamp(point.y, 0.02, 0.98);
-        if (dragHandle.handle === "entryY") {
+        if (live.dragHandle!.handle === "entryY") {
           const delta = nextY - position.entryY;
           return { ...position, entryY: nextY, targetY: clamp(position.targetY + delta, 0.02, 0.98), stopY: clamp(position.stopY + delta, 0.02, 0.98) };
         }
-        if (dragHandle.handle === "targetY") {
+        if (live.dragHandle!.handle === "targetY") {
           const constrained = position.direction === "long" ? Math.min(nextY, position.entryY - .01) : Math.max(nextY, position.entryY + .01);
           return { ...position, targetY: clamp(constrained, 0.02, 0.98) };
         }
@@ -125,38 +161,40 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       });
       return;
     }
-    if (moveDrag) {
+    if (live.moveDrag) {
       const point = pointerPosition(event);
       if (!point) return;
-      const width = moveDrag.origin.right - moveDrag.origin.left;
-      const verticalMinimum = Math.min(moveDrag.origin.entryY, moveDrag.origin.targetY, moveDrag.origin.stopY);
-      const verticalMaximum = Math.max(moveDrag.origin.entryY, moveDrag.origin.targetY, moveDrag.origin.stopY);
-      const shiftX = clamp(point.x - moveDrag.startX, -moveDrag.origin.left, 1 - moveDrag.origin.right);
-      const shiftY = clamp(point.y - moveDrag.startY, -verticalMinimum, 1 - verticalMaximum);
+      const origin = live.moveDrag.origin;
+      const width = origin.right - origin.left;
+      const verticalMinimum = Math.min(origin.entryY, origin.targetY, origin.stopY);
+      const verticalMaximum = Math.max(origin.entryY, origin.targetY, origin.stopY);
+      const shiftX = clamp(point.x - live.moveDrag.startX, -origin.left, 1 - origin.right);
+      const shiftY = clamp(point.y - live.moveDrag.startY, -verticalMinimum, 1 - verticalMaximum);
       setToolState((state) => ({
         ...state,
-        positions: state.positions.map((position) => position.id === moveDrag.id
-          ? { ...moveDrag.origin, left: moveDrag.origin.left + shiftX, right: moveDrag.origin.left + shiftX + width, entryY: moveDrag.origin.entryY + shiftY, targetY: moveDrag.origin.targetY + shiftY, stopY: moveDrag.origin.stopY + shiftY }
+        positions: state.positions.map((position) => position.id === live.moveDrag!.id
+          ? { ...origin, left: origin.left + shiftX, right: origin.left + shiftX + width, entryY: origin.entryY + shiftY, targetY: origin.targetY + shiftY, stopY: origin.stopY + shiftY }
           : position),
       }));
       return;
     }
-    if (!draft) return;
+    if (!live.draft) return;
     const point = pointerPosition(event);
     if (point) setDraft((previous) => previous ? { ...previous, endX: point.x, endY: point.y } : previous);
   }
-  function handlePointerUp(event: React.PointerEvent) {
-    if (dragHandle) {
+  function handlePointerUp(event: { clientX: number; clientY: number }) {
+    const live = liveRef.current;
+    if (live.dragHandle) {
       setDragHandle(null);
       return;
     }
-    if (moveDrag) {
+    if (live.moveDrag) {
       setMoveDrag(null);
       return;
     }
-    if (!draft) return;
+    if (!live.draft) return;
     const point = pointerPosition(event);
-    const completed = point ? sanitizeDraft({ ...draft, endX: point.x, endY: point.y }, draft.direction) : null;
+    const completed = point ? sanitizeDraft({ ...live.draft, endX: point.x, endY: point.y }, live.draft.direction) : null;
     if (completed) {
       setToolState((state) => ({ ...state, positions: [...state.positions.slice(-11), completed] }));
       setSelectedId(completed.id);
@@ -168,24 +206,14 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   function beginHandle(event: React.PointerEvent, id: string, handle: ResizeHandle) {
     if (previewPosition) return;
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
     setSelectedId(id);
     setDragHandle({ id, handle });
-  }
-  function beginMove(event: React.PointerEvent, position: PositionTool) {
-    if (readOnly || previewPosition) return;
-    const point = pointerPosition(event);
-    if (!point) return;
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setSelectedId(position.id);
-    setMoveDrag({ id: position.id, startX: point.x, startY: point.y, origin: position });
   }
   const previewPosition = draft ? sanitizeDraft(draft, draft.direction) : null;
   const renderedPositions = previewPosition ? [...toolState.positions, previewPosition] : toolState.positions;
 
   return <div className="position-tool-layer">
-    <div className={`position-tool-surface ${activeTool ? "is-drawing" : ""}`} ref={surfaceRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
+    <div className={`position-tool-surface ${activeTool ? "is-drawing" : ""}`} ref={surfaceRef}>
       {renderedPositions.map((position) => {
         const metrics = calculatePositionMetrics(position, currentPrice, defaults);
         const selected = position.id === selectedId;
@@ -202,7 +230,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         const topHandleY = Math.min(position.targetY, position.stopY);
         const bottomHandleY = Math.max(position.targetY, position.stopY);
         const interactive = selected || hoveredId === position.id;
-        return <div key={position.id} className={`position-tool-drawing ${position.direction} ${selected ? "is-selected" : ""} ${hoveredId === position.id ? "is-hovered" : ""}`} style={{ left, width }} onPointerDown={(event) => beginMove(event, position)} onPointerEnter={() => setHoveredId(position.id)} onPointerLeave={() => setHoveredId((current) => current === position.id ? null : current)}>
+        return <div key={position.id} className={`position-tool-drawing ${position.direction} ${selected ? "is-selected" : ""} ${hoveredId === position.id ? "is-hovered" : ""}`} style={{ left, width }}>
           <div className="position-tool-zone target" style={{ top: targetTop, height: targetHeight }} /><div className="position-tool-zone stop" style={{ top: stopTop, height: stopHeight }} />
           <div className="position-tool-edge left-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "leftX")} />
           <div className="position-tool-edge right-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />

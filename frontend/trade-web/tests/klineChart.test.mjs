@@ -177,7 +177,7 @@ for (const marker of ["position-tool-trigger long", "position-tool-trigger short
 for (const marker of ["PositionDirection", "defaultPositionToolDefaults", "priceAtChartY", "riskReward", "profitPnl", "lossPnl"]) {
   if (!positionTools.includes(marker)) throw new Error(`Position tool calculations are missing ${marker}`);
 }
-for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", "cursor:grab", "cursor:move"]) {
+for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", "cursor:grab", "pointer-events:none"]) {
   if (!positionCss.includes(marker) && !source.includes(marker)) throw new Error(`Position tool styling is missing ${marker}`);
 }
 if (positionOverlay.includes('usePreference("positionTools"') || positionOverlay.includes("position-tool-settings-panel")) {
@@ -253,6 +253,10 @@ if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-i
 const positionToolsCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
 if (!positionToolsCss.includes("transform:translate(-50%,calc(-100% - 4px))") || !positionToolsCss.includes("width:11px; height:11px;")) {
   throw new Error("Position stats panel must sit above the entry divider; drag handles half size (11px)");
+}
+const overlaySrc = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
+if (!overlaySrc.includes('window.addEventListener("pointermove", move)') || !positionToolsCss.includes(".position-tool-drawing { position:absolute; top:0; bottom:0; pointer-events:none; }")) {
+  throw new Error("Overlay must not intercept chart mouse events (crosshair survives hover/drag); tool drag via window pointer listeners");
 }
 
 console.log("KlineChart self-rendered contract tests passed");

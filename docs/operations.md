@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 测量工具区保留图表十字线（悬停＋拖拽全程）Web 发布（2026-11-27，北京时间）
+
+根因：测量覆盖层 pointer-events:auto 拦截鼠标事件，lightweight-charts 收不到 mousemove 故十字线消失（合成事件转发不可靠：库仅在 mouseenter 后订阅 mousemove 且挂 topCanvas）。根因修复：覆盖层 surface/drawing 改 pointer-events:none（真实鼠标事件直达图表，十字线原生保留），工具交互改 window 级 pointerdown/move/up 监听＋矩形命中测试（liveRef 镜像状态避免闭包过期）；手柄/边线/三线保留 pointer-events:auto 供拖拽；悬停高亮改 window move 命中。本地实测（rAF shim）：工具区悬停十字线 true、拖拽中 true、工具平移 40px 生效。Web release **`trade-web-20261127-crosshair-2ebd87b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `e50559cd…`／`ef8529f7…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 pointer-events:none＋window 监听。后端不切换，旧 release 保留可回退。
+
 ## 测量工具中面板置分割线上方＋拖拽柄减半 Web 发布（2026-11-27，北京时间）
 
 Codex 版 PositionToolOverlay 两处 UI 修正：① RR/方向/浮动盈亏小面板原 translate(-50%,-50%) 压在入场盈亏分割线上，改 translate(-50%,calc(-100% - 4px)) 整体置于分割线上方 4px；② 四个拖拽圆角方柄 22px→11px（边框 3→1.5、圆角 6→3、偏移 -11→-5.5）。本地实测 statsBottom 318 ≤ entryTop 322、柄 11×11。Web release **`trade-web-20261127-postool-ed9da75`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `b361f099…`／`09ccda94…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
