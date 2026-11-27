@@ -183,7 +183,7 @@ for (const marker of ["position-tool-trigger long", "position-tool-trigger short
 for (const marker of ["PositionDirection", "defaultPositionToolDefaults", "startTime", "entryPrice", "riskReward", "profitPnl", "lossPnl"]) {
   if (!positionTools.includes(marker)) throw new Error(`Position tool calculations are missing ${marker}`);
 }
-for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", "cursor:grab", "pointer-events:none", ".chart-line-editor", ".chart-line-menu", ".chart-line-tool.horizontal", ".chart-line-tool.vertical"]) {
+for (const marker of [".position-tool-layer", "position-tool-trigger.is-active svg { stroke-width:2.6; }", ".position-tool-surface", "--position-tool-main-height", "cursor:grab", "pointer-events:none", ".chart-line-editor", ".chart-line-menu", ".chart-line-tool.horizontal", ".chart-line-tool.vertical"]) {
   if (!positionCss.includes(marker) && !source.includes(marker)) throw new Error(`Position tool styling is missing ${marker}`);
 }
 if (positionOverlay.includes('usePreference("positionTools"') || positionOverlay.includes("position-tool-settings-panel")) {

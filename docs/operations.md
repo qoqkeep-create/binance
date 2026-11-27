@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 工具图标选中态＝加粗变绿无背景（悬浮去背景态）Web 发布（2026-11-28，北京时间）
+
+用户：工具栏图标点击后不要背景，改为图形加粗＋变绿；悬浮也不加背景。实现：.position-tool-trigger.{long,short,guide-line}.is-active 统一 color var(--green)＋background transparent（原绿/红/蓝 14% 底全去除）；is-active svg stroke-width 2.6 加粗；hover 仅文字色变化无背景。实测：多头/横线选中 bg=rgba(0,0,0,0)、color rgb(0,168,143)、svg 描边 2.6px；截图目检图标加粗绿色无底。Web release **`trade-web-20261128-toolactive-fd42c65`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `e3ca5616…`／`6d931010…` 与本地单链构建一致，ba 复核同哈希。后端不切换，旧 release 保留可回退。
+
 ## 横线右轴价签对齐现价标签造型 Web 发布（2026-11-28，北京时间）
 
 用户要求划线价签与当前价格标签造型/位置/数字位置一致。实现：.chart-line-axis-tag 字号 11→12px（同轴标）、padding 2/6→3/6px、line-height 1.2、text-align right、右缘 flush 0px＋translateY(-50%) 保持；实测价签 font 12px/高 20.4px/pad 3px 6px/右距 0，与现价芯片（红 59827.0）完全同款；价格数字沿用 priceScaleFormatter 分档与现价标签同格式。Web release **`trade-web-20261128-linetag-f88b458`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `21c62eb1…`／`5eee3050…` 与本地单链构建一致，ba 复核同哈希。后端不切换，旧 release 保留可回退。
