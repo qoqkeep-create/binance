@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 横线／竖线工具 Web 发布（2026-11-27，北京时间）
+
+Web release **`trade-web-20261127-chart-lines`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**。静态资源已核对 `activeLineTool`、`chart-line-editor`、横线／竖线按钮和线条编辑菜单，入口返回 200，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。后端不切换，线条数据只保存在浏览器本地缓存。
+
 ## 十字线拖拽期间不消失（改 window pointermove 驱动）Web 发布（2026-11-27，北京时间）
 
 用户口径：拖测量框柄/拖整个工具时十字线必须在，靠它肉眼定位；十字线永远只跟随鼠标位置，不随鼠标按键状态出现/消失。根因：自绘十字线原挂容器 `mousemove`，而拖拽起点 `preventDefault`（防图表 pan）后浏览器停发兼容 mouse 事件→拖拽期间十字线消失。改挂 **window `pointermove`**（不受 preventDefault/按键状态影响）＋document mouseleave 清除，边界检查补 y<0。实测：拖中左柄期间横线 y 与鼠标精确一致、竖线 round 吸附 bar 中心＋右轴价签在位；松手后十字线保留；整体 moveDrag 期间同样跟随；指针移到主图区外清除。Web release **`trade-web-20261127-crossdrag-ee0b856`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `89efa329…`／`d01924a4…` 与本地单链构建一致，ba 复核同哈希（CSS 未变沿用 `e7f3e274…`）。契约测试锁定 window pointermove 监听。后端不切换，旧 release 保留可回退。
