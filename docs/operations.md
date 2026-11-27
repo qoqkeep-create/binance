@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 单击落初始尺寸测量框恢复＋非整根时间渲染修复 Web 发布（2026-11-27，北京时间）
+
+用户报：点多头工具后在图上单击不再生成初始大小测量框（v2 重构改没）。两层根因：① 单击 draft 三价相等/时间零宽，sanitize 只补 0.2% 价距＋60s，15m 下压成 8px 细条≈不可见；② `timeToCoordinate` 对**非整根时间**（＋60s 落在两根之间）返回 null→整个工具不渲染；右缘单击时＋18% 宽换算进留白区 coordinateToTime 亦 null。修：单击（未拖动）落初始框＝**可见根数×18% 整根宽**（按周期秒换算）＋主图高上下各 15% 价距（RR 1.00）；渲染/命中改 `timeToIndex(t, true)` 最近根索引＋logicalToCoordinate，任意存储时间都可见。实测：中部单击宽 17.1%/高 30%、右半数据区单击 14 根宽/高 30% 均落框并自动选中、工具按钮复位；空头单击方向正确。Web release **`trade-web-20261127-clicksize-683ddd7`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `e5a3b2df…`／`f1a408a0…` 与本地单链构建一致，ba 复核同哈希；该 release 为完整同源构建，含并发会话横线／竖线工具（其 chart-lines release 曾被本次切换覆盖回同源超集）。契约测试锁定 timeToIndex＋bars*interval。后端不切换，旧 release 保留可回退。
+
 ## 横线／竖线工具 Web 发布（2026-11-27，北京时间）
 
 Web release **`trade-web-20261127-chart-lines`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**。静态资源已核对 `activeLineTool`、`chart-line-editor`、横线／竖线按钮和线条编辑菜单，入口返回 200，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。后端不切换，线条数据只保存在浏览器本地缓存。

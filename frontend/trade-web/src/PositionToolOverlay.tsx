@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Trash2, X } from "lucide-react";
-import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, Logical, Time } from "lightweight-charts";
 import {
   calculatePositionMetrics,
   defaultPositionToolDefaults,
@@ -117,7 +117,10 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     return t === null || t === undefined ? null : Number(t);
   };
   const yToPrice = (y: number): number | null => candleSeries?.coordinateToPrice(y) ?? null;
-  const timeToX = (t: number): number | null => timeScale?.timeToCoordinate(t as Time) ?? null;
+  const timeToX = (t: number): number | null => {
+    const index = timeScale?.timeToIndex(t as Time, true);
+    return index === null || index === undefined ? null : timeScale?.logicalToCoordinate(index as unknown as Logical) ?? null;
+  };
   const priceToY = (p: number): number | null => candleSeries?.priceToCoordinate(p) ?? null;
 
   const [, setViewTick] = useState(0);
@@ -258,7 +261,22 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     if (live.moveDrag) { setMoveDrag(null); return; }
     if (!live.draft) return;
     const point = dataPoint(event);
-    const completed = point ? sanitizeDraft({ ...live.draft, endTime: point.t, targetPrice: point.p, stopPrice: point.p }) : null;
+    let finished: Draft | null = point ? { ...live.draft, endTime: point.t, targetPrice: point.p, stopPrice: point.p } : null;
+    // 单击（未拖动）落一个初始尺寸框：宽＝可见根数 18%（按周期换算成整根）、高＝主图高上下各 15%，保持同层。
+    if (finished && point && point.t === live.draft.startTime && point.p === live.draft.entryPrice) {
+      const px = pixelPoint(event);
+      const surface = surfaceRef.current;
+      const data = candleSeries?.data() ?? [];
+      const interval = data.length > 1 ? Number(data[1].time) - Number(data[0].time) : 60;
+      const vr = timeScale?.getVisibleLogicalRange();
+      const bars = Math.max(2, Math.round((vr ? vr.to - vr.from : 80) * 0.18));
+      const pUp = px && surface ? yToPrice(px.y - surface.clientHeight * 0.15) : null;
+      if (pUp !== null) {
+        const distance = Math.abs(pUp - finished.entryPrice);
+        finished = { ...finished, endTime: finished.startTime + bars * interval, targetPrice: finished.entryPrice + distance, stopPrice: finished.entryPrice - distance };
+      }
+    }
+    const completed = finished ? sanitizeDraft(finished) : null;
     if (completed) {
       setToolState((state) => ({ ...state, positions: [...state.positions.slice(-11), completed] }));
       setSelectedId(completed.id);
