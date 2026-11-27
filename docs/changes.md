@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量选中仅区内／区外取消／去空态提示与悬停选中
+
+window down 命中区间才 setSelectedId＋moveDrag，否则 setSelectedId(null)；interactive=selected（删 hoveredId 悬停手柄）；删 position-tool-empty JSX/CSS。实测区内 4 柄/区外 0 柄/空态无。契约测试锁定。release select-d30ee61 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：中线 chip 右端绿底白字（含入场/RR/浮盈亏、去多空字）＋中线柄上下移
 
 stats chip right:0/translateY(-100%-2px)/绿底白字/圆角4/单行紧凑常显；入场 span 删除；target/stop span 绿/红底白字圆角3；middle-left/right 柄改 entryY（上下移中线），宽度调整保留左右边线。实测 chip 右对齐/线上/配色/无方向字、entry 移动 30px。契约测试锁定。release chip-3ea09da 上线首尔＋ba 哈希一致。

@@ -72,7 +72,6 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   const [dragHandle, setDragHandle] = useState<{ id: string; handle: ResizeHandle } | null>(null);
   const [moveDrag, setMoveDrag] = useState<MoveDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef<{ draft: Draft | null; dragHandle: { id: string; handle: ResizeHandle } | null; moveDrag: MoveDrag | null; activeTool: PositionDirection | null; readOnly: boolean; positions: PositionTool[] }>({ draft: null, dragHandle: null, moveDrag: null, activeTool: null, readOnly: false, positions: [] });
   liveRef.current = { draft, dragHandle, moveDrag, activeTool, readOnly, positions: toolState.positions };
@@ -111,6 +110,9 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       if (hit) {
         setSelectedId(hit.id);
         setMoveDrag({ id: hit.id, startX: point.x, startY: point.y, origin: hit });
+      } else {
+        // 区外点击取消选中。
+        setSelectedId(null);
       }
     };
     const move = (event: PointerEvent) => handlePointerMove(event);
@@ -130,13 +132,6 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   }, [activeTool]);
   function handlePointerMove(event: { clientX: number; clientY: number }) {
     const live = liveRef.current;
-    if (!live.dragHandle && !live.moveDrag && !live.draft) {
-      const rect = surfaceRef.current?.getBoundingClientRect();
-      const inside = !!rect && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
-      const point = inside ? pointerPosition(event) : null;
-      const hit = point ? live.positions.find((p) => point.x >= p.left && point.x <= p.right && point.y >= Math.min(p.entryY, p.targetY, p.stopY) && point.y <= Math.max(p.entryY, p.targetY, p.stopY)) : null;
-      setHoveredId(hit ? hit.id : null);
-    }
     if (live.dragHandle) {
       const point = pointerPosition(event);
       if (!point) return;
@@ -229,8 +224,8 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         const bottomHandle: "targetY" | "stopY" = topHandle === "targetY" ? "stopY" : "targetY";
         const topHandleY = Math.min(position.targetY, position.stopY);
         const bottomHandleY = Math.max(position.targetY, position.stopY);
-        const interactive = selected || hoveredId === position.id;
-        return <div key={position.id} className={`position-tool-drawing ${position.direction} ${selected ? "is-selected" : ""} ${hoveredId === position.id ? "is-hovered" : ""}`} style={{ left, width }}>
+        const interactive = selected;
+        return <div key={position.id} className={`position-tool-drawing ${position.direction} ${selected ? "is-selected" : ""}`} style={{ left, width }}>
           <div className="position-tool-zone target" style={{ top: targetTop, height: targetHeight }} /><div className="position-tool-zone stop" style={{ top: stopTop, height: stopHeight }} />
           <div className="position-tool-edge left-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "leftX")} />
           <div className="position-tool-edge right-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
@@ -250,7 +245,6 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
           </div>}
         </div>;
       })}
-      {!renderedPositions.length && !activeTool && <div className="position-tool-empty">选择多头或空头，然后在 K 线区域拖出测量区间</div>}
     </div>
     <div className="position-tool-list" aria-label="已保存的测量工具">{toolState.positions.map((position) => <ToolCard key={position.id} position={position} currentPrice={currentPrice} defaults={defaults} selected={position.id === selectedId} onSelect={() => setSelectedId(position.id)} onDelete={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== position.id) })); if (selectedId === position.id) setSelectedId(null); }} />)}</div>
     {selectedPosition && selectedMetrics && <div className="position-tool-detail"><div><strong>{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</strong><span>入场 {formatPrice(selectedMetrics.entryPrice)}</span></div><div><span>止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span>止损 {formatPrice(selectedMetrics.stopPrice)}</span><span>RR {selectedMetrics.riskReward.toFixed(2)}</span></div><button type="button" aria-label="关闭测量详情" onClick={() => setSelectedId(null)}><X size={13} /></button></div>}

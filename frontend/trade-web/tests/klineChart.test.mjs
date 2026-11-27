@@ -168,7 +168,7 @@ if (!source.includes('container.addEventListener("contextmenu", onContextMenu)')
 if (!source.includes('import PositionToolOverlay from "./PositionToolOverlay"') || !source.includes("<PositionToolOverlay") || source.includes("MeasureKind") || source.includes("FIB_LEVELS") || source.includes("measure-layer") || source.includes("清除测量")) {
   throw new Error("KlineChart must use the shared position tool overlay and remove the old long/short/fib implementation");
 }
-for (const marker of ["calculatePositionMetrics", "localStorage", "MIN_POSITION_DISTANCE", "setMoveDrag", "position-tool-resize-handle top-left", "position-tool-resize-handle bottom-left", "position-tool-resize-handle middle-left", "position-tool-resize-handle middle-right", "position-tool-edge left-edge", "position-tool-edge right-edge", "const interactive = selected || hoveredId === position.id"]) {
+for (const marker of ["calculatePositionMetrics", "localStorage", "MIN_POSITION_DISTANCE", "setMoveDrag", "position-tool-resize-handle top-left", "position-tool-resize-handle bottom-left", "position-tool-resize-handle middle-left", "position-tool-resize-handle middle-right", "position-tool-edge left-edge", "position-tool-edge right-edge", "const interactive = selected;"]) {
   if (!positionOverlay.includes(marker)) throw new Error(`Position tool overlay is missing ${marker}`);
 }
 for (const marker of ["position-tool-trigger long", "position-tool-trigger short", "TrendingUp", "TrendingDown", "activePositionTool"]) {
@@ -257,6 +257,9 @@ if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !po
 const overlaySrc2 = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
 if (overlaySrc2.includes("浮动盈亏") || !overlaySrc2.includes("入场 {formatPrice(metrics.entryPrice)} · RR") || !overlaySrc2.includes('aria-label="上下移动中线"')) {
   throw new Error("Stats chip must drop direction words, include entry price, and middle handles move the entry line vertically");
+}
+if (!overlaySrc2.includes("区外点击取消选中") || overlaySrc2.includes("position-tool-empty") || overlaySrc2.includes("hoveredId")) {
+  throw new Error("Selection only inside zone; outside click deselects; empty hint and hover-selection removed");
 }
 const overlaySrc = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
 if (!overlaySrc.includes('window.addEventListener("pointermove", move)') || !positionToolsCss.includes(".position-tool-drawing { position:absolute; top:0; bottom:0; pointer-events:none; }")) {
