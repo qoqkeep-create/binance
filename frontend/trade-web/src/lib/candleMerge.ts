@@ -18,8 +18,9 @@ export function mergeTicker(candles: Candle[], price: number, bucketTime: number
   const last = candles[candles.length - 1];
   if (bucketTime < last.time) return candles;
   if (bucketTime > last.time) {
-    // high/low 暂取现价（不混入前根收盘，避免 hl2 填充锚污染）；首根真实 1m 到达后整体接管。
-    return [...candles, { time: bucketTime, open: last.close, high: price, low: price, close: price, volume: 0, seeded: true }].slice(-1500);
+    // 种子根实体必须有效：high/low 张开到前根收盘与现价之间，否则零高度实体渲染成
+    // 一条横线＝视觉上的"重合/碎蜡烛"。首根真实 1m 到达后整体接管（seeded 标记）。
+    return [...candles, { time: bucketTime, open: last.close, high: Math.max(last.close, price), low: Math.min(last.close, price), close: price, volume: 0, seeded: true }].slice(-1500);
   }
   if (last.close === price && last.high >= price && last.low <= price) return candles;
   return [...candles.slice(0, -1), { ...last, close: price, high: Math.max(last.high, price), low: Math.min(last.low, price) }];

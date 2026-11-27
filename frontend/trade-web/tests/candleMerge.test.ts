@@ -11,7 +11,7 @@ const rolled = mergeTicker(closed, 12.5, 1800);
 if (rolled.length !== 3) throw new Error("roll must append a seeded bar");
 if (rolled[1].close !== 12 || rolled[1].open !== 11 || rolled[1].high !== 13) throw new Error("closed bar mutated at roll");
 if (rolled[2].time !== 1800 || rolled[2].open !== 12 || rolled[2].close !== 12.5 || !rolled[2].seeded) throw new Error("seed bar must open at previous close and carry seeded flag");
-if (rolled[2].high !== 12.5 || rolled[2].low !== 12.5) throw new Error("seed extremes must stay at current price until first real 1m");
+if (rolled[2].high !== 12.5 || rolled[2].low !== 12) throw new Error("seed body must span previous close and price (zero-height body renders as a dash)");
 
 // 当前桶内：只改尾根 close/high/low。
 const live = mergeTicker(closed, 12.8, 900);
