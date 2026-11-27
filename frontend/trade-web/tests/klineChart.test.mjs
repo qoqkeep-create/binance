@@ -254,8 +254,8 @@ if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-i
   throw new Error("History open/close times must sit at the card bottom-left");
 }
 const positionToolsCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
-if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !positionToolsCss.includes("width:11px; height:11px;") || !positionToolsCss.includes(".position-tool-line.stop-line span { background:var(--red); color:#ffffff; border-radius:3px; }")) {
-  throw new Error("Stats chip right-aligned green/white rounded; stop label red/white; handles half size");
+if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !positionToolsCss.includes("width:11px; height:11px;") || !positionToolsCss.includes(".position-tool-line.stop-line span { background:var(--red); color:#ffffff; border-radius:3px; }") || !positionToolsCss.includes("font-size:16px")) {
+  throw new Error("Stats chip right-aligned green/white rounded; stop label red/white; handles half size; label text doubled to 16px");
 }
 const overlaySrc2 = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
 if (overlaySrc2.includes("浮动盈亏") || !overlaySrc2.includes("入场 {formatPrice(metrics.entryPrice)} · RR") || !overlaySrc2.includes('aria-label="自由移动左点"') || !overlaySrc2.includes('"leftFree"') || !overlaySrc2.includes('beginHandle(event, position.id, "rightX")')) {

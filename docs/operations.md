@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 止损/止盈/入场 chip 文字加倍（8→16px）条放大 Web 发布（2026-11-27，北京时间）
+
+三条文字条（止损/止盈线标签＋中线入场 chip）字号 8→16px（加倍），条 padding 2/4→3/6（chip 3/7、圆角 5），止盈/止损标签偏移适配（-32/6px）。实测三条 computed 16px、chip 高 28px。Web release **`trade-web-20261127-labelsize-c0364e1`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `7a06405f…`／`e8a5af3b…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 16px。后端不切换，旧 release 保留可回退。
+
 ## 四柄最终规格（中左 move 光标＋仅左/中线，不带动整体）Web 发布（2026-11-27，北京时间）
 
 用户最终明确：左上/左下仅上下；右仅左右；中左悬停四向箭头（cursor:move）、按下拖拽只动左边界＋中线，**不带动止盈/止损/整体**。修：leftFree 分支去掉 target/stop 随移；middle-left cursor grab→move。实测：中左 dLeft30/dEntry25/dTarget0/dStop0；左上 dTarget25 其余 0；右 dWidth30 其余 0；cursor=move。Web release **`trade-web-20261127-handles2-bd8ab20`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `6e69f158…`／`5de8bf4c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
