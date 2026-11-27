@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：横线右轴价签对齐现价标签（12px/3-6内距/右缘flush/同分档数字格式）
+
+实测与现价芯片同款同高同位。release linetag-f88b458 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-28：画线菜单点选即关、纵向 76px 长图例（11px 字）、粗细1-6/线型实虚点/颜色7色扩充
 
 changeLineStyle 收尾关菜单；options column＋pd-line-sample-lg；LINE_WIDTHS/LINE_STYLES(含dotted)/LINE_COLOR_NAMES。实测 6 档/7 色、点选即关、defaults 同步。release linemenu-fe9b154 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

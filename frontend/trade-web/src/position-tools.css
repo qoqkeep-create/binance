@@ -25,5 +25,5 @@
 .chart-line-options button:hover,.chart-line-options button.is-active { color:var(--text); border-color:var(--accent); }
 .chart-line-color-menu { min-width:130px; }
 .chart-line-color-menu { min-width:160px; }
-.chart-line-axis-tag { position:absolute; right:0; transform:translateY(-50%); z-index:3; padding:2px 6px; border-radius:3px; font:11px var(--font-ui); font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap; }
+.chart-line-axis-tag { position:absolute; right:0; transform:translateY(-50%); z-index:3; padding:3px 6px; border-radius:3px; font:12px var(--font-ui); font-variant-numeric:tabular-nums; line-height:1.2; pointer-events:none; white-space:nowrap; text-align:right; }
 .chart-line-tool:active { cursor:grabbing; }.pd-line-sample { display:inline-block; width:18px; border-top:2px solid currentColor; vertical-align:middle; }.pd-line-sample.is-dashed { border-top-style:dashed; }.pd-line-sample-lg { width:76px; flex:none; }.pd-color-swatch { display:inline-block; width:12px; height:12px; border-radius:3px; }

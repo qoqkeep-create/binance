@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 横线右轴价签对齐现价标签造型 Web 发布（2026-11-28，北京时间）
+
+用户要求划线价签与当前价格标签造型/位置/数字位置一致。实现：.chart-line-axis-tag 字号 11→12px（同轴标）、padding 2/6→3/6px、line-height 1.2、text-align right、右缘 flush 0px＋translateY(-50%) 保持；实测价签 font 12px/高 20.4px/pad 3px 6px/右距 0，与现价芯片（红 59827.0）完全同款；价格数字沿用 priceScaleFormatter 分档与现价标签同格式。Web release **`trade-web-20261128-linetag-f88b458`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `21c62eb1…`／`5eee3050…` 与本地单链构建一致，ba 复核同哈希。后端不切换，旧 release 保留可回退。
+
 ## 画线菜单点选即关＋纵向长图例＋选项扩充 Web 发布（2026-11-28，北京时间）
 
 用户三件：① 菜单选项点完即收起（此前选完仍停留）；② 选项纵向排列、示意线加长（约设置条一半＝76px）、文字加大（11px），实线/虚线/颜色均同规格（颜色菜单也改图例行＋色名）；③ 选项扩充。实现：changeLineStyle 末尾 setLineMenu(null)；.chart-line-options flex-direction:column、选项按钮 flex 行＋pd-line-sample-lg 76px；粗细 1-6px（LINE_WIDTHS）、线型 实线/虚线/点线（LINE_STYLES，ChartLineStyle 增 dotted，校验/默认同步）、颜色 7 色带中文名（绿红蓝金白紫粉，LINE_COLOR_NAMES）；菜单 min-width 160。实测：粗细菜单 6 项 column/76px/11px，点 2px 即关且 line=2、defaults 同步；颜色 7 项点紫即关 color=#A78BFA；截图目检紫色 2px 线与图例条。Web release **`trade-web-20261128-linemenu-fe9b154`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `4c45df80…`／`fe454cce…`／`380e96d5…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
