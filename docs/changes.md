@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量工具可移入右侧空白区、中线距边线5%锁死
+
+根因：库 coordinateToTime/timeToIndex 只认有数据的根（空白返回 null／钳末根），拖不进空白。改按周期等差外推 coordinateToLogical↔logicalToCoordinate；clampEntryToEdges 把中线限制在两边线内缩 5% 区间（entryY/leftFree 共用）。实测右柄入空白超末根 26 根、中线精确停上限、整体平移同步。契约测试锁定。release whitesp-d51c50b 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-27：清除钮纯红垃圾桶图标、信息条统一样式顶部居中、工具栏+20%
 
 清除钮去红底去文字（16px 红垃圾桶，aria-label 保留）；测量详情条（含删除钮）与画线编辑条统一 line-bright 圆角阴影 chip 样式，主图顶部居中（left:50%/top:8px/translateX(-50%)，仅选中显示——右上全量列表是上轮按"未选中不显示"指令移除的）；工具栏 53px 高、字体 16/14px、trigger 35px。实测 computed 全对、topGap=8/dx=0、截图目检通过。release toolstrip-af074b3 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 测量工具可移入右侧空白区＋中线距边线5%锁死 Web 发布（2026-11-27，北京时间）
+
+用户问：右侧空白区也是 K 线显示区，为何做多/做空区域拖不进去？并要求中线拖动不得越过止盈/止损两条边线（距两边各约 5% 即锁死）。底层根因：覆盖层时间↔像素换算用库的 `coordinateToTime/timeToIndex`，二者**只认有数据的根**——空白区 coordinateToTime 返回 null（拖拽/落点判定直接失效）、timeToIndex(findNearest) 把超末根时间钳回最后一根（渲染无法越过末根）。改按周期等差外推：`xToTime＝末根时间＋(round(coordinateToLogical)－末根序号)×周期`，`timeToX＝logicalToCoordinate(末根序号＋(t－末根时间)/周期)`，空白区可绘制、可拖入、可渲染。中线夹持：`clampEntryToEdges` 将 entryPrice 限制在 [min(边)+5%span, max(边)−5%span]，entryY 与 leftFree 共用。实测：右柄拖 +200px 入空白 endTime 超末根 26 根；中线猛拖精确停在 target−5%span（1.338522＝上限）；整体平移两端同步 +34 根；空白绘制不再被 null 拦截。Web release **`trade-web-20261127-whitesp-d51c50b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `246587d7…`／`6b860fed…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 coordinateToLogical/logicalToCoordinate/clampEntryToEdges。后端不切换，旧 release 保留可回退。
+
 ## 清除钮纯图标化＋信息条统一样式顶部居中＋工具栏放大20% Web 发布（2026-11-27，北京时间）
 
 用户三件：① 一键清除钮去红底去汉字，只留与其他图标同尺寸（16px）的红色垃圾桶；② 解释右上做多/做空信息栏消失（上轮按"未选中不显示"指令删除了全量卡片列表），现要求所有信息栏统一为横线/竖线编辑条样式并置于 **K 线区域顶部居中**；③ 工具栏字体与整条大小 +20%。实现：`.chart-tool-clear` 透明底纯红图标（aria-label/title 保留名称）；测量详情条与画线编辑条同用 line-bright 边框/5px 圆角/阴影 chip 样式，left:50%＋top:8px＋translateX(-50%) 居中于主图顶部（详情条含红色删除钮＋关闭钮，仍仅选中显示）；工具栏 44→53px、周期/指标 13→16px、自动/手动 12→14px、trigger 29→35px、分隔线 17→20px。实测 computed：barH 53px、tf/im 16px、vm 14px、trig 35px、clear 无文字透明底红字 16px 图标；detail/editor 均 topGap=8px、dx=0、radius 5px、阴影在位，选中互斥；截图目检通过。Web release **`trade-web-20261127-toolstrip-af074b3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `14ba6298…`／`23b2f39d…`／`8255a3d6…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。

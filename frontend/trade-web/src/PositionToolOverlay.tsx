@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Trash2, X } from "lucide-react";
-import type { IChartApi, ISeriesApi, Logical, Time } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, Logical } from "lightweight-charts";
 import {
   calculatePositionMetrics,
   defaultPositionToolDefaults,
@@ -75,6 +75,13 @@ function readLocalChartLines(): ChartLine[] {
   }
 }
 function newId() { return `position-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+// 中线不得越过止盈/止损两条边线：距两边各 5% 区间边缘即锁死。
+function clampEntryToEdges(position: PositionTool, price: number): number {
+  const span = Math.abs(position.targetPrice - position.stopPrice);
+  const lo = Math.min(position.targetPrice, position.stopPrice) + span * 0.05;
+  const hi = Math.max(position.targetPrice, position.stopPrice) - span * 0.05;
+  return Math.min(hi, Math.max(lo, price));
+}
 function sanitizeDraft(draft: Draft): PositionTool {
   const minDistance = Math.max(0.00000001, draft.entryPrice * 0.002);
   const distance = Math.max(minDistance, Math.abs(draft.targetPrice - draft.entryPrice));
@@ -103,14 +110,21 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
 
   const candleSeries: ISeriesApi<"Candlestick"> | undefined = api?.panes()[0]?.getSeries().find((s): s is ISeriesApi<"Candlestick"> => s.seriesType() === "Candlestick");
   const timeScale = api?.timeScale();
+  const candleData = candleSeries?.data() ?? [];
+  const lastDataIndex = candleData.length ? candleData.length - 1 : 0;
+  const lastDataTime = candleData.length ? Number(candleData[candleData.length - 1].time) : 0;
+  const dataInterval = candleData.length > 1 ? Number(candleData[1].time) - Number(candleData[0].time) : 60;
+  // 右侧空白区同属 K 线显示区：coordinateToTime/timeToIndex 只认有数据的根（空白返回 null／钳到末根），
+  // 测量区便拖不进空白；按周期等差外推逻辑坐标，空白区可绘制可移动。
   const xToTime = (x: number): number | null => {
-    const t = timeScale?.coordinateToTime(x);
-    return t === null || t === undefined ? null : Number(t);
+    const logical = timeScale?.coordinateToLogical(x);
+    if (logical === null || logical === undefined || !candleData.length) return null;
+    return lastDataTime + (Math.round(logical) - lastDataIndex) * dataInterval;
   };
   const yToPrice = (y: number): number | null => candleSeries?.coordinateToPrice(y) ?? null;
   const timeToX = (t: number): number | null => {
-    const index = timeScale?.timeToIndex(t as Time, true);
-    return index === null || index === undefined ? null : timeScale?.logicalToCoordinate(index as unknown as Logical) ?? null;
+    if (!candleData.length || !timeScale) return null;
+    return timeScale.logicalToCoordinate((lastDataIndex + (t - lastDataTime) / dataInterval) as unknown as Logical);
   };
   const priceToY = (p: number): number | null => candleSeries?.priceToCoordinate(p) ?? null;
 
@@ -232,8 +246,8 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         switch (live.dragHandle!.handle) {
           case "leftX": return { ...position, startTime: Math.min(point.t, position.endTime - 60) };
           case "rightX": return { ...position, endTime: Math.max(point.t, position.startTime + 60) };
-          case "leftFree": return { ...position, startTime: Math.min(point.t, position.endTime - 60), entryPrice: point.p };
-          case "entryY": return { ...position, entryPrice: point.p };
+          case "leftFree": return { ...position, startTime: Math.min(point.t, position.endTime - 60), entryPrice: clampEntryToEdges(position, point.p) };
+          case "entryY": return { ...position, entryPrice: clampEntryToEdges(position, point.p) };
           case "targetY": return { ...position, targetPrice: point.p };
           default: return { ...position, stopPrice: point.p };
         }
