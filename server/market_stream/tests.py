@@ -136,20 +136,14 @@ class MarketHistoryTests(TestCase):
 
     @patch("market_stream.service.time.time", return_value=600)
     @patch("market_stream.service.public_request")
-    def test_stale_tail_returns_local_snapshot_and_heals_via_worker(self, request, _time):
+    def test_stale_tail_sync_backfills_bounded_and_heals(self, request, _time):
         service.persist([rest_candle("BTCUSDT", "1m", row, 600000) for row in self.rows()])
         request.return_value = [[540000, "1", "2", "1", "1.5", "3", 599999, "4.5"]]
-        # SWR：已有本地历史时首请求立即返回旧快照，不在请求内回源；尾根交给 worker。
+        # 连续性优先：过期尾根在请求内做一页有界同步补页（timeout=4），立即自愈。
         result = service.load_history("BTCUSDT", "1m", 5)
-        request.assert_not_called()
-        self.assertEqual(result["lastOpenTime"], 240000)
-        self.assertTrue(result["stale"])
-        self.assertTrue(result["historyPending"])
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertTrue(repair.run_next())
-        healed = service.load_history("BTCUSDT", "1m", 5)
-        self.assertEqual(healed["lastOpenTime"], 540000)
-        self.assertFalse(healed["stale"])
+        request.assert_called_once()
+        self.assertEqual(result["lastOpenTime"], 540000)
+        self.assertFalse(result["stale"])
 
     @patch("market_stream.service.time.time", return_value=600)
     @patch("market_stream.service.public_request")
