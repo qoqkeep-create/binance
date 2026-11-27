@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 十字线中点跳变（自绘 round 取整替代库 ceil）Web 发布（2026-11-27，北京时间）
+
+用户报十字线需到下一根中轴线才跳，期望越过两根中点即跳。根因：lightweight-charts coordinateToIndex 用 Math.ceil（中心才跳）。修：隐藏库十字线（vertLine/horzLine visible:false），改容器 mousemove 自绘：coordinateToLogical→**Math.round**→logicalToCoordinate 得吸附中心，自绘竖/横虚线＋原价格/百分比标签；mouseleave 清除。本地实测中点 582：581→前根 578.5、583→后根 586.125＝中点跳变✓。Web release **`trade-web-20261127-crosssnap-b8c1e54`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `bbe06b39…`／`bbf1ca0e…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 round＋自绘线。后端不切换，旧 release 保留可回退。
+
 ## 网站 favicon 与页头 logo 换用 iOS AppIcon Web 发布（2026-11-27，北京时间）
 
 复用 iOS 工程 AppIcon-1024.png：复制为 trade-web/public/favicon.png；index.html 增 rel=icon＋apple-touch-icon；页头 brand-glyph 三菱形改 img.brand-logo（26px 圆角 6）；登录门禁/加载态 account-page-glyph 改 img.account-page-logo（34px 圆角 8）；删旧 glyph CSS。本地实测 img loaded naturalWidth=1024。Web release **`trade-web-20261127-icon-acb6224`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/favicon 哈希 `c1d7be17…`／`83194a74…` 与本地一致，线上 favicon 200。后端不切换，旧 release 保留可回退。

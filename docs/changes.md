@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：十字线中点跳变（自绘 round 替代库 ceil）
+
+库 coordinateToIndex ceil＝到中心才跳；隐藏库十字线，容器 mousemove 自绘：coordinateToLogical→round→logicalToCoordinate 吸附中心＋竖/横虚线＋价格/百分比标签；mouseleave 清除。实测中点两侧分别吸附前/后根。契约测试锁定。release crosssnap-b8c1e54 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：favicon 与页头/门禁 logo 换用 iOS AppIcon
 
 AppIcon-1024.png → public/favicon.png；index.html icon/apple-touch-icon；brand-glyph/account-page-glyph 三菱形改 img（26/34px 圆角）；旧 glyph CSS 删。实测 loaded 1024。release icon-acb6224 上线首尔＋线上 favicon 200＋哈希一致。

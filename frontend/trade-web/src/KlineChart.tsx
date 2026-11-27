@@ -4,7 +4,7 @@ import { RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-r
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
-  type IChartApi, type ISeriesApi, type IPriceLine, type Time as ChartTime,
+  type IChartApi, type ISeriesApi, type IPriceLine, type Logical, type Time as ChartTime,
   type CandlestickData, type LineData, type WhitespaceData,
 } from "lightweight-charts";
 import { useAccount, usePreference } from "./AccountProvider";
@@ -134,7 +134,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const themeRef = useRef(theme);
   const settingsRef = useRef(settings);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [crosshair, setCrosshair] = useState<{ y: number; price: number } | null>(null);
+  const [crosshair, setCrosshair] = useState<{ x: number; y: number; price: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
@@ -383,7 +383,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: RIGHT_OFFSET, minBarSpacing: 0.5 },
-      crosshair: { mode: CrosshairMode.Normal, horzLine: { labelVisible: false } },
+      crosshair: { mode: CrosshairMode.Normal, vertLine: { visible: false, labelVisible: false }, horzLine: { visible: false, labelVisible: false } },
       localization: { locale: "zh-CN" },
     });
     chartRef.current = chart;
@@ -482,19 +482,30 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       setChartTick((t) => t + 1);
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-    const onCrosshair = (param: { point?: { x: number; y: number } }) => {
-      const candle = candleRef.current;
+    // 自绘十字线：round 取整＝越过两根中轴线中点即跳下一根（库 ceil 需到中心才跳）。
+    const onCrosshairMove = (event: MouseEvent) => {
       const api = chartRef.current;
-      if (!param.point || !candle || !api) { setCrosshair(null); return; }
+      const candle = candleRef.current;
+      if (!api || !candle) return;
+      const rect = container.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
       const mainHeight = api.panes()[0]?.getHeight() ?? 0;
-      if (param.point.y > mainHeight) { setCrosshair(null); return; }
-      const price = candle.coordinateToPrice(param.point.y);
-      if (price === null) { setCrosshair(null); return; }
-      setCrosshair({ y: param.point.y, price });
+      if (y > mainHeight || x < 0 || x > rect.width) { setCrosshair(null); return; }
+      const ts = api.timeScale();
+      const logical = ts.coordinateToLogical(x);
+      if (logical === null) { setCrosshair(null); return; }
+      const barX = ts.logicalToCoordinate(Math.round(logical) as Logical);
+      const price = candle.coordinateToPrice(y);
+      if (barX === null || price === null) { setCrosshair(null); return; }
+      setCrosshair({ x: barX, y, price });
     };
-    chart.subscribeCrosshairMove(onCrosshair);
+    const onCrosshairLeave = () => setCrosshair(null);
+    container.addEventListener("mousemove", onCrosshairMove);
+    container.addEventListener("mouseleave", onCrosshairLeave);
     return () => {
-      chart.unsubscribeCrosshairMove(onCrosshair);
+      container.removeEventListener("mousemove", onCrosshairMove);
+      container.removeEventListener("mouseleave", onCrosshairLeave);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
       container.removeEventListener("contextmenu", onContextMenu);
@@ -758,10 +769,14 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
           const base = candlesRef.current[candlesRef.current.length - 1]?.close ?? crosshair.price;
           const pct = base > 0 ? (crosshair.price - base) / base * 100 : 0;
           const up = pct >= 0;
-          return <div className="kline-crosshair-tag" style={{ top: crosshair.y }}>
-            <span>{priceScaleFormatter(crosshair.price)}</span>
-            <span className={up ? "up" : "down"}>{up ? "+" : "-"}{Math.abs(pct).toFixed(2)}%</span>
-          </div>;
+          return <>
+            <div className="kline-crosshair-v" style={{ left: crosshair.x }} />
+            <div className="kline-crosshair-h" style={{ top: crosshair.y }} />
+            <div className="kline-crosshair-tag" style={{ top: crosshair.y }}>
+              <span>{priceScaleFormatter(crosshair.price)}</span>
+              <span className={up ? "up" : "down"}>{up ? "+" : "-"}{Math.abs(pct).toFixed(2)}%</span>
+            </div>
+          </>;
         })()}
       </div>
       {showSettings && <IndicatorSettingsPanel settings={settings} onChange={(next) => setPreference({ ...preference, indicators: next })} onClose={() => setShowSettings(false)} />}
