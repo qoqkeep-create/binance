@@ -56,7 +56,7 @@ if (!styles.includes(".trade-type-row button.active { color: var(--green); font-
 if (!pages.includes("pg-tp-btn") || !pages.includes("自动止盈") || !pages.includes("TpLevels") || !pages.includes("strategy_config")) {
   throw new Error("Position card footer must expose 自动止盈 button (left of 立即平仓) showing the bound strategy levels");
 }
-if (!pages.includes("marginOpen") || !styles.includes(".pg-card footer { justify-content: flex-end; }") || !styles.includes(".pg-close-btn { padding: 7px 14px; border: 0; border-radius: 6px; background: var(--green)")) {
+if (!pages.includes("marginOpen") || !styles.includes(".pg-card footer { justify-content: flex-end; }") || !styles.includes(".pg-close-btn { padding: 2px 14px; border: 0; border-radius: 6px; background: var(--green)")) {
   throw new Error("Margin ratio needs a detail modal; 立即平仓 sits bottom-right in green");
 }
 if (!styles.includes(".nav-item.active .nav-pos-count { background: color-mix(in srgb, var(--text) 92%, transparent); color: var(--green); }")) {

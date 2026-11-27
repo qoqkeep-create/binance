@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓钮回最底状态栏（收起坞零占位）、自动止盈中绿框绿字、两按钮21px、4行预留136px
+
+toggle 回 statusbar 居中绿底芯片；dock 收起不渲染；is-running 绿框无底；按钮 padding 2px；行高 34→预留 136。实测收起 1px、居中、绿框绿字、21px、6 行可见 4。release dockbtn-9c9c2e1 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：持仓钮并入标题行（同水平线）、标题行降高 27px、绿底无描边
 
 删独立顶栏；toggle 入 head 第 9 列（pd-op-head 左右分布）；head 常显；toggle border 0＋green 14% 底绿字。实测同线<8px、headH 27、listH 176。release dockhead2-ea11cf8 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

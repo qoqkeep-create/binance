@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓钮回最底状态栏＋运行中绿框绿字＋按钮降高＋4行预留校准 Web 发布（2026-11-28，北京时间）
+
+用户：① 运行中按钮文案「自动止盈中」＋绿色线框绿字（去填充）；② 立即平仓保留；③ 两按钮高度统一缩窄；④ 持仓展开钮回到**最底状态栏**（K 线下方不留常驻条，收起时坞仅 1px 边框）。实现：toggle 移回 statusbar 居中（绿 14% 底无描边芯片）；PositionsDock 收起时不渲染 head/body；.pg-tp-btn.is-running 改 border green＋bg transparent；两按钮 padding 2px（高 21px 统一）；行高 34px→4 行预留 136px。实测：收起 dockH=1、钮在状态栏居中；运行中 tpText=自动止盈中/边框绿/底透明/字绿；tpH=clH=21；6 行替身 listH=136 可见 4 行。Web release **`trade-web-20261128-dockbtn-9c9c2e1`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `607e1eee…`／`bd16b6b9…`／`02307dd0…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 持仓钮并入标题行同水平线＋标题行降高＋绿底无描边 Web 发布（2026-11-28，北京时间）
 
 用户三件：① 展开时持仓钮要与列标题同一水平线（原独立顶栏在标题上一行）；② 标题行太高要降；③ 按钮加底色去描边、颜色自定。实现：删 `.positions-dock-bar`，toggle 移入 `.positions-dock-head` 第 9 列（pd-op-head：标题左＋按钮右 space-between），标题行常显（收起时即唯一行）；head padding 3px（行高 27px）；toggle 去 border、底 color-mix(green 14%)、字绿、hover 24%。实测：收起仅标题行（body false）、展开钮与标题中心差<8px 同线、headH 27、border 0、bg 绿 14%、listH 176 不变。Web release **`trade-web-20261128-dockhead2-ea11cf8`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `f68133b5…`／`e6349ab0…`／`119195d9…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
