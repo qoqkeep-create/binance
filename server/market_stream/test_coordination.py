@@ -182,6 +182,38 @@ class SocketDiagnosticTests(SimpleTestCase):
                 await self.run_socket(reason)
 
 
+class RealtimeQueueTests(SimpleTestCase):
+    def test_ticker_batch_matches_legacy_symbol_filters(self):
+        from market_stream.websocket import matches
+
+        payload = {"channel": "market.ticker.batch", "data": {"items": [
+            {"symbol": "BTCUSDT", "lastPrice": 1},
+            {"symbol": "ETHUSDT", "lastPrice": 2},
+        ]}}
+        self.assertTrue(matches(payload, {"market.ticker": {"symbols": {"BTCUSDT"}, "intervals": set()}}, "qa", "ordinary"))
+        self.assertFalse(matches(payload, {"market.ticker": {"symbols": {"XRPUSDT"}, "intervals": set()}}, "qa", "ordinary"))
+
+    async def test_kline_preempts_ticker_burst_and_ticker_is_latest_wins(self):
+        from market_stream.websocket import PriorityOutgoingQueue
+
+        queue = PriorityOutgoingQueue(3)
+        queue.put_nowait('{"data":{"symbol":"BTCUSDT","lastPrice":1}}', channel="market.ticker", symbol="BTCUSDT")
+        queue.put_nowait('{"data":{"symbol":"BTCUSDT","lastPrice":2}}', channel="market.ticker", symbol="BTCUSDT")
+        queue.put_nowait('{"data":{"symbol":"ETHUSDT","lastPrice":3}}', channel="market.ticker", symbol="ETHUSDT")
+        queue.put_nowait('{"channel":"market.kline","data":{"symbol":"BTCUSDT"}}', channel="market.kline")
+
+        self.assertEqual(await queue.get(), '{"channel":"market.kline","data":{"symbol":"BTCUSDT"}}')
+        self.assertEqual(await queue.get(), '{"data":{"symbol":"BTCUSDT","lastPrice":2}}')
+
+    async def test_priority_frames_still_fail_when_only_priority_frames_fill_capacity(self):
+        from market_stream.websocket import PriorityOutgoingQueue
+
+        queue = PriorityOutgoingQueue(1)
+        queue.put_nowait('{"channel":"market.kline","data":{"symbol":"BTCUSDT"}}', channel="market.kline")
+        with self.assertRaises(asyncio.QueueFull):
+            queue.put_nowait('{"channel":"market.history","data":{"symbol":"BTCUSDT"}}', channel="market.history")
+
+
 class RepairCooldownTests(TestCase):
     def setUp(self):
         cache.clear()

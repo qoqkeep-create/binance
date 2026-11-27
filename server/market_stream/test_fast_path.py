@@ -63,6 +63,33 @@ class LiveFastPathTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
 
+    def test_closed_kline_sequence_has_its_own_scope(self):
+        self.assertNotEqual(
+            bus.sequence_key("market.kline", "BTCUSDT:1m", candle()),
+            bus.sequence_key("market.kline", "BTCUSDT:1m", candle(closed=True)),
+        )
+        self.assertEqual(
+            bus.sequence_key("market.ticker", "BTCUSDT", {"symbol": "BTCUSDT"}),
+            "integrated:sequence:market.ticker:BTCUSDT",
+        )
+
+    @patch("market_stream.bus.publish_batch")
+    @patch("market_stream.service.symbols", return_value=["BTCUSDT", "ETHUSDT"])
+    def test_ticker_snapshot_publishes_one_latest_batch(self, _symbols, publish):
+        from market_stream import service
+
+        service.update_tickers([
+            {"s": "BTCUSDT", "c": "10", "q": "100", "P": "1", "E": 1000},
+            {"s": "ETHUSDT", "c": "20", "q": "200", "P": "2", "E": 1001},
+        ])
+
+        publish.assert_called_once()
+        channel, entries = publish.call_args.args
+        self.assertEqual(channel, "market.ticker.batch")
+        self.assertEqual(entries[0][0], "all")
+        self.assertEqual([item["symbol"] for item in entries[0][1]["items"]], ["BTCUSDT", "ETHUSDT"])
+        self.assertEqual(entries[0][1]["eventTime"], 1001)
+
     @patch("market_stream.bus.publish_batch")
     def test_unclosed_update_never_opens_a_database_transaction(self, publish):
         # SimpleTestCase rejects all database access, including BEGIN.

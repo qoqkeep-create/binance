@@ -45,7 +45,7 @@ Python 保留原交易业务、Decimal 精度、账户模式、绑定代际、�
 
 2026-11-06 本地将每连接 Redis 订阅／解码改成 API 事件循环内共享，按全部连接主题并集合并接收、一次解码后内存投递；实际订阅确认后 ack、私有身份过滤及连接发送队列保留。Redis 中断仍由 WSS 重连与快照恢复；采集服务与 API 继续独立。当前实现及未部署范围见 [共享分发](market-data.md#api-共享行情分发器2026-11-06本地)。
 
-WSS 分发行情及 `trading.account/position/order/fill`，按用户和交易模式过滤。每连接 128 条有界队列，慢客户端超时断开重连；access token 到期关闭 4401，客户端合并 refresh 后重连。REST 遇 401 最多 refresh 并重试一次；身份已经切换时旧请求不能覆盖新会话。
+WSS 分发行情及 `trading.account/position/order/fill`，按用户和交易模式过滤。Web 使用独立 ticker／K 线连接，ticker 通过 `market.ticker.batch` 每个快照发送一次，旧 iOS `market.ticker` 订阅由 API fanout 展开兼容。每连接 128 条有界优先队列，K 线、历史和私有事件优先，ticker 按交易对保留最新值；慢客户端超时断开重连。access token 到期关闭 4401，客户端合并 refresh 后重连。REST 遇 401 最多 refresh 并重试一次；身份已经切换时旧请求不能覆盖新会话。
 
 公共行情改用按频道／币种／周期的 Redis v2 主题，sequence 与发布原子执行。新增 `market.history` 能力协商和后台就绪通知；新客户端不会向旧后端发送未支持的频道。API 与 market 必须配套升级／回滚，不能混用公共事件路由版本，详细字段见 [就绪协议](market-data.md#补全就绪协议)。
 

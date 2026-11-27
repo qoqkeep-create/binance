@@ -21,11 +21,35 @@ class Subscription:
     def __init__(self, owner, queue, accepts):
         self.owner, self.queue, self.accepts = owner, queue, accepts
         self.topics = set()
+        self.expand_ticker_batch = True
         self.failure = asyncio.get_running_loop().create_future()
 
     def fail(self, reason):
         if not self.failure.done():
             self.failure.set_result(reason)
+
+    def enqueue(self, wire, payload):
+        if payload.get("channel") == "market.ticker.batch" and self.expand_ticker_batch:
+            for item in payload.get("data", {}).get("items", []):
+                if not isinstance(item, dict):
+                    continue
+                expanded = {**payload, "channel": "market.ticker", "data": item}
+                if not self.accepts(expanded):
+                    continue
+                expanded_wire = json.dumps(expanded, separators=(",", ":"))
+                self._enqueue_wire(expanded_wire, expanded)
+            return
+        self._enqueue_wire(wire, payload)
+
+    def _enqueue_wire(self, wire, payload):
+        put_event = getattr(self.queue, "put_event", None)
+        if put_event is not None:
+            data = payload.get("data") or {}
+            put_event(wire, channel=payload.get("channel"), symbol=data.get("symbol"))
+            return
+        # Isolated fanout tests use a plain asyncio.Queue, which keeps the
+        # existing one-argument queue contract.
+        self.queue.put_nowait(wire)
 
     async def update(self, topics, timeout=3):
         await self.owner.change(self, set(topics), timeout)
@@ -202,7 +226,7 @@ class MarketFanout:
             try:
                 # Filter the original envelope, before stripping private identity.
                 if member.accepts(payload):
-                    member.queue.put_nowait(wire)
+                    member.enqueue(wire, payload)
             except asyncio.QueueFull:
                 member.fail("slow_consumer")
             except (ValueError, TypeError, KeyError, AttributeError):

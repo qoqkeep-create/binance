@@ -153,6 +153,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const viewModeRef = useRef<"auto" | "manual">("auto");
   const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
+  const chartTickPendingRef = useRef(false);
+  const gapReloadAtRef = useRef(0);
 
   useEffect(() => {
     setActivePositionTool(null);
@@ -318,7 +320,13 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       stochKRef.current?.update(linePoint(times[last], indicators.stoch[last].k));
       stochDRef.current?.update(linePoint(times[last], indicators.stoch[last].d));
       syncPositionLines(positionRef.current, candle.close);
-      setChartTick((t) => t + 1);
+      if (!chartTickPendingRef.current) {
+        chartTickPendingRef.current = true;
+        requestAnimationFrame(() => {
+          chartTickPendingRef.current = false;
+          setChartTick((t) => t + 1);
+        });
+      }
       return;
     }
     candleRef.current.setData(candles.map((candle): CandlePoint => ({
@@ -657,6 +665,13 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     };
     const unsubscribe = marketRealtime.subscribe({ symbol, interval: selectedInterval, handler: (event) => {
       if (!active || candlesSymbolRef.current !== symbol) return;
+      if (event.type === "gap") {
+        if (event.symbol === symbol && event.interval === "1m" && Date.now() - gapReloadAtRef.current > 1000) {
+          gapReloadAtRef.current = Date.now();
+          setAttempt((value) => value + 1);
+        }
+        return;
+      }
       if (event.type === "kline") {
         // 桶宽一律取自 intervalSeconds（对 ChartInterval 全覆盖，无静默回退）。
         const width = intervalSeconds[selectedInterval];

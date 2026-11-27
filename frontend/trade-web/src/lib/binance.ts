@@ -61,6 +61,7 @@ export async function getKlines(symbol: string, interval = "15m", limit = 500, s
 export type StreamEvent =
   | { type: "ticker"; symbol: string; price: number; changePercent: number; eventTime?: number }
   | { type: "kline"; symbol: string; candle: Candle; closed: boolean; eventTime?: number }
+  | { type: "gap"; symbol: string; interval: string; expected: number; received: number }
   | { type: "latency"; ms: number }
   | { type: "disconnected" }
   | { type: "error"; error: Event | Error };

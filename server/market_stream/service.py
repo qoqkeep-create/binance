@@ -84,8 +84,9 @@ def update_tickers(rows, *, emit=True):
             current[item["symbol"]] = item
             updates.append(item)
     cache.set("market:tickers", current, 86400)
-    if emit:
-        bus.publish_batch("market.ticker", [(item["symbol"], item) for item in updates])
+    if emit and updates:
+        event_time = max((item["eventTime"] for item in updates), default=0)
+        bus.publish_batch("market.ticker.batch", [("all", {"items": updates, "eventTime": event_time})])
     return current
 
 

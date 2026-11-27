@@ -6,7 +6,7 @@ from django.conf import settings
 import redis
 
 BUS_CHANNEL = "integrated:events:v1"
-MARKET_CHANNELS = {"market.kline", "market.ticker", "market.history"}
+MARKET_CHANNELS = {"market.kline", "market.ticker", "market.ticker.batch", "market.history"}
 PUBLISH_SEQUENCED = """
 local sequence = redis.call('INCR', KEYS[1])
 redis.call('EXPIRE', KEYS[1], 86400)
@@ -16,6 +16,8 @@ return sequence
 
 
 def delivery_topic(payload):
+    if payload.get("channel") == "market.ticker.batch":
+        return "integrated:market:v2:market.ticker.batch:all:-"
     if payload.get("channel") not in MARKET_CHANNELS:
         return BUS_CHANNEL
     data = payload["data"]
@@ -28,10 +30,15 @@ def subscription_topics(subscriptions):
     for channel, filters in subscriptions.items():
         if channel not in MARKET_CHANNELS:
             continue
+        if channel == "market.ticker.batch":
+            topics.add("integrated:market:v2:market.ticker.batch:all:-")
+            continue
         symbols = filters["symbols"] or {"*"}
         intervals = {"-"} if channel == "market.ticker" else filters["intervals"] or {"*"}
         topics.update(f"integrated:market:v2:{channel}:{symbol}:{interval}"
                       for symbol in symbols for interval in intervals)
+        if channel == "market.ticker":
+            topics.add("integrated:market:v2:market.ticker.batch:all:-")
     return topics
 
 
@@ -53,6 +60,11 @@ def publish_private_batch(entries):
     _publish_batch(entries)
 
 
+def sequence_key(channel, key, data):
+    suffix = ":closed" if channel == "market.kline" and data.get("closed") is True else ""
+    return f"integrated:sequence:{channel}:{key}{suffix}"
+
+
 def _publish_batch(entries):
     """Allocate sequence and publish atomically, including across producers."""
     if not entries:
@@ -66,6 +78,6 @@ def _publish_batch(entries):
             if user_id is not None:
                 payload.update(_user=str(user_id), _mode=mode)
             prefix = json.dumps(payload, separators=(",", ":"))[:-1] + ',"sequence":'
-            pipe.eval(PUBLISH_SEQUENCED, 1, f"integrated:sequence:{channel}:{key}",
+            pipe.eval(PUBLISH_SEQUENCED, 1, sequence_key(channel, key, data),
                       delivery_topic(payload), prefix)
         pipe.execute()

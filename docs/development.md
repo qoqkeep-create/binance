@@ -1,5 +1,17 @@
 # 开发与验证
 
+## Web 实时行情分流与缺口恢复（2026-11-28，本地）
+
+Web `marketRealtime` 改为共享订阅状态下的 ticker／K 线双 WebSocket。ticker 连接订阅 `market.ticker.batch`，每个快照只发送一条批量消息，前端仍按 500ms 合并更新左侧列表。K 线连接只订阅当前交易对的 1m 实时流。ASGI 每连接出站队列对 K 线、历史和私有事件优先，旧逐交易对 ticker 使用 latest-wins。K 线 closed 事件使用独立 sequence 作用域，客户端检测跳号后沿用图表现有历史读取路径恢复。
+
+验证命令和结果如下。
+
+- `frontend/trade-web` 的 `npm test` 共 11 组确定性检查通过，`npm run build` 通过。
+- `DEBUG=true DB_ENGINE=sqlite3 USE_REDIS_CACHE=False RUN_SCHEDULER_IN_WEB=false .venv/bin/python manage.py test market_stream.test_coordination market_stream.test_fast_path.BrowserWebSocketAuthTests market_stream.test_fast_path.LiveFastPathTests --verbosity 1` 共 26 项通过。
+- 同环境 `market_stream.test_fanout` 共 11 项通过，其中 7 项需要显式隔离 Redis 的协议测试按既有条件跳过。
+
+本轮没有部署到 47.80.22.243（首尔服务器），没有修改 iOS ticker 协议，也没有真实交易或资金操作。线上仍需登录后的 Web 端到端采样验证 eventTime 到 renderData 的延迟分段。
+
 ## Web 新版多空测量工具整合（2026-11-27）
 
 从 `/Users/apple/work/trade-web` 接入 `PositionToolOverlay`、`lib/positionTools.ts`、`position-tools.css` 和计算测试。`KlineChart` 现在只负责图表、行情和持仓线，测量交互由独立覆盖层承载，覆盖层高度跟随主 pane，MACD／StochRSI 副图不参与绘制区域。旧的 `MeasureKind`、RR2／斐波那契绘制、周期栏测量按钮和右键“清除测量”已移除。多头／空头改为周期栏后的图标按钮，测量状态保存于浏览器 `localStorage`，不再写入账号设置或 Django Web 设置接口。默认新建区域设为最小高度并保持初始 1:1 盈亏距离，水平线使用抓手光标，整个区域支持上下左右平移。

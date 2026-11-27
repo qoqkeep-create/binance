@@ -6,6 +6,14 @@
 
 `frontend/trade-web` 与 iOS 并列使用 `market_stream` 的 `/api/market/tickers|symbols|klines` 和 `/ws/v1`，不在浏览器直连 Binance。Web K 线保留 `items` 的毫秒时间和字符串／数字字段映射，分析助手的 `12h` 周期已加入后端共享周期目录；WSS 浏览器鉴权使用 `bearer.<JWT>` subprotocol，token 不进入请求 URL。Web K 线自 2026-11-26 起改用 `lightweight-charts` v5 自绘（替换 TradingView 托管 iframe）：主图蜡烛＋EMA 21/55/144＋Supertrend 10×6，副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3，参数与配色对齐 iOS；副图自适应比例主图 70%／两副图各 15%、首屏 64 根、切币／切周期单次 `setData` 加载，Supertrend 带可配填充与反转断开，指标启用／参数／颜色经顶部「指标」面板配置并随偏好保存，历史走 `/api/market/klines`、尾根实时走 `/ws/v1`。Web 已完成本地构建、替身测试与本地浏览器验收，尚未部署静态产物或做线上验收。
 
+## Web 实时行情分流与 K 线缺口恢复（2026-11-28，本地）
+
+Web 实时客户端现在使用两个物理 `/ws/v1` 连接。ticker 连接订阅 `market.ticker.batch`，每个全量快照只发送一条批量消息，K 线连接只承载当前订阅交易对的 1m 流。切换交易对或周期时只更新订阅帧，不重建另一条连接。服务端每条连接的出站缓冲区优先发送 K 线、历史和私有事件，旧版逐交易对 ticker 按交易对保留最新一条，ticker 突发不会占满 K 线发送空间。iOS 继续使用既有 `market.ticker` 单连接协议，由 fanout 展开批量消息兼容。
+
+K 线 forming 与 closed 事件使用独立的 Redis sequence 作用域。Web 客户端只对 closed sequence 跳号触发恢复，避免形成中间更新被合并时误报缺口。恢复沿用 `KlineChart` 的现有历史请求与缓存交接，最多每秒触发一次，旧画面在新快照准备好前继续显示。
+
+本地验证范围包括 Web `npm test`、`npm run build`，Django `market_stream.test_coordination`、`market_stream.test_fast_path` 与 `market_stream.test_fanout`。线上 47.80.22.243（首尔服务器）尚未部署本轮改动，仍需登录后的浏览器端到端采样确认 Binance eventTime、WebSocket 收到时间、队列等待和 `renderData` 时间。
+
 ## 持仓浮盈与开仓标签（2026-11-22，本地验证）
 
 本轮复现两条消失路径：同账户 `USDTChartPositionsModel.monitor` 重启／取消时会清空已知持仓，前台重读较慢时线条随之缺失；原浮盈文字绑定开仓价，开仓价离开纵向视口时，浮盈框也被一起裁掉。另将非数组返回视为读取失败，避免 `null`／对象通过 `.rows` 静默变成已确认空仓。

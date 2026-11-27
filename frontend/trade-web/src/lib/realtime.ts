@@ -9,23 +9,32 @@ export interface RealtimeSubscription {
   handler: (event: StreamEvent) => void;
 }
 
-type WireEnvelope = { type?: string; channel?: string; data?: Record<string, unknown> };
+type WireEnvelope = { type?: string; channel?: string; sequence?: number; data?: Record<string, unknown> };
+type SocketKind = "ticker" | "kline";
+
+interface SocketState {
+  socket?: WebSocket;
+  reconnectTimer?: ReturnType<typeof setTimeout>;
+  pingTimer?: ReturnType<typeof setInterval>;
+  generation: number;
+  backoff: number;
+}
 
 /**
- * Single shared market WebSocket. One connection carries the union of all
- * subscriptions; token is refreshed proactively and attached at connect;
- * reconnect uses capped backoff. Removes per-component stream lifecycle races.
+ * One shared Web realtime client backed by two physical sockets. The ticker
+ * burst cannot occupy the selected-symbol K-line socket, while subscribers
+ * and authentication remain shared at the application level.
  */
 class MarketRealtime {
   private subs = new Set<RealtimeSubscription>();
-  private socket?: WebSocket;
-  private reconnectTimer?: ReturnType<typeof setTimeout>;
-  private pingTimer?: ReturnType<typeof setInterval>;
+  private sockets: Record<SocketKind, SocketState> = {
+    ticker: { generation: 0, backoff: 1000 },
+    kline: { generation: 0, backoff: 1000 },
+  };
   private restartTimer?: ReturnType<typeof setTimeout>;
   private latencySamples: number[] = [];
-  private backoff = 1000;
   private requestId = 0;
-  private generation = 0;
+  private klineSequences = new Map<string, number>();
 
   subscribe(sub: RealtimeSubscription): () => void {
     this.subs.add(sub);
@@ -36,38 +45,55 @@ class MarketRealtime {
     };
   }
 
-  // 订阅集合变化只在活连接上重发 subscribe 帧（后端按通道替换 filters），
-  // 不再整条重连——重连会造成行情断档（用户报"断断续续经常断开"的根因）。
   private scheduleSync() {
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = setTimeout(() => {
-      if (!this.subs.size) { this.teardown(); return; }
-      const socket = this.socket;
-      if (socket && socket.readyState === WebSocket.OPEN) this.sendSubscribe(socket);
-      else void this.connect();
+      this.restartTimer = undefined;
+      if (!this.subs.size) {
+        this.teardown("ticker");
+        this.teardown("kline");
+        return;
+      }
+      this.syncSocket("ticker");
+      this.syncSocket("kline");
     }, 120);
   }
 
-  private sendSubscribe(socket: WebSocket) {
-    // 通配 "*" 仅客户端分发用；后端 symbols 校验 [A-Z0-9]{2,32}，混入 "*" 会整条订阅被拒。
-    const klineSymbols = [...new Set([...this.subs].map((s) => s.symbol).filter((symbol) => symbol !== "*"))];
-    // ticker 用空 symbols＝后端通配单 topic 收全量；kline 订阅 1m 实时 feed，
-    // 大周期由客户端聚合到对应桶（后端仅推 1m 实时 K 线）。
+  private syncSocket(kind: SocketKind) {
+    const state = this.sockets[kind];
+    const socket = state.socket;
+    if (socket?.readyState === WebSocket.OPEN) {
+      this.sendSubscribe(kind, socket);
+      return;
+    }
+    if (!socket || socket.readyState === WebSocket.CLOSED) void this.connect(kind);
+  }
+
+  private sendSubscribe(kind: SocketKind, socket: WebSocket) {
+    if (kind === "ticker") {
+      socket.send(JSON.stringify({
+        version: 1, type: "subscribe", requestId: `web-${++this.requestId}`,
+        subscriptions: [{ channel: "market.ticker.batch", filters: { symbols: [], intervals: [] } }],
+      }));
+      return;
+    }
+    const klineSymbols = [...new Set([...this.subs]
+      .map((sub) => sub.symbol)
+      .filter((symbol) => symbol !== "*"))];
     socket.send(JSON.stringify({
       version: 1, type: "subscribe", requestId: `web-${++this.requestId}`,
-      subscriptions: [
-        { channel: "market.ticker", filters: { symbols: [], intervals: [] } },
-        { channel: "market.kline", filters: { symbols: klineSymbols, intervals: ["1m"] } },
-      ],
+      subscriptions: [{ channel: "market.kline", filters: { symbols: klineSymbols, intervals: ["1m"] } }],
     }));
   }
 
-  private teardown() {
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    if (this.pingTimer) clearInterval(this.pingTimer);
-    this.pingTimer = undefined;
-    const socket = this.socket;
-    this.socket = undefined;
+  private teardown(kind: SocketKind) {
+    const state = this.sockets[kind];
+    if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+    if (state.pingTimer) clearInterval(state.pingTimer);
+    state.reconnectTimer = undefined;
+    state.pingTimer = undefined;
+    const socket = state.socket;
+    state.socket = undefined;
     if (socket) {
       socket.onopen = null;
       socket.onmessage = null;
@@ -77,72 +103,113 @@ class MarketRealtime {
     }
   }
 
-  private async connect() {
-    this.teardown();
-    const generation = ++this.generation;
+  private async connect(kind: SocketKind) {
+    const state = this.sockets[kind];
+    this.teardown(kind);
+    const generation = ++state.generation;
     if (!this.subs.size) return;
     const token = await ensureFreshToken();
-    if (generation !== this.generation || !this.subs.size) return;
+    if (generation !== state.generation || !this.subs.size) return;
     const socket = token ? new WebSocket(websocketPath(), [`bearer.${token}`]) : new WebSocket(websocketPath());
-    this.socket = socket;
+    state.socket = socket;
     socket.onopen = () => {
-      if (generation !== this.generation) return;
-      this.backoff = 1000;
-      this.sendSubscribe(socket);
-      this.pingTimer = window.setInterval(() => {
-        socket.send(JSON.stringify({ version: 1, type: "ping", requestId: `ping-${++this.requestId}`, timestamp: Date.now() }));
+      if (generation !== state.generation) return;
+      state.backoff = 1000;
+      if (kind === "kline") this.klineSequences.clear();
+      this.sendSubscribe(kind, socket);
+      state.pingTimer = window.setInterval(() => {
+        socket.send(JSON.stringify({ type: "ping", requestId: `ping-${++this.requestId}`, timestamp: Date.now() }));
       }, 2000);
     };
     socket.onmessage = (message) => {
-      if (generation !== this.generation) return;
+      if (generation !== state.generation) return;
       try {
         const envelope = JSON.parse(message.data as string) as WireEnvelope;
         const data = envelope.data ?? {};
         if (envelope.type === "pong") {
-          const sent = Number(data.clientTimestamp);
-          if (Number.isFinite(sent) && sent > 0) {
-            this.latencySamples.push(Date.now() - sent);
-            if (this.latencySamples.length > 3) this.latencySamples.shift();
-            const sorted = [...this.latencySamples].sort((a, b) => a - b);
-            this.broadcast({ type: "latency", ms: sorted[Math.floor(sorted.length / 2)] });
-          }
+          if (kind === "ticker") this.receiveLatency(data);
           return;
         }
         if (envelope.type !== "event") return;
-        const symbol = String(data.symbol ?? "");
-        if (envelope.channel === "market.ticker") {
-          const price = Number(data.lastPrice);
-          const change = Number(data.priceChangePercent24h);
-          for (const sub of this.subs) {
-            const filter = typeof sub.tickerSymbols === "function" ? sub.tickerSymbols() : sub.tickerSymbols;
-            const wanted = filter?.length ? filter.includes(symbol) : sub.symbol === symbol || sub.symbol === "*";
-            if (wanted) sub.handler({ type: "ticker", symbol, price, changePercent: change, eventTime: Number(data.eventTime) });
-          }
-        } else if (envelope.channel === "market.kline") {
-          for (const sub of this.subs) {
-            if (sub.symbol !== "*" && sub.symbol !== symbol) continue;
-            sub.handler({
-              type: "kline", symbol,
-              candle: {
-                time: Math.floor(Number(data.openTime) / 1000),
-                open: Number(data.openPrice), high: Number(data.highPrice),
-                low: Number(data.lowPrice), close: Number(data.closePrice), volume: Number(data.volume),
-              },
-              closed: data.closed === true, eventTime: Number(data.eventTime),
-            });
-          }
+        if (kind === "ticker" && envelope.channel === "market.ticker.batch") {
+          this.dispatchTickerBatch(data);
+        } else if (kind === "kline" && envelope.channel === "market.kline") {
+          this.dispatchKline(envelope, data);
         }
       } catch { /* ignore malformed frame */ }
     };
     socket.onclose = () => {
-      if (generation !== this.generation) return;
-      this.latencySamples = [];
+      if (generation !== state.generation) return;
+      state.socket = undefined;
+      state.pingTimer = undefined;
+      if (kind === "kline") this.klineSequences.clear();
+      if (kind === "ticker") this.latencySamples = [];
       this.broadcast({ type: "disconnected" });
-      const delay = this.backoff;
-      this.backoff = Math.min(15_000, this.backoff * 2);
-      this.reconnectTimer = setTimeout(() => void this.connect(), delay);
+      const delay = state.backoff;
+      state.backoff = Math.min(15_000, state.backoff * 2);
+      state.reconnectTimer = setTimeout(() => {
+        state.reconnectTimer = undefined;
+        void this.connect(kind);
+      }, delay);
     };
     socket.onerror = () => { /* onclose follows */ };
+  }
+
+  private receiveLatency(data: Record<string, unknown>) {
+    const sent = Number(data.clientTimestamp);
+    if (!Number.isFinite(sent) || sent <= 0) return;
+    this.latencySamples.push(Date.now() - sent);
+    if (this.latencySamples.length > 3) this.latencySamples.shift();
+    const sorted = [...this.latencySamples].sort((a, b) => a - b);
+    this.broadcast({ type: "latency", ms: sorted[Math.floor(sorted.length / 2)] });
+  }
+
+  private dispatchTicker(data: Record<string, unknown>) {
+    const symbol = String(data.symbol ?? "");
+    const price = Number(data.lastPrice);
+    const change = Number(data.priceChangePercent24h);
+    for (const sub of this.subs) {
+      const filter = typeof sub.tickerSymbols === "function" ? sub.tickerSymbols() : sub.tickerSymbols;
+      const wanted = filter?.length ? filter.includes(symbol) : sub.symbol === symbol || sub.symbol === "*";
+      if (wanted) sub.handler({ type: "ticker", symbol, price, changePercent: change, eventTime: Number(data.eventTime) });
+    }
+  }
+
+  private dispatchTickerBatch(data: Record<string, unknown>) {
+    const eventTime = Number(data.eventTime);
+    const items = Array.isArray(data.items) ? data.items : [];
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      this.dispatchTicker({ ...(item as Record<string, unknown>), eventTime: Number((item as Record<string, unknown>).eventTime ?? eventTime) });
+    }
+  }
+
+  private dispatchKline(envelope: WireEnvelope, data: Record<string, unknown>) {
+    const symbol = String(data.symbol ?? "");
+    const interval = String(data.interval ?? "1m");
+    const closed = data.closed === true;
+    const sequence = Number(envelope.sequence);
+    const sequenceKey = `${symbol}:${interval}:${closed ? "closed" : "forming"}`;
+    const previous = this.klineSequences.get(sequenceKey);
+    if (Number.isFinite(sequence) && sequence > 0) {
+      if (previous !== undefined && sequence <= previous) return;
+      if (closed && previous !== undefined && sequence > previous + 1) {
+        this.broadcast({ type: "gap", symbol, interval, expected: previous + 1, received: sequence });
+      }
+      this.klineSequences.set(sequenceKey, sequence);
+    }
+    for (const sub of this.subs) {
+      if (sub.symbol !== "*" && sub.symbol !== symbol) continue;
+      sub.handler({
+        type: "kline", symbol,
+        candle: {
+          time: Math.floor(Number(data.openTime) / 1000),
+          open: Number(data.openPrice), high: Number(data.highPrice),
+          low: Number(data.lowPrice), close: Number(data.closePrice), volume: Number(data.volume),
+        },
+        closed, eventTime: Number(data.eventTime),
+      });
+    }
   }
 
   private broadcast(event: StreamEvent) {

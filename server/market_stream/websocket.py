@@ -1,4 +1,5 @@
 import asyncio
+from collections import OrderedDict, deque
 import json
 import logging
 import re
@@ -14,7 +15,7 @@ from market_stream.bus import subscription_topics
 from market_stream.core import INTERVAL_MS
 from market_stream.fanout import FanoutError, get_fanout
 
-PUBLIC_CHANNELS = {"market.kline", "market.ticker", "market.history", "strategy.signal"}
+PUBLIC_CHANNELS = {"market.kline", "market.ticker", "market.ticker.batch", "market.history", "strategy.signal"}
 PRIVATE_CHANNELS = {"trading.account", "trading.position", "trading.order", "trading.fill"}
 logger = logging.getLogger(__name__)
 OUTGOING_CAPACITY = 128
@@ -28,6 +29,71 @@ CLOSE_REASONS = frozenset({"client_disconnect", "token_expired", "slow_consumer"
 class SocketEnded(Exception):
     def __init__(self, reason):
         self.reason = reason
+
+
+class PriorityOutgoingQueue:
+    """Bounded per-socket queue with loss-tolerant ticker coalescing.
+
+    K-line, history, control, and private frames retain FIFO delivery and
+    consume the bounded capacity. Ticker frames keep only the newest payload
+    per symbol, allowing a large ticker burst to yield to selected K-lines.
+    """
+
+    def __init__(self, maxsize):
+        self.maxsize = maxsize
+        self.ticker_limit = max(1024, maxsize)
+        self._priority = deque()
+        self._tickers = OrderedDict()
+        self._wake = asyncio.Event()
+
+    def qsize(self):
+        return len(self._priority) + len(self._tickers)
+
+    def put_nowait(self, wire, channel=None, symbol=None):
+        if channel == "market.ticker":
+            key = symbol or self._ticker_symbol(wire)
+            if key is None:
+                channel = None
+            else:
+                if key in self._tickers:
+                    self._tickers.pop(key)
+                elif len(self._tickers) >= self.ticker_limit:
+                    if self._tickers:
+                        self._tickers.popitem(last=False)
+                    else:
+                        raise asyncio.QueueFull
+                self._tickers[key] = wire
+                self._wake.set()
+                return
+        if self.qsize() >= self.maxsize:
+            if self._tickers:
+                self._tickers.popitem(last=False)
+            else:
+                raise asyncio.QueueFull
+        self._priority.append(wire)
+        self._wake.set()
+
+    def put_event(self, wire, *, channel=None, symbol=None):
+        self.put_nowait(wire, channel=channel, symbol=symbol)
+
+    async def get(self):
+        while True:
+            if self._priority:
+                return self._priority.popleft()
+            if self._tickers:
+                _, wire = self._tickers.popitem(last=False)
+                return wire
+            self._wake.clear()
+            await self._wake.wait()
+
+    @staticmethod
+    def _ticker_symbol(wire):
+        try:
+            data = json.loads(wire).get("data", {})
+            symbol = data.get("symbol")
+            return symbol if isinstance(symbol, str) and symbol else None
+        except (TypeError, ValueError, AttributeError):
+            return None
 
 
 def record_close(reason):
@@ -112,14 +178,23 @@ def validate_subscription(item):
 
 def matches(payload, subscriptions, user_id, mode):
     channel = payload.get("channel")
+    subscription_channel = channel
     if channel not in subscriptions:
-        return False
+        if channel == "market.ticker.batch" and "market.ticker" in subscriptions:
+            subscription_channel = "market.ticker"
+        else:
+            return False
     if payload.get("_user") is not None and (payload["_user"] != user_id or payload.get("_mode") != mode):
         return False
-    if channel in PRIVATE_CHANNELS and payload.get("_user") != user_id:
+    if subscription_channel in PRIVATE_CHANNELS and payload.get("_user") != user_id:
         return False
-    filters = subscriptions[channel]
+    filters = subscriptions[subscription_channel]
     data = payload.get("data", {})
+    if channel == "market.ticker.batch":
+        items = data.get("items", [])
+        return isinstance(items, list) and (
+            not filters["symbols"] or any(item.get("symbol") in filters["symbols"] for item in items if isinstance(item, dict))
+        )
     return ((not filters["symbols"] or data.get("symbol") in filters["symbols"])
             and (not filters["intervals"] or data.get("interval") in filters["intervals"]))
 
@@ -150,19 +225,19 @@ async def application(scope, receive, send):
     if protocol:
         accept["subprotocol"] = protocol
     await send(accept)
-    outgoing = asyncio.Queue(maxsize=OUTGOING_CAPACITY)
+    outgoing = PriorityOutgoingQueue(OUTGOING_CAPACITY)
     subscriptions = {}
     member = None
     tasks = []
 
-    async def enqueue_wire(wire):
+    async def enqueue_wire(wire, channel=None, symbol=None):
         try:
-            outgoing.put_nowait(wire)
+            outgoing.put_nowait(wire, channel=channel, symbol=symbol)
         except asyncio.QueueFull:
             raise SocketEnded("slow_consumer") from None
 
     async def enqueue(payload):
-        await enqueue_wire(json.dumps(payload, separators=(",", ":")))
+        await enqueue_wire(json.dumps(payload, separators=(",", ":")), payload.get("channel"))
 
     async def sender():
         while True:
@@ -202,6 +277,7 @@ async def application(scope, receive, send):
                             subscriptions[channel] = filters
                         else:
                             subscriptions.pop(channel, None)
+                    member.expand_ticker_batch = "market.ticker.batch" not in subscriptions
                     # Acknowledge only after Redis has installed the new routes.
                     # The client can then read once to recover a notice published
                     # before its subscription became active.

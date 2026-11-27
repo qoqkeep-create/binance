@@ -24,6 +24,7 @@ try {
   execFileSync(process.execPath, [join(output, "tests/priceFormat.test.js")], { stdio: "inherit" });
   execFileSync(process.execPath, [join(output, "tests/positionTools.test.js")], { stdio: "inherit" });
   execFileSync(process.execPath, [join(root, "tests/klineChart.test.mjs")], { stdio: "inherit" });
+  execFileSync(process.execPath, [join(root, "tests/realtime.test.mjs")], { stdio: "inherit" });
   execFileSync(process.execPath, [join(root, "tests/tradePanel.test.mjs")], { stdio: "inherit" });
 } finally {
   rmSync(output, { recursive: true, force: true });
