@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { X } from "lucide-react";
 import { tradeApi, isLongSide, type PositionRow } from "./lib/tradeApi";
 import { TpLevels } from "./Pages";
 
@@ -75,11 +75,6 @@ export function PositionsDock({ rows, prices, open, height, onToggle, onOpenSymb
       </div>
       {notice && <p className="positions-dock-notice">{notice}</p>}
     </div>}
-    <div className="positions-dock-bar">
-      <button type="button" className="positions-dock-toggle" aria-expanded={open} aria-label={open ? "收起持仓列表" : "展开持仓列表"} onClick={onToggle}>
-        {open ? <ChevronDown size={13} /> : <ChevronUp size={13} />} 持仓
-      </button>
-    </div>
     {confirmRow && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认平仓</strong><button type="button" aria-label="关闭" onClick={() => setConfirmRow(null)}><X size={15} /></button></header>

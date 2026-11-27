@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓展开钮归位状态栏正中心，删独立条（K 线拿回 24px）
+
+删 .positions-dock-bar；toggle 绝对定位状态栏中心；坞内容展开仍 30%。实测 stage 630→654、居中偏差<20px、bodyH 211 不变。release dockcenter-2411d1b 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：持仓坞居中正下方条＋标题列＋行操作（自动止盈/立即平仓）＋面板同黑
 
 PositionsDock.tsx：内容＋24px 居中条；九列表头；行操作复用持仓页按钮与确认/快照弹窗（TpLevels 共享导出）；盈亏 WS 推算；背景 var(--panel) 与左 rail 同色；展开 30% workspace 高（ResizeObserver）。实测居中/同黑/211px/表头/操作齐全。release dockbar-855b988 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
