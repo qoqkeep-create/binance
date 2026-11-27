@@ -250,5 +250,9 @@ if (app.includes("market-rank") || !styles.includes(".nav-item { display: flex; 
 if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-items: flex-start;")) {
   throw new Error("History open/close times must sit at the card bottom-left");
 }
+const positionToolsCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
+if (!positionToolsCss.includes("transform:translate(-50%,calc(-100% - 4px))") || !positionToolsCss.includes("width:11px; height:11px;")) {
+  throw new Error("Position stats panel must sit above the entry divider; drag handles half size (11px)");
+}
 
 console.log("KlineChart self-rendered contract tests passed");

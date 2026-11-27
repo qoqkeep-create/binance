@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量工具中面板置分割线上方＋拖拽柄减半
+
+.position-tool-stats transform 改 translate(-50%,calc(-100% - 4px))（不再压盈亏分割线）；resize-handle 22→11px、border 1.5、radius 3、offset -5.5。实测面板底 318≤分割线 322、柄 11×11。契约测试锁定。release postool-ed9da75 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：多空测量工具改为本地缓存与可平移绘制
 
 多头／空头按钮移动到周期栏后方并改为图标，移除“交易测量”标题和设置按钮。新建测量区域设有最小高度，止盈／止损以入场线为中心初始保持 1:1，三条水平线显示抓手光标，测量区域支持上下左右拖动。测量状态改存浏览器 `localStorage`，删除 Web 账号设置中的 `positionTools` 字段和对应后端校验，避免记录用户数据。Web release `trade-web-20261127-local-b74be41` 与后端 release `integrated-quick-b74be41` 已部署到 47.80.22.243（首尔服务器）。

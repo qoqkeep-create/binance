@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 测量工具中面板置分割线上方＋拖拽柄减半 Web 发布（2026-11-27，北京时间）
+
+Codex 版 PositionToolOverlay 两处 UI 修正：① RR/方向/浮动盈亏小面板原 translate(-50%,-50%) 压在入场盈亏分割线上，改 translate(-50%,calc(-100% - 4px)) 整体置于分割线上方 4px；② 四个拖拽圆角方柄 22px→11px（边框 3→1.5、圆角 6→3、偏移 -11→-5.5）。本地实测 statsBottom 318 ≤ entryTop 322、柄 11×11。Web release **`trade-web-20261127-postool-ed9da75`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `b361f099…`／`09ccda94…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 精简稳固批次：删游客入口／死代码／fee 单源／workers2／模式头 Web+后端发布（2026-11-27，北京时间）
 
 按用户授权"先 iOS/Web、删游客、其余架构项自决推进、精简单稳固"执行：① Web 删除游客登录入口与共享账号 88888888 虚构（AccountDialog enterGuest/分隔/按钮、AccountProvider guest 同步分支、account.ts role guest、App/TradePanel/KlineChart guest 判定、死 guest CSS）；iOS 本无游客不动。② 删死代码 CompactIndicatorStrip 全链（组件/css/lib/两测试/runner 行）。③ server fee 常量单源 common/fees.py（trading/positions views 改导入，含 L2213 内联字面量）。④ uvicorn workers 1→2（Dockerfile；切币 hang 饱和证据触发 2026-11-14 审查 P2 扩容条件；fanout 每 loop 单 reader 假设按 worker 成立）。⑤ Web REST 显式 X-Trading-Mode: ordinary 补契约缺口（iOS/harmony 已带）。Web release **`trade-web-20261127-lean-85bc0dc`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `5bf1b1ec…`／`c74a3fec…` 与本地一致，ba 复核同哈希且页面"游客"0 命中。后端随 quick_deploy 切换为 **`integrated-quick-f8c114d`**（四容器、切换前活动命令 0、health 全 true；docker top 确认 uvicorn master＋2 worker）。server 定向测试 849 例：1 环境性 error（本地缺 MARKET_TEST_REDIS_BINARY，既有）＋1 过时 SWR 断言已对齐有界同步补页设计后全绿。旧 release 保留可回退。
