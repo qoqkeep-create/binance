@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓抽屉顶栏右芯片按钮（描边+底色）、列表限高4行内滚、状态栏旧钮移除
+
+顶栏 26px 常显居右芯片；body 表头＋list max-height 176px（4×44）；实测右缘<20px、6 行可见 4、scrollable。release dockhead-c0df2f9 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：持仓坞信息白色（同币种）、浮盈浮亏红绿（补回丢失的 pd-up/pd-down）
 
 行值 color var(--text)、杠杆同白；pd-up green/pd-down red 补回。实测行值=币种白、盈绿亏红。release dockcolor-476d594 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

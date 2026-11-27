@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓抽屉顶栏右芯片按钮＋列表限高 4 行 Web 发布（2026-11-28，北京时间）
+
+用户终案：按钮统一放**抽屉顶栏右侧**（带描边＋底色芯片），收起时顶栏即 K 线下边条、按钮居其右缘；展开时列表在顶栏下方、**最多 4 行高**超出内滚（隐藏滚动条）；状态栏旧居中按钮移除。实现：PositionsDock 顶栏 `.positions-dock-bar`（26px、justify-end）常显，toggle 芯片 1px line-bright 描边＋panel-hover 底；body＝表头＋list（max-height:176px＝4×44px 行高）；App 删 statusbar toggle 与 wsH/ResizeObserver。实测：按钮距 workspace 右<20px、描边 1px/底 rgb(32,34,37)、状态栏无旧钮；6 行替身下 listH=176、可见 4 行、scrollable=true。Web release **`trade-web-20261128-dockhead-c0df2f9`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `dc5ad503…`／`ec6526ba…`／`373b3b93…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 持仓坞信息改白色＋浮盈浮亏红绿 Web 发布（2026-11-28，北京时间）
 
 用户报：坞内信息浅灰应改与币种同白；浮盈浮亏要红/绿。根因：dockbar 重写 CSS 时丢失 `.pd-up/.pd-down` 两类→盈亏随行灰；行值 color 为 muted。修：`.positions-dock-row` color 改 var(--text)（与币种按钮同白 rgb(238,240,243)）、杠杆小字同白；补回 `.pd-up{green}/.pd-down{red}`。实测：行值四列均 rgb(238,240,243)=币种色；盈利行 pd-up rgb(0,168,143)、亏损行 pd-down rgb(255,86,105)（-9.41U／-1.18%）。Web release **`trade-web-20261128-dockcolor-476d594`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `9d280b3e…`／`5ff401e0…`／`b453dc6e…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定行白与红绿类。后端不切换，旧 release 保留可回退。

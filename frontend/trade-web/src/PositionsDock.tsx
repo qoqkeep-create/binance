@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { tradeApi, isLongSide, type PositionRow } from "./lib/tradeApi";
 import { TpLevels } from "./Pages";
 
@@ -9,11 +9,10 @@ const num = (value: number | string | null | undefined) => {
 };
 const fmt = (value: number | string | null | undefined, digits = 2) => num(value).toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
-export function PositionsDock({ rows, prices, open, height, onToggle, onOpenSymbol, onChanged }: {
+export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onChanged }: {
   rows: PositionRow[];
   prices: Record<string, number>;
   open: boolean;
-  height: number;
   onToggle: () => void;
   onOpenSymbol: (symbol: string) => void;
   onChanged: () => void;
@@ -40,7 +39,12 @@ export function PositionsDock({ rows, prices, open, height, onToggle, onOpenSymb
   }
 
   return <div className="positions-dock">
-    {open && <div className="positions-dock-body" style={{ height }}>
+    <div className="positions-dock-bar">
+      <button type="button" className="positions-dock-toggle" aria-expanded={open} aria-label={open ? "收起持仓列表" : "展开持仓列表"} onClick={onToggle}>
+        {open ? <ChevronDown size={13} /> : <ChevronUp size={13} />} 持仓
+      </button>
+    </div>
+    {open && <div className="positions-dock-body">
       <div className="positions-dock-head" role="row">
         <span>币种/方向</span><span>仓位</span><span>保证金</span><span>开仓价</span><span>现价</span><span>浮盈浮亏</span><span>市价止损</span><span>市价止盈</span><span>操作</span>
       </div>
