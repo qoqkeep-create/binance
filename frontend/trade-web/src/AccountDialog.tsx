@@ -137,7 +137,7 @@ export default function AccountDialog({ initialMode, onClose, returnFocusTo, pre
   }
 
   return createPortal(<div className={`account-modal-backdrop ${presentation === "page" ? "account-page-backdrop" : ""}`} onPointerDown={(event) => { if (presentation !== "page" && event.target === event.currentTarget) onClose(); }}>
-    {presentation === "page" && <div className="account-page-brand" aria-hidden="true"><div className="account-page-glyph"><span /><span /><span /></div><div><strong>ORBITAL</strong><small>MARKET INTELLIGENCE</small></div></div>}
+    {presentation === "page" && <div className="account-page-brand" aria-hidden="true"><img className="account-page-logo" src={`${import.meta.env.BASE_URL}favicon.png`} alt="" /><div><strong>ORBITAL</strong><small>MARKET INTELLIGENCE</small></div></div>}
     <div className="account-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="account-dialog-heading"><div><span className="account-eyebrow">YOUR WORKSPACE</span><h2 id={titleId}>{mode === "login" ? "欢迎回来" : "创建个人账户"}</h2><p>{mode === "login" ? "登录后，继续你的市场观察。" : "用邮箱注册，保存自己的页面偏好。"}</p></div>{presentation !== "page" && <button type="button" className="account-modal-close" onClick={onClose} aria-label="关闭账户窗口"><X size={18} /></button>}</header>
       <div className="account-auth-tabs" role="tablist" aria-label="账户操作"><button type="button" role="tab" aria-selected={mode === "login"} className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")} disabled={busy}>登录</button><button type="button" role="tab" aria-selected={mode === "register"} className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")} disabled={busy}>邮箱注册</button></div>
@@ -156,9 +156,9 @@ export default function AccountDialog({ initialMode, onClose, returnFocusTo, pre
 
 export function AccountGate({ loading }: { loading: boolean }) {
   const [showForm, setShowForm] = useState(true);
-  if (loading) return <div className="account-gate-loading" role="status"><div className="account-page-glyph"><span /><span /><span /></div><strong>正在检查账户会话</strong><small>准备你的市场观察台…</small></div>;
+  if (loading) return <div className="account-gate-loading" role="status"><img className="account-page-logo" src={`${import.meta.env.BASE_URL}favicon.png`} alt="" /><strong>正在检查账户会话</strong><small>准备你的市场观察台…</small></div>;
   if (showForm) return <AccountDialog initialMode="login" onClose={() => setShowForm(false)} returnFocusTo={null} presentation="page" />;
   return <>
-    <div className="account-gate-backdrop"><div className="account-page-brand" aria-hidden="true"><div className="account-page-glyph"><span /><span /><span /></div><div><strong>ORBITAL</strong><small>MARKET INTELLIGENCE</small></div></div><div className="account-gate-copy"><span className="account-eyebrow">PRIVATE MARKET WORKSPACE</span><h1>登录后开始观察市场</h1><p>行情、合约分析和你的页面偏好都在同一个工作区中。</p><button type="button" className="account-gate-cta" onClick={() => setShowForm(true)}><UserRound size={16} /> 登录 / 注册</button></div><div className="account-gate-footer">安全会话 · 个人偏好云端保存 · 图表视图本地管理</div></div>
+    <div className="account-gate-backdrop"><div className="account-page-brand" aria-hidden="true"><img className="account-page-logo" src={`${import.meta.env.BASE_URL}favicon.png`} alt="" /><div><strong>ORBITAL</strong><small>MARKET INTELLIGENCE</small></div></div><div className="account-gate-copy"><span className="account-eyebrow">PRIVATE MARKET WORKSPACE</span><h1>登录后开始观察市场</h1><p>行情、合约分析和你的页面偏好都在同一个工作区中。</p><button type="button" className="account-gate-cta" onClick={() => setShowForm(true)}><UserRound size={16} /> 登录 / 注册</button></div><div className="account-gate-footer">安全会话 · 个人偏好云端保存 · 图表视图本地管理</div></div>
   </>;
 }

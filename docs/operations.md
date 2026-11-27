@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 网站 favicon 与页头 logo 换用 iOS AppIcon Web 发布（2026-11-27，北京时间）
+
+复用 iOS 工程 AppIcon-1024.png：复制为 trade-web/public/favicon.png；index.html 增 rel=icon＋apple-touch-icon；页头 brand-glyph 三菱形改 img.brand-logo（26px 圆角 6）；登录门禁/加载态 account-page-glyph 改 img.account-page-logo（34px 圆角 8）；删旧 glyph CSS。本地实测 img loaded naturalWidth=1024。Web release **`trade-web-20261127-icon-acb6224`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/favicon 哈希 `c1d7be17…`／`83194a74…` 与本地一致，线上 favicon 200。后端不切换，旧 release 保留可回退。
+
 ## 测量工具选中语义修正（区内选中/区外取消）＋去空态提示 Web 发布（2026-11-27，北京时间）
 
 ① 选中仅发生在测量区间内点击（left/right×min/max Y 命中）；**区外点击取消选中**（setSelectedId(null)）；② 悬停不再显示手柄/高亮（interactive=selected，删 hoveredId），避免"看起来被选中"；③ 删除空态提示文字"选择多头或空头，然后在 K 线区域拖出测量区间"（JSX＋CSS）。本地实测：区内点击 4 柄、区外点击 0 柄、空态不存在。Web release **`trade-web-20261127-select-d30ee61`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `1877ac97…`／`a83a75bb…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。

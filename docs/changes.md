@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：favicon 与页头/门禁 logo 换用 iOS AppIcon
+
+AppIcon-1024.png → public/favicon.png；index.html icon/apple-touch-icon；brand-glyph/account-page-glyph 三菱形改 img（26/34px 圆角）；旧 glyph CSS 删。实测 loaded 1024。release icon-acb6224 上线首尔＋线上 favicon 200＋哈希一致。
+
 ## 2026-11-27：测量选中仅区内／区外取消／去空态提示与悬停选中
 
 window down 命中区间才 setSelectedId＋moveDrag，否则 setSelectedId(null)；interactive=selected（删 hoveredId 悬停手柄）；删 position-tool-empty JSX/CSS。实测区内 4 柄/区外 0 柄/空态无。契约测试锁定。release select-d30ee61 上线首尔＋ba 哈希一致。

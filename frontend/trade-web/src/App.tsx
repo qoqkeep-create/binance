@@ -249,7 +249,7 @@ function TerminalApp() {
   return (
     <div className="terminal-shell">
       <header className="topbar">
-        <div className="brand-lockup"><div className="brand-glyph"><span /><span /><span /></div><div><div className="brand-name">ORBITAL</div><div className="brand-sub">MARKET INTELLIGENCE</div></div></div>
+        <div className="brand-lockup"><img className="brand-logo" src={`${import.meta.env.BASE_URL}favicon.png`} alt="ORBITAL" /><div><div className="brand-name">ORBITAL</div><div className="brand-sub">MARKET INTELLIGENCE</div></div></div>
         <nav className="main-nav" aria-label="主导航" ref={navRef}>
           {(["行情", "信号", "引擎", "持仓", "历史", "账户"] as NavItem[]).map((item) => <button key={item} className={`nav-item ${activeNav === item ? "active" : ""}`} onClick={() => setActiveNav(item)}>{item}{item === "信号" && <span className="nav-badge">LIVE</span>}{item === "持仓" && positionCount > 0 && <span className="nav-pos-count" aria-label={`${positionCount} 个持仓`}>{positionCount}</span>}</button>)}
         </nav>
