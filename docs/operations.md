@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 修 wslive 引入的订阅全拒（左列表与K线停刷根因）Web 发布（2026-11-28，北京时间）
+
+用户报：左列表与 K 线价格都不刷新/很慢，要求确认链路。根因：上一版 wslive 把 App 订阅 symbol 设为客户端通配 "*"，而 `sendSubscribe` 把全部 sub.symbol 并入 kline filters 发给后端；后端 `validate_subscription`（market_stream/websocket.py:106）按 `[A-Z0-9]{2,32}` 校验 symbols，"*" 不合法→**整条 subscribe 被拒**→ticker 与 kline 均未安装→两路全停。修：klineSymbols 过滤掉 "*"（通配仅客户端分发层使用）；ticker 仍空 symbols 通配。假 WS 实证：subscribe 帧 kline symbols=["RAYSOLUSDT"]、ticker=[]、逐符号过后台正则=true。链路确认：单共享 WS→subscribe 帧（活连接重发不重连）→后端 fanout ticker 通配/kline 按币→客户端按 sub 分发（App "*" 收全量做健康与列表、KlineChart 按币收 kline 聚合尾根）→左列表 500ms 聚合、K 线尾根 120ms 防抖、坞盈亏 WS 推算。Web release **`trade-web-20261128-wsfix-dfdd04f`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `b19600f8…`／`52a57ce5…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定过滤。后端不切换，旧 release 保留可回退。
+
 ## 持仓展开钮归位状态栏正中心（删独立条、K 线拿回 24px）Web 发布（2026-11-28，北京时间）
 
 用户澄清：不要新开一条放按钮，放**最下面状态栏正中心**即可，给 K 线让位。实现：删除 `.positions-dock-bar`（24px 独立条）；toggle 改 `.statusbar-dock-toggle` 绝对定位 left:50% translateX(-50%) 居于状态栏中心；坞内容展开时仍贴 K 线下方 30% 高。实测：noNewBar=true、按钮中心偏差<20px 且在状态栏内、kline-stage 630→654px（拿回 24px）、展开 bodyH 211/704 不变。Web release **`trade-web-20261128-dockcenter-2411d1b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `62590c13…`／`8c3d8391…`／`f54acb96…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。

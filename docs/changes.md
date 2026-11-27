@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：修 wslive 订阅全拒（"*" 混入 kline filters 致后端整条拒绝→两路停刷）
+
+klineSymbols 过滤 "*"（通配仅客户端）；假 WS 实证帧 symbols 全过后端 [A-Z0-9]{2,32} 校验。release wsfix-dfdd04f 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-28：持仓展开钮归位状态栏正中心，删独立条（K 线拿回 24px）
 
 删 .positions-dock-bar；toggle 绝对定位状态栏中心；坞内容展开仍 30%。实测 stage 630→654、居中偏差<20px、bodyH 211 不变。release dockcenter-2411d1b 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

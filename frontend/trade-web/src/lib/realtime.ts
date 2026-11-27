@@ -49,7 +49,8 @@ class MarketRealtime {
   }
 
   private sendSubscribe(socket: WebSocket) {
-    const klineSymbols = [...new Set([...this.subs].map((s) => s.symbol))];
+    // 通配 "*" 仅客户端分发用；后端 symbols 校验 [A-Z0-9]{2,32}，混入 "*" 会整条订阅被拒。
+    const klineSymbols = [...new Set([...this.subs].map((s) => s.symbol).filter((symbol) => symbol !== "*"))];
     // ticker 用空 symbols＝后端通配单 topic 收全量；kline 订阅 1m 实时 feed，
     // 大周期由客户端聚合到对应桶（后端仅推 1m 实时 K 线）。
     socket.send(JSON.stringify({
