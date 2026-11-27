@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓钮并入标题行（同水平线）、标题行降高 27px、绿底无描边
+
+删独立顶栏；toggle 入 head 第 9 列（pd-op-head 左右分布）；head 常显；toggle border 0＋green 14% 底绿字。实测同线<8px、headH 27、listH 176。release dockhead2-ea11cf8 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：抽屉固定预留4行（height:176）、芯片与行操作贴右缘（弹性列＋窄屏隐次列＋操作列min150）
 
 窄屏横滚曾把按钮推出右缘（-601px）；改 fr 弹性列、≤900px 隐保证金/市价止盈、操作列 minmax(150px,1.7fr)、padding-right 4。实测 1 笔 listH 176、无横滚、右距 4、无重叠。release dockfit-99f6b04 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
