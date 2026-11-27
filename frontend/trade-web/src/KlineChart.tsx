@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Minus, MoveVertical, RefreshCw, SlidersHorizontal, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Brush, Minus, MoveVertical, RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
@@ -145,6 +145,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const [activePositionTool, setActivePositionTool] = useState<PositionDirection | null>(null);
   const [activeLineTool, setActiveLineTool] = useState<ChartLineOrientation | null>(null);
   const [clearToolsTick, setClearToolsTick] = useState(0);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const viewModeRef = useRef<"auto" | "manual">("auto");
   const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
 
@@ -750,7 +751,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
             <span className="tool-sep" aria-hidden="true" />
             <button type="button" className={`position-tool-trigger guide-line ${activeLineTool === "vertical" ? "is-active" : ""}`} aria-label="竖线工具" title="竖线工具" aria-pressed={activeLineTool === "vertical"} disabled={status !== "ready"} onClick={() => { setActivePositionTool(null); setActiveLineTool((current) => current === "vertical" ? null : "vertical"); }}><MoveVertical size={16} /></button>
             <span className="tool-sep" aria-hidden="true" />
-            <button type="button" className="chart-tool-clear" aria-label="一键清除所有划线工具" title="一键清除所有划线工具" disabled={status !== "ready"} onClick={() => setClearToolsTick((tick) => tick + 1)}><Trash2 size={16} /></button>
+            <button type="button" className="chart-tool-clear" aria-label="一键清除所有划线工具" title="一键清除所有划线工具" disabled={status !== "ready"} onClick={() => setClearConfirmOpen(true)}><Brush size={16} /></button>
           </div>
         </div>
         <div className="toolbar-right">
@@ -764,6 +765,11 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
           </button>
           {insightToggle}
         </div>
+        {clearConfirmOpen && <div className="chart-clear-confirm" role="dialog" aria-label="确认清除所有划线工具">
+          <span>清除全部横线、竖线与测量工具？</span>
+          <button type="button" className="is-danger" onClick={() => { setClearToolsTick((tick) => tick + 1); setClearConfirmOpen(false); }}>确认</button>
+          <button type="button" onClick={() => setClearConfirmOpen(false)}>取消</button>
+        </div>}
       </div>
       <div className="kline-stage" data-chart-theme={theme} style={{ "--position-tool-main-height": mainPaneHeight > 0 ? `${mainPaneHeight}px` : "100%" } as CSSProperties}>
         {status === "loading" && <div className="kline-loading" role="status" aria-label="K 线加载中"><span className="kline-bars" aria-hidden="true"><i /><i /><i /><i /></span></div>}

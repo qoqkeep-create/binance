@@ -21,12 +21,12 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 7px 11px;
+  padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: transparent;
   color: var(--muted);
-  font: 16px var(--font-ui);
+  font: 14px var(--font-ui);
 }
 .indicator-master:hover { color: var(--text); border-color: var(--line-bright); }
 
@@ -40,12 +40,12 @@
   border-radius: 4px;
 }
 .view-mode button {
-  padding: 6px 13px;
+  padding: 5px 11px;
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   color: var(--muted);
-  font: 14px var(--font-ui);
+  font: 12px var(--font-ui);
   cursor: pointer;
 }
 .view-mode button:hover { color: var(--text); }
