@@ -4,7 +4,7 @@
 
 **Goal:** Keep selected-symbol K-line updates responsive while the Web market list continues receiving prices for the full contract universe.
 
-**Architecture:** Preserve the existing Binance collector, Redis sequence model, and iOS `market.ticker` contract. The Web client will use separate ticker and K-line sockets, while the ASGI sender will apply latest-wins coalescing to ticker frames and priority delivery to K-line frames. Closed K-line events will use an independent sequence scope so the Web client can request a history refresh after a real gap.
+**Architecture:** Preserve the existing Binance collector, Redis sequence model, and iOS `market.ticker` contract. The collector publishes one `market.ticker.batch` event per snapshot, the Web client uses a separate ticker socket, and the ASGI fanout expands that batch for legacy iOS ticker subscriptions. K-line frames receive priority delivery, and closed K-line events use an independent sequence scope so the Web client can request a history refresh after a real gap.
 
 **Tech Stack:** Django ASGI WebSocket, Redis Pub/Sub, Python asyncio, React, TypeScript, lightweight-charts.
 
@@ -27,7 +27,7 @@ Add closed-bar sequence scoping and verify that forming and closed K-line sequen
 - Modify: `server/market_stream/test_fanout.py`
 - Modify: `server/market_stream/test_coordination.py`
 
-Introduce a bounded outgoing buffer that stores K-line and control frames ahead of ticker frames. Ticker frames use latest-wins per symbol and may evict older ticker entries when the buffer is full. K-line and private frames retain the existing slow-consumer failure behavior.
+Introduce a bounded outgoing buffer that stores K-line and control frames ahead of ticker frames. The Web batch is sent as one frame, while legacy ticker frames use latest-wins per symbol and may evict older ticker entries when the buffer is full. K-line and private frames retain the existing slow-consumer failure behavior.
 
 ### Task 3: Split Web ticker and K-line sockets
 
@@ -36,7 +36,7 @@ Introduce a bounded outgoing buffer that stores K-line and control frames ahead 
 - Modify: `frontend/trade-web/src/lib/binance.ts`
 - Add: `frontend/trade-web/tests/realtime.test.mjs`
 
-Maintain one shared Web client with two physical connections. The ticker socket carries only ticker subscriptions and latency probes. The K-line socket carries only selected-symbol 1m K-lines. Reconnects reset sequence state and retain the current bearer-token flow.
+Maintain one shared Web client with two physical connections. The ticker socket subscribes to `market.ticker.batch` and carries latency probes. The K-line socket carries only selected-symbol 1m K-lines. Reconnects reset sequence state and retain the current bearer-token flow.
 
 ### Task 4: Add closed K-line gap recovery
 
