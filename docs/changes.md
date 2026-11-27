@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：交易侧栏松散规整版式（标签在上、40px 统一控件、行距字号上调）
+
+字段改堆叠（标签上/控件整行），限价/止损/止损金额/止盈策略四控件同高 40px 同宽同圆角；面板 gap 14px；标签 13/输入 14/指标 14/11/提交 15/类型 13/设置 12/Maker 13。computed 与整页截图目检通过。release tradespace-042aaaf 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-27：测量信息条统一画线编辑条样式、选中互斥
 
 详情条复用 chart-line-editor 容器＋字段改 chart-line-editor-item 芯片（标题加粗/删除红/关闭×）；clearLineSelection 在区域点击、beginHandle、新框落定三处清除画线选中。实测先选横线再点测量：editorGone true、样式 computed 一致、截图同款。release barmutex-f6a5e3d 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

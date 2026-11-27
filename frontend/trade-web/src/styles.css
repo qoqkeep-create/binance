@@ -406,25 +406,25 @@ html[data-theme="light"] .nav-item.active .nav-badge { border-color: color-mix(i
 .pg-confirm footer button.is-danger { color: #fff; background: var(--red); border-color: var(--red); }
 
 /* 交易面板 v1：iOS 同款止损反推仓位 */
-.trade-panel { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; }
-.trade-hint { padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font: 11px var(--font-ui); }
-.trade-side-row { display: flex; align-items: center; gap: 8px; }
-.trade-side-row small { color: var(--muted-dark); font: 9px var(--font-ui); }
-.trade-side { padding: 4px 10px; border-radius: 5px; font: 600 12px var(--font-ui); }
+.trade-panel { display: flex; flex-direction: column; gap: 14px; padding-bottom: 16px; }
+.trade-hint { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font: 12px var(--font-ui); }
+.trade-side-row { display: flex; align-items: center; gap: 10px; }
+.trade-side-row small { color: var(--muted-dark); font: 11px var(--font-ui); }
+.trade-side { padding: 5px 12px; border-radius: 5px; font: 600 13px var(--font-ui); }
 .trade-side.long { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
 .trade-side.short { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
-.trade-grid { grid-template-columns: 1fr 1fr; }
-.trade-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font: 12px var(--font-ui); }
-.trade-field input { width: 130px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px var(--font-ui); font-variant-numeric: tabular-nums; }
-.trade-risk-box { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 130px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px var(--font-ui); font-variant-numeric: tabular-nums; }
+.trade-grid { grid-template-columns: 1fr 1fr; gap: 12px 16px; }.trade-grid > div { gap: 5px; }.trade-grid span { font: 11px var(--font-ui); }.trade-grid strong { font: 500 14px var(--font-ui); }
+.trade-field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; color: var(--muted); font: 13px var(--font-ui); }
+.trade-field input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 14px var(--font-ui); font-variant-numeric: tabular-nums; }
+.trade-risk-box { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 14px var(--font-ui); font-variant-numeric: tabular-nums; }
 .trade-risk-box svg { color: var(--muted); flex: none; }
-.trade-strategy-link { display: flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--muted); }
-.trade-strategy-link strong { color: var(--text); font-weight: 500; }
+.trade-strategy .trade-strategy-link { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--muted); font: 13px var(--font-ui); }
+.trade-strategy-link strong { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trade-strategy-link:hover strong { color: var(--green); }
-.trade-strategy { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 12px var(--font-ui); }
+.trade-strategy { display: flex; flex-direction: column; align-items: stretch; gap: 6px; color: var(--muted); font: 13px var(--font-ui); }
 .trade-strategy strong { color: var(--text); font-weight: 500; }
-.trade-strategy button { padding: 4px 8px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--accent-strong); font: 11px var(--font-ui); }
-.trade-submit { padding: 10px 12px; border: 0; border-radius: 6px; background: var(--green); color: #06281c; font: 600 14px var(--font-ui); }
+.trade-strategy > button:not(.trade-strategy-link) { padding: 6px 10px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--accent-strong); font: 12px var(--font-ui); }
+.trade-submit { padding: 12px; border: 0; border-radius: 6px; background: var(--green); color: #06281c; font: 600 15px var(--font-ui); }
 .trade-submit:disabled { opacity: .45; }
 html[data-theme="light"] .trade-submit { color: #ffffff; }
 .pg-confirm footer button.is-long { background: var(--green); border-color: var(--green); color: #06281c; }
@@ -443,12 +443,12 @@ html[data-theme="light"] .pg-confirm footer button.is-long { color: #ffffff; }
 .pulse-mode-toggle span { font-size: 11px; }
 
 /* 交易面板：市价/限价 + 开仓设置 */
-.trade-type-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.trade-type-row button { padding: 7px 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: 600 12px var(--font-ui); }
+.trade-type-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.trade-type-row button { padding: 10px 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: 600 13px var(--font-ui); }
 .trade-type-row button.active { color: var(--green); font-weight: 600; border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
-.trade-settings-btn { display: flex; gap: 5px; align-items: center; justify-content: center; width: 100%; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: 11px var(--font-ui); }
-.trade-settings { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
-.trade-maker-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font: 12px var(--font-ui); }
+.trade-settings-btn { display: flex; gap: 6px; align-items: center; justify-content: center; width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: 12px var(--font-ui); }
+.trade-settings { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+.trade-maker-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; color: var(--muted); font: 13px var(--font-ui); }
 .trade-maker-row.is-fixed strong { color: var(--text); font-weight: 500; }
 
 /* 账户：绑定表单 + 策略管理 */
@@ -492,8 +492,8 @@ html[data-theme="light"] .pg-close-btn { color: #ffffff; }
 .pg-margin { cursor: pointer; background: transparent; }
 .nav-item.active .nav-pos-count { background: color-mix(in srgb, var(--text) 92%, transparent); color: var(--green); }
 .trade-field > span:first-child { flex: none; white-space: nowrap; }
-.trade-input-wrap { position: relative; flex: 1; display: flex; }
-.trade-input-wrap input { width: 100%; padding-right: 26px; }
+.trade-input-wrap { position: relative; width: 100%; display: flex; }
+.trade-input-wrap input { width: 100%; padding-right: 30px; }
 .trade-paste-icon { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
 .trade-paste-icon:hover { color: var(--green); background: var(--panel-hover); }
 .pg-notice { position: relative; padding-right: 26px; }
