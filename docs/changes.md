@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：交易面板隐藏滚动条、分档价位、含手续费勾选条下移、三预估独立区、设置弹窗
+
+insight-panel/pg-scroll 隐藏滚动条（切换宽度不变 705px）；当前价/确认限价止损价 priceScaleFormatter；trade-fee-row 于止损价下、trade-info 于提交钮上；开仓设置 pg-confirm 弹窗（含手续费移主表单）。实测顺序/弹窗/宽度全过。release tradeflow-369ec3d 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：修 wslive 订阅全拒（"*" 混入 kline filters 致后端整条拒绝→两路停刷）
 
 klineSymbols 过滤 "*"（通配仅客户端）；假 WS 实证帧 symbols 全过后端 [A-Z0-9]{2,32} 校验。release wsfix-dfdd04f 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。

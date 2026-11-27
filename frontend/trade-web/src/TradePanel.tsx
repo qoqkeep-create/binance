@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ClipboardPaste, Settings2, X } from "lucide-react";
 import { tradeApi, type AccountInfo } from "./lib/tradeApi";
 import { getCopiedPrice } from "./lib/priceClipboard";
+import { priceScaleFormatter } from "./lib/priceFormat";
 import { StopLossDialog, StrategyDialog } from "./AccountDialogs";
 
 const FEE_RATE = 0.001;
@@ -138,11 +139,9 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
       <button type="button" className={orderType === "market" ? "active" : ""} onClick={() => { setOrderType("market"); attemptKeyRef.current = null; }}>市价开仓</button>
       <button type="button" className={orderType === "limit" ? "active" : ""} onClick={() => { setOrderType("limit"); attemptKeyRef.current = null; }}>限价挂单</button>
     </div>
-    <div className="pg-grid trade-grid">
-      <div><span>当前价格</span><strong>{price === undefined ? "—" : fmt(price, 4)}</strong></div>
-      <div><span>预估仓位</span><strong>{valid ? `${fmt(notional)} U` : "—"}</strong></div>
-      <div><span>预估手续费</span><strong>{valid ? `${fmt(fee)} U` : "—"}</strong></div>
-      <div><span>止损回撤</span><strong>{valid ? `${fmt(ratio * 100)}%` : "—"}</strong></div>
+    <div className="trade-field trade-static">
+      <span>当前价格</span>
+      <strong>{price === undefined ? "—" : priceScaleFormatter(price)}</strong>
     </div>
     {orderType === "limit" && <label className="trade-field">
       <span>限价</span>
@@ -155,6 +154,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
         <button type="button" className="trade-paste-icon" title="粘贴" aria-label="粘贴止损价" onClick={() => { const v = getCopiedPrice(); if (v !== null) { setStopInput(v); attemptKeyRef.current = null; } }}><ClipboardPaste size={13} aria-hidden="true" /></button>
       </span>
     </label>
+    <label className="trade-maker-row trade-fee-row"><span>止损含手续费</span><input type="checkbox" checked={includeFee} onChange={(event) => { setIncludeFee(event.target.checked); try { localStorage.setItem(INCLUDE_FEE_KEY, String(event.target.checked)); } catch { /* keep session value */ } }} /></label>
     <div className="trade-field">
       <span>止损金额</span>
       <button type="button" className="trade-risk-box" onClick={() => setStopDialogOpen(true)} aria-label="设置止损金额">
@@ -169,23 +169,31 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
       </button>
       {strategyState === "error" && <button type="button" onClick={() => void load()}>重试</button>}
     </div>
+    <div className="trade-info">
+      <div><span>预估仓位</span><strong>{valid ? `${fmt(notional)} U` : "—"}</strong></div>
+      <div><span>预估手续费</span><strong>{valid ? `${fmt(fee)} U` : "—"}</strong></div>
+      <div><span>止损回撤</span><strong>{valid ? `${fmt(ratio * 100)}%` : "—"}</strong></div>
+    </div>
     <button type="button" className={`trade-submit ${isLong ? "is-long" : "is-short"}`} disabled={!valid || !strategy || submitting} onClick={() => setConfirmOpen(true)}>
       {submitting ? "提交中…" : stopInput.trim() === "" ? "输入止损价" : orderType === "market" ? (isLong ? "市价开多" : "市价开空") : (isLong ? "限价挂多" : "限价挂空")}
     </button>
     <button type="button" className="trade-settings-btn" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}><Settings2 size={13} /> 开仓设置</button>
-    {settingsOpen && <div className="trade-settings">
-      <label className="trade-maker-row"><span>市价开仓用 Maker</span><input type="checkbox" checked={maker.market} onChange={(event) => setMakerPref("market", event.target.checked)} /></label>
-      <label className="trade-maker-row"><span>限价开仓用 Maker</span><input type="checkbox" checked={maker.limit} onChange={(event) => setMakerPref("limit", event.target.checked)} /></label>
-      <label className="trade-maker-row"><span>预挂止盈用 Maker</span><input type="checkbox" checked={maker.takeProfit} onChange={(event) => setMakerPref("takeProfit", event.target.checked)} /></label>
-      <label className="trade-maker-row"><span>止损含手续费</span><input type="checkbox" checked={includeFee} onChange={(event) => { setIncludeFee(event.target.checked); try { localStorage.setItem(INCLUDE_FEE_KEY, String(event.target.checked)); } catch { /* keep session value */ } }} /></label>
-      <div className="trade-maker-row is-fixed"><span>止损</span><strong>触发后市价</strong></div>
+    {settingsOpen && <div className="pg-confirm-backdrop" onClick={() => setSettingsOpen(false)}>
+      <div className="pg-confirm" role="dialog" aria-modal="true" aria-label="开仓设置" onClick={(event) => event.stopPropagation()}>
+        <header><strong>开仓设置</strong><button type="button" aria-label="关闭" onClick={() => setSettingsOpen(false)}><X size={15} /></button></header>
+        <label className="trade-maker-row"><span>市价开仓用 Maker</span><input type="checkbox" checked={maker.market} onChange={(event) => setMakerPref("market", event.target.checked)} /></label>
+        <label className="trade-maker-row"><span>限价开仓用 Maker</span><input type="checkbox" checked={maker.limit} onChange={(event) => setMakerPref("limit", event.target.checked)} /></label>
+        <label className="trade-maker-row"><span>预挂止盈用 Maker</span><input type="checkbox" checked={maker.takeProfit} onChange={(event) => setMakerPref("takeProfit", event.target.checked)} /></label>
+        <div className="trade-maker-row is-fixed"><span>止损</span><strong>触发后市价</strong></div>
+        <footer><button type="button" onClick={() => setSettingsOpen(false)}>完成</button></footer>
+      </div>
     </div>}
     <StopLossDialog open={stopDialogOpen} onClose={() => setStopDialogOpen(false)} onSaved={() => void load()} />
     <StrategyDialog open={strategyDialogOpen} onClose={() => setStrategyDialogOpen(false)} onCreate={() => { setStrategyDialogOpen(false); onNavigate("strategy"); }} />
     {confirmOpen && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认{orderType === "market" ? "开仓" : "挂单"}</strong><button type="button" aria-label="关闭" onClick={() => setConfirmOpen(false)}><X size={15} /></button></header>
-        <p>{symbol.replace(/USDT$/, "")}/USDT {isLong ? "开多" : "开空"}{orderType === "limit" ? `，限价 ${limitInput}` : ""}，预估仓位 {fmt(notional)} U，手续费约 {fmt(fee)} U（止损{includeFee ? "含" : "不含"}手续费）；止损价 {stopInput}，止损金额 {risk} U（回撤 {fmt(ratio * 100)}%），止盈策略「{strategy?.name}」。实际成交与数量以交易所为准，确认继续？</p>
+        <p>{symbol.replace(/USDT$/, "")}/USDT {isLong ? "开多" : "开空"}{orderType === "limit" && limitInput.trim() !== "" ? `，限价 ${priceScaleFormatter(Number(limitInput))}` : ""}，预估仓位 {fmt(notional)} U，手续费约 {fmt(fee)} U（止损{includeFee ? "含" : "不含"}手续费）；止损价 {stopInput.trim() !== "" ? priceScaleFormatter(Number(stopInput)) : stopInput}，止损金额 {risk} U（回撤 {fmt(ratio * 100)}%），止盈策略「{strategy?.name}」。实际成交与数量以交易所为准，确认继续？</p>
         <footer>
           <button type="button" onClick={() => setConfirmOpen(false)}>取消</button>
           <button type="button" className={isLong ? "is-long" : "is-danger"} disabled={submitting} onClick={() => void submitOpen()}>{submitting ? "提交中…" : "确认"}</button>

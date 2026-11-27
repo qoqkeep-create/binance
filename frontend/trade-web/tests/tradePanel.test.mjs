@@ -32,6 +32,9 @@ if (!apiSrc.includes('setStopLoss: (amount: number) => post<unknown>("/account/s
   throw new Error("Stop-loss save must post the backend-required amount field, not stop_loss_amount");
 }
 const cssSrc = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+if (!panel.includes("trade-info") || !panel.includes("trade-fee-row") || panel.indexOf("trade-input-wrap") > panel.indexOf("trade-fee-row") || panel.indexOf("trade-fee-row") > panel.indexOf("trade-risk-box") || panel.indexOf("trade-info") > panel.indexOf("trade-submit") || !panel.includes('settingsOpen && <div className="pg-confirm-backdrop"') || !panel.includes("priceScaleFormatter(price)") || !cssSrc.includes(".insight-panel, .pg-scroll { scrollbar-width: none; }")) {
+  throw new Error("Fee row under stop price; estimates block above submit; settings in dialog; tiered prices; hidden scrollbars");
+}
 const dialogsSrc = readFileSync(fileURLToPath(new URL("../src/AccountDialogs.tsx", import.meta.url)), "utf8");
 const pagesSrc2 = readFileSync(fileURLToPath(new URL("../src/Pages.tsx", import.meta.url)), "utf8");
 if (!dialogsSrc.includes("单笔止损金额") || !dialogsSrc.includes("确认后止损额立即生效") || !dialogsSrc.includes("pending_amount") || !dialogsSrc.includes("step={1}") || !dialogsSrc.includes("min={minimum} max={maximum}") || !pagesSrc2.includes("<AccountRow label=\"止损金额\"") || !pagesSrc2.includes("<AccountRow label=\"止盈策略\"") || !pagesSrc2.includes("<StopLossDialog") || !pagesSrc2.includes("<StrategyDialog") || !panel.includes("<StopLossDialog") || !panel.includes("<StrategyDialog") || !cssSrc.includes(".acct-dialog { width: min(420px, 92vw);") || !cssSrc.includes("padding: 7px 0;")) {

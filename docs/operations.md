@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 交易面板四件：隐藏滚动条／分档价位／表单重排／设置弹窗 Web 发布（2026-11-28，北京时间）
+
+用户四件：① 市价/限价切换时右栏出现滚动条致宽度缩窄→隐藏滚动条（保留可滚）；② 价位遵从分档小数；③ 表单重排：当前价格/止损价/止损金额/止盈策略为可操作区，「止损含手续费」勾选条移到止损价正下方，预估仓位/预估手续费/止损回撤三项移到可操作区下方、开仓按钮上方的独立信息区；④ 开仓设置改弹窗（不再内联在按钮下）。实现：insight-panel/pg-scroll `scrollbar-width:none`＋webkit 隐藏；当前价格与确认弹窗限价/止损价改 priceScaleFormatter；TradePanel 重排（trade-static 行、trade-fee-row、trade-info 三格区）；settingsOpen 渲染 pg-confirm 弹窗（3 Maker＋止损触发后市价固定行，含手续费已移主表单）。实测：切换前后右栏宽均 705px、scrollbarWidth none、feeBelowStop/infoAboveSubmit true、设置弹窗 4 行且不含手续费项。Web release **`trade-web-20261128-tradeflow-369ec3d`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `273a2d87…`／`96ae0e8a…`／`3f57b257…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定顺序与弹窗。后端不切换，旧 release 保留可回退。
+
 ## 修 wslive 引入的订阅全拒（左列表与K线停刷根因）Web 发布（2026-11-28，北京时间）
 
 用户报：左列表与 K 线价格都不刷新/很慢，要求确认链路。根因：上一版 wslive 把 App 订阅 symbol 设为客户端通配 "*"，而 `sendSubscribe` 把全部 sub.symbol 并入 kline filters 发给后端；后端 `validate_subscription`（market_stream/websocket.py:106）按 `[A-Z0-9]{2,32}` 校验 symbols，"*" 不合法→**整条 subscribe 被拒**→ticker 与 kline 均未安装→两路全停。修：klineSymbols 过滤掉 "*"（通配仅客户端分发层使用）；ticker 仍空 symbols 通配。假 WS 实证：subscribe 帧 kline symbols=["RAYSOLUSDT"]、ticker=[]、逐符号过后台正则=true。链路确认：单共享 WS→subscribe 帧（活连接重发不重连）→后端 fanout ticker 通配/kline 按币→客户端按 sub 分发（App "*" 收全量做健康与列表、KlineChart 按币收 kline 聚合尾根）→左列表 500ms 聚合、K 线尾根 120ms 防抖、坞盈亏 WS 推算。Web release **`trade-web-20261128-wsfix-dfdd04f`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `b19600f8…`／`52a57ce5…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定过滤。后端不切换，旧 release 保留可回退。
