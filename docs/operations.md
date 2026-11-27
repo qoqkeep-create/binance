@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓坞信息改白色＋浮盈浮亏红绿 Web 发布（2026-11-28，北京时间）
+
+用户报：坞内信息浅灰应改与币种同白；浮盈浮亏要红/绿。根因：dockbar 重写 CSS 时丢失 `.pd-up/.pd-down` 两类→盈亏随行灰；行值 color 为 muted。修：`.positions-dock-row` color 改 var(--text)（与币种按钮同白 rgb(238,240,243)）、杠杆小字同白；补回 `.pd-up{green}/.pd-down{red}`。实测：行值四列均 rgb(238,240,243)=币种色；盈利行 pd-up rgb(0,168,143)、亏损行 pd-down rgb(255,86,105)（-9.41U／-1.18%）。Web release **`trade-web-20261128-dockcolor-476d594`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `9d280b3e…`／`5ff401e0…`／`b453dc6e…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定行白与红绿类。后端不切换，旧 release 保留可回退。
+
 ## 表单顺序再调（策略→止损金额→含手续费）＋三预估改三行左右＋持仓按钮居右 Web 发布（2026-11-28，北京时间）
 
 用户三件：① 含手续费移到止损金额下方、止盈策略移到止损价下方（市价与限价同顺序）；② 预估仓位/预估手续费/止损回撤改**三行、每行左右结构**（标签左值右，弃三列上下卡）；③ 持仓列表止盈/平仓按钮居右。实现：TradePanel 顺序＝现价→限价→止损价→止盈策略→止损金额→含手续费→trade-info→提交；.trade-info 改 column、子行 row＋space-between；.pd-actions justify-end（持仓页 footer 原已 flex-end）。实测：orderOk=true（stop<strat<risk<fee<info<submit）、三行各 17px 同线左右、坞按钮 flex-end 且距行右<20px。Web release **`trade-web-20261128-formorder-38bc936`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `ab0b6d6f…`／`5ff401e0…`／`54c875f0…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定顺序与行结构。后端不切换，旧 release 保留可回退。

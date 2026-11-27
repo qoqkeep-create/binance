@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓坞信息白色（同币种）、浮盈浮亏红绿（补回丢失的 pd-up/pd-down）
+
+行值 color var(--text)、杠杆同白；pd-up green/pd-down red 补回。实测行值=币种白、盈绿亏红。release dockcolor-476d594 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：表单顺序（止损价→止盈策略→止损金额→含手续费）、三预估三行左右、持仓按钮居右
 
 市价/限价同顺序；trade-info 三行 row space-between；pd-actions flex-end（页 footer 原已居右）。实测 orderOk/三行同线左右/坞按钮居右。release formorder-38bc936 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
