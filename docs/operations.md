@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 输入框降至34px＋持仓钮改K线居中（收起贴底边、展开抽屉外顶部）Web 发布（2026-11-28，北京时间）
+
+用户两件：① 交易模块输入框再缩窄（40→34px，限价/止损输入、止损金额盒、止盈策略盒同步）；② 持仓钮位置：收起时＝最下边条**居中（相对 K 线图中心）**；展开时＝**抽屉外**顶部居中（独立 topbar 行，不再在标题行内）。实现：.positions-dock-closed-wrap 绝对定位 workspace left:50% bottom:2px；展开渲染 .positions-dock-topbar（居中芯片行，位于 head 上方即抽屉外）；head 操作列恢复纯标题，pd-op-head 清除。实测：收起 centered=true（偏差<8px）、inputH 34px；展开 topbar 在 head 之上、居中、closed-wrap 消失；截图目检芯片悬于抽屉顶外居中。Web release **`trade-web-20261128-dockcenter-04a444b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `cb28b48b…`／`267f9166…`／`0fd707e6…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 工具图标选中态＝加粗变绿无背景（悬浮去背景态）Web 发布（2026-11-28，北京时间）
 
 用户：工具栏图标点击后不要背景，改为图形加粗＋变绿；悬浮也不加背景。实现：.position-tool-trigger.{long,short,guide-line}.is-active 统一 color var(--green)＋background transparent（原绿/红/蓝 14% 底全去除）；is-active svg stroke-width 2.6 加粗；hover 仅文字色变化无背景。实测：多头/横线选中 bg=rgba(0,0,0,0)、color rgb(0,168,143)、svg 描边 2.6px；截图目检图标加粗绿色无底。Web release **`trade-web-20261128-toolactive-fd42c65`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `e3ca5616…`／`6d931010…` 与本地单链构建一致，ba 复核同哈希。后端不切换，旧 release 保留可回退。

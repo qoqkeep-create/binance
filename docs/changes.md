@@ -1,6 +1,10 @@
 # 变更与验收记录
 
-## 2026-11-28：工具图标选中态改加粗变绿无背景，悬浮去背景
+## 2026-11-28：交易输入框 40→34px；持仓钮 K 线居中（收起贴底边居中、展开抽屉外 topbar 居中）
+
+closed-wrap left:50% bottom:2px；topbar 独立行在 head 上方；head 操作列复原。实测居中<8px、34px、topbar aboveHead。release dockcenter-04a444b 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
+## 2026-11-28：工具图标选中态改加粗变绿无背景，悬浮去背景，悬浮去背景
 
 is-active 统一绿字透明底＋svg stroke-width 2.6；hover 无背景。实测 bg 透明/绿/2.6px。release toolactive-fd42c65 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
 

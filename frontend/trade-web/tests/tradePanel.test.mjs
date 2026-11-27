@@ -46,7 +46,7 @@ if (panel.includes("trade-side-row") || panel.includes("止损价低于现价为
 if (!cssSrc.includes(".trade-field > span:first-child { flex: none; white-space: nowrap; }")) {
   throw new Error("Stop-price label must stay on one line");
 }
-if (!cssSrc.includes(".trade-field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; color: var(--muted); font: 13px var(--font-ui); }") || !cssSrc.includes(".trade-field input { width: 100%; height: 40px;") || !cssSrc.includes(".trade-risk-box { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; height: 40px;") || !cssSrc.includes(".trade-strategy .trade-strategy-link { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; height: 40px;") || !cssSrc.includes(".trade-panel { display: flex; flex-direction: column; gap: 14px;")) {
+if (!cssSrc.includes(".trade-field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; color: var(--muted); font: 13px var(--font-ui); }") || !cssSrc.includes(".trade-field input { width: 100%; height: 34px;") || !cssSrc.includes(".trade-risk-box { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; height: 34px;") || !cssSrc.includes(".trade-strategy .trade-strategy-link { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; height: 34px;") || !cssSrc.includes(".trade-panel { display: flex; flex-direction: column; gap: 14px;")) {
   throw new Error("Trade panel must use stacked labels with uniform full-width 40px controls and looser rhythm");
 }
 const styles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");

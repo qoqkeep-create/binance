@@ -39,10 +39,11 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
   }
 
   return <div className="positions-dock">
-    {!open && <button type="button" className="positions-dock-toggle positions-dock-closed" aria-expanded={false} aria-label="展开持仓列表" onClick={onToggle}><ChevronUp size={13} /> 持仓</button>}
+    {!open && <div className="positions-dock-closed-wrap"><button type="button" className="positions-dock-toggle" aria-expanded={false} aria-label="展开持仓列表" onClick={onToggle}><ChevronUp size={13} /> 持仓</button></div>}
+    {open && <div className="positions-dock-topbar"><button type="button" className="positions-dock-toggle" aria-expanded={true} aria-label="收起持仓列表" onClick={onToggle}><ChevronDown size={13} /> 持仓</button></div>}
     {open && <div className="positions-dock-body">
       <div className="positions-dock-head" role="row">
-        <span>币种/方向</span><span>仓位</span><span>保证金</span><span>开仓价</span><span>现价</span><span>浮盈浮亏</span><span>市价止损</span><span>市价止盈</span><span className="pd-op-head"><em>操作</em><button type="button" className="positions-dock-toggle" aria-expanded={open} aria-label={open ? "收起持仓列表" : "展开持仓列表"} onClick={onToggle}><ChevronDown size={13} /> 持仓</button></span>
+        <span>币种/方向</span><span>仓位</span><span>保证金</span><span>开仓价</span><span>现价</span><span>浮盈浮亏</span><span>市价止损</span><span>市价止盈</span><span>操作</span>
       </div>
       <div className="positions-dock-list">
         {rows.length === 0 && <p className="positions-dock-empty">暂无持仓</p>}
