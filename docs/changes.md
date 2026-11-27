@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：四柄最终规格（中左 move 光标＋仅左/中线不带动整体）
+
+leftFree 去 target/stop 随移（仅 left＋entryY）；middle-left cursor move（四向箭头）。实测中左 30/25/0/0、左上仅 target25、右仅 width30。契约测试锁定。release handles2-bd8ab20 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：左柄 z3 解除边线遮挡／拖工具 preventDefault 阻断图表平移
 
 左柄被 left-edge(z2) 遮挡只触发 leftX；柄提 z3 后 leftFree 四向生效。拖工具/绘制时真实 mousedown 启动图表 pan；down 命中分支与 beginHandle preventDefault 阻断兼容鼠标事件。实测左柄纯竖向 24、区内拖拽 +40 且图表视口稳定。契约测试锁定。release dragfix-c59d1eb 上线首尔＋ba 哈希一致。

@@ -144,8 +144,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         }
         if (live.dragHandle!.handle === "leftFree") {
           const nextY = clamp(point.y, 0.02, 0.98);
-          const delta = nextY - position.entryY;
-          return { ...position, left: clamp(point.x, 0.02, position.right - 0.05), entryY: nextY, targetY: clamp(position.targetY + delta, 0.02, 0.98), stopY: clamp(position.stopY + delta, 0.02, 0.98) };
+          return { ...position, left: clamp(point.x, 0.02, position.right - 0.05), entryY: nextY };
         }
         if (live.dragHandle!.handle === "rightX") {
           return { ...position, right: clamp(point.x, position.left + 0.05, 0.98) };

@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 四柄最终规格（中左 move 光标＋仅左/中线，不带动整体）Web 发布（2026-11-27，北京时间）
+
+用户最终明确：左上/左下仅上下；右仅左右；中左悬停四向箭头（cursor:move）、按下拖拽只动左边界＋中线，**不带动止盈/止损/整体**。修：leftFree 分支去掉 target/stop 随移；middle-left cursor grab→move。实测：中左 dLeft30/dEntry25/dTarget0/dStop0；左上 dTarget25 其余 0；右 dWidth30 其余 0；cursor=move。Web release **`trade-web-20261127-handles2-bd8ab20`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `6e69f158…`／`5de8bf4c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 左柄被边线遮挡＋拖工具带动图表 双修 Web 发布（2026-11-27，北京时间）
 
 ① 左柄无法上下根因：左边线条 z-index:2 盖住柄（无 z），点击命中 leftX 边线而非 leftFree 柄；柄提 z-index:3 后自由四向生效（实测上下 24/横向 0 的纯竖向拖拽✓）。② 拖工具时图表跟平移根因：真实 mousedown 落到图表画布启动 pan；在 window down 命中/绘制分支与 beginHandle 加 preventDefault 阻断兼容鼠标事件（mousemove 仍供十字线）。实测区内拖拽工具 +40 且图表 visibleLogicalRange 不变✓。Web release **`trade-web-20261127-dragfix-c59d1eb`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `bea2bca4…`／`ec98a4d1…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 z3＋preventDefault。后端不切换，旧 release 保留可回退。
