@@ -4,8 +4,9 @@ import { aggregateCandles, buildPivotSeries } from "./contractAnalysis.js";
 import { bollingerLevels, buildIndicatorRow, continuousClosedCandles, intervalSeconds } from "./analysisIndicators.js";
 
 export const analysisSources = ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "12h", "1d"] as const;
-const indicatorIntervals = ["5m", "15m", "30m", "1h", "2h", "4h", "12h", "1d"];
 export type SourceInterval = typeof analysisSources[number];
+// 指标条周期须是 analysisSources 的子集：桶宽统一取自 intervalSeconds，缺配即编译失败。
+const indicatorIntervals: SourceInterval[] = ["5m", "15m", "30m", "1h", "2h", "4h", "12h", "1d"];
 export type AnalysisQuote = NonNullable<AnalysisSnapshot["quote"]>;
 
 export interface RawAnalysisSnapshot {
@@ -202,12 +203,12 @@ export function buildAnalysisSnapshot(raw: RawAnalysisSnapshot | null, symbol: s
     retainConfirmedTurns(series, raw, now, previous);
     if (raw.tickSize) inheritPendingTurns(series, raw.tickSize);
     const indicators = indicatorIntervals.map((interval) => {
-      const source = interval as SourceInterval;
-      const result = buildIndicatorRow(interval, raw.candles[source] ?? [], cutoff(source));
-      const received = raw.receivedAt[interval as SourceInterval];
-      const closed = continuousClosedCandles(raw.candles[source] ?? [], intervalSeconds[interval], cutoff(source));
-      const lastClose = closed.length ? closed[closed.length - 1].time + intervalSeconds[interval] : null;
-      if (result.status === "ready" && (!received || now - received > 150 || lastClose === null || lastClose < Math.floor(now / intervalSeconds[interval]) * intervalSeconds[interval])) result.status = "stale";
+      const seconds = intervalSeconds[interval];
+      const result = buildIndicatorRow(interval, raw.candles[interval] ?? [], cutoff(interval));
+      const received = raw.receivedAt[interval];
+      const closed = continuousClosedCandles(raw.candles[interval] ?? [], seconds, cutoff(interval));
+      const lastClose = closed.length ? closed[closed.length - 1].time + seconds : null;
+      if (result.status === "ready" && (!received || now - received > 150 || lastClose === null || lastClose < Math.floor(now / seconds) * seconds)) result.status = "stale";
       return result;
     });
     return { symbol, quote, series, indicators, fetchedAt: raw.fetchedAt };

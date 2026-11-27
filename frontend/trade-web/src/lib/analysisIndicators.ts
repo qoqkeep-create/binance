@@ -1,11 +1,24 @@
 import type { Candle } from "./binance";
 import type { BollingerLevels, IndicatorRow } from "./analysisTypes";
 
-export const intervalSeconds: Record<string, number> = {
-  "1m": 60, "2m": 120, "5m": 300, "10m": 600, "15m": 900,
+// 前端认识的周期全集：任何"按周期取桶宽"的代码只能查这张表。
+// 缺条目是编译错误，不再是静默按 60 秒聚合（那会把 1m 根追加进大周期图＝蜡烛挤成一片）。
+export const knownIntervals = ["1m", "2m", "3m", "5m", "10m", "15m", "30m", "1h", "2h", "4h", "12h", "1d"] as const;
+export type KnownInterval = typeof knownIntervals[number];
+
+export const intervalSeconds: Record<KnownInterval, number> = {
+  "1m": 60, "2m": 120, "3m": 180, "5m": 300, "10m": 600, "15m": 900,
   "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400,
   "12h": 43200, "1d": 86400,
 };
+
+/** 后端 INTERVAL_MS 原生支持、可在图表切换的周期；工具条按钮必须是它的子集。 */
+export const chartIntervals = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"] as const satisfies readonly KnownInterval[];
+export type ChartInterval = typeof chartIntervals[number];
+
+export function isChartInterval(value: unknown): value is ChartInterval {
+  return typeof value === "string" && (chartIntervals as readonly string[]).includes(value);
+}
 
 /** A gap starts a new observation history; unfinished candles cannot confirm indicators. */
 export function continuousClosedCandles(candles: Candle[], seconds: number, now: number): Candle[] {
@@ -81,7 +94,7 @@ function stochRsi(closes: number[]): { k: number | null; d: number | null } {
   return { k: last(kValues), d: kValues.length >= 3 ? kValues.slice(-3).reduce((sum, number) => sum + number, 0) / 3 : null };
 }
 
-export function buildIndicatorRow(interval: string, candles: Candle[], now: number): IndicatorRow {
+export function buildIndicatorRow(interval: KnownInterval, candles: Candle[], now: number): IndicatorRow {
   const seconds = intervalSeconds[interval];
   const closed = continuousClosedCandles(candles, seconds, now);
   const closes = closed.map((candle) => candle.close);

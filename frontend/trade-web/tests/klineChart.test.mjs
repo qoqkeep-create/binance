@@ -52,8 +52,11 @@ if (!source.includes("IndicatorSettingsPanel") || !source.includes("mergeIndicat
 if (!source.includes("}, 1);") || !source.includes("}, 2);")) {
   throw new Error("MACD and StochRSI must render in their own panes");
 }
-if (!source.includes("const INTERVALS = [\"3m\", \"5m\", \"15m\", \"1h\", \"4h\", \"1d\"]")) {
+if (!source.includes('const INTERVALS: readonly ChartInterval[] = ["3m", "5m", "15m", "1h", "4h", "1d"]')) {
   throw new Error("Interval picker must mirror the iOS favorites");
+}
+if (source.includes("?? 60") || !source.includes("const width = intervalSeconds[selectedInterval];")) {
+  throw new Error("Bucket width must come from intervalSeconds; a silent 60s fallback appends 1m bars onto larger periods (3m overlap)");
 }
 // The chart instance is created once; symbol switches only fetch + setData, never rebuild.
 if (!source.includes("chartRef.current = chart;") || !source.includes("}, []);")) {

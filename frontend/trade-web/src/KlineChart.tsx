@@ -12,7 +12,7 @@ import { getKlines, type Candle } from "./lib/binance";
 import { tradeApi, isLongSide, type PositionRow } from "./lib/tradeApi";
 import { setCopiedPrice } from "./lib/priceClipboard";
 import { priceScaleFormatter, minMoveFor } from "./lib/priceFormat";
-import { intervalSeconds } from "./lib/analysisIndicators";
+import { intervalSeconds, isChartInterval, type ChartInterval } from "./lib/analysisIndicators";
 import { marketRealtime } from "./lib/realtime";
 import { buildChartIndicators } from "./lib/chartIndicators";
 import { mergeCandle, mergeTicker, mergeBucketKline } from "./lib/candleMerge";
@@ -26,18 +26,16 @@ import PositionToolOverlay, { type ChartLineOrientation } from "./PositionToolOv
 import type { PositionDirection } from "./lib/positionTools";
 import "./kline-chart.css";
 
-const INTERVALS = ["3m", "5m", "15m", "1h", "4h", "1d"];
-const VALID_INTERVALS = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"]);
+const INTERVALS: readonly ChartInterval[] = ["3m", "5m", "15m", "1h", "4h", "1d"];
 const HISTORY_LIMIT = 300;
 // 自适应高度比例：主图 70%，两个副图各 15%。
 const PANE_STRETCH = { main: 70, sub: 15 };
 const RIGHT_OFFSET = 5;
 
-interface ChartPreference { interval: string; indicators?: unknown }
+interface ChartPreference { interval: ChartInterval; indicators?: unknown }
 const defaultChartPreference: ChartPreference = { interval: "15m", indicators: DEFAULT_INDICATORS };
 function validChartPreference(value: unknown): value is ChartPreference {
-  return !!value && typeof value === "object" && typeof (value as ChartPreference).interval === "string"
-    && VALID_INTERVALS.has((value as ChartPreference).interval);
+  return !!value && typeof value === "object" && isChartInterval((value as ChartPreference).interval);
 }
 
 const THEMES = {
@@ -124,7 +122,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const candlesRef = useRef<Candle[]>([]);
   const paneLegendRefs = useRef<Array<HTMLDivElement | null>>([null, null]);
   const symbolRef = useRef<string | null>(null);
-  const intervalRef = useRef<string>("15m");
+  const intervalRef = useRef<ChartInterval>("15m");
   const loadingOlderRef = useRef(false);
   const hasMoreRef = useRef(true);
   const loadGenRef = useRef(0);
@@ -660,7 +658,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     const unsubscribe = marketRealtime.subscribe({ symbol, interval: selectedInterval, handler: (event) => {
       if (!active || candlesSymbolRef.current !== symbol) return;
       if (event.type === "kline") {
-        const width = intervalSeconds[selectedInterval] ?? 60;
+        // 桶宽一律取自 intervalSeconds（对 ChartInterval 全覆盖，无静默回退）。
+        const width = intervalSeconds[selectedInterval];
         const incoming = event.candle;
         const bucket = selectedInterval === "1m" ? incoming.time : Math.floor(incoming.time / width) * width;
         // 收盘水位：已收盘的桶拒绝迟到的 forming/ticker 改写，否则收盘后实体被拉长＝与交易所原生K线不一致。
@@ -674,7 +673,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
         }
         scheduleTail();
       } else if (event.type === "ticker") {
-        const width = intervalSeconds[selectedInterval] ?? 60;
+        const width = intervalSeconds[selectedInterval];
         const ts = event.eventTime && event.eventTime > 0 ? event.eventTime : Date.now();
         const bucket = Math.floor(ts / 1000 / width) * width;
         if (bucket <= closedThroughRef.current) return;

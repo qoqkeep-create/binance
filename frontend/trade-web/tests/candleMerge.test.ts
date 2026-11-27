@@ -1,4 +1,5 @@
 import { mergeTicker, mergeCandle, mergeBucketKline } from "../src/lib/candleMerge.js";
+import { chartIntervals, intervalSeconds, type ChartInterval } from "../src/lib/analysisIndicators.js";
 import type { Candle } from "../src/lib/binance.js";
 
 const closed: Candle[] = [
@@ -57,5 +58,51 @@ if (ignored !== closed) throw new Error("old bucket must be ignored");
 
 // 开收盘连续不变量：种子→首根 1m 后 open 必须等于前根收盘。
 if (taken[2].open !== taken[1].close) throw new Error("open/close continuity broken across bucket roll");
+
+// 桶宽必须由 intervalSeconds 派生：3m 曾因缺配静默回退 60 秒，把整段 1m 根追加进 3m 图＝蜡烛挤成一片。
+const minutes: Record<ChartInterval, number> = { "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "2h": 120, "4h": 240, "1d": 1440 };
+for (const interval of chartIntervals) {
+  if (intervalSeconds[interval] !== minutes[interval] * 60) throw new Error(`${interval} must map to ${minutes[interval] * 60}s, got ${intervalSeconds[interval]}`);
+}
+const bucketOf = (interval: ChartInterval, time: number) => Math.floor(time / intervalSeconds[interval]) * intervalSeconds[interval];
+
+// 同一 3m 桶内的 540/600 两根 1m 只能长成一根 540，尾根取首根 open 并并集极值。
+if (bucketOf("3m", 540) !== 540 || bucketOf("3m", 600) !== 540) throw new Error("540 and 600 must share the 540 three-minute bucket");
+const threeMinute: Candle[] = [
+  { time: 0, open: 10, high: 11, low: 9, close: 10.5, volume: 10 },
+  { time: 180, open: 10.5, high: 12, low: 10, close: 11, volume: 20 },
+  { time: 360, open: 11, high: 11.5, low: 10.5, close: 11.2, volume: 30 },
+];
+const inside3m = mergeBucketKline(
+  mergeBucketKline(threeMinute, { time: 540, open: 11.2, high: 12.2, low: 10.8, close: 11.8, volume: 5 }, bucketOf("3m", 540), false),
+  { time: 600, open: 11.8, high: 12.9, low: 10.6, close: 12.5, volume: 7 }, bucketOf("3m", 600), false,
+);
+if (inside3m.length !== 4) throw new Error(`two 1m events inside one 3m bucket must stay a single bar, got ${inside3m.length - 3}`);
+if (inside3m[3].open !== 11.2 || inside3m[3].high !== 12.9 || inside3m[3].low !== 10.6 || inside3m[3].close !== 12.5) throw new Error("3m tail bar must keep the first 1m open and union extremes");
+
+// 每个大周期：整桶 1m 事件只加一根蜡烛，且全部落在周期边界、时间严格递增。
+for (const interval of ["3m", "5m", "15m"] as ChartInterval[]) {
+  const seconds = intervalSeconds[interval];
+  const start = Math.floor(1_800_000 / seconds) * seconds;
+  let candles: Candle[] = [{ time: start - seconds, open: 10, high: 11, low: 9, close: 10.5, volume: 10 }];
+  for (let offset = 0; offset < seconds; offset += 60) {
+    candles = mergeBucketKline(candles, {
+      time: start + offset, open: 10 + offset / 1000, high: 11 + offset / 1000, low: 9, close: 10.5 + offset / 1000, volume: 1,
+    }, bucketOf(interval, start + offset), false);
+  }
+  if (candles.length !== 2) throw new Error(`${interval}: ${seconds / 60} one-minute events must stay one bar, got ${candles.length - 1}`);
+  if (candles[1].time !== start) throw new Error(`${interval}: the new bar must open at the bucket start ${start}`);
+  if (candles.some((candle) => candle.time % seconds !== 0)) throw new Error(`${interval}: every candle must sit on a ${seconds}s boundary`);
+  for (let index = 1; index < candles.length; index++) {
+    if (candles[index].time <= candles[index - 1].time) throw new Error(`${interval}: candle times must stay strictly increasing`);
+  }
+}
+
+// ticker 种子根同样必须落在周期边界：桶滚间隙按 180 取桶，种子与后续 1m 共用一根。
+const rolled3m = mergeTicker(threeMinute, 11.9, bucketOf("3m", 600));
+if (rolled3m.length !== 4 || rolled3m[3].time !== 540 || !rolled3m[3].seeded) throw new Error("3m ticker seed must land on the 540 bucket");
+const seededThen1m = mergeBucketKline(rolled3m, { time: 540, open: 11.9, high: 12.4, low: 11.7, close: 12.1, volume: 4 }, bucketOf("3m", 540), false);
+if (seededThen1m.length !== 4 || seededThen1m[3].seeded || seededThen1m[3].open !== 11.9) throw new Error("first real 1m must take over the seeded 3m bar without adding one");
+for (const candle of seededThen1m) if (candle.time % 180 !== 0) throw new Error("3m series must never hold an off-boundary candle");
 
 console.log("candleMerge bucket-guard tests passed");

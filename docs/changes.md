@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：3 分钟图混入 1 分钟根致蜡烛重合——桶宽改由 intervalSeconds 全集驱动，静默回退删除
+
+用户报 3m K 线重合。根因：`lib/analysisIndicators.ts` 的 `intervalSeconds` 缺 `3m`，`KlineChart` 两处 `intervalSeconds[selectedInterval] ?? 60` 静默按 60 秒取桶；实时层只订阅 1m（`lib/realtime.ts` 固定 `intervals: ["1m"]`，大周期由客户端聚合），于是同一 3m 桶内的 540/600 各成一根，180 秒历史间距右侧接上 60 秒间距＝蜡烛挤叠。修复：新增 `knownIntervals`/`chartIntervals`/`isChartInterval`，`intervalSeconds` 改 `Record<KnownInterval, number>` 并补 `"3m": 180`；`KlineChart` 的 `INTERVALS`/`ChartPreference.interval`/`intervalRef` 收为 `ChartInterval`（`VALID_INTERVALS` 由 `isChartInterval` 取代），两处 `?? 60` 删除；`analysisSnapshot` 的 `indicatorIntervals` 标注 `SourceInterval[]` 去掉冗余断言，`buildIndicatorRow` 参数收为 `KnownInterval`。新增周期漏配秒数自此是编译错误（样例实证 TS2741／TS2322＋TS7053），不再是运行时错桶。测试：`candleMerge.test.ts` 首次走派生路径——9 个图表周期桶宽逐一核对、540/600 同桶只留一根、3m/5m/15m 整桶 1m 只加一根且全部落边界＋时间严格递增、ticker 种子根同边界；`klineChart.test.mjs` 契约锁定新声明并禁止 `?? 60`；把 3m 故意改成 60 后测试报 `3m must map to 180s, got 60`（红灯确认）。`npm test` 全绿、`npm run build`、`tsc --noEmit`、`git diff --check` 通过；`klineCache` 为纯内存，刷新即清无残留脏桶缓存。iOS/鸿蒙用 Swift 枚举 rawValue 无此表，后端 `INTERVAL_MS` 原生含 3m，均不涉及。本地改动未推送未上线（待指令），尾根实时表现需线上带 WSS 验收。
+
 ## 2026-11-28：收起钮回抽屉内顶栏；面板默认盘面＋按钮换序带图标；自动/手动合并为单开关
 
 `.positions-dock-topbar` 恢复为抽屉首行（居中、`padding:4px 0`，芯片仍 108px），浮动 `bottom:100%` 方案与 `.positions-dock` 的 `position:relative` 一并删除；`pulse-mode-toggle` 改「盘面｜交易」顺序、`insightMode` 默认 `"pulse"`、两钮加 `LayoutDashboard`／`ArrowLeftRight` 13px 图标（`inline-flex`＋gap 5）；`KlineChart` 右上角双按钮组合并为单个 `.view-mode` 按钮，选中＝自动（绿芯片＋resetView）、未选中＝手动（透明描边防漂移），`aria-pressed` 绑定 auto。实测 topbar 距抽屉顶 1px／中线 delta 0／列头在下，默认盘面态 TradePanel hidden，单按钮 37×28 且两态 title/边框正确翻转。契约测试同步（klineChart、tradePanel），`npm test` 全绿、`npm run build` 通过。本地提交 `3b968d4`（未推送）。Web release **`trade-web-20261128-autobtn-3b968d4`** 原子切换上线 47.80.22.243（首尔服务器），index/JS/CSS 哈希 `d49d9a0f…`／`d74c15da…`／`b27473e1…` 与本地单链构建一致，ba＋IP 双入口复核同哈希，health 三项 true；后端不切换，旧 release 保留可回退。
