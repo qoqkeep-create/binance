@@ -204,8 +204,8 @@ const tradeApiSrc = readFileSync(fileURLToPath(new URL("../src/lib/tradeApi.ts",
 if (!tradeApiSrc.includes('export const isLongSide = (side: number | string) => ["0", "long", "buy"].includes(String(side).toLowerCase());') || !pagesSrc.includes("isLongSide(side)") || !source.includes("isLongSide(row.side)") || pagesSrc.includes('side === "0"')) {
   throw new Error("Side badges must treat backend integer 0 as long (0=long 1=short), not string-only compare");
 }
-if (!klineCss.includes("font: 12px var(--font-ui);") || !klineCss.includes("font: 13px var(--font-ui);")) {
-  throw new Error("自动/手动/指标 labels must be one font level larger");
+if (!klineCss.includes("font: 14px var(--font-ui);") || !klineCss.includes("font: 16px var(--font-ui);")) {
+  throw new Error("自动/手动/指标 labels must be scaled +20% (14/16px)");
 }
 if (!styles.includes(".market-row.selected { background: color-mix(in srgb, var(--green) 26%, transparent)") || !styles.includes(".market-tabs button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
   throw new Error("Selected market row must be a full green bar; group tabs must use chip-strength selection");
@@ -258,8 +258,8 @@ if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-i
   throw new Error("History open/close times must sit at the card bottom-left");
 }
 const positionToolsCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
-if (!source.includes("chart-tool-group") || !source.includes("tool-sep") || !source.includes("chart-tool-clear") || !source.includes("一键清除所有划线工具") || !source.includes("clearSignal={clearToolsTick}") || !positionOverlay.includes("clearSignal") || !positionOverlay.includes('selected && <div className="position-tool-stats"') || positionOverlay.includes("position-tool-list") || !positionOverlay.includes("chart-line-editor-center") || !positionToolsCss.includes(".chart-tool-group") || !positionToolsCss.includes(".chart-line-editor-center") || !positionToolsCss.includes(".position-tool-detail { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);")) {
-  throw new Error("Tool icons must share one bordered group with separators plus a clear-all button; only selected tool shows info strip; option bars center on the main pane");
+if (!source.includes("chart-tool-group") || !source.includes("tool-sep") || !source.includes("chart-tool-clear") || !source.includes("一键清除所有划线工具") || !source.includes("clearSignal={clearToolsTick}") || !positionOverlay.includes("clearSignal") || !positionOverlay.includes('selected && <div className="position-tool-stats"') || positionOverlay.includes("position-tool-list") || !positionOverlay.includes("chart-line-editor-center") || !positionToolsCss.includes(".chart-tool-group") || !positionToolsCss.includes(".chart-line-editor { position:absolute") || !positionToolsCss.includes(".chart-line-editor-center { left:50%; top:8px; transform:translateX(-50%); }") || !positionToolsCss.includes(".position-tool-detail { position:absolute; left:50%; top:8px; transform:translateX(-50%);") || !positionToolsCss.includes(".position-tool-detail { position:absolute; left:50%; top:8px; transform:translateX(-50%); display:flex; align-items:center; gap:12px; padding:3px 8px; border:1px solid var(--line-bright); border-radius:5px; background:var(--bg-elevated); box-shadow:0 8px 22px #0005;") || !positionToolsCss.includes(".chart-tool-clear { display:grid; place-items:center; width:35px; border:0; background:transparent; color:var(--red); }") || !styles.includes(".chart-toolbar { height: 53px") || !styles.includes("font: 16px var(--font-ui)") || !klineCss.includes("font: 14px var(--font-ui)")) {
+  throw new Error("Tool group with icon-only red trash clear button; unified top-center option bars; toolbar scaled +20%");
 }
 if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !positionToolsCss.includes("width:11px; height:11px;") || !positionToolsCss.includes(".position-tool-line.stop-line span { background:var(--red); color:#ffffff; border-radius:3px; }") || !positionToolsCss.includes("font-size:8px")) {
   throw new Error("Stats chip right-aligned green/white rounded; stop label red/white; handles half size; label text 8px");

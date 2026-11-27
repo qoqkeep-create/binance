@@ -736,15 +736,15 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
           ))}
           <span className="divider" aria-hidden="true" />
           <div className="chart-tool-group" role="group" aria-label="划线工具">
-            <button type="button" className={`position-tool-trigger long ${activePositionTool === "long" ? "is-active" : ""}`} aria-label="多头测量" title="多头测量" aria-pressed={activePositionTool === "long"} disabled={status !== "ready"} onClick={() => { setActiveLineTool(null); setActivePositionTool((current) => current === "long" ? null : "long"); }}><TrendingUp size={15} /></button>
+            <button type="button" className={`position-tool-trigger long ${activePositionTool === "long" ? "is-active" : ""}`} aria-label="多头测量" title="多头测量" aria-pressed={activePositionTool === "long"} disabled={status !== "ready"} onClick={() => { setActiveLineTool(null); setActivePositionTool((current) => current === "long" ? null : "long"); }}><TrendingUp size={16} /></button>
             <span className="tool-sep" aria-hidden="true" />
-            <button type="button" className={`position-tool-trigger short ${activePositionTool === "short" ? "is-active" : ""}`} aria-label="空头测量" title="空头测量" aria-pressed={activePositionTool === "short"} disabled={status !== "ready"} onClick={() => { setActiveLineTool(null); setActivePositionTool((current) => current === "short" ? null : "short"); }}><TrendingDown size={15} /></button>
+            <button type="button" className={`position-tool-trigger short ${activePositionTool === "short" ? "is-active" : ""}`} aria-label="空头测量" title="空头测量" aria-pressed={activePositionTool === "short"} disabled={status !== "ready"} onClick={() => { setActiveLineTool(null); setActivePositionTool((current) => current === "short" ? null : "short"); }}><TrendingDown size={16} /></button>
             <span className="tool-sep" aria-hidden="true" />
             <button type="button" className={`position-tool-trigger guide-line ${activeLineTool === "horizontal" ? "is-active" : ""}`} aria-label="横线工具" title="横线工具" aria-pressed={activeLineTool === "horizontal"} disabled={status !== "ready"} onClick={() => { setActivePositionTool(null); setActiveLineTool((current) => current === "horizontal" ? null : "horizontal"); }}><Minus size={16} /></button>
             <span className="tool-sep" aria-hidden="true" />
             <button type="button" className={`position-tool-trigger guide-line ${activeLineTool === "vertical" ? "is-active" : ""}`} aria-label="竖线工具" title="竖线工具" aria-pressed={activeLineTool === "vertical"} disabled={status !== "ready"} onClick={() => { setActivePositionTool(null); setActiveLineTool((current) => current === "vertical" ? null : "vertical"); }}><MoveVertical size={16} /></button>
             <span className="tool-sep" aria-hidden="true" />
-            <button type="button" className="chart-tool-clear" disabled={status !== "ready"} onClick={() => setClearToolsTick((tick) => tick + 1)}><Trash2 size={13} /> 一键清除所有划线工具</button>
+            <button type="button" className="chart-tool-clear" aria-label="一键清除所有划线工具" title="一键清除所有划线工具" disabled={status !== "ready"} onClick={() => setClearToolsTick((tick) => tick + 1)}><Trash2 size={16} /></button>
           </div>
         </div>
         <div className="toolbar-right">
