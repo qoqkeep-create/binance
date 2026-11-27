@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓钮归位状态条（收起）/topbar（展开），关闭整体卸载
+
+状态条渲染 statusbar-dock-toggle（left=workspace 实测中心，ResizeObserver）；PositionsDock !open 返回 null 去除 1px 残留；topbar 保留。实测收起/展开 delta 均 0，dock 残留消失。release dockcenter3-f263e80 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致（66d06ccb/cc61823d/f291175d）。
+
 ## 2026-11-28：交易输入框 40→34px；持仓钮 K 线居中（收起贴底边居中、展开抽屉外 topbar 居中）
 
 closed-wrap left:50% bottom:2px；topbar 独立行在 head 上方；head 操作列复原。实测居中<8px、34px、topbar aboveHead。release dockcenter-04a444b 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

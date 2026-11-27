@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { tradeApi, isLongSide, type PositionRow } from "./lib/tradeApi";
 import { TpLevels } from "./Pages";
 
@@ -38,10 +38,10 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
     }
   }
 
+  if (!open) return null;
   return <div className="positions-dock">
-    {!open && <div className="positions-dock-closed-wrap"><button type="button" className="positions-dock-toggle" aria-expanded={false} aria-label="展开持仓列表" onClick={onToggle}><ChevronUp size={13} /> 持仓</button></div>}
-    {open && <div className="positions-dock-topbar"><button type="button" className="positions-dock-toggle" aria-expanded={true} aria-label="收起持仓列表" onClick={onToggle}><ChevronDown size={13} /> 持仓</button></div>}
-    {open && <div className="positions-dock-body">
+    <div className="positions-dock-topbar"><button type="button" className="positions-dock-toggle" aria-expanded={true} aria-label="收起持仓列表" onClick={onToggle}><ChevronDown size={13} /> 持仓</button></div>
+    <div className="positions-dock-body">
       <div className="positions-dock-head" role="row">
         <span>币种/方向</span><span>仓位</span><span>保证金</span><span>开仓价</span><span>现价</span><span>浮盈浮亏</span><span>市价止损</span><span>市价止盈</span><span>操作</span>
       </div>
@@ -75,7 +75,7 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
         })}
       </div>
       {notice && <p className="positions-dock-notice">{notice}</p>}
-    </div>}
+    </div>
     {confirmRow && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认平仓</strong><button type="button" aria-label="关闭" onClick={() => setConfirmRow(null)}><X size={15} /></button></header>

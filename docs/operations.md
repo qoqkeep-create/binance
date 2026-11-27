@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓钮最终归位：收起＝底部状态条内 K 线中线居中，展开＝列表上方 topbar 居中（关闭即卸载）Web 发布（2026-11-28，北京时间）
+
+用户澄清：持仓钮初始应放在 K 线区域中线最下方的空白条（状态条）上，而不是持仓列表里；列表打开后，关闭按钮放在持仓列表以外的上方居中。实现：删除 PositionsDock 内 closed-wrap 渲染，收起态改由 App 状态条渲染 `.statusbar-dock-toggle`（absolute left=实测 chart-workspace 中心 x，ResizeObserver＋window resize 重算，随面板/助手显隐更新）；展开态保留 `.positions-dock-topbar` 居中芯片，且 `if (!open) return null` 整体卸载，消除收起时残留的 1px 边框线。实测（本地 vite＋sqlite）：收起 btnCenter==wsCenter（delta 0）且按钮矩形完全落在状态条内、无 .positions-dock 残留；点开后 topbar 芯片居中（delta 0）、位于列表体上方、状态条钮消失；再收起回归正常。截图目检通过。Web release **`trade-web-20261128-dockcenter3-f263e80`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `66d06ccb…`／`cc61823d…`／`f291175d…` 与本地单链构建一致，ba.wow211.com 复核同哈希（tt.wow211.com 当前 NXDOMAIN，以 ba 入口为准）。契约测试标记同步更新。后端不切换，旧 release 保留可回退。
+
 ## 输入框降至34px＋持仓钮改K线居中（收起贴底边、展开抽屉外顶部）Web 发布（2026-11-28，北京时间）
 
 用户两件：① 交易模块输入框再缩窄（40→34px，限价/止损输入、止损金额盒、止盈策略盒同步）；② 持仓钮位置：收起时＝最下边条**居中（相对 K 线图中心）**；展开时＝**抽屉外**顶部居中（独立 topbar 行，不再在标题行内）。实现：.positions-dock-closed-wrap 绝对定位 workspace left:50% bottom:2px；展开渲染 .positions-dock-topbar（居中芯片行，位于 head 上方即抽屉外）；head 操作列恢复纯标题，pd-op-head 清除。实测：收起 centered=true（偏差<8px）、inputH 34px；展开 topbar 在 head 之上、居中、closed-wrap 消失；截图目检芯片悬于抽屉顶外居中。Web release **`trade-web-20261128-dockcenter-04a444b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `cb28b48b…`／`267f9166…`／`0fd707e6…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
