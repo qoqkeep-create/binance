@@ -127,7 +127,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const labelPriceRefs = useRef<Map<string, number>>(new Map());
   const labelLayerRef = useRef<HTMLDivElement | null>(null);
   const tpOrdersRef = useRef<Array<{ key: string; price: number }>>([]);
-  const prevCloseRef = useRef<number | null>(null);
   const tickDirRef = useRef<1 | -1>(1);
   const loadOlderRef = useRef<() => Promise<void>>(async () => {});
   // 当前 candlesRef 归属的币种；切币未加载完成前置 null，禁止新币 tick 合并进旧币尾根。
@@ -175,8 +174,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     const leftEdge = 8;
     const leftSixth = Math.round(container.clientWidth / 6);
     const strip = posLabelRefs.current.get("entry")?.offsetWidth || posLabelRefs.current.get("stop")?.offsetWidth || 64;
-    // 三框整体再右移两个条宽；浮盈亏仍在开仓/止损右侧一个条宽。
-    const base = leftEdge + strip * 2;
+    // 开仓/止损整体左移一条宽（用户要求更靠左）；浮盈亏仍在其右一条宽错开。
+    const base = leftEdge + strip;
     const height = container.clientHeight;
     posLabelRefs.current.forEach((el, key) => {
       const price = labelPriceRefs.current.get(key);
@@ -194,7 +193,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     const lines = posLineRefs.current;
     const labels = posLabelRefs.current;
     const layer = labelLayerRef.current;
-    const desired = new Map<string, { price: number; text: string; color: string; style: LineStyle }>();
+    const desired = new Map<string, { price: number; text: string; color: string; labelColor?: string; style: LineStyle }>();
     if (row) {
       const entry = Number(row.open_price);
       const stop = Number(row.market_stop_price);
@@ -204,12 +203,15 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
         const loss = Number.isFinite(stop) && stop > 0 ? notional * Math.abs(entry - stop) / entry : 0;
         const close = liveClose !== undefined && Number.isFinite(liveClose) ? liveClose : entry;
         const pnl = (close - entry) / entry * notional * (long ? 1 : -1);
-        if (prevCloseRef.current !== null && close !== prevCloseRef.current) tickDirRef.current = close > prevCloseRef.current ? 1 : -1;
-        prevCloseRef.current = close;
+        // 价格线方向用「相对前一根收盘」的稳定参照：逐 tick 比较会红绿闪色。
+        const cs = candlesRef.current;
+        const refClose = cs.length > 1 ? cs[cs.length - 2].close : close;
+        tickDirRef.current = close >= refClose ? 1 : -1;
         const dirColor = tickDirRef.current === 1 ? "#28A473" : "#F63C55";
+        const pnlColor = pnl >= 0 ? "#28A473" : "#F63C55";
         desired.set("entry", { price: entry, text: `开仓 ${priceScaleFormatter(entry)}`, color: "#3179F5", style: LineStyle.Dashed });
         if (Number.isFinite(stop) && stop > 0) desired.set("stop", { price: stop, text: `止损 -${loss.toFixed(2)}U`, color: "#F63C55", style: LineStyle.Dashed });
-        desired.set("pnl", { price: close, text: `${pnl >= 0 ? "浮盈" : "浮亏"} ${pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}U`, color: dirColor, style: LineStyle.Dotted });
+        desired.set("pnl", { price: close, text: `${pnl >= 0 ? "浮盈" : "浮亏"} ${pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}U`, color: dirColor, labelColor: pnlColor, style: LineStyle.Dotted });
         tpOrdersRef.current.forEach((tp, index) => {
           if (Number.isFinite(tp.price) && tp.price > 0) desired.set(tp.key, { price: tp.price, text: `止盈${tpOrdersRef.current.length > 1 ? ` L${index + 1}` : ""} ${priceScaleFormatter(tp.price)}`, color: "#28A473", style: LineStyle.Dashed });
         });
@@ -235,7 +237,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       }
       if (el) {
         el.textContent = spec.text;
-        el.style.background = spec.color;
+        el.style.background = spec.labelColor ?? spec.color;
       }
     });
     layoutPosLabels();
@@ -308,7 +310,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       macdDeaRef.current?.update(linePoint(times[last], indicators.macd[last].dea));
       stochKRef.current?.update(linePoint(times[last], indicators.stoch[last].k));
       stochDRef.current?.update(linePoint(times[last], indicators.stoch[last].d));
-      if (prevCloseRef.current === null) prevCloseRef.current = candles[last - 1]?.close ?? null;
       syncPositionLines(positionRef.current, candle.close);
       setChartTick((t) => t + 1);
       return;
@@ -342,7 +343,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     stochDRef.current?.setData(lineData(times, indicators.stoch.map((point) => point.d)));
     stochKRef.current?.applyOptions({ color: config.stoch.kColor, visible: config.stoch.enabled });
     stochDRef.current?.applyOptions({ color: config.stoch.dColor, visible: config.stoch.enabled });
-    if (prevCloseRef.current === null) prevCloseRef.current = candles[last - 1]?.close ?? null;
     syncPositionLines(positionRef.current, candles[last].close);
     applyPaneLayout(chart, config);
     setMainPaneHeight(chart.panes()[0]?.getHeight() ?? 0);
@@ -559,7 +559,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     hasMoreRef.current = true;
     loadingOlderRef.current = false;
     loadGenRef.current += 1;
-    prevCloseRef.current = null;
     tickDirRef.current = 1;
     // 切币必须恢复价格轴 autoScale：手动竖向拖动/轴缩放会冻结旧币价格窗，
     // 不恢复则新币蜡烛落在窗外＝"切换后空白"，点自动才出来。
