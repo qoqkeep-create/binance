@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { RefreshCw, SlidersHorizontal, TrendingUp, TrendingDown, Rows3 } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
@@ -22,6 +22,7 @@ import { createSupertrendBandView, type BandPoint, type BandFillConfig } from ".
 import { createSupertrendLineView, type SupertrendLinePoint, type SupertrendLineConfig } from "./lib/supertrendLine";
 import { createMacdHistogramView, type MacdBarPoint, type MacdHistogramConfig } from "./lib/macdHistogram";
 import IndicatorSettingsPanel from "./IndicatorSettingsPanel";
+import PositionToolOverlay from "./PositionToolOverlay";
 import "./kline-chart.css";
 
 const INTERVALS = ["3m", "5m", "15m", "1h", "4h", "1d"];
@@ -45,12 +46,6 @@ const THEMES = {
 
 // 十字线只在各序列上保留竖横参考线，不显示小圆点标记。
 const NO_CROSSHAIR_MARKER = { crosshairMarkerVisible: false } as const;
-
-// 测量工具（对齐 TradingView 多/空仓位与斐波那契回撤）：拖拽定入场/止损，目标按 RR=2。
-type MeasureKind = "long" | "short" | "fib";
-interface MeasureDraw { id: number; kind: MeasureKind; t1: number; p1: number; t2: number; p2: number }
-const MEASURE_RR = 2;
-const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 type Time = ChartTime;
 type LinePoint = LineData<Time> | WhitespaceData<Time>;
@@ -98,7 +93,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   theme?: "dark" | "light";
   onSymbolChange?: (symbol: string) => void;
 }) {
-  const { hydrating } = useAccount();
+  const { hydrating, user } = useAccount();
   const [preference, setPreference] = usePreference("chart", defaultChartPreference, validChartPreference);
   const selectedInterval = preference.interval;
   const settings = useMemo(() => mergeIndicatorSettings(preference.indicators), [preference.indicators]);
@@ -144,13 +139,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const [viewMode, setViewMode] = useState<"auto" | "manual">("auto");
   const [clickMenu, setClickMenu] = useState<{ x: number; y: number; price: number | null } | null>(null);
   const [copied, setCopied] = useState(false);
-  const [activeTool, setActiveTool] = useState<MeasureKind | null>(null);
-  const [drawings, setDrawings] = useState<MeasureDraw[]>([]);
-  const [draft, setDraft] = useState<MeasureDraw | null>(null);
-  const [, setDrawTick] = useState(0);
-  const activeToolRef = useRef<MeasureKind | null>(null);
-  const draftRef = useRef<MeasureDraw | null>(null);
-  const drawIdRef = useRef(1);
+  const [, setChartTick] = useState(0);
+  const [mainPaneHeight, setMainPaneHeight] = useState(0);
   const viewModeRef = useRef<"auto" | "manual">("auto");
   const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
 
@@ -311,7 +301,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       stochDRef.current?.update(linePoint(times[last], indicators.stoch[last].d));
       if (prevCloseRef.current === null) prevCloseRef.current = candles[last - 1]?.close ?? null;
       syncPositionLines(positionRef.current, candle.close);
-      setDrawTick((t) => t + 1);
+      setChartTick((t) => t + 1);
       return;
     }
     candleRef.current.setData(candles.map((candle): CandlePoint => ({
@@ -346,6 +336,8 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     if (prevCloseRef.current === null) prevCloseRef.current = candles[last - 1]?.close ?? null;
     syncPositionLines(positionRef.current, candles[last].close);
     applyPaneLayout(chart, config);
+    setMainPaneHeight(chart.panes()[0]?.getHeight() ?? 0);
+    requestAnimationFrame(() => { if (chartRef.current === chart) setMainPaneHeight(chart.panes()[0]?.getHeight() ?? 0); });
     // TradingView 式附图图例：名称＋参数固定 pane 左上角，禁用时隐藏。
     const panes = chart.panes();
     const legendSpecs = [
@@ -419,11 +411,12 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const resizeObserver = new ResizeObserver(() => {
       if (!chartRef.current) return;
       applyPaneLayout(chartRef.current, settingsRef.current);
+      setMainPaneHeight(chartRef.current.panes()[0]?.getHeight() ?? 0);
       if (viewModeRef.current === "auto" && candlesRef.current.length) {
         chartRef.current.timeScale().setVisibleLogicalRange(autoRange(candlesRef.current.length));
       }
       layoutPosLabels();
-      setDrawTick((t) => t + 1);
+      setChartTick((t) => t + 1);
     });
     resizeObserver.observe(container);
     // 自动：左右拖动＋滚轮缩放可用，上下（价格轴／触摸竖向）锁定；手动：全向。
@@ -440,16 +433,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const onPointerDown = (event: PointerEvent) => {
       if ((event.target as HTMLElement).closest(".kline-click-menu")) return;
       setClickMenu(null);
-      if (activeToolRef.current && event.button === 0) {
-        const rect = container.getBoundingClientRect();
-        const t = chart.timeScale().coordinateToTime(event.clientX - rect.left);
-        const pRaw = candleRef.current?.coordinateToPrice(event.clientY - rect.top) ?? null;
-        const p = pRaw === null ? null : Number(pRaw);
-        if (t === null || p === null) return;
-        draftRef.current = { id: 0, kind: activeToolRef.current, t1: Number(t), p1: p, t2: Number(t), p2: p };
-        setDraft(draftRef.current);
-        return;
-      }
       if (viewModeRef.current !== "manual" || event.button !== 0) return;
       const rect = container.getBoundingClientRect();
       const axisWidth = chart.priceScale("right", 0).width();
@@ -461,17 +444,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
       vdrag = { startY: event.clientY, from: range.from, to: range.to };
     };
     const onPointerMove = (event: PointerEvent) => {
-      if (draftRef.current) {
-        const rect = container.getBoundingClientRect();
-        const t = chart.timeScale().coordinateToTime(event.clientX - rect.left);
-        const pRaw = candleRef.current?.coordinateToPrice(event.clientY - rect.top) ?? null;
-        const p = pRaw === null ? null : Number(pRaw);
-        if (t !== null && p !== null) {
-          draftRef.current = { ...draftRef.current, t2: Number(t), p2: p };
-          setDraft(draftRef.current);
-        }
-        return;
-      }
       if (!vdrag) return;
       const height = chart.panes()[0]?.getHeight() ?? 1;
       const perPixel = (vdrag.to - vdrag.from) / Math.max(1, height);
@@ -480,13 +452,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     };
     const onPointerUp = () => {
       vdrag = null;
-      const d = draftRef.current;
-      if (d) {
-        draftRef.current = null;
-        setDraft(null);
-        if (d.t1 !== d.t2 && Math.abs(d.p1 - d.p2) > 0) setDrawings((list) => [...list, { ...d, id: drawIdRef.current++ }]);
-        setTool(null);
-      }
     };
     // 右键自定义菜单（屏蔽浏览器原生"图片另存为/检查"）；左键不触发。
     const onContextMenu = (event: MouseEvent) => {
@@ -508,7 +473,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     const onRange = (range: { from: number; to: number } | null) => {
       if (range && range.from < 24) void loadOlderRef.current();
       layoutPosLabels();
-      setDrawTick((t) => t + 1);
+      setChartTick((t) => t + 1);
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     const onCrosshair = (param: { point?: { x: number; y: number } }) => {
@@ -727,64 +692,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
     setCopied(ok);
   }
 
-  function setTool(tool: MeasureKind | null) {
-    activeToolRef.current = tool;
-    setActiveTool(tool);
-    const chart = chartRef.current;
-    if (!chart) return;
-    if (tool) {
-      // 绘制期间禁用平移/缩放，避免拖拽锚点时图面跟着动。
-      chart.applyOptions({
-        handleScroll: { pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false, mouseWheel: false },
-        handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: false },
-      });
-    } else {
-      viewModeApplyRef.current(viewModeRef.current);
-    }
-  }
-
-  function renderMeasure(d: MeasureDraw) {
-    const chart = chartRef.current;
-    const series = candleRef.current;
-    if (!chart || !series) return null;
-    const ts = chart.timeScale();
-    const x1 = ts.timeToCoordinate(d.t1 as ChartTime);
-    const x2 = ts.timeToCoordinate(d.t2 as ChartTime);
-    if (x1 === null || x2 === null) return null;
-    const left = Math.min(x1, x2);
-    const width = Math.max(24, Math.abs(x2 - x1));
-    const yOf = (p: number) => series.priceToCoordinate(p);
-    const nodes: ReactNode[] = [];
-    const line = (key: string, y: number | null, color: string, tag: string) => {
-      if (y === null) return;
-      nodes.push(<div key={`${key}l`} className="measure-line" style={{ left, width, top: y, background: color }} />);
-      nodes.push(<div key={`${key}t`} className="measure-tag" style={{ left: left + 4, top: y - 16, background: color }}>{tag}</div>);
-    };
-    const zone = (key: string, ya: number | null, yb: number | null, color: string) => {
-      if (ya === null || yb === null) return;
-      nodes.push(<div key={key} className="measure-zone" style={{ left, width, top: Math.min(ya, yb), height: Math.abs(ya - yb), background: color }} />);
-    };
-    if (d.kind === "fib") {
-      FIB_LEVELS.forEach((r) => {
-        const p = d.p1 + (d.p2 - d.p1) * r;
-        line(`f${r}`, yOf(p), "#8A93A3", `${r}  ${priceScaleFormatter(p)}`);
-      });
-    } else {
-      const risk = Math.abs(d.p1 - d.p2);
-      const target = d.kind === "long" ? d.p1 + risk * MEASURE_RR : d.p1 - risk * MEASURE_RR;
-      const yE = yOf(d.p1);
-      const yS = yOf(d.p2);
-      const yT = yOf(target);
-      zone("loss", yE, yS, "rgba(246, 60, 85, 0.14)");
-      zone("profit", yE, yT, "rgba(40, 164, 115, 0.14)");
-      const riskPct = d.p1 > 0 ? (risk / d.p1) * 100 : 0;
-      line("e", yE, "#3179F5", `开仓 ${priceScaleFormatter(d.p1)}`);
-      line("s", yS, "#F63C55", `止损 -${riskPct.toFixed(2)}%`);
-      line("t", yT, "#28A473", `止盈 +${(riskPct * MEASURE_RR).toFixed(2)}%  RR${MEASURE_RR}`);
-    }
-    return <div className="measure-layer" key={d.id}>{nodes}</div>;
-  }
-
   async function refreshChart() {
     if (refreshing) return;
     setRefreshing(true);
@@ -815,10 +722,6 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
               {interval === "1d" ? "1D" : interval.toUpperCase()}
             </button>
           ))}
-          <span className="divider" />
-          <button type="button" className={`measure-tool ${activeTool === "long" ? "active" : ""}`} title="做多测量" aria-label="做多测量" onClick={() => setTool(activeTool === "long" ? null : "long")}><TrendingUp size={15} /></button>
-          <button type="button" className={`measure-tool ${activeTool === "short" ? "active" : ""}`} title="做空测量" aria-label="做空测量" onClick={() => setTool(activeTool === "short" ? null : "short")}><TrendingDown size={15} /></button>
-          <button type="button" className={`measure-tool ${activeTool === "fib" ? "active" : ""}`} title="斐波那契测量" aria-label="斐波那契测量" onClick={() => setTool(activeTool === "fib" ? null : "fib")}><Rows3 size={15} /></button>
         </div>
         <div className="toolbar-right">
           <button type="button" className="chart-refresh" aria-label="刷新 K 线" title="刷新 K 线" disabled={refreshing} onClick={() => void refreshChart()}><RefreshCw size={14} className={refreshing ? "spin" : ""} /></button>
@@ -832,18 +735,16 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
           {insightToggle}
         </div>
       </div>
-      <div className="kline-stage" data-chart-theme={theme}>
+      <div className="kline-stage" data-chart-theme={theme} style={{ "--position-tool-main-height": mainPaneHeight > 0 ? `${mainPaneHeight}px` : "100%" } as CSSProperties}>
         {status === "loading" && <div className="kline-loading" role="status" aria-label="K 线加载中"><span className="kline-bars" aria-hidden="true"><i /><i /><i /><i /></span></div>}
         {status === "error" && <div className="chart-widget-notice chart-widget-error"><p role="status">K 线加载失败</p><button className="chart-restore" type="button" onClick={() => setAttempt((previous) => previous + 1)}>重试</button></div>}
         <div ref={containerRef} className="kline-container">
-          {drawings.map((d) => renderMeasure(d))}
-          {draft && renderMeasure(draft)}
           {clickMenu && <div className="kline-click-menu" style={{ left: clickMenu.x, top: clickMenu.y }}>
             <button type="button" onClick={() => { setClickMenu(null); void refreshChart(); }}>刷新</button>
             <button type="button" onClick={() => void copyCurrentPrice()}>{copied ? "已复制" : "复制当前价格"}</button>
-            <button type="button" onClick={() => { setDrawings([]); setClickMenu(null); }}>清除测量</button>
           </div>}
         </div>
+        {status === "ready" && <PositionToolOverlay currentPrice={candlesRef.current[candlesRef.current.length - 1]?.close ?? 0} readOnly={false} />}
         {crosshair && (() => {
           const base = candlesRef.current[candlesRef.current.length - 1]?.close ?? crosshair.price;
           const pct = base > 0 ? (crosshair.price - base) / base * 100 : 0;

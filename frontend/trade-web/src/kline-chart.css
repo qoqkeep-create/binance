@@ -188,12 +188,3 @@
 .kline-click-menu { position: absolute; z-index: 6; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; border: 1px solid var(--line-bright); border-radius: 6px; background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .kline-click-menu button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--text); font: 500 11px var(--font-ui); white-space: nowrap; text-align: left; }
 .kline-click-menu button:hover { border-color: var(--green); color: var(--green); }
-
-/* 测量工具（做多/做空/斐波那契）覆盖层与工具栏图标 */
-.measure-tool { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted); }
-.measure-tool:hover { color: var(--text); background: var(--panel-hover); }
-.measure-tool.active { color: var(--green); border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
-.measure-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
-.measure-zone { position: absolute; }
-.measure-line { position: absolute; height: 1px; }
-.measure-tag { position: absolute; padding: 1px 4px; border-radius: 3px; color: #ffffff; font: 600 9px var(--font-ui); white-space: nowrap; }

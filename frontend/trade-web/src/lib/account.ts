@@ -5,7 +5,7 @@ export interface AccountUser {
   email: string | null;
   username: string;
   displayName: string;
-  role: "user" | "guest";
+  role: "user";
 }
 
 export interface AccountSession {
@@ -20,7 +20,7 @@ export interface SettingsResponse {
   updatedAt: string | number | null;
 }
 
-export const preferenceKeys = ["theme", "activeNav", "marketGroup", "selectedSymbol", "marketQuery", "showInsightPanel", "assistantTopInterval", "chart"] as const;
+export const preferenceKeys = ["theme", "activeNav", "marketGroup", "selectedSymbol", "marketQuery", "showInsightPanel", "assistantTopInterval", "chart", "positionTools"] as const;
 
 export class AccountApiError extends Error {
   readonly status: number;
@@ -141,7 +141,7 @@ function normalizeUser(value: unknown): AccountUser {
   const displayName = typeof item.displayName === "string" && item.displayName ? item.displayName : email?.split("@")[0] ?? "账户";
   const username = typeof item.username === "string" && item.username ? item.username : email?.split("@")[0] ?? String(item.id ?? "user");
   if (typeof item.id !== "string" || !item.id) throw new AccountApiError(502, { message: "账户返回异常，请重新登录。" });
-  return { id: item.id, email, username, displayName, role: item.role === "guest" ? "guest" : "user" };
+  return { id: item.id, email, username, displayName, role: "user" };
 }
 
 function sessionPayload(value: unknown, status: number): AccountSession {
@@ -160,7 +160,7 @@ async function refreshToken(signal?: AbortSignal): Promise<string> {
   try {
     const response = await fetch(apiUrl("/auth/refresh"), {
       method: "POST", credentials: "include", cache: "no-store", signal: controller.signal,
-      headers: { Accept: "application/json", "Content-Type": "application/json" }, body: "{}",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Trading-Mode": "ordinary" }, body: "{}",
     });
     let data: unknown;
     try { data = await response.json(); } catch { throw new AccountApiError(response.status, {}); }
@@ -180,6 +180,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   try {
     const headers: Record<string, string> = {
       Accept: "application/json",
+      "X-Trading-Mode": "ordinary",
       ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(options.csrfToken || accessToken ? { Authorization: `Bearer ${options.csrfToken || accessToken}` } : {}),
     };

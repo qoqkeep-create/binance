@@ -1,5 +1,11 @@
 # 开发与验证
 
+## Web 新版多空测量工具整合（2026-11-27）
+
+从 `/Users/apple/work/trade-web` 接入 `PositionToolOverlay`、`lib/positionTools.ts`、`position-tools.css` 和计算测试。`KlineChart` 现在只负责图表、行情和持仓线，测量交互由独立覆盖层承载，覆盖层高度跟随主 pane，MACD／StochRSI 副图不参与绘制区域。旧的 `MeasureKind`、RR2／斐波那契绘制、周期栏测量按钮和右键“清除测量”已移除。`frontend/trade-web/src/lib/account.ts` 增加 `positionTools` 偏好，`server/web/validation.py` 校验账户规模、风险模式、杠杆、数量精度、价格范围、位置坐标和最多 12 个对象。
+
+本地浏览器登录隔离测试账号后，验证多头按钮激活、参数面板展开、主图拖拽生成入场／止盈／止损线、RR／数量／风险／浮动盈亏展示和删除入口。Web `npm test`、`npm run build`、Django `DEBUG=true DB_ENGINE=sqlite3 USE_REDIS_CACHE=False RUN_SCHEDULER_IN_WEB=false .venv/bin/python manage.py test web --noinput` 通过。测试仅使用本地隔离账号和行情替身，没有真实交易或资金操作。
+
 ## 持仓下拉刷新短阈值停留回位、划转上限提示与开仓超限文案（2026-11-26）
 
 iOS 共用 `WebRefreshScrollView` 由系统 `.refreshable` 改回显式自定义刷新，回应真机"偶发不触发、触发距离过远、回位偏卡"反馈：触发距离固定 **56 pt**（与保留槽等高），显示距离钳制在 56 pt，深拉持手不再逐帧发布 SwiftUI 状态；松手才发请求，读取期间 `contentMargins` 保持下压 56 pt，新数据在读取阶段就位；结束后先 0.16 s 淡出指示器、**停留 0.2 s**、再 0.24 s 单次动画收回边距让卡片上移。观察器只挂最近的非分页纵向滚动宿主（跳过横向 `PositionNativePager`），隐藏页／离开取消任务并以 `refreshID` 拒绝迟到完成；保留 20 pt 指示器、`refresh.indicator` 无障碍标识与"刷新"无障碍动作。`WebRefreshInteractionTests`／`WebRefreshScrollViewTests` 覆盖阈值／钳制／回拉撤销／去重／松手触发／保留与收回／停用拒绝迟到完成（原 `WebNativeRefreshTests` 紧耦合系统控件，已替换）。

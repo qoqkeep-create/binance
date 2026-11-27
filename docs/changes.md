@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：接入 trade-web 新版多空测量工具
+
+当前整合 Web 前端接入 `PositionToolOverlay`、`lib/positionTools` 和持久化设置面板，复用现有 `KlineChart` 主图容器。新版支持多头／空头绘制、入场／止盈／止损拖动、RR、数量、风险和浮动盈亏计算，测量对象通过 iOS 账号体系的 `positionTools` 偏好保存。当前 Django Web 设置接口增加对应字段校验和大小、数量、数值范围限制。旧 `KlineChart` 内的做多、做空、斐波那契测量状态、工具栏按钮、覆盖层和右键清除入口已删除。新增 positionTools 计算、前端契约和后端设置测试。部署前完成 Web `npm test`、`npm run build`、Django `web` 测试和 `git diff --check`。
+
 ## 2026-11-27：历史卡开平仓时间左下＋全量提交 b342a82
 
 .pg-card footer.pg-times 提 specificity 覆盖 align-items:center → column/flex-start/justify-end＝左下。release histleft-b342a82 上线首尔＋ba 哈希一致。用户指令全量提交 b342a82（18 文件 732+/64-），未推送。

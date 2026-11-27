@@ -6,6 +6,9 @@ const indicators = readFileSync(fileURLToPath(new URL("../src/lib/chartIndicator
 const band = readFileSync(fileURLToPath(new URL("../src/lib/supertrendBand.ts", import.meta.url)), "utf8");
 const macd = readFileSync(fileURLToPath(new URL("../src/lib/macdHistogram.ts", import.meta.url)), "utf8");
 const stline = readFileSync(fileURLToPath(new URL("../src/lib/supertrendLine.ts", import.meta.url)), "utf8");
+const positionOverlay = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
+const positionTools = readFileSync(fileURLToPath(new URL("../src/lib/positionTools.ts", import.meta.url)), "utf8");
+const positionCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
 
 if (source.includes("tv-advanced-chart") || source.includes("widgets.tradingview-widget.com") || source.includes("TradingViewWidget")) {
   throw new Error("Web K-line must be self-rendered, not the TradingView iframe widget");
@@ -162,8 +165,17 @@ if ((source.match(/resetView\(\);/g) || []).length < 2 || !source.includes("klin
 if (!source.includes('container.addEventListener("contextmenu", onContextMenu)') || !source.includes("event.preventDefault();") || source.includes("downAt") || !klineCss.includes(".kline-click-menu { position: absolute; z-index: 6; display: flex; flex-direction: column;")) {
   throw new Error("Menu must open on right-click only (native context menu suppressed) and stack vertically");
 }
-if (!source.includes("做多测量") || !source.includes("做空测量") || !source.includes("斐波那契测量") || !source.includes("FIB_LEVELS") || !source.includes("0.618") || !source.includes("MEASURE_RR") || !source.includes("measure-layer") || !source.includes("清除测量")) {
-  throw new Error("Three measure tools (long/short/fib) with toolbar icons, RR zones, fib levels and clear action required");
+if (!source.includes('import PositionToolOverlay from "./PositionToolOverlay"') || !source.includes("<PositionToolOverlay") || source.includes("MeasureKind") || source.includes("FIB_LEVELS") || source.includes("measure-layer") || source.includes("清除测量")) {
+  throw new Error("KlineChart must use the shared position tool overlay and remove the old long/short/fib implementation");
+}
+for (const marker of ["position-tool-trigger long", "position-tool-trigger short", "position-tool-settings-panel", "setToolState", "calculatePositionMetrics"]) {
+  if (!positionOverlay.includes(marker)) throw new Error(`Position tool overlay is missing ${marker}`);
+}
+for (const marker of ["PositionDirection", "defaultPositionToolDefaults", "priceAtChartY", "riskReward", "profitPnl", "lossPnl"]) {
+  if (!positionTools.includes(marker)) throw new Error(`Position tool calculations are missing ${marker}`);
+}
+for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", ".position-tool-settings-panel"]) {
+  if (!positionCss.includes(marker) && !source.includes(marker)) throw new Error(`Position tool styling is missing ${marker}`);
 }
 const pasteSrc = readFileSync(fileURLToPath(new URL("../src/TradePanel.tsx", import.meta.url)), "utf8");
 if (!source.includes("price: pRaw === null ? null : Number(pRaw)") || !source.includes("setCopiedPrice(text)") || !pasteSrc.includes("粘贴") || !pasteSrc.includes("getCopiedPrice")) {
