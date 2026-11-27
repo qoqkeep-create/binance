@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 止盈/平仓改纯加粗文字（黄/绿、无边框底色）Web 发布（2026-11-28，北京时间）
+
+用户：两按钮改加粗文字、去边框底色、字色黄与绿。实现：.pg-tp-btn（含 is-running）＝#F5B942 金黄 700 字重、border 0、bg transparent（主题 --accent-strong 暗色为白不可用，取图表金线同色）；.pg-close-btn＝var(--green) 700、无边框底色；hover 下划线。持仓页 footer 同类同步生效。实测：tpColor rgb(245,185,66)/700/0 边框/透明底、clColor rgb(0,168,143)/700；截图「自动止盈中」金黄、「立即平仓」绿纯文字。Web release **`trade-web-20261128-textbtn-6673efd`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `7a3a4e1a…`／`bd16b6b9…`／`a8cf28e8…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 持仓钮回最底状态栏＋运行中绿框绿字＋按钮降高＋4行预留校准 Web 发布（2026-11-28，北京时间）
 
 用户：① 运行中按钮文案「自动止盈中」＋绿色线框绿字（去填充）；② 立即平仓保留；③ 两按钮高度统一缩窄；④ 持仓展开钮回到**最底状态栏**（K 线下方不留常驻条，收起时坞仅 1px 边框）。实现：toggle 移回 statusbar 居中（绿 14% 底无描边芯片）；PositionsDock 收起时不渲染 head/body；.pg-tp-btn.is-running 改 border green＋bg transparent；两按钮 padding 2px（高 21px 统一）；行高 34px→4 行预留 136px。实测：收起 dockH=1、钮在状态栏居中；运行中 tpText=自动止盈中/边框绿/底透明/字绿；tpH=clH=21；6 行替身 listH=136 可见 4 行。Web release **`trade-web-20261128-dockbtn-9c9c2e1`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `607e1eee…`／`bd16b6b9…`／`02307dd0…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
