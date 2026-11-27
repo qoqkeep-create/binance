@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：清除全部按钮改用「自动清理」SVG（fill=currentColor 随钮色，替换 Brush）
+
+viewBox 1024、16px；实测 currentColor/钮色一致/Brush 移除/截图目检。release clearicon-14edca2 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-28：持仓钮双位置右端化（展开＝标题行右端不撑宽、收起＝状态栏右端）
 
 head 第9列 pd-op-head 放芯片钮（150px 列内不增列）；状态栏钮仅收起时显示且 right:12px。实测收起12/展开4px、headW=rowW 未变宽、展开时状态栏钮消失。release dockpos2-794e116 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

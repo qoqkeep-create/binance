@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Brush, Minus, MoveVertical, RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
+import { Minus, MoveVertical, RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
@@ -767,7 +767,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
             <span className="tool-sep" aria-hidden="true" />
             <button type="button" className={`position-tool-trigger guide-line ${activeLineTool === "vertical" ? "is-active" : ""}`} aria-label="竖线工具" title="竖线工具" aria-pressed={activeLineTool === "vertical"} disabled={status !== "ready"} onClick={() => { setActivePositionTool(null); setActiveLineTool((current) => current === "vertical" ? null : "vertical"); }}><MoveVertical size={16} /></button>
             <span className="tool-sep" aria-hidden="true" />
-            <button type="button" className="chart-tool-clear" aria-label="一键清除所有划线工具" title="一键清除所有划线工具" disabled={status !== "ready"} onClick={() => setClearConfirmOpen(true)}><Brush size={16} /></button>
+            <button type="button" className="chart-tool-clear" aria-label="一键清除所有划线工具" title="一键清除所有划线工具" disabled={status !== "ready"} onClick={() => setClearConfirmOpen(true)}><svg width="16" height="16" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M448 448H224a32 32 0 0 0-32 32v64a32 32 0 0 0 32 32h576a32 32 0 0 0 32-32v-64a32 32 0 0 0-32-32h-224V160a32 32 0 0 0-32-32h-64a32 32 0 0 0-32 32v288z m-64-64V128a64 64 0 0 1 64-64h128a64 64 0 0 1 64 64v256h192a64 64 0 0 1 64 64v128a64 64 0 0 1-64 64v256a64 64 0 0 1-64 64H256a64 64 0 0 1-64-64v-256a64 64 0 0 1-64-64v-128a64 64 0 0 1 64-64h192z m384 256H256v224a32 32 0 0 0 32 32h448a32 32 0 0 0 32-32v-224z m-96 64a32 32 0 0 1 32 32v160h-64v-160a32 32 0 0 1 32-32z m-128 64a32 32 0 0 1 32 32v96h-64v-96a32 32 0 0 1 32-32z m-128 64a32 32 0 0 1 32 32v32h-64v-32a32 32 0 0 1 32-32z" fill="currentColor" /></svg></button>
           </div>
         </div>
         <div className="toolbar-right">

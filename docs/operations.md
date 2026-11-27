@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 清除全部按钮改用「自动清理」SVG 图标 Web 发布（2026-11-28，北京时间）
+
+用户提供 ~/Downloads/自动清理.svg 替换工具栏清除钮图标，颜色沿用现版钮色。实现：KlineChart 内联 svg（viewBox 0 0 1024 1024、16px、path fill=**currentColor**——原文件硬编码 #000000 已改，随 .chart-tool-clear 的 var(--muted) 与 hover var(--text)），移除 lucide Brush 导入。实测：svg 在位、fill currentColor、钮色 rgb(161,165,174) 与其他图标一致、Brush 已去除；截图目检新图标居工具组右端。Web release **`trade-web-20261128-clearicon-14edca2`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `9eb021b5…`／`db92b229…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 viewBox。后端不切换，旧 release 保留可回退。
+
 ## 持仓钮双位置右端化（展开＝标题行右端不撑宽、收起＝状态栏右端）Web 发布（2026-11-28，北京时间）
 
 用户按截图红框指明：展开时按钮放标题行最右端（与"操作"同格 space-between，**不得把标题行撑宽**）；收起时放最底状态栏右端（非居中）。实现：PositionsDock head 第 9 列 pd-op-head（操作＋芯片钮，150px 列内容纳不增列）；App 状态栏钮改 `{!dockOpen && ...}` 且 CSS 右对齐 right:12px；展开时状态栏钮隐藏。实测：收起 atRight=12、无 head 钮；展开 headRight=4、headW=485＝rowW（未变宽）、状态栏钮消失；截图目检芯片在"操作"列右端对齐。Web release **`trade-web-20261128-dockpos2-794e116`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `795f5cfb…`／`ae7241e7…`／`9cda992c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
