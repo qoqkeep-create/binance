@@ -1,5 +1,17 @@
 # 整合环境部署与运维
 
+## 轻量观测 healthlog 上线（2026-11-27，47.80.22.243 首尔服务器）
+
+应用户“轻量化观测最近一周／长期运行情况”要求，部署单文件 Python 标准库脚本 `deploy/integrated/observability/healthlog.py`（服务器位于 `/opt/trade-tools-integrated/observability/`，无第三方依赖，总占用约 160KB）。
+
+- **采集**：root crontab 每分钟 `flock -n /run/lock/tradetools-healthlog.lock … healthlog.py collect`。每分钟采主机 load、CPU 忙／iowait（/proc/stat 差分）、内存／swap、磁盘（statvfs）、nginx 状态、六容器健康与 StartedAt（docker inspect）、`https://127.0.0.1/integrated/v1/health` 的 HTTP 码＋延迟＋checks 全 true；容器 CPU／内存限额占比（docker stats，单次约 2s）每 5 分钟采一次以控开销。所有子进程带超时，flock 防重叠。
+- **事件**：容器重启、健康状态变化、health 异常／恢复、nginx 变化、内核 OOM（journalctl -k 扫描，按当前容器 ID 归名）记入 `data/events.log`（1MB 轮转）。
+- **存储与保留**：`data/metrics-YYYYMM.csv` 每分钟原始样本保留 3 个月，更早 gzip 保留 12 个月；`data/daily.csv` 每日汇总（load／iowait 均峰、内存最低、磁盘峰、health 异常、异常分钟、重启／OOM 数）永久保留，作长期趋势来源。
+- **历史回填**：`healthlog.py backfill` 从系统自带 sysstat（`/var/log/sysstat/sa*`，10 分钟粒度、保留约 9 天）解析 load／CPU／内存／swap 回填，并从 journal 回填近 22 天 OOM 事件。已回填 11-19 起 1264 行样本＋8 天日报。sar 无磁盘空间／容器／health 历史，回填行这些列为空。
+- **查看**：`tradetools-health [天数|all]`（软链 `/usr/local/bin/tradetools-health` → 脚本 `report`，默认 7 天）：当前快照＋告警、近 N 天汇总、每日趋势；>31 天或 `all` 按月汇总。
+- **安装步骤（已执行）**：上传 `healthlog.py`＋`tradetools-health` → `python3 healthlog.py backfill` → `python3 healthlog.py collect` 试采 → 追加 crontab → `ln -sf /opt/trade-tools-integrated/observability/tradetools-health /usr/local/bin/tradetools-health`。未改任何业务容器、Nginx、数据库。
+- **首轮发现（仅观测，未做任何变更，待用户决策）**：① 近 14 天应用容器 OOM 杀进程 **106 次、每日 4–11 次**慢性发生，docker 自动重启恢复故表面 healthy；历史容器 ID 已随部署替换无法归名，新 OOM 将由采集器按当前 ID 归名；api 容器内存当前 **89.5%**（256MiB 限额）最逼近。② iowait 长期均值约 15%、峰值近 50%，load 峰值 4.96（2 核）主要由磁盘 I/O 等待贡献。③ 22 端口公网暴露，journal 见 root 暴力破解尝试（223.83.183.254）。建议后续经批准评审容器内存限额与 I/O 来源。
+
 ## 桶滚种子根开收盘错位根因修复（mergeBucketKline 单源重构）Web 发布（2026-11-27，北京时间）
 
 用户报：K 线开盘/收盘不对齐、实体间非常大重叠区（崩溃段填充带大块错位），要求深度解决可重构。根因：大周期桶滚时 **ticker 先于首根 1m 种子新根**（旧代码 open=high=low=close=现价），随后真实 1m 到达只并 high/low/close、**永不纠正 open**→open 停在滚桶瞬间价、与前根收盘脱节＝开收盘错位＋快市实体互相重叠；种子 high/low 混入前根收盘又污染 hl2 填充锚＝大块重叠填充区。重构：合并逻辑收进 `lib/candleMerge.ts` 纯函数 `mergeBucketKline`（KlineChart 不再内联）；种子根 `open=前根收盘`（连续）、`high/low=现价`（不污染 hl2）、显式 `seeded` 标记；首根真实 1m **整体接管 open/high/low** 并清标记；forming 1m 不重复累加成交量保留。实测：单元测试锁种子连续/接管/成交量/旧桶忽略；浏览器内动态 import 真实模块跑序列 seedOpen=12=prevClose、takenOpen/High/Low=首根 1m 真值；崩溃段喂数目检因 Browser 面板隐藏激活失败归线上验收（结构/序列已实证）。Web release **`trade-web-20261127-candleopen-cc6f277`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `f4c1bdf7…`／`27629ec4…` 与本地单链构建一致，ba 复核同哈希。契约测试改锁 mergeBucketKline＋seeded＋open: last.close。后端不切换，旧 release 保留可回退。

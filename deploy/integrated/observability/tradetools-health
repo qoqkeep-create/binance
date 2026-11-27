@@ -1,0 +1,3 @@
+#!/bin/sh
+# 用法：tradetools-health [天数|all]，默认近 7 天
+exec /usr/bin/python3 /opt/trade-tools-integrated/observability/healthlog.py report "$@"
