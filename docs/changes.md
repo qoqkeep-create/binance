@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：收起钮回抽屉内顶栏；面板默认盘面＋按钮换序带图标；自动/手动合并为单开关
+
+`.positions-dock-topbar` 恢复为抽屉首行（居中、`padding:4px 0`，芯片仍 108px），浮动 `bottom:100%` 方案与 `.positions-dock` 的 `position:relative` 一并删除；`pulse-mode-toggle` 改「盘面｜交易」顺序、`insightMode` 默认 `"pulse"`、两钮加 `LayoutDashboard`／`ArrowLeftRight` 13px 图标（`inline-flex`＋gap 5）；`KlineChart` 右上角双按钮组合并为单个 `.view-mode` 按钮，选中＝自动（绿芯片＋resetView）、未选中＝手动（透明描边防漂移），`aria-pressed` 绑定 auto。实测 topbar 距抽屉顶 1px／中线 delta 0／列头在下，默认盘面态 TradePanel hidden，单按钮 37×28 且两态 title/边框正确翻转。契约测试同步（klineChart、tradePanel），`npm test` 全绿、`npm run build` 通过。本地提交 `3b968d4`（未推送）。Web release **`trade-web-20261128-autobtn-3b968d4`** 原子切换上线 47.80.22.243（首尔服务器），index/JS/CSS 哈希 `d49d9a0f…`／`d74c15da…`／`b27473e1…` 与本地单链构建一致，ba＋IP 双入口复核同哈希，health 三项 true；后端不切换，旧 release 保留可回退。
+
 ## 2026-11-28：持仓钮加长一倍并移出抽屉；右上角／开仓方式／盘面切换压缩改版
 
 持仓钮 `min-width: 108px`（原约 54px，收起与展开两态同宽、内容居中）；展开态改为 `.positions-dock-open-toggle` 绝对定位 `bottom: 100%`，脱离抽屉落在 K 线／指标附图区，实测钮下缘距持仓区上边缘 1px、与抽屉同中线；topbar 独立行删除。右上角 `.view-mode`／`.indicator-master` 统一 28px 高、11px 字（图标 13px），实测组宽 110→70px、指标钮 67→46px，与右侧图标方块按钮同量级。市价开仓／限价挂单去边框改周期按钮式下划线（`.trade-type-row button.active::after` 2px 绿线），实测 68×29px。右侧面板顶部 MARKET PULSE／“交易”标题删除，`pulse-mode-toggle` 改为整宽“交易｜盘面”二段大按钮（实测 45px 高，选中沿用自动／手动同款绿芯片）；`aside` 改用 aria-label。契约测试同步更新（klineChart、tradePanel），`npm test` 全绿、`npm run build` 通过，Qoder 内置浏览器 720px 视口实测上述几何。本地提交 `333c1fc`（未推送）。Web release **`trade-web-20261128-uicompact-333c1fc`** 原子切换上线 47.80.22.243（首尔服务器），index/JS/CSS 哈希 `389cce6b…`／`125d0be5…`／`e8bc0e99…` 与本地单链构建一致，ba.wow211.com 与 IP 双入口复核同哈希，`/integrated/v1/health` 三项均 true；后端不切换，旧 release `trade-web-20261128-dockcenter3-f263e80` 保留可回退。宽屏桌面排列与四项观感归线上验收。
