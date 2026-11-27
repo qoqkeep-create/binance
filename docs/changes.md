@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：收盘水位拒绝迟到 ticker/forming 改写（修倒数第三根形状偏离原生）
+
+三路比对证明服务器聚合==币安==OKX（差≤0.2），偏离只在 web WS 副本：已收盘桶被迟到推送改 close→实体拉长。closedThroughRef 水位：closed 1m 记水位，之后该桶及更旧的非 closed 写入拒绝；切币/周期/刷新重置。契约测试锁定。release closedwm-1e7cf7e 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-27：持仓标签左移一条宽、浮盈亏盒色按数值、价格线按相对前根收盘稳定着色
 
 base 8+2strip→8+strip；labelColor 与线色分离（盒＝pnl 符号色）；方向参照改前一根收盘（删 prevCloseRef 逐 tick 比较＝红绿闪色根因）。实测 left 68/136、浮盈绿/浮亏红、截图稳定色。release poslabel2-6e0e254 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。

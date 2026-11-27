@@ -121,6 +121,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
   const loadingOlderRef = useRef(false);
   const hasMoreRef = useRef(true);
   const loadGenRef = useRef(0);
+  const closedThroughRef = useRef(0);
   const positionRef = useRef<PositionRow | null>(null);
   const posLineRefs = useRef<Map<string, IPriceLine>>(new Map());
   const posLabelRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -559,6 +560,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     hasMoreRef.current = true;
     loadingOlderRef.current = false;
     loadGenRef.current += 1;
+    closedThroughRef.current = 0;
     tickDirRef.current = 1;
     // 切币必须恢复价格轴 autoScale：手动竖向拖动/轴缩放会冻结旧币价格窗，
     // 不恢复则新币蜡烛落在窗外＝"切换后空白"，点自动才出来。
@@ -624,11 +626,14 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       if (event.type === "kline") {
         const width = intervalSeconds[selectedInterval] ?? 60;
         const incoming = event.candle;
+        const bucket = selectedInterval === "1m" ? incoming.time : Math.floor(incoming.time / width) * width;
+        // 收盘水位：已收盘的桶拒绝迟到的 forming/ticker 改写，否则收盘后实体被拉长＝与交易所原生K线不一致。
+        if (event.closed) closedThroughRef.current = Math.max(closedThroughRef.current, bucket);
+        else if (bucket <= closedThroughRef.current) return;
         if (selectedInterval === "1m") {
           candlesRef.current = mergeCandle(candlesRef.current, incoming);
         } else {
           // 后端仅推 1m 实时 K 线；大周期客户端聚合到对应桶，保证尾根实时且带影线。
-          const bucket = Math.floor(incoming.time / width) * width;
           candlesRef.current = mergeBucketKline(candlesRef.current, incoming, bucket, event.closed);
         }
         scheduleTail();
@@ -636,6 +641,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
         const width = intervalSeconds[selectedInterval] ?? 60;
         const ts = event.eventTime && event.eventTime > 0 ? event.eventTime : Date.now();
         const bucket = Math.floor(ts / 1000 / width) * width;
+        if (bucket <= closedThroughRef.current) return;
         const next = mergeTicker(candlesRef.current, event.price, bucket);
         if (next !== candlesRef.current) {
           candlesRef.current = next;
@@ -707,6 +713,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
     if (refreshing) return;
     setRefreshing(true);
     loadGenRef.current += 1;
+    closedThroughRef.current = 0;
     try {
       const candles = await getKlines(symbol, selectedInterval, HISTORY_LIMIT);
       if (!candles.length) { setStatus("error"); return; }

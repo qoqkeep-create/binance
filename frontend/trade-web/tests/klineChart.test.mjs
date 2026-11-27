@@ -128,6 +128,9 @@ const cacheSrc = readFileSync(fileURLToPath(new URL("../src/lib/klineCache.ts", 
 if (!cacheSrc.includes("if (candles.length) putCachedKlines")) {
   throw new Error("Prefetch must not cache empty cold-start snapshots");
 }
+if (!source.includes("closedThroughRef.current = Math.max(closedThroughRef.current, bucket)") || !source.includes("if (bucket <= closedThroughRef.current) return;") || !source.includes("mergeBucketKline(candlesRef.current, incoming, bucket, event.closed)")) {
+  throw new Error("Closed-bucket watermark must reject late forming/ticker writes so closed candles stay exchange-native");
+}
 const merge = readFileSync(fileURLToPath(new URL("../src/lib/candleMerge.ts", import.meta.url)), "utf8");
 if (!merge.includes("mergeTicker(candles: Candle[], price: number, bucketTime: number)") || !merge.includes("if (bucketTime < last.time) return candles;") || !merge.includes("bucketTime > last.time")) {
   throw new Error("Ticker merge must target the current time bucket only and seed a new bar at roll, never mutate closed history");
