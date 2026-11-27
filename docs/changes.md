@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量四柄轴向规则（左上/左下上下、右左右、左自由四向）
+
+middle-right 改 rightX；middle-left 新增 leftFree（left＋entryY 联动）；光标 grab 不变箭头。实测四柄轴向位移符合规则。契约测试锁定。release handles-e1218f6 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：右键复制即关／设为止损价直填／右区提示全删
 
 复制后 setClickMenu(null)、删 copied 态；新增"设为止损价"→onStopPrice→App stopPriceRequest{value,at}→TradePanel effect 填 stopInput；TradePanel notice 全链删（state/setNotice/pg-notice）。实测菜单三项/设值/即关/无 notice。契约测试锁定（submitOpen 仅确认按钮一次调用保 UNKNOWN 不重发）。release ctxstop-ec03da3 上线首尔＋ba 哈希一致。

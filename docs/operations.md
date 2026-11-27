@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 测量四柄轴向规则定案 Web 发布（2026-11-27，北京时间）
+
+用户明确四柄规则：左上/左下仅上下；右仅左右；左自由四向（按住即拖、光标不变箭头）。实现：top-left/bottom-left 保持 targetY/stopY；middle-right 改 rightX（仅宽度）；middle-left 新增 leftFree（leftX＋entryY 联动，止盈/止损随中线平移）；middle-left 光标 grab。本地实测：top-left dTarget20/dx0；bottom-left dStop14/dWidth0；middle-right dWidth30/dStop0；middle-left dx30/dEntry20/dTarget20。Web release **`trade-web-20261127-handles-e1218f6`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `a6286976…`／`e8a9a063…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定四柄。后端不切换，旧 release 保留可回退。
+
 ## 右键菜单闭环（复制即关／设为止损价直填）＋右区提示全删 Web 发布（2026-11-27，北京时间）
 
 ① 复制当前价格完成后菜单立即关闭，删"已复制"态；② 新增右键项"设为止损价"：直接把右键横线价格（分档精度）经 App stopPriceRequest 注入 TradePanel 止损输入框，无需复制；③ 右侧交易/盘面区域提示全删（notice state/setNotice/pg-notice 全链移除，含"已粘贴止损价"）。本地实测：菜单三项（刷新/设为止损价/复制当前价格）、设值 1.333≈横线价 1.3328、两操作后菜单均关闭、右区无 notice。Web release **`trade-web-20261127-ctxstop-ec03da3`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `2f007d0d…`／`b125a77a…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。

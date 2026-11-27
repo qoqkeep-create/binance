@@ -20,7 +20,7 @@ interface PositionToolOverlayProps {
 
 type Draft = { direction: PositionDirection; startX: number; startY: number; endX: number; endY: number };
 type PositionToolState = { defaults: PositionToolDefaults; positions: PositionTool[] };
-type ResizeHandle = "entryY" | "targetY" | "stopY" | "leftX" | "rightX";
+type ResizeHandle = "entryY" | "targetY" | "stopY" | "leftX" | "rightX" | "leftFree";
 type MoveDrag = { id: string; startX: number; startY: number; origin: PositionTool };
 const toolsPreferenceFallback: PositionToolState = { defaults: defaultPositionToolDefaults, positions: [] };
 const LOCAL_STORAGE_KEY = "trade-web-position-tools";
@@ -139,6 +139,11 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         if (live.dragHandle!.handle === "leftX") {
           return { ...position, left: clamp(point.x, 0.02, position.right - 0.05) };
         }
+        if (live.dragHandle!.handle === "leftFree") {
+          const nextY = clamp(point.y, 0.02, 0.98);
+          const delta = nextY - position.entryY;
+          return { ...position, left: clamp(point.x, 0.02, position.right - 0.05), entryY: nextY, targetY: clamp(position.targetY + delta, 0.02, 0.98), stopY: clamp(position.stopY + delta, 0.02, 0.98) };
+        }
         if (live.dragHandle!.handle === "rightX") {
           return { ...position, right: clamp(point.x, position.left + 0.05, 0.98) };
         }
@@ -240,8 +245,8 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
           {selected && !previewPosition && <div className="position-tool-handles">
             <button type="button" className="position-tool-resize-handle top-left" style={{ top: `${topHandleY * 100}%` }} aria-label="调整上方高度" onPointerDown={(event) => beginHandle(event, position.id, topHandle)} />
             <button type="button" className="position-tool-resize-handle bottom-left" style={{ top: `${bottomHandleY * 100}%` }} aria-label="调整下方高度" onPointerDown={(event) => beginHandle(event, position.id, bottomHandle)} />
-            <button type="button" className="position-tool-resize-handle middle-left" style={{ top: `${position.entryY * 100}%` }} aria-label="上下移动中线" onPointerDown={(event) => beginHandle(event, position.id, "entryY")} />
-            <button type="button" className="position-tool-resize-handle middle-right" style={{ top: `${position.entryY * 100}%` }} aria-label="上下移动中线" onPointerDown={(event) => beginHandle(event, position.id, "entryY")} />
+            <button type="button" className="position-tool-resize-handle middle-left" style={{ top: `${position.entryY * 100}%` }} aria-label="自由移动左点" onPointerDown={(event) => beginHandle(event, position.id, "leftFree")} />
+            <button type="button" className="position-tool-resize-handle middle-right" style={{ top: `${position.entryY * 100}%` }} aria-label="左右调整宽度" onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
           </div>}
         </div>;
       })}
