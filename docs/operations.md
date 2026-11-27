@@ -6,6 +6,8 @@
 
 本次多空测量工具改动已发布到 **47.80.22.243（首尔服务器）**。Web 静态 release 为 **`trade-web-20261127-local-b74be41`**，后端 release 为 **`integrated-quick-b74be41`**。线上周期栏后的多头／空头图标、默认 1:1 最小高度、抓手光标、测量区域平移和浏览器本地缓存已由静态产物与入口核对，health 的 database、migrations、scheduler 均为 true。Web 不再发送 `positionTools` 账号设置，后端也已移除对应接收校验。
 
+测量框编辑态随后发布为 Web release **`trade-web-20261127-resize-fce2cb6`**。静态资源已核对 `position-tool-resize-handle`、`position-tool-edge` 和左右边 `ew-resize` 样式，线上入口 200，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。
+
 ## 新版多空测量工具整合发布（2026-11-27，北京时间）
 
 本地提交 **`85bc0dc`** 接入 `PositionToolOverlay`、`positionTools` 账号偏好和 Django 设置校验，删除旧版 `KlineChart` 多空／斐波那契测量。Web 静态 release **`trade-web-20261127-position-tools-eb450bc`** 已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`，目标 **47.80.22.243（首尔服务器）**。线上与本地哈希一致：index `5bf1b1ec…`、JS `c74a3fec…`、CSS `2002943e…`。线上 JS 含 `position-tool-trigger` 和 `positionTools`，旧版斐波那契入口已移除。

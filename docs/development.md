@@ -4,6 +4,8 @@
 
 从 `/Users/apple/work/trade-web` 接入 `PositionToolOverlay`、`lib/positionTools.ts`、`position-tools.css` 和计算测试。`KlineChart` 现在只负责图表、行情和持仓线，测量交互由独立覆盖层承载，覆盖层高度跟随主 pane，MACD／StochRSI 副图不参与绘制区域。旧的 `MeasureKind`、RR2／斐波那契绘制、周期栏测量按钮和右键“清除测量”已移除。多头／空头改为周期栏后的图标按钮，测量状态保存于浏览器 `localStorage`，不再写入账号设置或 Django Web 设置接口。默认新建区域设为最小高度并保持初始 1:1 盈亏距离，水平线使用抓手光标，整个区域支持上下左右平移。
 
+2026-11-27 更新测量框编辑态。选中后显示左上、左下和中部左右四个圆角拖拽点，顶部／底部水平边和左右边均可调整，未悬停或选中时中部只显示 RR。悬停或选中时显示方向和浮动盈亏，止盈／止损标签只显示价格并隐藏百分比。
+
 本地浏览器登录隔离测试账号后，验证多头按钮激活、参数面板展开、主图拖拽生成入场／止盈／止损线、RR／数量／风险／浮动盈亏展示和删除入口。Web `npm test`、`npm run build`、Django `DEBUG=true DB_ENGINE=sqlite3 USE_REDIS_CACHE=False RUN_SCHEDULER_IN_WEB=false .venv/bin/python manage.py test web --noinput` 通过。测试仅使用本地隔离账号和行情替身，没有真实交易或资金操作。
 
 ## 持仓下拉刷新短阈值停留回位、划转上限提示与开仓超限文案（2026-11-26）

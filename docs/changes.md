@@ -4,6 +4,8 @@
 
 多头／空头按钮移动到周期栏后方并改为图标，移除“交易测量”标题和设置按钮。新建测量区域设有最小高度，止盈／止损以入场线为中心初始保持 1:1，三条水平线显示抓手光标，测量区域支持上下左右拖动。测量状态改存浏览器 `localStorage`，删除 Web 账号设置中的 `positionTools` 字段和对应后端校验，避免记录用户数据。Web release `trade-web-20261127-local-b74be41` 与后端 release `integrated-quick-b74be41` 已部署到 47.80.22.243（首尔服务器）。
 
+随后增加测量框编辑态。选中图形时显示四个圆角拖拽点，四条边均可调整，悬停或选中才显示方向和浮动盈亏，未交互时只显示 RR。止盈／止损标签移除百分比。Web release `trade-web-20261127-resize-fce2cb6` 已部署到 47.80.22.243（首尔服务器）。
+
 ## 2026-11-27：精简稳固批次（删游客/死代码/fee 单源/workers2/模式头）
 
 用户授权自决架构推进。Web：游客入口与 guest 概念全删（server 本无 guest，共享账号登录生产 400 实证）；CompactIndicatorStrip 死链删；REST 显式 X-Trading-Mode ordinary。Server：common/fees.py 单源 TOTAL_FEE_RATE（trading/positions 导入＋内联字面量收敛）；uvicorn workers 2（饱和证据触发既有审查 P2）。web 测试全绿＋build；server 849 例定向复核。release lean-85bc0dc 上线首尔＋ba 哈希一致、游客 0 命中。
