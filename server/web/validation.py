@@ -64,40 +64,6 @@ def _validate_chart(value: object) -> dict:
     return result
 
 
-def _validate_position_tools(value: object) -> dict:
-    if not isinstance(value, dict) or set(value) - {"defaults", "positions"}:
-        raise SettingsValidationError("多空测量设置字段不正确。")
-    defaults = value.get("defaults")
-    positions = value.get("positions")
-    required_defaults = {"accountSize", "riskMode", "riskValue", "lotSize", "leverage", "qtyPrecision", "priceRangePercent"}
-    if not isinstance(defaults, dict) or set(defaults) != required_defaults or defaults.get("riskMode") not in {"percent", "currency"}:
-        raise SettingsValidationError("多空测量默认设置不正确。")
-    for key in required_defaults - {"riskMode"}:
-        item = defaults[key]
-        if not isinstance(item, (int, float)) or isinstance(item, bool) or not math.isfinite(item):
-            raise SettingsValidationError("多空测量默认设置数值不正确。")
-    if (defaults["accountSize"] <= 0 or defaults["riskValue"] <= 0 or defaults["lotSize"] <= 0
-            or defaults["leverage"] <= 0 or not 0 <= defaults["qtyPrecision"] <= 8
-            or defaults["qtyPrecision"] % 1 or not 0 < defaults["priceRangePercent"] <= 200):
-        raise SettingsValidationError("多空测量默认设置超出范围。")
-    if not isinstance(positions, list) or len(positions) > 12:
-        raise SettingsValidationError("多空测量对象过多。")
-    position_fields = {"id", "direction", "left", "right", "entryY", "targetY", "stopY", "createdAt"}
-    for position in positions:
-        if not isinstance(position, dict) or set(position) != position_fields or position["direction"] not in {"long", "short"}:
-            raise SettingsValidationError("多空测量对象格式不正确。")
-        _visible_text(position["id"], max_length=80, min_length=1, message="多空测量对象标识不正确。")
-        numbers = [position[key] for key in ("left", "right", "entryY", "targetY", "stopY", "createdAt")]
-        if any(not isinstance(item, (int, float)) or isinstance(item, bool) or not math.isfinite(item) for item in numbers):
-            raise SettingsValidationError("多空测量对象数值不正确。")
-        if (not 0 <= position["left"] < position["right"] <= 1
-                or any(not 0 <= position[key] <= 1 for key in ("entryY", "targetY", "stopY"))):
-            raise SettingsValidationError("多空测量对象位置不正确。")
-    if len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) > 32 * 1024:
-        raise SettingsValidationError("多空测量设置不能超过 32KB。")
-    return value
-
-
 def validate_patch(value: object) -> dict:
     if not isinstance(value, dict):
         raise SettingsValidationError("设置须为 JSON 对象。")
@@ -107,7 +73,7 @@ def validate_patch(value: object) -> dict:
         "marketGroup": {"top20", "alts", "gainers", "losers"},
         "assistantTopInterval": {"2m", "5m", "10m"},
     }
-    allowed = set(enums) | {"selectedSymbol", "marketQuery", "showInsightPanel", "chart", "positionTools"}
+    allowed = set(enums) | {"selectedSymbol", "marketQuery", "showInsightPanel", "chart"}
     if set(value) - allowed:
         raise SettingsValidationError("包含不支持的个人设置。")
     result = {}
@@ -120,7 +86,7 @@ def validate_patch(value: object) -> dict:
             _visible_text(item, max_length=80, message="搜索条件须不超过 80 个可见字符。")
         if key == "showInsightPanel" and type(item) is not bool:
             raise SettingsValidationError("面板设置须为布尔值。")
-        result[key] = _validate_chart(item) if key == "chart" else _validate_position_tools(item) if key == "positionTools" else item
+        result[key] = _validate_chart(item) if key == "chart" else item
     return result
 
 

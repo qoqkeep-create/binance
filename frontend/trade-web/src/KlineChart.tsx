@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { RefreshCw, SlidersHorizontal } from "lucide-react";
+import { RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
@@ -23,6 +23,7 @@ import { createSupertrendLineView, type SupertrendLinePoint, type SupertrendLine
 import { createMacdHistogramView, type MacdBarPoint, type MacdHistogramConfig } from "./lib/macdHistogram";
 import IndicatorSettingsPanel from "./IndicatorSettingsPanel";
 import PositionToolOverlay from "./PositionToolOverlay";
+import type { PositionDirection } from "./lib/positionTools";
 import "./kline-chart.css";
 
 const INTERVALS = ["3m", "5m", "15m", "1h", "4h", "1d"];
@@ -141,8 +142,13 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
   const [copied, setCopied] = useState(false);
   const [, setChartTick] = useState(0);
   const [mainPaneHeight, setMainPaneHeight] = useState(0);
+  const [activePositionTool, setActivePositionTool] = useState<PositionDirection | null>(null);
   const viewModeRef = useRef<"auto" | "manual">("auto");
   const viewModeApplyRef = useRef<(mode: "auto" | "manual") => void>(() => {});
+
+  useEffect(() => {
+    setActivePositionTool(null);
+  }, [symbol, selectedInterval]);
 
   const autoVisibleBars = () => {
     const width = containerRef.current?.clientWidth ?? 800;
@@ -722,6 +728,9 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
               {interval === "1d" ? "1D" : interval.toUpperCase()}
             </button>
           ))}
+          <span className="divider" aria-hidden="true" />
+          <button type="button" className={`position-tool-trigger long ${activePositionTool === "long" ? "is-active" : ""}`} aria-label="多头测量" title="多头测量" aria-pressed={activePositionTool === "long"} disabled={status !== "ready"} onClick={() => setActivePositionTool((current) => current === "long" ? null : "long")}><TrendingUp size={15} /></button>
+          <button type="button" className={`position-tool-trigger short ${activePositionTool === "short" ? "is-active" : ""}`} aria-label="空头测量" title="空头测量" aria-pressed={activePositionTool === "short"} disabled={status !== "ready"} onClick={() => setActivePositionTool((current) => current === "short" ? null : "short")}><TrendingDown size={15} /></button>
         </div>
         <div className="toolbar-right">
           <button type="button" className="chart-refresh" aria-label="刷新 K 线" title="刷新 K 线" disabled={refreshing} onClick={() => void refreshChart()}><RefreshCw size={14} className={refreshing ? "spin" : ""} /></button>
@@ -744,7 +753,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark" }: {
             <button type="button" onClick={() => void copyCurrentPrice()}>{copied ? "已复制" : "复制当前价格"}</button>
           </div>}
         </div>
-        {status === "ready" && <PositionToolOverlay currentPrice={candlesRef.current[candlesRef.current.length - 1]?.close ?? 0} readOnly={false} />}
+        {status === "ready" && <PositionToolOverlay currentPrice={candlesRef.current[candlesRef.current.length - 1]?.close ?? 0} readOnly={false} activeTool={activePositionTool} onActiveToolChange={setActivePositionTool} />}
         {crosshair && (() => {
           const base = candlesRef.current[candlesRef.current.length - 1]?.close ?? crosshair.price;
           const pct = base > 0 ? (crosshair.price - base) / base * 100 : 0;

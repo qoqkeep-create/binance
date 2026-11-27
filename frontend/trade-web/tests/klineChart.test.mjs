@@ -168,14 +168,20 @@ if (!source.includes('container.addEventListener("contextmenu", onContextMenu)')
 if (!source.includes('import PositionToolOverlay from "./PositionToolOverlay"') || !source.includes("<PositionToolOverlay") || source.includes("MeasureKind") || source.includes("FIB_LEVELS") || source.includes("measure-layer") || source.includes("清除测量")) {
   throw new Error("KlineChart must use the shared position tool overlay and remove the old long/short/fib implementation");
 }
-for (const marker of ["position-tool-trigger long", "position-tool-trigger short", "position-tool-settings-panel", "setToolState", "calculatePositionMetrics"]) {
+for (const marker of ["calculatePositionMetrics", "localStorage", "MIN_POSITION_DISTANCE", "setMoveDrag"]) {
   if (!positionOverlay.includes(marker)) throw new Error(`Position tool overlay is missing ${marker}`);
+}
+for (const marker of ["position-tool-trigger long", "position-tool-trigger short", "TrendingUp", "TrendingDown", "activePositionTool"]) {
+  if (!source.includes(marker)) throw new Error(`KlineChart is missing ${marker}`);
 }
 for (const marker of ["PositionDirection", "defaultPositionToolDefaults", "priceAtChartY", "riskReward", "profitPnl", "lossPnl"]) {
   if (!positionTools.includes(marker)) throw new Error(`Position tool calculations are missing ${marker}`);
 }
-for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", ".position-tool-settings-panel"]) {
+for (const marker of [".position-tool-layer", ".position-tool-trigger.long.is-active", ".position-tool-surface", "--position-tool-main-height", "cursor:grab", "cursor:move"]) {
   if (!positionCss.includes(marker) && !source.includes(marker)) throw new Error(`Position tool styling is missing ${marker}`);
+}
+if (positionOverlay.includes('usePreference("positionTools"') || positionOverlay.includes("position-tool-settings-panel")) {
+  throw new Error("Position tools must stay in browser cache without the old account settings panel");
 }
 const pasteSrc = readFileSync(fileURLToPath(new URL("../src/TradePanel.tsx", import.meta.url)), "utf8");
 if (!source.includes("price: pRaw === null ? null : Number(pRaw)") || !source.includes("setCopiedPrice(text)") || !pasteSrc.includes("粘贴") || !pasteSrc.includes("getCopiedPrice")) {

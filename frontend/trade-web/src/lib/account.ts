@@ -20,7 +20,7 @@ export interface SettingsResponse {
   updatedAt: string | number | null;
 }
 
-export const preferenceKeys = ["theme", "activeNav", "marketGroup", "selectedSymbol", "marketQuery", "showInsightPanel", "assistantTopInterval", "chart", "positionTools"] as const;
+export const preferenceKeys = ["theme", "activeNav", "marketGroup", "selectedSymbol", "marketQuery", "showInsightPanel", "assistantTopInterval", "chart"] as const;
 
 export class AccountApiError extends Error {
   readonly status: number;

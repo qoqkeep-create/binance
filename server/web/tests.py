@@ -36,39 +36,3 @@ class WebSettingsTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
-
-    def test_position_tools_are_persisted_and_validated(self):
-        position_tools = {
-            "defaults": {
-                "accountSize": 10000,
-                "riskMode": "percent",
-                "riskValue": 1,
-                "lotSize": 1,
-                "leverage": 1,
-                "qtyPrecision": 3,
-                "priceRangePercent": 30,
-            },
-            "positions": [{
-                "id": "position-test",
-                "direction": "long",
-                "left": 0.2,
-                "right": 0.8,
-                "entryY": 0.5,
-                "targetY": 0.2,
-                "stopY": 0.8,
-                "createdAt": 1793520000000,
-            }],
-        }
-        saved = self.client.patch(
-            "/api/web/settings",
-            {"patch": {"positionTools": position_tools}, "baseVersion": 0},
-            format="json",
-        )
-        self.assertEqual(saved.status_code, 200)
-        self.assertEqual(saved.data["data"]["settings"]["positionTools"], position_tools)
-        invalid = self.client.patch(
-            "/api/web/settings",
-            {"patch": {"positionTools": {**position_tools, "defaults": {**position_tools["defaults"], "riskValue": 0}}}, "baseVersion": 1},
-            format="json",
-        )
-        self.assertEqual(invalid.status_code, 400)
