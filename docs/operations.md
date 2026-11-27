@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 测量中线 chip 重设计（右端绿底白字含入场/RR/浮盈亏）＋中线柄上下移动 Web 发布（2026-11-27，北京时间）
+
+① 中线统计 chip：去多头/空头字、常显、右端对齐（right:0）置于中线上方 2px、绿底白字圆角 4px、单行紧凑「入场 x · RR x · ±x」，min-width 删除；② 原入场价位信息条删除（信息并入 chip）；③ 止盈标签绿底白字、止损标签红底白字（圆角 3px）；④ 中线左右两个调整柄改 entryY 上下移动中线（原 leftX/rightX 由左右边线保留）。本地实测：chip 右对齐/线上/绿底白字/无方向字、入场条消失、止损红底/止盈绿底、中线柄拖动 entry 移动 30px。Web release **`trade-web-20261127-chip-3ea09da`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/CSS 哈希 `7e23aba0…`／`33d48cae…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 测量工具区保留图表十字线（悬停＋拖拽全程）Web 发布（2026-11-27，北京时间）
 
 根因：测量覆盖层 pointer-events:auto 拦截鼠标事件，lightweight-charts 收不到 mousemove 故十字线消失（合成事件转发不可靠：库仅在 mouseenter 后订阅 mousemove 且挂 topCanvas）。根因修复：覆盖层 surface/drawing 改 pointer-events:none（真实鼠标事件直达图表，十字线原生保留），工具交互改 window 级 pointerdown/move/up 监听＋矩形命中测试（liveRef 镜像状态避免闭包过期）；手柄/边线/三线保留 pointer-events:auto 供拖拽；悬停高亮改 window move 命中。本地实测（rAF shim）：工具区悬停十字线 true、拖拽中 true、工具平移 40px 生效。Web release **`trade-web-20261127-crosshair-2ebd87b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `e50559cd…`／`ef8529f7…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 pointer-events:none＋window 监听。后端不切换，旧 release 保留可回退。

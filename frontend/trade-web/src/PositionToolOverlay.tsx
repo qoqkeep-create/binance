@@ -234,21 +234,19 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
           <div className="position-tool-zone target" style={{ top: targetTop, height: targetHeight }} /><div className="position-tool-zone stop" style={{ top: stopTop, height: stopHeight }} />
           <div className="position-tool-edge left-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "leftX")} />
           <div className="position-tool-edge right-edge" style={{ top: boxTop, height: boxHeight }} onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
-          <div className="position-tool-line entry" style={{ top: `${position.entryY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "entryY")}>
-            {interactive && <span>入场 {formatPrice(metrics.entryPrice)}</span>}
-          </div>
+          <div className="position-tool-line entry" style={{ top: `${position.entryY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "entryY")} />
           <div className="position-tool-line target-line" style={{ top: `${position.targetY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "targetY")}>
             {interactive && <span>止盈 {formatPrice(metrics.targetPrice)}</span>}
           </div>
           <div className="position-tool-line stop-line" style={{ top: `${position.stopY * 100}%` }} onPointerDown={(event) => beginHandle(event, position.id, "stopY")}>
             {interactive && <span>止损 {formatPrice(metrics.stopPrice)}</span>}
           </div>
-          <div className="position-tool-stats" style={{ top: `${position.entryY * 100}%` }}><strong>RR {metrics.riskReward.toFixed(2)}</strong>{interactive && <span>{position.direction === "long" ? "多头" : "空头"} · 浮动盈亏 {formatMoney(metrics.openPnl)}</span>}</div>
+          <div className="position-tool-stats" style={{ top: `${position.entryY * 100}%` }}>入场 {formatPrice(metrics.entryPrice)} · RR {metrics.riskReward.toFixed(2)} · {formatMoney(metrics.openPnl)}</div>
           {selected && !previewPosition && <div className="position-tool-handles">
             <button type="button" className="position-tool-resize-handle top-left" style={{ top: `${topHandleY * 100}%` }} aria-label="调整上方高度" onPointerDown={(event) => beginHandle(event, position.id, topHandle)} />
             <button type="button" className="position-tool-resize-handle bottom-left" style={{ top: `${bottomHandleY * 100}%` }} aria-label="调整下方高度" onPointerDown={(event) => beginHandle(event, position.id, bottomHandle)} />
-            <button type="button" className="position-tool-resize-handle middle-left" style={{ top: `${position.entryY * 100}%` }} aria-label="向左调整测量宽度" onPointerDown={(event) => beginHandle(event, position.id, "leftX")} />
-            <button type="button" className="position-tool-resize-handle middle-right" style={{ top: `${position.entryY * 100}%` }} aria-label="向右调整测量宽度" onPointerDown={(event) => beginHandle(event, position.id, "rightX")} />
+            <button type="button" className="position-tool-resize-handle middle-left" style={{ top: `${position.entryY * 100}%` }} aria-label="上下移动中线" onPointerDown={(event) => beginHandle(event, position.id, "entryY")} />
+            <button type="button" className="position-tool-resize-handle middle-right" style={{ top: `${position.entryY * 100}%` }} aria-label="上下移动中线" onPointerDown={(event) => beginHandle(event, position.id, "entryY")} />
           </div>}
         </div>;
       })}

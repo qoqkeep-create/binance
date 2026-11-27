@@ -251,8 +251,12 @@ if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-i
   throw new Error("History open/close times must sit at the card bottom-left");
 }
 const positionToolsCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
-if (!positionToolsCss.includes("transform:translate(-50%,calc(-100% - 4px))") || !positionToolsCss.includes("width:11px; height:11px;")) {
-  throw new Error("Position stats panel must sit above the entry divider; drag handles half size (11px)");
+if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !positionToolsCss.includes("width:11px; height:11px;") || !positionToolsCss.includes(".position-tool-line.stop-line span { background:var(--red); color:#ffffff; border-radius:3px; }")) {
+  throw new Error("Stats chip right-aligned green/white rounded; stop label red/white; handles half size");
+}
+const overlaySrc2 = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
+if (overlaySrc2.includes("浮动盈亏") || !overlaySrc2.includes("入场 {formatPrice(metrics.entryPrice)} · RR") || !overlaySrc2.includes('aria-label="上下移动中线"')) {
+  throw new Error("Stats chip must drop direction words, include entry price, and middle handles move the entry line vertically");
 }
 const overlaySrc = readFileSync(fileURLToPath(new URL("../src/PositionToolOverlay.tsx", import.meta.url)), "utf8");
 if (!overlaySrc.includes('window.addEventListener("pointermove", move)') || !positionToolsCss.includes(".position-tool-drawing { position:absolute; top:0; bottom:0; pointer-events:none; }")) {

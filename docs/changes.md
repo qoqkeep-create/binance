@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：中线 chip 右端绿底白字（含入场/RR/浮盈亏、去多空字）＋中线柄上下移
+
+stats chip right:0/translateY(-100%-2px)/绿底白字/圆角4/单行紧凑常显；入场 span 删除；target/stop span 绿/红底白字圆角3；middle-left/right 柄改 entryY（上下移中线），宽度调整保留左右边线。实测 chip 右对齐/线上/配色/无方向字、entry 移动 30px。契约测试锁定。release chip-3ea09da 上线首尔＋ba 哈希一致。
+
 ## 2026-11-27：测量工具区保留十字线（覆盖层 pointer-events:none＋window 指针监听）
 
 覆盖层拦截鼠标致库十字线消失；合成转发不可靠（库 mouseenter 后才订阅 mousemove、挂 topCanvas）。改 surface/drawing pointer-events:none，真实事件直达图表；工具拖拽/绘制改 window pointerdown/move/up＋命中测试（liveRef 镜像）；手柄/边/线 auto。实测悬停/拖拽十字线 true、平移 40px。契约测试锁定。release crosshair-2ebd87b 上线首尔＋ba 哈希一致。
