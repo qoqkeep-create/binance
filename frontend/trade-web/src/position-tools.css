@@ -20,10 +20,10 @@
 .chart-line-editor .chart-line-delete { color:var(--red); }
 .chart-line-menu { position:absolute; top:31px; left:0; z-index:9; display:grid; gap:5px; min-width:142px; padding:8px; border:1px solid var(--line-bright); border-radius:4px; background:var(--bg-elevated); box-shadow:0 10px 24px #0006; }
 .chart-line-menu span { color:var(--muted-dark); font-size:8px; }
-.chart-line-options { display:flex; gap:4px; }
-.chart-line-options button { min-width:28px; height:24px; padding:3px 5px; border:1px solid var(--line); border-radius:3px; background:transparent; color:var(--muted); font-size:8px; }
+.chart-line-options { display:flex; flex-direction:column; gap:4px; }
+.chart-line-options button { display:flex; align-items:center; gap:10px; width:100%; min-height:26px; padding:3px 8px; border:1px solid var(--line); border-radius:3px; background:transparent; color:var(--muted); font-size:11px; }
 .chart-line-options button:hover,.chart-line-options button.is-active { color:var(--text); border-color:var(--accent); }
 .chart-line-color-menu { min-width:130px; }
-.chart-line-color-menu .chart-line-options button { min-width:24px; width:24px; padding:0; border-radius:50%; }
+.chart-line-color-menu { min-width:160px; }
 .chart-line-axis-tag { position:absolute; right:0; transform:translateY(-50%); z-index:3; padding:2px 6px; border-radius:3px; font:11px var(--font-ui); font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap; }
-.chart-line-tool:active { cursor:grabbing; }.pd-line-sample { display:inline-block; width:18px; border-top:2px solid currentColor; vertical-align:middle; }.pd-line-sample.is-dashed { border-top-style:dashed; }.pd-color-swatch { display:inline-block; width:12px; height:12px; border-radius:3px; }
+.chart-line-tool:active { cursor:grabbing; }.pd-line-sample { display:inline-block; width:18px; border-top:2px solid currentColor; vertical-align:middle; }.pd-line-sample.is-dashed { border-top-style:dashed; }.pd-line-sample-lg { width:76px; flex:none; }.pd-color-swatch { display:inline-block; width:12px; height:12px; border-radius:3px; }

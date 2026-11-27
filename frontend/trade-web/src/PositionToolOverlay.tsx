@@ -25,7 +25,7 @@ interface PositionToolOverlayProps {
 }
 
 export type ChartLineOrientation = "horizontal" | "vertical";
-type ChartLineStyle = "solid" | "dashed";
+type ChartLineStyle = "solid" | "dashed" | "dotted";
 type ChartLine = { id: string; orientation: ChartLineOrientation; time?: number; price?: number; color: string; lineWidth: number; lineStyle: ChartLineStyle; createdAt: number };
 type Draft = Omit<PositionTool, "id" | "createdAt">;
 type PositionToolState = { defaults: PositionToolDefaults; positions: PositionTool[] };
@@ -34,7 +34,10 @@ type MoveDrag = { id: string; startTime: number; startPrice: number; origin: Pos
 const toolsPreferenceFallback: PositionToolState = { defaults: defaultPositionToolDefaults, positions: [] };
 const LOCAL_STORAGE_KEY = "trade-web-position-tools-v2";
 const LINE_STORAGE_KEY = "trade-web-chart-lines-v1";
-const LINE_COLORS = ["#2EBD85", "#F6465D", "#2D7FF9", "#F5B942", "#FFFFFF"];
+const LINE_COLORS = ["#2EBD85", "#F6465D", "#2D7FF9", "#F5B942", "#FFFFFF", "#A78BFA", "#F06292"];
+const LINE_COLOR_NAMES: Record<string, string> = { "#2EBD85": "绿", "#F6465D": "红", "#2D7FF9": "蓝", "#F5B942": "金", "#FFFFFF": "白", "#A78BFA": "紫", "#F06292": "粉" };
+const LINE_WIDTHS = [1, 2, 3, 4, 5, 6];
+const LINE_STYLES: { value: ChartLineStyle; label: string }[] = [{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }];
 const formatPrice = (value: number) => value >= 1000 ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : value >= 1 ? value.toFixed(4) : value.toFixed(6);
 const formatMoney = (value: number) => `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}`;
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
@@ -61,8 +64,8 @@ function isChartLine(value: unknown): value is ChartLine {
     && (line.orientation === "horizontal" || line.orientation === "vertical")
     && (line.orientation === "horizontal" ? typeof line.price === "number" && Number.isFinite(line.price) && line.price > 0 : typeof line.time === "number" && Number.isFinite(line.time))
     && typeof line.color === "string" && LINE_COLORS.includes(line.color)
-    && typeof line.lineWidth === "number" && [1, 2, 3, 4].includes(line.lineWidth)
-    && (line.lineStyle === "solid" || line.lineStyle === "dashed")
+    && typeof line.lineWidth === "number" && [1, 2, 3, 4, 5, 6].includes(line.lineWidth)
+    && (line.lineStyle === "solid" || line.lineStyle === "dashed" || line.lineStyle === "dotted")
     && typeof line.createdAt === "number" && Number.isFinite(line.createdAt);
 }
 function readLocalChartLines(): ChartLine[] {
@@ -85,8 +88,8 @@ function readLineDefaults(): LineDefaults {
     const parsed = JSON.parse(raw) as Partial<LineDefaults>;
     return {
       color: typeof parsed.color === "string" && LINE_COLORS.includes(parsed.color) ? parsed.color : fallback.color,
-      lineWidth: [1, 2, 3, 4].includes(parsed.lineWidth as number) ? parsed.lineWidth as number : 1,
-      lineStyle: parsed.lineStyle === "dashed" ? "dashed" : "solid",
+      lineWidth: [1, 2, 3, 4, 5, 6].includes(parsed.lineWidth as number) ? parsed.lineWidth as number : 1,
+      lineStyle: parsed.lineStyle === "dashed" || parsed.lineStyle === "dotted" ? parsed.lineStyle : "solid",
     };
   } catch { return fallback; }
 }
@@ -352,6 +355,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   function changeLineStyle(id: string, patch: Partial<LineDefaults>) {
     setChartLines((lines) => lines.map((line) => line.id === id ? { ...line, ...patch } : line));
     setLineDefaults((current) => { const next = { ...current, ...patch }; saveLineDefaults(next); return next; });
+    setLineMenu(null);
   }
   function deleteChartLine(id: string) {
     setChartLines((lines) => lines.filter((line) => line.id !== id));
@@ -436,16 +440,16 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       })}
       {selectedLine && <div className="chart-line-editor chart-line-editor-center" onPointerDown={(event) => event.stopPropagation()}>
         <button type="button" aria-label="线条粗细" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "width" ? null : { id: selectedLine.id, kind: "width" })}><span className="pd-line-sample" style={{ borderTopWidth: `${selectedLine.lineWidth}px`, borderTopStyle: selectedLine.lineStyle === "dashed" ? "dashed" : "solid", borderTopColor: selectedLine.color }} />{selectedLine.lineWidth}px <ChevronDown size={12} /></button>
-        <button type="button" aria-label="线型实虚" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "lineStyle" ? null : { id: selectedLine.id, kind: "lineStyle" })}><span className="pd-line-sample" style={{ borderTopStyle: selectedLine.lineStyle === "dashed" ? "dashed" : "solid" }} /> <ChevronDown size={12} /></button>
+        <button type="button" aria-label="线型实虚" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "lineStyle" ? null : { id: selectedLine.id, kind: "lineStyle" })}><span className="pd-line-sample" style={{ borderTopStyle: selectedLine.lineStyle === "dashed" ? "dashed" : selectedLine.lineStyle === "dotted" ? "dotted" : "solid" }} /> <ChevronDown size={12} /></button>
         <button type="button" aria-label="线条颜色" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "color" ? null : { id: selectedLine.id, kind: "color" })}><span className="pd-color-swatch" style={{ background: selectedLine.color }} /> <ChevronDown size={12} /></button>
         <button type="button" className="chart-line-delete" aria-label="删除线条" onClick={() => deleteChartLine(selectedLine.id)}><Trash2 size={13} /></button>
         {lineMenu?.id === selectedLine.id && lineMenu.kind === "width" && <div className="chart-line-menu">
-          <span>粗细</span><div className="chart-line-options">{[1, 2, 3, 4].map((width) => <button key={width} type="button" className={selectedLine.lineWidth === width ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineWidth: width })}><span className="pd-line-sample" style={{ borderTopWidth: `${width}px`, borderTopColor: selectedLine.color }} />{width}px</button>)}</div>
+          <span>粗细</span><div className="chart-line-options">{LINE_WIDTHS.map((width) => <button key={width} type="button" className={selectedLine.lineWidth === width ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineWidth: width })}><span className="pd-line-sample pd-line-sample-lg" style={{ borderTopWidth: `${width}px`, borderTopStyle: selectedLine.lineStyle === "dashed" ? "dashed" : selectedLine.lineStyle === "dotted" ? "dotted" : "solid", borderTopColor: selectedLine.color }} />{width}px</button>)}</div>
         </div>}
         {lineMenu?.id === selectedLine.id && lineMenu.kind === "lineStyle" && <div className="chart-line-menu">
-          <span>线型</span><div className="chart-line-options"><button type="button" className={selectedLine.lineStyle === "solid" ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineStyle: "solid" })}><span className="pd-line-sample" />实线</button><button type="button" className={selectedLine.lineStyle === "dashed" ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineStyle: "dashed" })}><span className="pd-line-sample is-dashed" />虚线</button></div>
+          <span>线型</span><div className="chart-line-options">{LINE_STYLES.map((style) => <button key={style.value} type="button" className={selectedLine.lineStyle === style.value ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineStyle: style.value })}><span className="pd-line-sample pd-line-sample-lg" style={{ borderTopWidth: `${selectedLine.lineWidth}px`, borderTopStyle: style.value === "dashed" ? "dashed" : style.value === "dotted" ? "dotted" : "solid", borderTopColor: selectedLine.color }} />{style.label}</button>)}</div>
         </div>}
-        {lineMenu?.id === selectedLine.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={selectedLine.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`选择颜色 ${color}`} onClick={() => changeLineStyle(selectedLine.id, { color })} />)}</div></div>}
+        {lineMenu?.id === selectedLine.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={selectedLine.color === color ? "is-active" : ""} aria-label={`选择颜色 ${color}`} onClick={() => changeLineStyle(selectedLine.id, { color })}><span className="pd-line-sample pd-line-sample-lg" style={{ borderTopWidth: `${selectedLine.lineWidth}px`, borderTopStyle: selectedLine.lineStyle === "dashed" ? "dashed" : selectedLine.lineStyle === "dotted" ? "dotted" : "solid", borderTopColor: color }} />{LINE_COLOR_NAMES[color]}</button>)}</div></div>}
       </div>}
       {selectedPosition && selectedMetrics && <div className="chart-line-editor position-tool-detail"><span className="chart-line-editor-item is-title">{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</span><span className="chart-line-editor-item">入场 {formatPrice(selectedMetrics.entryPrice)}</span><span className="chart-line-editor-item">止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span className="chart-line-editor-item">止损 {formatPrice(selectedMetrics.stopPrice)}</span><span className="chart-line-editor-item">RR {selectedMetrics.riskReward.toFixed(2)}</span><button type="button" aria-label="删除测量工具" onClick={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== selectedPosition.id) })); setSelectedId(null); }}><Trash2 size={13} /></button></div>}
     </div>

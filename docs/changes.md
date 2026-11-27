@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：画线菜单点选即关、纵向 76px 长图例（11px 字）、粗细1-6/线型实虚点/颜色7色扩充
+
+changeLineStyle 收尾关菜单；options column＋pd-line-sample-lg；LINE_WIDTHS/LINE_STYLES(含dotted)/LINE_COLOR_NAMES。实测 6 档/7 色、点选即关、defaults 同步。release linemenu-fe9b154 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：十字线时间轴标签条（中文周几＋日期＋时分，本站芯片配色，居竖线贴轴）
 
 crosshair 增 time（吸附序号取 data 时间/越界外推）；.kline-crosshair-time bottom:2px translateX(-50%) clamp 78px。实测文本/居中/样式命中。release crosstime-f5e94c8 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

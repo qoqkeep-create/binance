@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 画线菜单点选即关＋纵向长图例＋选项扩充 Web 发布（2026-11-28，北京时间）
+
+用户三件：① 菜单选项点完即收起（此前选完仍停留）；② 选项纵向排列、示意线加长（约设置条一半＝76px）、文字加大（11px），实线/虚线/颜色均同规格（颜色菜单也改图例行＋色名）；③ 选项扩充。实现：changeLineStyle 末尾 setLineMenu(null)；.chart-line-options flex-direction:column、选项按钮 flex 行＋pd-line-sample-lg 76px；粗细 1-6px（LINE_WIDTHS）、线型 实线/虚线/点线（LINE_STYLES，ChartLineStyle 增 dotted，校验/默认同步）、颜色 7 色带中文名（绿红蓝金白紫粉，LINE_COLOR_NAMES）；菜单 min-width 160。实测：粗细菜单 6 项 column/76px/11px，点 2px 即关且 line=2、defaults 同步；颜色 7 项点紫即关 color=#A78BFA；截图目检紫色 2px 线与图例条。Web release **`trade-web-20261128-linemenu-fe9b154`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `4c45df80…`／`fe454cce…`／`380e96d5…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 十字线时间轴标签条 Web 发布（2026-11-28，北京时间）
 
 用户要求在十字线竖线与时间轴交点处加具体时间条（参考 TradingView 样式但适配本站配色）。实现：crosshair state 增 time（吸附 bar 序号→data()[idx].time，越界按周期外推）；`.kline-crosshair-time` 芯片贴时间轴底部（bottom:2px、translateX(-50%) 居竖线、左右 clamp 78px），格式"周六 2026-11-28 00:30"（中文周几＋日期＋时分，tabular-nums）；本站样式＝bg-elevated 深底＋line-bright 描边＋4px 圆角＋白字 10px（非参考图的纯黑块）。实测：竖线处标签文本正确、居中贴轴、样式命中。Web release **`trade-web-20261128-crosstime-f5e94c8`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `0c3b4990…`／`360fd78c…`／`41b3049c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
