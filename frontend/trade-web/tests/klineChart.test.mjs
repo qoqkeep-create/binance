@@ -258,6 +258,9 @@ if (!styles.includes(".pg-card footer.pg-times { flex-direction: column; align-i
   throw new Error("History open/close times must sit at the card bottom-left");
 }
 const positionToolsCss = readFileSync(fileURLToPath(new URL("../src/position-tools.css", import.meta.url)), "utf8");
+if (!source.includes("chart-tool-group") || !source.includes("tool-sep") || !source.includes("chart-tool-clear") || !source.includes("一键清除所有划线工具") || !source.includes("clearSignal={clearToolsTick}") || !positionOverlay.includes("clearSignal") || !positionOverlay.includes('selected && <div className="position-tool-stats"') || positionOverlay.includes("position-tool-list") || !positionOverlay.includes("chart-line-editor-center") || !positionToolsCss.includes(".chart-tool-group") || !positionToolsCss.includes(".chart-line-editor-center") || !positionToolsCss.includes(".position-tool-detail { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);")) {
+  throw new Error("Tool icons must share one bordered group with separators plus a clear-all button; only selected tool shows info strip; option bars center on the main pane");
+}
 if (!positionToolsCss.includes("transform:translateY(calc(-100% - 2px))") || !positionToolsCss.includes("width:11px; height:11px;") || !positionToolsCss.includes(".position-tool-line.stop-line span { background:var(--red); color:#ffffff; border-radius:3px; }") || !positionToolsCss.includes("font-size:8px")) {
   throw new Error("Stats chip right-aligned green/white rounded; stop label red/white; handles half size; label text 8px");
 }

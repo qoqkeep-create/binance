@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：工具栏合并底框、信息条仅选中、选项条居中、一键清除所有划线工具
+
+四图标（多/空/横/竖）合并单底框＋竖线分隔，右端浅红「一键清除所有划线工具」（clearSignal 清空测量＋画线＋选中态）；删除右上全量卡片列表，测量 stats chip 仅选中显示；测量详情条（补删除钮）与画线编辑条居中主图（50%/50% translate）。实测未选中零信息条、两编辑条 dx=dy=0、清除后图面与存储全空、截图目检通过。契约测试锁定。release toolgroup-cdae754 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-27：桶滚种子根开收盘错位根因修复（mergeBucketKline 重构）
 
 根因：ticker 先种子新桶（open=现价）后真实 1m 只并 high/low/close 不纠正 open→开收盘错位＋实体重叠；种子 high/low 混前根收盘污染 hl2 填充锚→大块重叠区。重构合并为 lib/candleMerge.mergeBucketKline 纯函数：种子 open=前根收盘、high/low=现价、seeded 标记；首根 1m 整体接管 open/high/low；forming 不重复计 volume。单元测试＋浏览器内真实模块序列实证；崩溃段目检归线上（面板隐藏）。release candleopen-cc6f277 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。

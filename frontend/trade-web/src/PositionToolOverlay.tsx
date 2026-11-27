@@ -20,6 +20,7 @@ interface PositionToolOverlayProps {
   activeLineTool: ChartLineOrientation | null;
   onActiveLineToolChange: (tool: ChartLineOrientation | null) => void;
   api: IChartApi | null;
+  clearSignal?: number;
 }
 
 export type ChartLineOrientation = "horizontal" | "vertical";
@@ -84,17 +85,7 @@ function sanitizeDraft(draft: Draft): PositionTool {
   return { id: newId(), direction: draft.direction, startTime, endTime: endTime > startTime ? endTime : startTime + 60, entryPrice: draft.entryPrice, targetPrice, stopPrice, createdAt: Date.now() };
 }
 
-function ToolCard({ position, currentPrice, defaults, selected, onSelect, onDelete }: { position: PositionTool; currentPrice: number; defaults: PositionToolDefaults; selected: boolean; onSelect: () => void; onDelete: () => void }) {
-  const metrics = calculatePositionMetrics(position, currentPrice, defaults);
-  return <button type="button" className={`position-tool-card ${selected ? "is-selected" : ""}`} onClick={onSelect}>
-    <span className={`position-tool-card-dot ${position.direction}`} />
-    <span><strong>{position.direction === "long" ? "多头" : "空头"}</strong><small>RR {metrics.riskReward.toFixed(2)} · 数量 {metrics.quantity.toFixed(defaults.qtyPrecision)}</small></span>
-    <span className={metrics.openPnl >= 0 ? "position-positive" : "position-negative"}>{formatMoney(metrics.openPnl)}</span>
-    <span className="position-tool-card-delete" role="button" tabIndex={0} aria-label="删除测量工具" onClick={(event) => { event.stopPropagation(); onDelete(); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onDelete(); } }}><Trash2 size={12} /></span>
-  </button>;
-}
-
-export default function PositionToolOverlay({ currentPrice, readOnly = false, activeTool, onActiveToolChange, activeLineTool, onActiveLineToolChange, api }: PositionToolOverlayProps) {
+export default function PositionToolOverlay({ currentPrice, readOnly = false, activeTool, onActiveToolChange, activeLineTool, onActiveLineToolChange, api, clearSignal = 0 }: PositionToolOverlayProps) {
   const [toolState, setToolState] = useState<PositionToolState>(() => readLocalToolState());
   const [chartLines, setChartLines] = useState<ChartLine[]>(() => readLocalChartLines());
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -140,6 +131,16 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   }, [api, candleSeries]);
 
   useEffect(() => {
+    if (!clearSignal) return;
+    setToolState((state) => ({ ...state, positions: [] }));
+    setChartLines([]);
+    setSelectedId(null);
+    setSelectedLineId(null);
+    setLineMenu(null);
+    setDraft(null);
+  }, [clearSignal]);
+
+  useEffect(() => {
     try { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(toolState)); } catch { /* storage can be unavailable in private contexts */ }
   }, [toolState]);
   useEffect(() => {
@@ -168,7 +169,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   }
   useEffect(() => {
     const down = (event: PointerEvent) => {
-      if ((event.target as HTMLElement).closest(".position-tool-resize-handle, .position-tool-edge, .position-tool-line, .position-tool-list, .position-tool-detail, .chart-line-tool, .chart-line-editor")) return;
+      if ((event.target as HTMLElement).closest(".position-tool-resize-handle, .position-tool-edge, .position-tool-line, .position-tool-detail, .chart-line-tool, .chart-line-editor")) return;
       const live = liveRef.current;
       const point = dataPoint(event);
       if (!point) return;
@@ -300,6 +301,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   }
   const previewPosition = draft ? sanitizeDraft(draft) : null;
   const renderedPositions = previewPosition ? [...toolState.positions, previewPosition] : toolState.positions;
+  const selectedLine = chartLines.find((line) => line.id === selectedLineId) ?? null;
 
   return <div className="position-tool-layer">
     <div className={`position-tool-surface ${activeTool ? "is-drawing" : ""}`} ref={surfaceRef}>
@@ -310,21 +312,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         const lineStyle = line.orientation === "horizontal"
           ? { top: coordinate, borderTop: `${line.lineWidth}px ${line.lineStyle} ${line.color}` }
           : { left: coordinate, borderLeft: `${line.lineWidth}px ${line.lineStyle} ${line.color}` };
-        const editorStyle = line.orientation === "horizontal"
-          ? { left: 8, top: -42 }
-          : { left: 8, top: 8 };
-        return <div key={line.id} className={`chart-line-tool ${line.orientation} ${selected ? "is-selected" : ""}`} style={lineStyle} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLineId(line.id); setSelectedId(null); }}>
-          {selected && <div className="chart-line-editor" style={editorStyle} onPointerDown={(event) => event.stopPropagation()}>
-            <button type="button" onClick={() => setLineMenu((current) => current?.id === line.id && current.kind === "style" ? null : { id: line.id, kind: "style" })}>粗细/线型 <ChevronDown size={12} /></button>
-            <button type="button" onClick={() => setLineMenu((current) => current?.id === line.id && current.kind === "color" ? null : { id: line.id, kind: "color" })}>颜色 <ChevronDown size={12} /></button>
-            <button type="button" className="chart-line-delete" aria-label="删除线条" onClick={() => deleteChartLine(line.id)}><Trash2 size={13} /></button>
-            {lineMenu?.id === line.id && lineMenu.kind === "style" && <div className="chart-line-menu">
-              <span>粗细</span><div className="chart-line-options">{[1, 2, 3, 4].map((width) => <button key={width} type="button" className={line.lineWidth === width ? "is-active" : ""} onClick={() => updateChartLine(line.id, (current) => ({ ...current, lineWidth: width }))}>{width}px</button>)}</div>
-              <span>线型</span><div className="chart-line-options"><button type="button" className={line.lineStyle === "solid" ? "is-active" : ""} onClick={() => updateChartLine(line.id, (current) => ({ ...current, lineStyle: "solid" }))}>实线</button><button type="button" className={line.lineStyle === "dashed" ? "is-active" : ""} onClick={() => updateChartLine(line.id, (current) => ({ ...current, lineStyle: "dashed" }))}>虚线</button></div>
-            </div>}
-            {lineMenu?.id === line.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={line.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`选择颜色 ${color}`} onClick={() => updateChartLine(line.id, (current) => ({ ...current, color }))} />)}</div></div>}
-          </div>}
-        </div>;
+        return <div key={line.id} className={`chart-line-tool ${line.orientation} ${selected ? "is-selected" : ""}`} style={lineStyle} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLineId(line.id); setSelectedId(null); }} />;
       })}
       {renderedPositions.map((position) => {
         const metrics = calculatePositionMetrics(position, currentPrice, defaults);
@@ -359,7 +347,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
           <div className="position-tool-line stop-line" style={{ top: `${yStop}px` }} onPointerDown={(event) => beginHandle(event, position.id, "stopY")}>
             {interactive && <span>止损 {formatPrice(metrics.stopPrice)}</span>}
           </div>
-          <div className="position-tool-stats" style={{ top: `${yEntry}px` }}>入场 {formatPrice(metrics.entryPrice)} · RR {metrics.riskReward.toFixed(2)} · {formatMoney(metrics.openPnl)}</div>
+          {selected && <div className="position-tool-stats" style={{ top: `${yEntry}px` }}>入场 {formatPrice(metrics.entryPrice)} · RR {metrics.riskReward.toFixed(2)} · {formatMoney(metrics.openPnl)}</div>}
           {selected && !previewPosition && <div className="position-tool-handles">
             <button type="button" className="position-tool-resize-handle top-left" style={{ top: `${topHandleY}px` }} aria-label="调整上方高度" onPointerDown={(event) => beginHandle(event, position.id, topHandle)} />
             <button type="button" className="position-tool-resize-handle bottom-left" style={{ top: `${bottomHandleY}px` }} aria-label="调整下方高度" onPointerDown={(event) => beginHandle(event, position.id, bottomHandle)} />
@@ -368,8 +356,17 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
           </div>}
         </div>;
       })}
+      {selectedLine && <div className="chart-line-editor chart-line-editor-center" onPointerDown={(event) => event.stopPropagation()}>
+        <button type="button" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "style" ? null : { id: selectedLine.id, kind: "style" })}>粗细/线型 <ChevronDown size={12} /></button>
+        <button type="button" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "color" ? null : { id: selectedLine.id, kind: "color" })}>颜色 <ChevronDown size={12} /></button>
+        <button type="button" className="chart-line-delete" aria-label="删除线条" onClick={() => deleteChartLine(selectedLine.id)}><Trash2 size={13} /></button>
+        {lineMenu?.id === selectedLine.id && lineMenu.kind === "style" && <div className="chart-line-menu">
+          <span>粗细</span><div className="chart-line-options">{[1, 2, 3, 4].map((width) => <button key={width} type="button" className={selectedLine.lineWidth === width ? "is-active" : ""} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, lineWidth: width }))}>{width}px</button>)}</div>
+          <span>线型</span><div className="chart-line-options"><button type="button" className={selectedLine.lineStyle === "solid" ? "is-active" : ""} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, lineStyle: "solid" }))}>实线</button><button type="button" className={selectedLine.lineStyle === "dashed" ? "is-active" : ""} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, lineStyle: "dashed" }))}>虚线</button></div>
+        </div>}
+        {lineMenu?.id === selectedLine.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={selectedLine.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`选择颜色 ${color}`} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, color }))} />)}</div></div>}
+      </div>}
+      {selectedPosition && selectedMetrics && <div className="position-tool-detail"><div><strong>{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</strong><span>入场 {formatPrice(selectedMetrics.entryPrice)}</span></div><div><span>止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span>止损 {formatPrice(selectedMetrics.stopPrice)}</span><span>RR {selectedMetrics.riskReward.toFixed(2)}</span></div><button type="button" aria-label="删除测量工具" onClick={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== selectedPosition.id) })); setSelectedId(null); }}><Trash2 size={13} /></button><button type="button" aria-label="关闭测量详情" onClick={() => setSelectedId(null)}><X size={13} /></button></div>}
     </div>
-    <div className="position-tool-list" aria-label="已保存的测量工具">{toolState.positions.map((position) => <ToolCard key={position.id} position={position} currentPrice={currentPrice} defaults={defaults} selected={position.id === selectedId} onSelect={() => setSelectedId(position.id)} onDelete={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== position.id) })); if (selectedId === position.id) setSelectedId(null); }} />)}</div>
-    {selectedPosition && selectedMetrics && <div className="position-tool-detail"><div><strong>{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</strong><span>入场 {formatPrice(selectedMetrics.entryPrice)}</span></div><div><span>止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span>止损 {formatPrice(selectedMetrics.stopPrice)}</span><span>RR {selectedMetrics.riskReward.toFixed(2)}</span></div><button type="button" aria-label="关闭测量详情" onClick={() => setSelectedId(null)}><X size={13} /></button></div>}
   </div>;
 }

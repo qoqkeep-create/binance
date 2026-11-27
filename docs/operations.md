@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 划线工具栏合并底框＋信息条仅选中＋选项居中＋一键清除 Web 发布（2026-11-27，北京时间）
+
+用户三件：① 看多/看空信息条只显示选中的（未选中不显示信息条与删除按钮）；② 多/空/横/竖四图标合并一个底框、竖线分隔；③ 底框最右浅红「一键清除所有划线工具」按钮，清除当前图面全部横线/竖线/测量条；且所有工具选中后选项条置于 K 线中央。实现：删除右上全量卡片列表（ToolCard 整链移除），测量信息条（stats chip）改仅选中渲染；选中测量详情条与画线编辑条统一移入主图 surface 并 left/top 50%＋translate(-50%,-50%) 居中（详情条补删除按钮）；工具栏四 trigger 收进 `.chart-tool-group` 单底框＋`.tool-sep` 竖分隔＋`.chart-tool-clear` 浅红清除钮（red 12% 底）；清除经 `clearSignal` 计数 prop 触发覆盖层清空 positions＋chartLines＋选中态。实测：底框 1px 边框/4 图标/4 分隔/trigger 无边框、清除钮红字 12% 红底；未选中 stats/list/detail/editor 全 0；测量选中详情 dx=dy=0 居中含删除钮、stats=1；画线选中编辑条 dx=dy=0 居中；一键清除后图面与两个存储键全 0；截图目检通过。Web release **`trade-web-20261127-toolgroup-cdae754`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `1ca5c88f…`／`426b45ea…`／`92ea542c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定组框/分隔/清除/居中/仅选中。后端不切换，旧 release 保留可回退。
+
 ## 轻量观测 healthlog 上线（2026-11-27，47.80.22.243 首尔服务器）
 
 应用户“轻量化观测最近一周／长期运行情况”要求，部署单文件 Python 标准库脚本 `deploy/integrated/observability/healthlog.py`（服务器位于 `/opt/trade-tools-integrated/observability/`，无第三方依赖，总占用约 160KB）。
