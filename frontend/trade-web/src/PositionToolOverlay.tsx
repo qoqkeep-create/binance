@@ -75,6 +75,23 @@ function readLocalChartLines(): ChartLine[] {
     return [];
   }
 }
+const LINE_DEFAULTS_KEY = "trade-web-chart-line-defaults";
+type LineDefaults = { color: string; lineWidth: number; lineStyle: ChartLineStyle };
+function readLineDefaults(): LineDefaults {
+  const fallback: LineDefaults = { color: LINE_COLORS[0], lineWidth: 1, lineStyle: "solid" };
+  try {
+    const raw = window.localStorage.getItem(LINE_DEFAULTS_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<LineDefaults>;
+    return {
+      color: typeof parsed.color === "string" && LINE_COLORS.includes(parsed.color) ? parsed.color : fallback.color,
+      lineWidth: [1, 2, 3, 4].includes(parsed.lineWidth as number) ? parsed.lineWidth as number : 1,
+      lineStyle: parsed.lineStyle === "dashed" ? "dashed" : "solid",
+    };
+  } catch { return fallback; }
+}
+function saveLineDefaults(next: LineDefaults) { try { window.localStorage.setItem(LINE_DEFAULTS_KEY, JSON.stringify(next)); } catch { /* keep session value */ } }
+
 function newId() { return `position-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 // 中线不得越过止盈/止损两条边线：距两边各 5% 区间边缘即锁死。
 function clampEntryToEdges(position: PositionTool, price: number): number {
@@ -101,10 +118,14 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   const [moveDrag, setMoveDrag] = useState<MoveDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
-  const [lineMenu, setLineMenu] = useState<{ id: string; kind: "style" | "color" } | null>(null);
+  const [lineMenu, setLineMenu] = useState<{ id: string; kind: "width" | "lineStyle" | "color" } | null>(null);
+  const [lineDefaults, setLineDefaults] = useState<LineDefaults>(readLineDefaults);
+  const [lineDrag, setLineDrag] = useState<{ id: string; orientation: ChartLineOrientation } | null>(null);
+  const lineDefaultsRef = useRef(lineDefaults);
+  lineDefaultsRef.current = lineDefaults;
   const surfaceRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef<{ draft: Draft | null; dragHandle: { id: string; handle: ResizeHandle } | null; moveDrag: MoveDrag | null; activeTool: PositionDirection | null; activeLineTool: ChartLineOrientation | null; readOnly: boolean; positions: PositionTool[] }>({ draft: null, dragHandle: null, moveDrag: null, activeTool: null, activeLineTool: null, readOnly: false, positions: [] });
-  liveRef.current = { draft, dragHandle, moveDrag, activeTool, activeLineTool, readOnly, positions: toolState.positions };
+  const liveRef = useRef<{ draft: Draft | null; dragHandle: { id: string; handle: ResizeHandle } | null; moveDrag: MoveDrag | null; lineDrag: { id: string; orientation: ChartLineOrientation } | null; activeTool: PositionDirection | null; activeLineTool: ChartLineOrientation | null; readOnly: boolean; positions: PositionTool[] }>({ draft: null, dragHandle: null, moveDrag: null, lineDrag: null, activeTool: null, activeLineTool: null, readOnly: false, positions: [] });
+  liveRef.current = { draft, dragHandle, moveDrag, lineDrag, activeTool, activeLineTool, readOnly, positions: toolState.positions };
   const defaults = toolState.defaults;
   const selectedPosition = toolState.positions.find((position) => position.id === selectedId) ?? null;
   const selectedMetrics = selectedPosition ? calculatePositionMetrics(selectedPosition, currentPrice, defaults) : null;
@@ -205,9 +226,10 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       if (!point) return;
       if (live.activeLineTool) {
         event.preventDefault();
+        const preset = lineDefaultsRef.current;
         const line: ChartLine = live.activeLineTool === "horizontal"
-          ? { id: newId(), orientation: "horizontal", price: point.p, color: LINE_COLORS[0], lineWidth: 1, lineStyle: "solid", createdAt: Date.now() }
-          : { id: newId(), orientation: "vertical", time: point.t, color: LINE_COLORS[0], lineWidth: 1, lineStyle: "solid", createdAt: Date.now() };
+          ? { id: newId(), orientation: "horizontal", price: point.p, color: preset.color, lineWidth: preset.lineWidth, lineStyle: preset.lineStyle, createdAt: Date.now() }
+          : { id: newId(), orientation: "vertical", time: point.t, color: preset.color, lineWidth: preset.lineWidth, lineStyle: preset.lineStyle, createdAt: Date.now() };
         setChartLines((current) => [...current.slice(-47), line]);
         setSelectedLineId(line.id);
         onActiveLineToolChange(null);
@@ -272,6 +294,12 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       });
       return;
     }
+    if (live.lineDrag) {
+      if (!point) return;
+      const drag = live.lineDrag;
+      setChartLines((lines) => lines.map((line) => line.id === drag.id ? (drag.orientation === "horizontal" ? { ...line, price: point.p } : { ...line, time: point.t }) : line));
+      return;
+    }
     if (live.moveDrag) {
       if (!point) return;
       const origin = live.moveDrag.origin;
@@ -291,6 +319,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   function handlePointerUp(event: { clientX: number; clientY: number }) {
     const live = liveRef.current;
     if (live.dragHandle) { setDragHandle(null); return; }
+    if (live.lineDrag) { setLineDrag(null); document.body.style.cursor = ""; return; }
     if (live.moveDrag) { setMoveDrag(null); return; }
     if (!live.draft) return;
     const point = dataPoint(event);
@@ -320,6 +349,10 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
   }
   function updatePosition(id: string, update: (position: PositionTool) => PositionTool) { setToolState((state) => ({ ...state, positions: state.positions.map((position) => position.id === id ? update(position) : position) })); }
   function updateChartLine(id: string, update: (line: ChartLine) => ChartLine) { setChartLines((lines) => lines.map((line) => line.id === id ? update(line) : line)); }
+  function changeLineStyle(id: string, patch: Partial<LineDefaults>) {
+    setChartLines((lines) => lines.map((line) => line.id === id ? { ...line, ...patch } : line));
+    setLineDefaults((current) => { const next = { ...current, ...patch }; saveLineDefaults(next); return next; });
+  }
   function deleteChartLine(id: string) {
     setChartLines((lines) => lines.filter((line) => line.id !== id));
     if (selectedLineId === id) setSelectedLineId(null);
@@ -347,7 +380,17 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         const lineStyle = line.orientation === "horizontal"
           ? { top: coordinate, borderTop: `${line.lineWidth}px ${line.lineStyle} ${line.color}` }
           : { left: coordinate, borderLeft: `${line.lineWidth}px ${line.lineStyle} ${line.color}` };
-        return <div key={line.id} className={`chart-line-tool ${line.orientation} ${selected ? "is-selected" : ""}`} style={lineStyle} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLineId(line.id); setSelectedId(null); }} />;
+        return <div key={line.id} className={`chart-line-tool ${line.orientation} ${selected ? "is-selected" : ""}`} style={lineStyle} onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setSelectedLineId(line.id);
+          setSelectedId(null);
+          if (readOnly) return;
+          const point = dataPoint(event);
+          if (!point) return;
+          setLineDrag({ id: line.id, orientation: line.orientation });
+          document.body.style.cursor = "grabbing";
+        }} />;
       })}
       {renderedPositions.map((position) => {
         const metrics = calculatePositionMetrics(position, currentPrice, defaults);
@@ -392,14 +435,17 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         </div>;
       })}
       {selectedLine && <div className="chart-line-editor chart-line-editor-center" onPointerDown={(event) => event.stopPropagation()}>
-        <button type="button" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "style" ? null : { id: selectedLine.id, kind: "style" })}>粗细/线型 <ChevronDown size={12} /></button>
-        <button type="button" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "color" ? null : { id: selectedLine.id, kind: "color" })}>颜色 <ChevronDown size={12} /></button>
+        <button type="button" aria-label="线条粗细" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "width" ? null : { id: selectedLine.id, kind: "width" })}><span className="pd-line-sample" style={{ borderTopWidth: `${selectedLine.lineWidth}px`, borderTopStyle: selectedLine.lineStyle === "dashed" ? "dashed" : "solid", borderTopColor: selectedLine.color }} />{selectedLine.lineWidth}px <ChevronDown size={12} /></button>
+        <button type="button" aria-label="线型实虚" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "lineStyle" ? null : { id: selectedLine.id, kind: "lineStyle" })}><span className="pd-line-sample" style={{ borderTopStyle: selectedLine.lineStyle === "dashed" ? "dashed" : "solid" }} /> <ChevronDown size={12} /></button>
+        <button type="button" aria-label="线条颜色" onClick={() => setLineMenu((current) => current?.id === selectedLine.id && current.kind === "color" ? null : { id: selectedLine.id, kind: "color" })}><span className="pd-color-swatch" style={{ background: selectedLine.color }} /> <ChevronDown size={12} /></button>
         <button type="button" className="chart-line-delete" aria-label="删除线条" onClick={() => deleteChartLine(selectedLine.id)}><Trash2 size={13} /></button>
-        {lineMenu?.id === selectedLine.id && lineMenu.kind === "style" && <div className="chart-line-menu">
-          <span>粗细</span><div className="chart-line-options">{[1, 2, 3, 4].map((width) => <button key={width} type="button" className={selectedLine.lineWidth === width ? "is-active" : ""} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, lineWidth: width }))}>{width}px</button>)}</div>
-          <span>线型</span><div className="chart-line-options"><button type="button" className={selectedLine.lineStyle === "solid" ? "is-active" : ""} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, lineStyle: "solid" }))}>实线</button><button type="button" className={selectedLine.lineStyle === "dashed" ? "is-active" : ""} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, lineStyle: "dashed" }))}>虚线</button></div>
+        {lineMenu?.id === selectedLine.id && lineMenu.kind === "width" && <div className="chart-line-menu">
+          <span>粗细</span><div className="chart-line-options">{[1, 2, 3, 4].map((width) => <button key={width} type="button" className={selectedLine.lineWidth === width ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineWidth: width })}><span className="pd-line-sample" style={{ borderTopWidth: `${width}px`, borderTopColor: selectedLine.color }} />{width}px</button>)}</div>
         </div>}
-        {lineMenu?.id === selectedLine.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={selectedLine.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`选择颜色 ${color}`} onClick={() => updateChartLine(selectedLine.id, (current) => ({ ...current, color }))} />)}</div></div>}
+        {lineMenu?.id === selectedLine.id && lineMenu.kind === "lineStyle" && <div className="chart-line-menu">
+          <span>线型</span><div className="chart-line-options"><button type="button" className={selectedLine.lineStyle === "solid" ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineStyle: "solid" })}><span className="pd-line-sample" />实线</button><button type="button" className={selectedLine.lineStyle === "dashed" ? "is-active" : ""} onClick={() => changeLineStyle(selectedLine.id, { lineStyle: "dashed" })}><span className="pd-line-sample is-dashed" />虚线</button></div>
+        </div>}
+        {lineMenu?.id === selectedLine.id && lineMenu.kind === "color" && <div className="chart-line-menu chart-line-color-menu"><span>颜色</span><div className="chart-line-options">{LINE_COLORS.map((color) => <button key={color} type="button" className={selectedLine.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`选择颜色 ${color}`} onClick={() => changeLineStyle(selectedLine.id, { color })} />)}</div></div>}
       </div>}
       {selectedPosition && selectedMetrics && <div className="chart-line-editor position-tool-detail"><span className="chart-line-editor-item is-title">{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</span><span className="chart-line-editor-item">入场 {formatPrice(selectedMetrics.entryPrice)}</span><span className="chart-line-editor-item">止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span className="chart-line-editor-item">止损 {formatPrice(selectedMetrics.stopPrice)}</span><span className="chart-line-editor-item">RR {selectedMetrics.riskReward.toFixed(2)}</span><button type="button" aria-label="删除测量工具" onClick={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== selectedPosition.id) })); setSelectedId(null); }}><Trash2 size={13} /></button></div>}
     </div>

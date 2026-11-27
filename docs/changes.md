@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：画线可拖动（pointer/grabbing 手形）、编辑条图例化（粗细px/实虚/色块）、设置持久化
+
+lineDrag 入 liveRef；chart-line-tool cursor:pointer＋:active grabbing；三按钮带线段图例与色块；changeLineStyle 写 trade-web-chart-line-defaults，新建继承。实测拖动/持久化/继承/截图全过。release linedrag-758819b 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：收起态持仓钮归位 K 线区右缘（与展开态同 x=右缘4px，状态栏钮删除）
 
 .positions-dock-closed 绝对定位 workspace 右下；实测两态 rightGap 均 4px。release dockalign-42322a8 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

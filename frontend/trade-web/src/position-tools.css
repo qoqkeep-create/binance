@@ -11,8 +11,8 @@
 @media(max-width:700px){.position-tool-stats{right:0;left:auto;min-width:0}.position-tool-detail{max-width:94%;flex-wrap:wrap;justify-content:center;white-space:normal}.position-tool-detail div{gap:5px}}
 .position-tool-trigger.guide-line.is-active { color:var(--accent-strong); border-color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,var(--bg-elevated)); }
 .chart-line-tool { position:absolute; z-index:3; pointer-events:auto; }
-.chart-line-tool.horizontal { left:0; right:0; height:0; cursor:ns-resize; }
-.chart-line-tool.vertical { top:0; bottom:0; width:0; cursor:ew-resize; }
+.chart-line-tool.horizontal { left:0; right:0; height:0; cursor:pointer; }
+.chart-line-tool.vertical { top:0; bottom:0; width:0; cursor:pointer; }
 .chart-line-tool.is-selected { filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)); }
 .chart-line-editor { position:absolute; z-index:8; display:flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--line-bright); border-radius:5px; background:var(--bg-elevated); box-shadow:0 8px 22px #0005; pointer-events:auto; white-space:nowrap; }
 .chart-line-editor > button { display:inline-flex; align-items:center; gap:3px; min-height:24px; padding:4px 6px; border:1px solid var(--line); border-radius:3px; color:var(--muted); background:transparent; font-size:9px; }
@@ -26,3 +26,4 @@
 .chart-line-color-menu { min-width:130px; }
 .chart-line-color-menu .chart-line-options button { min-width:24px; width:24px; padding:0; border-radius:50%; }
 .chart-line-axis-tag { position:absolute; right:0; transform:translateY(-50%); z-index:3; padding:2px 6px; border-radius:3px; font:11px var(--font-ui); font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap; }
+.chart-line-tool:active { cursor:grabbing; }.pd-line-sample { display:inline-block; width:18px; border-top:2px solid currentColor; vertical-align:middle; }.pd-line-sample.is-dashed { border-top-style:dashed; }.pd-color-swatch { display:inline-block; width:12px; height:12px; border-radius:3px; }

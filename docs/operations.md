@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 画线可拖动＋指针手形/抓握＋编辑条图例化＋设置持久化 Web 发布（2026-11-28，北京时间）
+
+用户两件：① 横线无法上下拖动；悬停要手形指针（非上下箭头），按下拖动要 grabbing 抓握形；② 粗细与颜色分开设置且直接显示（色块、线段图例＋几px、实/虚图例），并保存上次设置。实现：lineDrag 状态入 liveRef，线 onPointerDown 选中同时起拖（preventDefault 防 pan），move 按方向更新 price/time，up 清 body cursor；.chart-line-tool cursor:pointer＋:active grabbing（拖动中 body grabbing＝苹果闭手形）；编辑条三按钮＝粗细（当前色线段图例＋Npx）、线型（实/虚图例）、颜色（当前色块），菜单分别带图例；changeLineStyle 同步写 localStorage `trade-web-chart-line-defaults`，新建线继承（lineDefaultsRef 防闭包过期）。实测：拖动 price 61091.7→60375.3 下移✓、hover computed cursor=pointer、松手 body 复原；编辑条 labels 粗细/线型/颜色＋sample/swatch；改金色虚线后 stored 正确、删线重画自动继承；截图目检金色虚线与图例条在位。Web release **`trade-web-20261128-linedrag-758819b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `889743e4…`／`7e0a1ad2…`／`f5a0e764…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 收起态持仓钮归位 K 线区右缘（与展开态同 x）Web 发布（2026-11-28，北京时间）
 
 用户指正：收起时按钮错放在整窗口最右（状态栏），应与展开态一样贴 **K 线区域右缘**。修正：状态栏钮删除；收起态芯片改 `.positions-dock-closed` 绝对定位于 chart-workspace 右下（right:4px/bottom:4px，workspace 补 position:relative），与展开态 head 第 9 列芯片同一 x（两态距 K 线右缘均 4px 实测）；展开时收起钮消失。Web release **`trade-web-20261128-dockalign-42322a8`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `d6d21462…`／`30177e41…`／`8e08faf9…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
