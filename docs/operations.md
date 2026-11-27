@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## K 线下方持仓坞＋状态栏展开钮 Web 发布（2026-11-27，北京时间）
+
+用户要求：开仓持仓列表加到行情 K 线图下方，最下边缘条加向上展开钮；展开高度≈两个附图高，再点收回。实现：`main.chart-workspace` 内 K 线之下新增 `.positions-dock`（收起 height:0，展开 height:30%≈MACD+StochRSI 两附图，.18s 过渡）；内含持仓行（币种/多空芯片/金额/开仓/现价/浮盈亏绿红/止损），10s 轮询复用 loadCount 同时喂 dock；点击行切到该币 K 线；状态栏右端 `.statusbar-dock-toggle`（ChevronUp/ChevronDown＋"持仓"，aria-expanded）切换。实测：展开 dockH=211px（workspace 704 的 30%，与展开前两附图合计≈197px 同量级）、2 行信息齐全（RAYSOL 多 +12.50 绿／HAEDAL 空 −3.20 红）、再点 dockH=0；截图目检坞在图下。Web release **`trade-web-20261127-posdock-eed325a`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `b98da2d0…`／`ee058efe…`／`806dd130…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 账户止损/策略改行＋iOS 口径弹窗（交易模块复用）＋导航芯片降高 Web 发布（2026-11-27，北京时间）
 
 用户四件：① 账户止损只显「止损金额＋金额＋右箭头」，点击弹窗做完整设定（完全参考 iOS）；② 账户止盈策略行显当前启用策略＋右箭头，弹窗看已有策略，「新建」关闭弹窗并滚动到内联创建表单；③ 交易模块止损金额/止盈策略复用同两弹窗；④ 主导航选中绿芯片高度略降。实现：新增 `AccountDialogs.tsx`（StopLossDialog：50～300 滑杆＋大字金额盒＋"当前"芯片＋三条说明＋pending 倒计时横幅可取消＋完成横幅＋确定按钮未变化禁用，GET/POST /account/stop-loss 与 /cancel；StrategyDialog：列表启用/编辑/删除＋新建策略；AccountRow 通用行）；Pages 账户两 section 改行＋弹窗，内联编辑表单保留供新建/编辑滚动（id=account-strategy-editor）；TradePanel 风险盒/策略链改开弹窗（新建→onNavigate 滚动账户）；导航 padding 4→7px（芯片 48→41px）。实测：行「止损金额200 U」「止盈策略未启用」无弹窗外滑杆；弹窗标题/金额盒/3 说明/滑杆/确定齐全；250 保存→完成横幅＋行更新；策略新建→弹窗关＋编辑器入视口；交易模块两入口同弹窗；芯片 41px/顶栏 56px。Web release **`trade-web-20261127-acctdlg-449f478`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `d9b9bb9c…`／`4b5e8db4…`／`2eec5043…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。

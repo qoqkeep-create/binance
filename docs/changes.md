@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：K 线下方持仓坞（状态栏向上展开钮，展开≈两附图高，再点收回）
+
+.positions-dock 收起 0/展开 30%（≈MACD+StochRSI），行含币种/多空/金额/开/现/盈亏/损，10s 轮询，点击行切币；状态栏 ChevronUp/Down 切换。实测 211px 展开、2 行、收回 0、截图。release posdock-eed325a 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-27：账户止损/策略行＋iOS 口径弹窗（交易复用）、导航芯片降高
 
 AccountDialogs.tsx：StopLossDialog（滑杆/金额盒/当前芯片/三说明/pending 取消/完成横幅/确定禁用未变化）＋StrategyDialog（启用/编辑/删除/新建）＋AccountRow；账户两行开弹窗、新建滚动内联表单；TradePanel 复用；导航 padding 7px（芯片 41px）。实测全链路＋截图。release acctdlg-449f478 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

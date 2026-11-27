@@ -213,6 +213,9 @@ if (!klineCss.includes("font: 12px var(--font-ui);") || !klineCss.includes("font
 if (!styles.includes(".market-row.selected { background: color-mix(in srgb, var(--green) 26%, transparent)") || !styles.includes(".market-tabs button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
   throw new Error("Selected market row must be a full green bar; group tabs must use chip-strength selection");
 }
+if (!app.includes("positions-dock") || !app.includes("statusbar-dock-toggle") || !app.includes("ChevronUp") || !app.includes("setDockOpen") || !styles.includes(".positions-dock.is-open { height: 30%;")) {
+  throw new Error("Positions dock below chart toggled from statusbar, open height about two sub-panes");
+}
 if (!app.includes("navRef") || !app.includes("chartRect.left - nav.getBoundingClientRect().left")) {
   throw new Error("Main nav first item must align vertically with the chart left edge");
 }
