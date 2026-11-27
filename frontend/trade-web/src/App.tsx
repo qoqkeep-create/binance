@@ -4,7 +4,6 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   Bell,
-  ChevronUp,
   CircleHelp,
   Cpu,
   LayoutDashboard,
@@ -380,7 +379,7 @@ function TerminalApp() {
       {activeNav === "历史" && <div className="pg-scroll"><HistoryPage /></div>}
       {activeNav === "账户" && <div className="pg-scroll"><AccountPage focus={accountFocus} /></div>}
       {(activeNav === "信号" || activeNav === "引擎") && <section className="empty-state"><div className="empty-orbit"><Cpu size={34} /></div><h1>{activeNav}模块即将上线</h1><p>核心数据层已连接 Binance Futures。切换回行情查看实时盘面。</p><button onClick={() => setActiveNav("行情")}><LayoutDashboard size={15} /> 返回行情</button></section>}
-      <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span>{!dockOpen && <button type="button" className="statusbar-dock-toggle" aria-expanded={false} aria-label="展开持仓列表" onClick={() => setDockOpen(true)}><ChevronUp size={13} /> 持仓</button>}<span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
+      <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span><span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
     </div>
   );
 }

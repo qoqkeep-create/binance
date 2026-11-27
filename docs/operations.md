@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 收起态持仓钮归位 K 线区右缘（与展开态同 x）Web 发布（2026-11-28，北京时间）
+
+用户指正：收起时按钮错放在整窗口最右（状态栏），应与展开态一样贴 **K 线区域右缘**。修正：状态栏钮删除；收起态芯片改 `.positions-dock-closed` 绝对定位于 chart-workspace 右下（right:4px/bottom:4px，workspace 补 position:relative），与展开态 head 第 9 列芯片同一 x（两态距 K 线右缘均 4px 实测）；展开时收起钮消失。Web release **`trade-web-20261128-dockalign-42322a8`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `d6d21462…`／`30177e41…`／`8e08faf9…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 清除全部按钮改用「自动清理」SVG 图标 Web 发布（2026-11-28，北京时间）
 
 用户提供 ~/Downloads/自动清理.svg 替换工具栏清除钮图标，颜色沿用现版钮色。实现：KlineChart 内联 svg（viewBox 0 0 1024 1024、16px、path fill=**currentColor**——原文件硬编码 #000000 已改，随 .chart-tool-clear 的 var(--muted) 与 hover var(--text)），移除 lucide Brush 导入。实测：svg 在位、fill currentColor、钮色 rgb(161,165,174) 与其他图标一致、Brush 已去除；截图目检新图标居工具组右端。Web release **`trade-web-20261128-clearicon-14edca2`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `9eb021b5…`／`db92b229…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 viewBox。后端不切换，旧 release 保留可回退。

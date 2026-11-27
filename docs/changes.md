@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：收起态持仓钮归位 K 线区右缘（与展开态同 x=右缘4px，状态栏钮删除）
+
+.positions-dock-closed 绝对定位 workspace 右下；实测两态 rightGap 均 4px。release dockalign-42322a8 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-28：清除全部按钮改用「自动清理」SVG（fill=currentColor 随钮色，替换 Brush）
 
 viewBox 1024、16px；实测 currentColor/钮色一致/Brush 移除/截图目检。release clearicon-14edca2 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
