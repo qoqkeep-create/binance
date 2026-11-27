@@ -213,6 +213,10 @@ if (!klineCss.includes("font: 12px var(--font-ui);") || !klineCss.includes("font
 if (!styles.includes(".market-row.selected { background: color-mix(in srgb, var(--green) 26%, transparent)") || !styles.includes(".market-tabs button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
   throw new Error("Selected market row must be a full green bar; group tabs must use chip-strength selection");
 }
+const realtimeSrc = readFileSync(fileURLToPath(new URL("../src/lib/realtime.ts", import.meta.url)), "utf8");
+if (!realtimeSrc.includes("sendSubscribe(socket)") || !realtimeSrc.includes("socket.readyState === WebSocket.OPEN") || !realtimeSrc.includes('sub.symbol !== "*" && sub.symbol !== symbol') || !app.includes('symbol: "*"') || !app.includes("tickerSymbolsRef") || !app.includes("(mark - entry) / entry * notional * (long ? 1 : -1)")) {
+  throw new Error("Subscription changes must reuse the live socket; dock pnl computed from WS mark price");
+}
 if (!app.includes("positions-dock") || !app.includes("statusbar-dock-toggle") || !app.includes("ChevronUp") || !app.includes("setDockOpen") || !styles.includes(".positions-dock.is-open { height: 30%;")) {
   throw new Error("Positions dock below chart toggled from statusbar, open height about two sub-panes");
 }
@@ -223,7 +227,7 @@ if (!styles.includes(".main-nav .nav-item { flex: 1; justify-content: center; }"
   throw new Error("Nav items must stay stretched long (half-width clamp), not shrink to natural width");
 }
 const realtime = readFileSync(fileURLToPath(new URL("../src/lib/realtime.ts", import.meta.url)), "utf8");
-if (!realtime.includes("sub.tickerSymbols?.length ? sub.tickerSymbols.includes(symbol) : sub.symbol === symbol") || !app.includes("pendingTickersRef")) {
+if (!realtime.includes("typeof sub.tickerSymbols === \"function\" ? sub.tickerSymbols() : sub.tickerSymbols") || !app.includes("pendingTickersRef")) {
   throw new Error("Left market list must refresh continuously from the shared WS ticker fanout, throttled");
 }
 if (!styles.includes(".main-nav { align-self: stretch; display: flex; align-items: stretch; gap: 4px; padding: 7px 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {

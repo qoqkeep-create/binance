@@ -5,7 +5,7 @@ import type { StreamEvent } from "./binance.js";
 export interface RealtimeSubscription {
   symbol: string;
   interval: string;
-  tickerSymbols?: readonly string[];
+  tickerSymbols?: readonly string[] | (() => readonly string[]);
   handler: (event: StreamEvent) => void;
 }
 
@@ -29,16 +29,36 @@ class MarketRealtime {
 
   subscribe(sub: RealtimeSubscription): () => void {
     this.subs.add(sub);
-    this.scheduleRestart();
+    this.scheduleSync();
     return () => {
       this.subs.delete(sub);
-      this.scheduleRestart();
+      this.scheduleSync();
     };
   }
 
-  private scheduleRestart() {
+  // 订阅集合变化只在活连接上重发 subscribe 帧（后端按通道替换 filters），
+  // 不再整条重连——重连会造成行情断档（用户报"断断续续经常断开"的根因）。
+  private scheduleSync() {
     if (this.restartTimer) clearTimeout(this.restartTimer);
-    this.restartTimer = setTimeout(() => void this.connect(), 120);
+    this.restartTimer = setTimeout(() => {
+      if (!this.subs.size) { this.teardown(); return; }
+      const socket = this.socket;
+      if (socket && socket.readyState === WebSocket.OPEN) this.sendSubscribe(socket);
+      else void this.connect();
+    }, 120);
+  }
+
+  private sendSubscribe(socket: WebSocket) {
+    const klineSymbols = [...new Set([...this.subs].map((s) => s.symbol))];
+    // ticker 用空 symbols＝后端通配单 topic 收全量；kline 订阅 1m 实时 feed，
+    // 大周期由客户端聚合到对应桶（后端仅推 1m 实时 K 线）。
+    socket.send(JSON.stringify({
+      version: 1, type: "subscribe", requestId: `web-${++this.requestId}`,
+      subscriptions: [
+        { channel: "market.ticker", filters: { symbols: [], intervals: [] } },
+        { channel: "market.kline", filters: { symbols: klineSymbols, intervals: ["1m"] } },
+      ],
+    }));
   }
 
   private teardown() {
@@ -67,17 +87,7 @@ class MarketRealtime {
     socket.onopen = () => {
       if (generation !== this.generation) return;
       this.backoff = 1000;
-      const kline = [...this.subs].map((s) => ({ symbol: s.symbol }));
-      const klineSymbols = [...new Set(kline.map((k) => k.symbol))];
-      // ticker 用空 symbols＝后端通配单 topic 收全量；kline 订阅 1m 实时 feed，
-      // 大周期由客户端聚合到对应桶（后端仅推 1m 实时 K 线）。
-      socket.send(JSON.stringify({
-        version: 1, type: "subscribe", requestId: `web-${++this.requestId}`,
-        subscriptions: [
-          { channel: "market.ticker", filters: { symbols: [], intervals: [] } },
-          { channel: "market.kline", filters: { symbols: klineSymbols, intervals: ["1m"] } },
-        ],
-      }));
+      this.sendSubscribe(socket);
       this.pingTimer = window.setInterval(() => {
         socket.send(JSON.stringify({ version: 1, type: "ping", requestId: `ping-${++this.requestId}`, timestamp: Date.now() }));
       }, 2000);
@@ -103,12 +113,13 @@ class MarketRealtime {
           const price = Number(data.lastPrice);
           const change = Number(data.priceChangePercent24h);
           for (const sub of this.subs) {
-            const wanted = sub.tickerSymbols?.length ? sub.tickerSymbols.includes(symbol) : sub.symbol === symbol;
+            const filter = typeof sub.tickerSymbols === "function" ? sub.tickerSymbols() : sub.tickerSymbols;
+            const wanted = filter?.length ? filter.includes(symbol) : sub.symbol === symbol || sub.symbol === "*";
             if (wanted) sub.handler({ type: "ticker", symbol, price, changePercent: change, eventTime: Number(data.eventTime) });
           }
         } else if (envelope.channel === "market.kline") {
           for (const sub of this.subs) {
-            if (sub.symbol !== symbol) continue;
+            if (sub.symbol !== "*" && sub.symbol !== symbol) continue;
             sub.handler({
               type: "kline", symbol,
               candle: {

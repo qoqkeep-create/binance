@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 实时层去重连断档＋展示层盈亏全 WS 化（iOS 口径）Web 发布（2026-11-28，北京时间）
+
+用户报：K 线区当前价刷新与左列表不同频、断断续续经常断；建议展示层（K 线盈亏、持仓坞价格）全用 WS 而非 10s REST。根因：`realtime.subscribe()` 每次订阅集合变化（切币/切周期/列表刷新触发 App 重订阅）都 **teardown+整条重连**→行情断档；左列表有 500ms 聚合缓存看不出断，K 线尾根直接停跳。修：① 订阅变化改为**活连接上重发 subscribe 帧**（后端按通道替换 filters，websocket.py:202），仅无活连接时才 connect；② App 订阅只随登录建立一次（symbol:"*" 通配 kline＋tickerSymbols 走 ref 动态列表），列表/切币不再重订阅；③ 持仓坞盈亏/现价改由 **WS mark 价实时推算** `(mark−entry)/entry×名义×方向`（REST 10s 轮询仅保留持仓存在性/止损位）。假 WS 实证：两次订阅 opens 恒 1、closes 0、subscribe 帧 1→2（不重连）。K 线尾根/持仓线盈亏本就 WS 驱动，断档消除后与左列表同频。Web release **`trade-web-20261128-wslive-d58775e`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `b954964a…`／`21b5ad6f…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## web 补「止损含手续费」开关（默认不含，对齐 iOS；用户批准）Web 发布（2026-11-28，北京时间）
 
 用户报：web 两笔订单止损金额均小于预设。定位：iOS `includeFee=false` 默认＋「止损含手续费」开关（仓位=止损额÷(距离比+含?0.001:0)）；web 硬编码 `include_fee:true` 且预览固定加 0.001→含手续费分摊使触止损**价格亏损**=预设×距离比/(距离比+0.001)<预设（例 200U/2%→190.48U）；后端 trading/views.py:2213 同公式。经 AskUserQuestion 批准「加开关默认不含」后实现：TradePanel 增 includeFee state（localStorage `integrated.chart.order-settings.include-fee` 默认 false）、开仓设置面板「止损含手续费」勾选、预览与 payload 均按开关、确认文案注明含/不含。实测：默认关 250U/2.01%→12,441.73U；开→11,851.90U；存储 true 持久化。Web release **`trade-web-20261127-inclfee-6a7d75c`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `f189d09f…`／`f7114618…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定开关默认与公式。后端不切换，旧 release 保留可回退。**注意：已开的两笔含手续费旧单不受影响，新单默认不含。**

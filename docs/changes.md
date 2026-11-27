@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：实时层订阅变化不重连（修断续断档）、持仓坞盈亏 WS 实时推算
+
+根因：subscribe 集合变化整条重连→断档。改活连接重发 subscribe 帧；App 订阅仅随登录一次（通配 kline＋ref ticker 列表）；坞盈亏=(WS mark−entry)/entry×名义×方向。假 WS 实证 opens 恒 1/closes 0。release wslive-d58775e 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-28：web 补「止损含手续费」开关（默认不含对齐 iOS，用户批准）
 
 根因：web 硬编码 include_fee:true（iOS 默认 false 带开关）→含手续费分摊使触止损价格亏损<预设。TradePanel 加开关（localStorage 持久化默认 false）、预览/payload/确认文案随开关。实测 250U/2.01%：关 12441.73U／开 11851.90U。release inclfee-6a7d75c 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。旧含手续费单不受影响。

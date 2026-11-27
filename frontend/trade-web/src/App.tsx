@@ -96,7 +96,11 @@ function TerminalApp() {
   const [accountFocus, setAccountFocus] = useState<{ kind: "stop-loss" | "strategy"; at: number } | null>(null);
   const [stopPriceRequest, setStopPriceRequest] = useState<{ value: string; at: number } | null>(null);
   const pendingTickersRef = useRef(new Map<string, { price: number; change: number }>());
+  const tickerSymbolsRef = useRef<readonly string[]>([]);
+  const selectedSymbolRef = useRef(selectedSymbol);
   const tickerSymbolsKey = useMemo(() => markets.all.map((row) => row.symbol).join(","), [markets.all]);
+  useEffect(() => { tickerSymbolsRef.current = tickerSymbolsKey ? tickerSymbolsKey.split(",") : []; }, [tickerSymbolsKey]);
+  useEffect(() => { selectedSymbolRef.current = selectedSymbol; }, [selectedSymbol]);
   const navRef = useRef<HTMLElement | null>(null);
   const [structuresContainer, setStructuresContainer] = useState<HTMLElement | null>(null);
   const assistantOpener = useRef<HTMLElement | null>(null);
@@ -202,8 +206,9 @@ function TerminalApp() {
       return;
     }
     setConnection("connecting");
-    const symbols = tickerSymbolsKey ? tickerSymbolsKey.split(",") : [selectedSymbol];
-    const unsubscribe = marketRealtime.subscribe({ symbol: selectedSymbol, interval: "15m", tickerSymbols: symbols, handler: (event: StreamEvent) => {
+    // 订阅只随登录建立一次：ticker 过滤走 ref 动态列表、kline 用通配，
+    // 列表/切币变化不再触发重订阅（活连接重发订阅帧，无断档）。
+    const unsubscribe = marketRealtime.subscribe({ symbol: "*", interval: "15m", tickerSymbols: () => (tickerSymbolsRef.current.length ? tickerSymbolsRef.current : [selectedSymbolRef.current]), handler: (event: StreamEvent) => {
       if (event.type === "disconnected" || event.type === "error") { setConnection("disconnected"); setLatency(null); setTickerOk(false); setKlineOk(false); }
       if (event.type === "latency") { setLatency(event.ms); setConnection("live"); }
       if (event.type === "kline") setKlineOk(true);
@@ -228,7 +233,7 @@ function TerminalApp() {
       });
     }, 500);
     return () => { window.clearInterval(flush); unsubscribe(); };
-  }, [selectedSymbol, user, tickerSymbolsKey]);
+  }, [user]);
 
   // 主导航首项与 K 线区左缘竖直对齐：按实测差值补 margin，随布局变化重算。
   useLayoutEffect(() => {
@@ -319,8 +324,11 @@ function TerminalApp() {
                 {dockPositions.length === 0 && <p className="positions-dock-empty">暂无持仓</p>}
                 {dockPositions.map((row) => {
                   const long = isLongSide(row.side);
-                  const pnl = Number(row.pnl);
                   const mark = priceMap[row.symbol] ?? Number(row.current_price);
+                  const entry = Number(row.open_price);
+                  const notional = Number(row.position_amount);
+                  // 展示层盈亏用 WS 实时价推算（iOS 口径），不等 10s REST 轮询。
+                  const pnl = entry > 0 && Number.isFinite(mark) ? (mark - entry) / entry * notional * (long ? 1 : -1) : Number(row.pnl);
                   return <button key={row.id} type="button" className="positions-dock-row" onClick={() => setSelectedSymbol(row.symbol)} aria-label={`查看 ${row.symbol} K线`}>
                     <span className="pd-symbol">{row.symbol.replace(/USDT$/, "")}</span>
                     <span className={`pd-side ${long ? "long" : "short"}`}>{long ? "多" : "空"}</span>
