@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓抽屉固定预留 4 行＋按钮/操作贴右缘（弹性列窄屏自适应）Web 发布（2026-11-28，北京时间）
+
+用户两件：① 列表不管几笔都**预留 4 行空间**（原 max-height 随内容缩→改固定 height:176px）；② 顶栏芯片与行内「止盈/平仓」按钮**贴右边缘**。根因补充：行原 min-width:1020 固定列在窄屏横滚→按钮被推出可视右缘（实测偏差 -601px）；改弹性 fr 列（min-width:0）＋≤900px 隐藏保证金/市价止盈两列＋操作列 minmax(150px,1.7fr) 防按钮溢出压列；行/顶栏 padding-right 4px。实测（720px 窄屏）：1 笔时 listH=176（4 行预留）、无横滚、芯片与操作右缘距=4px、止损列与按钮无重叠。Web release **`trade-web-20261128-dockfit-99f6b04`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `6680d983…`／`ec6526ba…`／`a4f6674c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 持仓抽屉顶栏右芯片按钮＋列表限高 4 行 Web 发布（2026-11-28，北京时间）
 
 用户终案：按钮统一放**抽屉顶栏右侧**（带描边＋底色芯片），收起时顶栏即 K 线下边条、按钮居其右缘；展开时列表在顶栏下方、**最多 4 行高**超出内滚（隐藏滚动条）；状态栏旧居中按钮移除。实现：PositionsDock 顶栏 `.positions-dock-bar`（26px、justify-end）常显，toggle 芯片 1px line-bright 描边＋panel-hover 底；body＝表头＋list（max-height:176px＝4×44px 行高）；App 删 statusbar toggle 与 wsH/ResizeObserver。实测：按钮距 workspace 右<20px、描边 1px/底 rgb(32,34,37)、状态栏无旧钮；6 行替身下 listH=176、可见 4 行、scrollable=true。Web release **`trade-web-20261128-dockhead-c0df2f9`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `dc5ad503…`／`ec6526ba…`／`373b3b93…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
