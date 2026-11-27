@@ -18,6 +18,7 @@
 | [变更与验收](changes.md) | 有日期和范围的实际结果 |
 | [TestFlight](testflight.md) | 签名、隐私清单、上传和手机安装 |
 | [行情与图表](market-data.md) | 采集、分页、推送、Metal、加载诊断与排障 |
+| [iOS K 线实时链路重构设计](plans/2026-11-28-ios-kline-realtime-architecture.md) | iOS K 线分流、实时状态存储、增量指标和帧调度设计 |
 | [K 线首屏交接原稿](plans/2026-11-01-ios-kline-first-frame-handoff.md) | 保留用户原始材料；执行结果已归入行情、开发、运维与变更主文档 |
 | [交易安全](trading-safety.md) | 幂等、保护、结算和测试边界 |
 | [资金](capital-and-transfers.md) | 归集状态机、历史归属与保证金率 |

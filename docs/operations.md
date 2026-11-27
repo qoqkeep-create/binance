@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## K 线 live 发布分块优化（2026-11-28，北京时间）
+
+针对选中交易对在全市场 live 发布批次中等待过久的问题，提交 **`87da79d`** 已部署到 **47.80.22.243（首尔服务器）** 的 **`integrated-quick-87da79d`**。市场采集器现在把 live K 线 Redis 发布拆成每批 32 条，减少单次 Redis pipeline 对选中交易对的阻塞。四个应用容器 healthy，health 三项通过。Web 静态资源沿用上一版 `trade-web-20261128-realtime-cf8756b`，没有重新切换静态产物。
+
 ## iOS sequence 兼容修复发布（2026-11-28，北京时间）
 
 针对首轮实时分流发布后发现的 iOS ingress 兼容风险，完整提交 **`cf8756b`** 已部署到 **47.80.22.243（首尔服务器）**。后端 release 为 **`integrated-quick-cf8756b`**，四个应用容器 healthy，health 三项通过。K 线保留旧的全局 `sequence`，closed 事件额外增加 `closedSequence`，旧 iOS 客户端继续按原序列处理。

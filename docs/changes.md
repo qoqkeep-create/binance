@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：K 线 live Redis 发布分块上线
+
+提交 `87da79d` 已发布到 47.80.22.243（首尔服务器）的 `integrated-quick-87da79d`。live K 线发布拆成每批 32 条，降低全市场 1m 事件批次对选中交易对的等待。Web 静态资源沿用 `trade-web-20261128-realtime-cf8756b`，health 三项通过。
+
 ## 2026-11-28：iOS K 线 sequence 兼容修复上线
 
 首轮 Web 实时分流发布后发现 iOS ingress 依赖全局连续 sequence。提交 `cf8756b` 已发布到 47.80.22.243（首尔服务器）的 `integrated-quick-cf8756b`，恢复全局 K 线 sequence 并增加 `closedSequence` 给 Web 缺口恢复使用。Web 静态 release `trade-web-20261128-realtime-cf8756b` 已切换，IP 与 `ba.wow211.com` 双入口资源一致，health 三项通过。
