@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：测量工具跨周期三底层缺陷修复（快照闭包/重绘键/整数网格）
+
+切高周期消失＋切回不可拖的根因：监听闭包捕获 data() 快照（改 timeGrid 实时读）、rAF 键缺数据身份（加 length＋首末时间）、logicalToCoordinate 非整数返回 0（timeToX Math.round 到最近根）。实测 1H 下 left=286/width=30、切回可选中可拖。契约测试锁定。release intgrid-7e5d9f1 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。遗留债备案：全局存储跨币种、价格轴 rAF 轮询。
+
 ## 2026-11-27：测量工具可移入右侧空白区、中线距边线5%锁死
 
 根因：库 coordinateToTime/timeToIndex 只认有数据的根（空白返回 null／钳末根），拖不进空白。改按周期等差外推 coordinateToLogical↔logicalToCoordinate；clampEntryToEdges 把中线限制在两边线内缩 5% 区间（entryY/leftFree 共用）。实测右柄入空白超末根 26 根、中线精确停上限、整体平移同步。契约测试锁定。release whitesp-d51c50b 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。

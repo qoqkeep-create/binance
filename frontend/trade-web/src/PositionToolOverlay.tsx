@@ -110,21 +110,33 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
 
   const candleSeries: ISeriesApi<"Candlestick"> | undefined = api?.panes()[0]?.getSeries().find((s): s is ISeriesApi<"Candlestick"> => s.seriesType() === "Candlestick");
   const timeScale = api?.timeScale();
-  const candleData = candleSeries?.data() ?? [];
-  const lastDataIndex = candleData.length ? candleData.length - 1 : 0;
-  const lastDataTime = candleData.length ? Number(candleData[candleData.length - 1].time) : 0;
-  const dataInterval = candleData.length > 1 ? Number(candleData[1].time) - Number(candleData[0].time) : 60;
-  // 右侧空白区同属 K 线显示区：coordinateToTime/timeToIndex 只认有数据的根（空白返回 null／钳到末根），
-  // 测量区便拖不进空白；按周期等差外推逻辑坐标，空白区可绘制可移动。
+  // 换算必须每次调用实时读 data()：指针监听只注册一次，捕获旧快照会在切周期后
+  // 用错末根时间/周期差（中间区命中失效、拖不动、工具飞出屏幕）。
+  const timeGrid = () => {
+    const data = candleSeries?.data() ?? [];
+    if (!data.length) return null;
+    const lastIdx = data.length - 1;
+    const lastTime = Number(data[lastIdx].time);
+    const interval = data.length > 1 ? Number(data[1].time) - Number(data[0].time) : 60;
+    return { lastIdx, lastTime, interval };
+  };
+  // 右侧空白区同属 K 线显示区：库 coordinateToTime/timeToIndex 只认有数据的根，
+  // 按周期等差外推逻辑坐标，空白区可绘制可移动。
   const xToTime = (x: number): number | null => {
-    const logical = timeScale?.coordinateToLogical(x);
-    if (logical === null || logical === undefined || !candleData.length) return null;
-    return lastDataTime + (Math.round(logical) - lastDataIndex) * dataInterval;
+    const grid = timeGrid();
+    if (!grid || !timeScale) return null;
+    const logical = timeScale.coordinateToLogical(x);
+    if (logical === null || logical === undefined) return null;
+    return grid.lastTime + (Math.round(logical) - grid.lastIdx) * grid.interval;
   };
   const yToPrice = (y: number): number | null => candleSeries?.coordinateToPrice(y) ?? null;
   const timeToX = (t: number): number | null => {
-    if (!candleData.length || !timeScale) return null;
-    return timeScale.logicalToCoordinate((lastDataIndex + (t - lastDataTime) / dataInterval) as unknown as Logical);
+    const grid = timeGrid();
+    if (!grid || !timeScale) return null;
+    // logicalToCoordinate 对非整数逻辑坐标返回 0：低周期工具切到高周期时时间不落网格，
+    // 必须取整到最近根（与 xToTime 的 round 对称），否则 x 被打成 0＝贴左缘细条。
+    const logical = Math.round(grid.lastIdx + (t - grid.lastTime) / grid.interval);
+    return timeScale.logicalToCoordinate(logical as unknown as Logical);
   };
   const priceToY = (p: number): number | null => candleSeries?.priceToCoordinate(p) ?? null;
 
@@ -136,7 +148,10 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     const sync = () => {
       const vr = api.timeScale().getVisibleLogicalRange();
       const pr = candleSeries.priceScale().getVisibleRange();
-      const key = `${vr?.from},${vr?.to},${pr?.from},${pr?.to}`;
+      const data = candleSeries.data();
+      const last = data.length ? Number(data[data.length - 1].time) : 0;
+      const first = data.length ? Number(data[0].time) : 0;
+      const key = `${vr?.from},${vr?.to},${pr?.from},${pr?.to},${data.length},${first},${last}`;
       if (key !== lastKey) { lastKey = key; setViewTick((tick) => tick + 1); }
       raf = requestAnimationFrame(sync);
     };

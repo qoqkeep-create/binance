@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 测量工具跨周期架构修复（实时网格换算＋数据身份重绘键＋整数网格取整）Web 发布（2026-11-27，北京时间）
+
+用户报：低周期切高周期后做多/做空工具消失；切回后中间区无法选中/拖动（仅边条可点）；要求从底层重审架构。三个真实缺陷：① **挂载期闭包捕获数据快照**——window 指针监听只注册一次，换算函数捕获当次 `candleSeries.data()` 数组，切周期后仍用旧"末根时间/周期差"→命中测试/拖拽坐标全错（中间区点不中、拖不动）；改 `timeGrid()` 每次调用实时读 `data()`，监听闭包不再可能过期。② **重绘触发键不含数据身份**——rAF 同步环只比对逻辑范围＋价格范围，切周期后两值常不变→覆盖层不重渲染→旧网格换算把工具甩出屏幕；键加入 `data.length＋首末时间`。③ **`logicalToCoordinate` 对非整数逻辑坐标返回 0**——15m 工具时间不落 1h 网格，x 被打成 0＝贴左缘 8px 细条（＝"消失"）；timeToX 改 `Math.round` 到最近根（与 xToTime 的 round 对称，网格语义一致）。实测：15M→1H 工具 left=286/width=30（4 根）位置正确；切回 15M 中间区点击即选中（4 柄）、右柄拖动 dEnd=+7200s；空白区行为不回退。Web release **`trade-web-20261127-intgrid-7e5d9f1`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `27bdd226…`／`3dfef1b8…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 timeGrid/Math.round(grid.lastIdx。后端不切换，旧 release 保留可回退。**遗留架构债（已备案未动）**：工具存储为全局（跨币种共享时间锚点，属产品现状）；价格轴无订阅 API 仍靠 rAF 轮询。
+
 ## 测量工具可移入右侧空白区＋中线距边线5%锁死 Web 发布（2026-11-27，北京时间）
 
 用户问：右侧空白区也是 K 线显示区，为何做多/做空区域拖不进去？并要求中线拖动不得越过止盈/止损两条边线（距两边各约 5% 即锁死）。底层根因：覆盖层时间↔像素换算用库的 `coordinateToTime/timeToIndex`，二者**只认有数据的根**——空白区 coordinateToTime 返回 null（拖拽/落点判定直接失效）、timeToIndex(findNearest) 把超末根时间钳回最后一根（渲染无法越过末根）。改按周期等差外推：`xToTime＝末根时间＋(round(coordinateToLogical)－末根序号)×周期`，`timeToX＝logicalToCoordinate(末根序号＋(t－末根时间)/周期)`，空白区可绘制、可拖入、可渲染。中线夹持：`clampEntryToEdges` 将 entryPrice 限制在 [min(边)+5%span, max(边)−5%span]，entryY 与 leftFree 共用。实测：右柄拖 +200px 入空白 endTime 超末根 26 根；中线猛拖精确停在 target−5%span（1.338522＝上限）；整体平移两端同步 +34 根；空白绘制不再被 null 拦截。Web release **`trade-web-20261127-whitesp-d51c50b`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `246587d7…`／`6b860fed…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 coordinateToLogical/logicalToCoordinate/clampEntryToEdges。后端不切换，旧 release 保留可回退。
