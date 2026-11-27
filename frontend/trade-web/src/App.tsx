@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  ArrowLeftRight,
   ArrowUpRight,
   Bell,
   ChevronUp,
@@ -93,7 +94,7 @@ function TerminalApp() {
   const [tickerOk, setTickerOk] = useState(false);
   const [klineOk, setKlineOk] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
-  const [insightMode, setInsightMode] = useState<"trade" | "pulse">("trade");
+  const [insightMode, setInsightMode] = useState<"trade" | "pulse">("pulse");
   const [accountFocus, setAccountFocus] = useState<{ kind: "stop-loss" | "strategy"; at: number } | null>(null);
   const [stopPriceRequest, setStopPriceRequest] = useState<{ value: string; at: number } | null>(null);
   const pendingTickersRef = useRef(new Map<string, { price: number; change: number }>());
@@ -335,8 +336,8 @@ function TerminalApp() {
         {panelVisible && <aside className="insight-panel" ref={setStructuresContainer} aria-label={showAssistant ? undefined : "盘面面板"} aria-labelledby={showAssistant ? "assistant-structures-title" : undefined}>
           <div hidden={showAssistant}>
           <div className="pulse-mode-toggle" role="group" aria-label="面板模式">
-            <button type="button" className={insightMode === "trade" ? "active" : ""} aria-pressed={insightMode === "trade"} onClick={() => { setInsightMode("trade"); setShowAssistant(false); }}>交易</button>
-            <button type="button" className={insightMode === "pulse" ? "active" : ""} aria-pressed={insightMode === "pulse"} onClick={() => { setInsightMode("pulse"); setShowAssistant(false); }}>盘面</button>
+            <button type="button" className={insightMode === "pulse" ? "active" : ""} aria-pressed={insightMode === "pulse"} onClick={() => { setInsightMode("pulse"); setShowAssistant(false); }}><LayoutDashboard size={13} aria-hidden="true" />盘面</button>
+            <button type="button" className={insightMode === "trade" ? "active" : ""} aria-pressed={insightMode === "trade"} onClick={() => { setInsightMode("trade"); setShowAssistant(false); }}><ArrowLeftRight size={13} aria-hidden="true" />交易</button>
           </div>
           <div hidden={insightMode !== "trade"}><TradePanel symbol={selectedSymbol} price={selectedPrice} visible={insightMode === "trade" && activeNav === "行情"} stopPriceRequest={stopPriceRequest} onNavigate={(kind) => { setAccountFocus({ kind, at: Date.now() }); setActiveNav("账户"); }} /></div>
           <div hidden={insightMode !== "pulse"}>

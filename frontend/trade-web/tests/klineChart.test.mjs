@@ -97,11 +97,14 @@ const klineCss = readFileSync(fileURLToPath(new URL("../src/kline-chart.css", im
 if (!styles.includes(".timeframe.active::after") || styles.includes(".timeframe.active { font-weight: 600; background: #2DBD85")) {
   throw new Error("Timeframe selection must use a green short underline + bold text, not the solid nav chip");
 }
-if (!klineCss.includes(".view-mode button.active { color: var(--green)")) {
-  throw new Error("Auto/manual view-mode selection must be green");
+if (!klineCss.includes(".view-mode.active { color: var(--green)") || !klineCss.includes(".view-mode.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
+  throw new Error("The single 自动 toggle must show the rounded green chip when auto is on");
 }
-if (!klineCss.includes(".view-mode button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
-  throw new Error("Auto/manual selection must show a rounded rectangle chip, not just text color");
+{
+  const autoBtn = source.match(/className=\{`view-mode \$\{viewMode === "auto" \? "active" : ""\}`\}/);
+  if (!autoBtn || source.includes(">手动</button>") || !source.includes('aria-pressed={viewMode === "auto"}')) {
+    throw new Error("缩放模式 must be one 自动 button: pressed = auto, unpressed = manual, no separate 手动 button");
+  }
 }
 if (source.includes("createPortal(") || source.includes(">重置</button>") || !source.includes('vertTouchDrag: mode === "manual"') || !source.includes("</button>\n          {insightToggle}")) {
   throw new Error("Reset button removed; auto locks vertical drag/price-axis zoom while manual allows all; insight toggle right of 指标");
@@ -217,8 +220,8 @@ const realtimeSrc = readFileSync(fileURLToPath(new URL("../src/lib/realtime.ts",
 if (!realtimeSrc.includes("sendSubscribe(socket)") || !realtimeSrc.includes('.filter((symbol) => symbol !== "*")') || !realtimeSrc.includes("socket.readyState === WebSocket.OPEN") || !realtimeSrc.includes('sub.symbol !== "*" && sub.symbol !== symbol') || !app.includes('symbol: "*"') || !app.includes("tickerSymbolsRef") || !readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("(mark - entry) / entry * notional * (long ? 1 : -1)")) {
   throw new Error("Subscription changes must reuse the live socket; dock pnl computed from WS mark price");
 }
-if (!app.includes("<PositionsDock") || !app.includes("PositionsDock") || !styles.includes(".statusbar-dock-toggle { position: absolute; top: 50%; transform: translate(-50%, -50%); }") || !app.includes("chartCenterX") || !app.includes("positions-dock-toggle statusbar-dock-toggle") || readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("positions-dock-closed") || !styles.includes(".pg-tp-btn.is-running { color: #F5B942; border-color: transparent; background: transparent; }") || !readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("positions-dock-open-toggle") || !styles.includes(".positions-dock-open-toggle { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);") || !styles.includes("justify-content: center; min-width: 108px;") || !styles.includes(".positions-dock-list { flex: none; height: 136px;") || !styles.includes(".positions-dock { flex: none; display: flex; flex-direction: column; background: var(--panel);") || !styles.includes(".positions-dock-row { color: var(--text);") || !styles.includes(".pd-up { color: var(--green); }.pd-down { color: var(--red); }") || !readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("positions-dock-head")) {
-  throw new Error("Positions dock: doubled-length centered chip, close chip floats above the drawer outside it, titled columns, panel-black background, row actions");
+if (!app.includes("<PositionsDock") || !app.includes("PositionsDock") || !styles.includes(".statusbar-dock-toggle { position: absolute; top: 50%; transform: translate(-50%, -50%); }") || !app.includes("chartCenterX") || !app.includes("positions-dock-toggle statusbar-dock-toggle") || readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("positions-dock-closed") || !styles.includes(".pg-tp-btn.is-running { color: #F5B942; border-color: transparent; background: transparent; }") || !readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("positions-dock-topbar") || !styles.includes(".positions-dock-topbar { flex: none; display: flex; justify-content: center;") || !styles.includes("justify-content: center; min-width: 108px;") || !styles.includes(".positions-dock-list { flex: none; height: 136px;") || !styles.includes(".positions-dock { flex: none; display: flex; flex-direction: column; background: var(--panel);") || !styles.includes(".positions-dock-row { color: var(--text);") || !styles.includes(".pd-up { color: var(--green); }.pd-down { color: var(--red); }") || !readFileSync(fileURLToPath(new URL("../src/PositionsDock.tsx", import.meta.url)), "utf8").includes("positions-dock-head")) {
+  throw new Error("Positions dock: doubled-length centered chip, close chip in a top bar inside the drawer, titled columns, panel-black background, row actions");
 }
 if (!app.includes("navRef") || !app.includes("chartRect.left - nav.getBoundingClientRect().left")) {
   throw new Error("Main nav first item must align vertically with the chart left edge");

@@ -74,8 +74,8 @@ if (!panel.includes("确认继续？") || !panel.includes("pg-confirm-backdrop")
 if (!api.includes("idempotencyKey?: string") || !api.includes('"/strategy/list"')) {
   throw new Error("tradeApi must support stable idempotency keys and the strategy list");
 }
-if (!app.includes('useState<"trade" | "pulse">("trade")') || !app.includes("pulse-mode-toggle") || !app.includes("<TradePanel symbol={selectedSymbol}") || !app.includes('role="group" aria-label="面板模式"') || app.includes("market-pulse-title") || !styles.includes(".pulse-mode-toggle button.active { color: var(--green); border-color: var(--green)")) {
-  throw new Error("Insight panel must open with a full-width 交易/盘面 segmented toggle at the top and no duplicated panel title");
+if (!app.includes('useState<"trade" | "pulse">("pulse")') || !app.includes("pulse-mode-toggle") || !app.includes("<TradePanel symbol={selectedSymbol}") || !app.includes('role="group" aria-label="面板模式"') || app.includes("market-pulse-title") || app.indexOf("盘面</button>") > app.indexOf("交易</button>") || !app.includes("<LayoutDashboard size={13}") || !app.includes("<ArrowLeftRight size={13}") || !styles.includes(".pulse-mode-toggle button.active { color: var(--green); border-color: var(--green)")) {
+  throw new Error("Insight panel must default to 盘面, keep 盘面 before 交易 as big icon buttons, and drop the duplicated panel title");
 }
 
 console.log("TradePanel v1 contract tests passed");

@@ -40,7 +40,7 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
 
   if (!open) return null;
   return <div className="positions-dock">
-    <button type="button" className="positions-dock-toggle positions-dock-open-toggle" aria-expanded={true} aria-label="收起持仓列表" onClick={onToggle}><ChevronDown size={13} /> 持仓</button>
+    <div className="positions-dock-topbar"><button type="button" className="positions-dock-toggle" aria-expanded={true} aria-label="收起持仓列表" onClick={onToggle}><ChevronDown size={13} /> 持仓</button></div>
     <div className="positions-dock-body">
       <div className="positions-dock-head" role="row">
         <span>币种/方向</span><span>仓位</span><span>保证金</span><span>开仓价</span><span>现价</span><span>浮盈浮亏</span><span>市价止损</span><span>市价止盈</span><span>操作</span>

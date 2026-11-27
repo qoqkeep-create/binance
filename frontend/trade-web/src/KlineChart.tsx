@@ -791,10 +791,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
         </div>
         <div className="toolbar-right">
           <button type="button" className="chart-refresh" aria-label="刷新 K 线" title="刷新 K 线" disabled={refreshing} onClick={() => void refreshChart()}><RefreshCw size={14} className={refreshing ? "spin" : ""} /></button>
-          <div className="view-mode" role="group" aria-label="缩放模式">
-            <button type="button" className={viewMode === "auto" ? "active" : ""} aria-pressed={viewMode === "auto"} onClick={() => { viewModeApplyRef.current("auto"); resetView(); }}>自动</button>
-            <button type="button" className={viewMode === "manual" ? "active" : ""} aria-pressed={viewMode === "manual"} onClick={() => { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); }}>手动</button>
-          </div>
+          <button type="button" className={`view-mode ${viewMode === "auto" ? "active" : ""}`} aria-pressed={viewMode === "auto"} title={viewMode === "auto" ? "自动缩放已开启，点击切为手动" : "当前手动缩放，点击切为自动"} onClick={() => { if (viewMode === "auto") { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); } else { viewModeApplyRef.current("auto"); resetView(); } }}>自动</button>
           <button type="button" className="indicator-master" aria-label="指标设置" title="指标设置" aria-expanded={showSettings} onClick={() => setShowSettings(true)}>
             <SlidersHorizontal size={13} /> 指标
           </button>
