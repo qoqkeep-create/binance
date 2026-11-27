@@ -50,8 +50,8 @@ if (!cssSrc.includes(".trade-field { display: flex; flex-direction: column; alig
   throw new Error("Trade panel must use stacked labels with uniform full-width 40px controls and looser rhythm");
 }
 const styles = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
-if (!styles.includes(".trade-type-row button.active { color: var(--green); font-weight: 600; border-color: var(--green)")) {
-  throw new Error("Market/limit selection must use the same rounded green chip as auto/manual");
+if (!styles.includes(".trade-type-row button.active::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 2px; border-radius: 1px; background: var(--green); }")) {
+  throw new Error("Market/limit selection must use the timeframe-style green underline, not a bordered chip");
 }
 if (!pages.includes("pg-tp-btn") || !pages.includes("自动止盈") || !pages.includes("TpLevels") || !pages.includes("strategy_config")) {
   throw new Error("Position card footer must expose 自动止盈 button (left of 立即平仓) showing the bound strategy levels");
@@ -74,8 +74,8 @@ if (!panel.includes("确认继续？") || !panel.includes("pg-confirm-backdrop")
 if (!api.includes("idempotencyKey?: string") || !api.includes('"/strategy/list"')) {
   throw new Error("tradeApi must support stable idempotency keys and the strategy list");
 }
-if (!app.includes('useState<"trade" | "pulse">("trade")') || !app.includes("pulse-mode-toggle") || !app.includes("<TradePanel symbol={selectedSymbol}")) {
-  throw new Error("Insight panel must default to trade mode with a 交易/盘面 toggle");
+if (!app.includes('useState<"trade" | "pulse">("trade")') || !app.includes("pulse-mode-toggle") || !app.includes("<TradePanel symbol={selectedSymbol}") || !app.includes('role="group" aria-label="面板模式"') || app.includes("market-pulse-title") || !styles.includes(".pulse-mode-toggle button.active { color: var(--green); border-color: var(--green)")) {
+  throw new Error("Insight panel must open with a full-width 交易/盘面 segmented toggle at the top and no duplicated panel title");
 }
 
 console.log("TradePanel v1 contract tests passed");

@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：持仓钮加长一倍并移出抽屉；右上角／开仓方式／盘面切换压缩改版
+
+持仓钮 `min-width: 108px`（原约 54px，收起与展开两态同宽、内容居中）；展开态改为 `.positions-dock-open-toggle` 绝对定位 `bottom: 100%`，脱离抽屉落在 K 线／指标附图区，实测钮下缘距持仓区上边缘 1px、与抽屉同中线；topbar 独立行删除。右上角 `.view-mode`／`.indicator-master` 统一 28px 高、11px 字（图标 13px），实测组宽 110→70px、指标钮 67→46px，与右侧图标方块按钮同量级。市价开仓／限价挂单去边框改周期按钮式下划线（`.trade-type-row button.active::after` 2px 绿线），实测 68×29px。右侧面板顶部 MARKET PULSE／“交易”标题删除，`pulse-mode-toggle` 改为整宽“交易｜盘面”二段大按钮（实测 45px 高，选中沿用自动／手动同款绿芯片）；`aside` 改用 aria-label。契约测试同步更新（klineChart、tradePanel），`npm test` 全绿、`npm run build` 通过，Qoder 内置浏览器 720px 视口实测上述几何。仅本地验证，未部署 47.80.22.243（首尔服务器），改动保留在本地未提交。
+
 ## 2026-11-28：持仓钮归位状态条（收起）/topbar（展开），关闭整体卸载
 
 状态条渲染 statusbar-dock-toggle（left=workspace 实测中心，ResizeObserver）；PositionsDock !open 返回 null 去除 1px 残留；topbar 保留。实测收起/展开 delta 均 0，dock 残留消失。release dockcenter3-f263e80 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致（66d06ccb/cc61823d/f291175d）。

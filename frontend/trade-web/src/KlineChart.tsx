@@ -796,7 +796,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
             <button type="button" className={viewMode === "manual" ? "active" : ""} aria-pressed={viewMode === "manual"} onClick={() => { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); }}>手动</button>
           </div>
           <button type="button" className="indicator-master" aria-label="指标设置" title="指标设置" aria-expanded={showSettings} onClick={() => setShowSettings(true)}>
-            <SlidersHorizontal size={15} /> 指标
+            <SlidersHorizontal size={13} /> 指标
           </button>
           {insightToggle}
         </div>

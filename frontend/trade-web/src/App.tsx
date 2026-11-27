@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
-  ArrowLeftRight,
   ArrowUpRight,
   Bell,
   ChevronUp,
@@ -333,15 +332,12 @@ function TerminalApp() {
           <PositionsDock rows={dockPositions} prices={priceMap} open={dockOpen} onToggle={() => setDockOpen((open) => !open)} onOpenSymbol={setSelectedSymbol} onChanged={() => void refreshPositions()} />
           {showAssistant && <ContractAnalysisAssistant key={selectedSymbol} symbol={selectedSymbol} baseAsset={selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")} structuresContainer={structuresContainer} returnFocusTo={assistantOpener.current} onClose={() => setShowAssistant(false)} />}
         </main>
-        {panelVisible && <aside className="insight-panel" ref={setStructuresContainer} aria-labelledby={showAssistant ? "assistant-structures-title" : "market-pulse-title"}>
+        {panelVisible && <aside className="insight-panel" ref={setStructuresContainer} aria-label={showAssistant ? undefined : "盘面面板"} aria-labelledby={showAssistant ? "assistant-structures-title" : undefined}>
           <div hidden={showAssistant}>
-          <header className="panel-heading">
-            <div>
-              <div className="eyebrow">MARKET PULSE</div>
-              <h2 id="market-pulse-title">{insightMode === "trade" ? "交易" : "盘面速览"}</h2>
-            </div>
-            <button className="pulse-mode-toggle" type="button" aria-pressed={insightMode === "trade"} title={insightMode === "trade" ? "切换到盘面" : "切换到交易"} onClick={() => { setInsightMode((mode) => (mode === "trade" ? "pulse" : "trade")); setShowAssistant(false); }}><ArrowLeftRight size={13} aria-hidden="true" /><span>{insightMode === "trade" ? "盘面" : "交易"}</span></button>
-          </header>
+          <div className="pulse-mode-toggle" role="group" aria-label="面板模式">
+            <button type="button" className={insightMode === "trade" ? "active" : ""} aria-pressed={insightMode === "trade"} onClick={() => { setInsightMode("trade"); setShowAssistant(false); }}>交易</button>
+            <button type="button" className={insightMode === "pulse" ? "active" : ""} aria-pressed={insightMode === "pulse"} onClick={() => { setInsightMode("pulse"); setShowAssistant(false); }}>盘面</button>
+          </div>
           <div hidden={insightMode !== "trade"}><TradePanel symbol={selectedSymbol} price={selectedPrice} visible={insightMode === "trade" && activeNav === "行情"} stopPriceRequest={stopPriceRequest} onNavigate={(kind) => { setAccountFocus({ kind, at: Date.now() }); setActiveNav("账户"); }} /></div>
           <div hidden={insightMode !== "pulse"}>
           <div className="price-card" aria-label="当前价格与涨跌">
