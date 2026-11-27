@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓钮双位置右端化（展开＝标题行右端不撑宽、收起＝状态栏右端）Web 发布（2026-11-28，北京时间）
+
+用户按截图红框指明：展开时按钮放标题行最右端（与"操作"同格 space-between，**不得把标题行撑宽**）；收起时放最底状态栏右端（非居中）。实现：PositionsDock head 第 9 列 pd-op-head（操作＋芯片钮，150px 列内容纳不增列）；App 状态栏钮改 `{!dockOpen && ...}` 且 CSS 右对齐 right:12px；展开时状态栏钮隐藏。实测：收起 atRight=12、无 head 钮；展开 headRight=4、headW=485＝rowW（未变宽）、状态栏钮消失；截图目检芯片在"操作"列右端对齐。Web release **`trade-web-20261128-dockpos2-794e116`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `795f5cfb…`／`ae7241e7…`／`9cda992c…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 止盈/平仓改纯加粗文字（黄/绿、无边框底色）Web 发布（2026-11-28，北京时间）
 
 用户：两按钮改加粗文字、去边框底色、字色黄与绿。实现：.pg-tp-btn（含 is-running）＝#F5B942 金黄 700 字重、border 0、bg transparent（主题 --accent-strong 暗色为白不可用，取图表金线同色）；.pg-close-btn＝var(--green) 700、无边框底色；hover 下划线。持仓页 footer 同类同步生效。实测：tpColor rgb(245,185,66)/700/0 边框/透明底、clColor rgb(0,168,143)/700；截图「自动止盈中」金黄、「立即平仓」绿纯文字。Web release **`trade-web-20261128-textbtn-6673efd`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `7a3a4e1a…`／`bd16b6b9…`／`a8cf28e8…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
