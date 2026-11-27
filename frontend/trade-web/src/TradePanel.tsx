@@ -129,10 +129,6 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
       <button type="button" className={orderType === "market" ? "active" : ""} onClick={() => { setOrderType("market"); attemptKeyRef.current = null; }}>市价开仓</button>
       <button type="button" className={orderType === "limit" ? "active" : ""} onClick={() => { setOrderType("limit"); attemptKeyRef.current = null; }}>限价挂单</button>
     </div>
-    <div className="trade-side-row">
-      {valid && <span className={`trade-side ${isLong ? "long" : "short"}`}>{isLong ? "开多" : "开空"}</span>}
-      <small>止损价低于现价为多，高于现价为空</small>
-    </div>
     <div className="pg-grid trade-grid">
       <div><span>当前价格</span><strong>{price === undefined ? "—" : fmt(price, 4)}</strong></div>
       <div><span>预估仓位</span><strong>{valid ? `${fmt(notional)} U` : "—"}</strong></div>
@@ -164,7 +160,7 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
       </button>
       {strategyState === "error" && <button type="button" onClick={() => void load()}>重试</button>}
     </div>
-    <button type="button" className="trade-submit" disabled={!valid || !strategy || submitting} onClick={() => setConfirmOpen(true)}>
+    <button type="button" className={`trade-submit ${isLong ? "is-long" : "is-short"}`} disabled={!valid || !strategy || submitting} onClick={() => setConfirmOpen(true)}>
       {submitting ? "提交中…" : stopInput.trim() === "" ? "输入止损价" : orderType === "market" ? (isLong ? "市价开多" : "市价开空") : (isLong ? "限价挂多" : "限价挂空")}
     </button>
     <button type="button" className="trade-settings-btn" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}><Settings2 size={13} /> 开仓设置</button>

@@ -10,6 +10,7 @@ import {
   type PositionTool,
   type PositionToolDefaults,
 } from "./lib/positionTools";
+import { priceScaleFormatter } from "./lib/priceFormat";
 import "./position-tools.css";
 
 interface PositionToolOverlayProps {
@@ -402,5 +403,12 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
       </div>}
       {selectedPosition && selectedMetrics && <div className="chart-line-editor position-tool-detail"><span className="chart-line-editor-item is-title">{selectedPosition.direction === "long" ? "多头计划" : "空头计划"}</span><span className="chart-line-editor-item">入场 {formatPrice(selectedMetrics.entryPrice)}</span><span className="chart-line-editor-item">止盈 {formatPrice(selectedMetrics.targetPrice)}</span><span className="chart-line-editor-item">止损 {formatPrice(selectedMetrics.stopPrice)}</span><span className="chart-line-editor-item">RR {selectedMetrics.riskReward.toFixed(2)}</span><button type="button" aria-label="删除测量工具" onClick={() => { setToolState((state) => ({ ...state, positions: state.positions.filter((item) => item.id !== selectedPosition.id) })); setSelectedId(null); }}><Trash2 size={13} /></button></div>}
     </div>
+    {chartLines.map((line) => {
+      if (line.orientation !== "horizontal" || line.price === undefined) return null;
+      const y = priceToY(line.price);
+      const mainHeight = surfaceRef.current?.clientHeight ?? 0;
+      if (y === null || y < 0 || y > mainHeight) return null;
+      return <div key={`axis-${line.id}`} className="chart-line-axis-tag" style={{ top: y, background: line.color, color: line.color === "#FFFFFF" ? "#181a1d" : "#ffffff" }}>{priceScaleFormatter(line.price)}</div>;
+    })}
   </div>;
 }

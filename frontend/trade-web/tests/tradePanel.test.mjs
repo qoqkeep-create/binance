@@ -25,6 +25,9 @@ if (!panel.includes("trade-paste-icon") || !panel.includes("trade-input-wrap") |
   throw new Error("Paste icon inside stop input; no notices in right panel; stop price injectable from chart right-click");
 }
 const cssSrc = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+if (panel.includes("trade-side-row") || panel.includes("止损价低于现价为多") || !panel.includes('className={`trade-submit ${isLong ? "is-long" : "is-short"}`}') || !cssSrc.includes(".trade-submit.is-short { background: var(--red); color: #ffffff; }")) {
+  throw new Error("No long/short hint row; submit button itself shows 市价开多/开空 and colors green/red");
+}
 if (!cssSrc.includes(".trade-field > span:first-child { flex: none; white-space: nowrap; }")) {
   throw new Error("Stop-price label must stay on one line");
 }

@@ -25,3 +25,4 @@
 .chart-line-options button:hover,.chart-line-options button.is-active { color:var(--text); border-color:var(--accent); }
 .chart-line-color-menu { min-width:130px; }
 .chart-line-color-menu .chart-line-options button { min-width:24px; width:24px; padding:0; border-radius:50%; }
+.chart-line-axis-tag { position:absolute; right:0; transform:translateY(-50%); z-index:3; padding:2px 6px; border-radius:3px; font:11px var(--font-ui); font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap; }
