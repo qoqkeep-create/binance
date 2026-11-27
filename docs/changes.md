@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：十字线永远跟随鼠标（拖柄/拖工具期间不消失）
+
+根因：拖拽起点 preventDefault 后兼容 mousemove 停发，容器 mousemove 驱动的自绘十字线拖拽期间消失。改 window pointermove 驱动＋document mouseleave 清除＋y<0 边界。实测拖柄/整体拖动期间横竖线＋价签在位、松手保留、区外清除。契约测试锁定。release crossdrag-ee0b856 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-27：测量工具数据坐标同层锚定、标签字号减半 8px、主图裁剪
 
 PositionTool 存时间+价格锚点（v2 存储键），渲染/拖拽/命中经库坐标换算；rAF 同步环补价格轴变化重排（库无价格轴订阅 API）；surface overflow:hidden 防溢入副图；line span/stats 16→8px、偏移 -22/4。实测横向×2 宽精确加倍、DOM 与库换算误差<0.01px、纵向压窗同比、三柄轴向语义不变、三标签 8px。契约测试改锁数据坐标标记＋8px。release toolanchor-ef0568a 上线 47.80.22.243（首尔服务器）＋ba/IP 哈希一致；含并发会话画线工具同源交付。

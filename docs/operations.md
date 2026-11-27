@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 十字线拖拽期间不消失（改 window pointermove 驱动）Web 发布（2026-11-27，北京时间）
+
+用户口径：拖测量框柄/拖整个工具时十字线必须在，靠它肉眼定位；十字线永远只跟随鼠标位置，不随鼠标按键状态出现/消失。根因：自绘十字线原挂容器 `mousemove`，而拖拽起点 `preventDefault`（防图表 pan）后浏览器停发兼容 mouse 事件→拖拽期间十字线消失。改挂 **window `pointermove`**（不受 preventDefault/按键状态影响）＋document mouseleave 清除，边界检查补 y<0。实测：拖中左柄期间横线 y 与鼠标精确一致、竖线 round 吸附 bar 中心＋右轴价签在位；松手后十字线保留；整体 moveDrag 期间同样跟随；指针移到主图区外清除。Web release **`trade-web-20261127-crossdrag-ee0b856`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `89efa329…`／`d01924a4…` 与本地单链构建一致，ba 复核同哈希（CSS 未变沿用 `e7f3e274…`）。契约测试锁定 window pointermove 监听。后端不切换，旧 release 保留可回退。
+
 ## 测量工具改数据坐标同层锚定＋标签字号减半 8px Web 发布（2026-11-27，北京时间）
 
 用户口径：字号太大缩为现在一半（16→8px）；测量工具不是浮层，尺寸随 K 线同比缩放、与蜡烛同一层。实现：`PositionTool` 改存 `startTime/endTime/entryPrice/targetPrice/stopPrice`（弃屏幕比例字段），渲染经 `timeToCoordinate/priceToCoordinate` 换算，拖拽/绘制/命中全走数据坐标（localStorage 键升 `trade-web-position-tools-v2`）；库价格轴无订阅 API，覆盖层加 rAF 同步环比对 `getVisibleLogicalRange`＋`priceScale().getVisibleRange` 变化即重排；surface 加 `overflow:hidden`，手动压价窗时止损区不再溢入 MACD 副图。实测：barSpacing×2 工具宽 205.875→411.75px 精确加倍；DOM left/width/三线 y 与库换算误差 <0.01px；纵向压窗后 y 随价格窗同比移动；中左柄 dStart+4500s/dEntry+0.0085 其余 0、右柄 dEnd+3600s 其余 0、左上柄 dTarget+0.0056 其余 0；三标签 computed 8px。Web release **`trade-web-20261127-toolanchor-ef0568a`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `38d20547…`／`e04b6988…`／`e7f3e274…` 与本地单链构建一致，ba 与 IP 双入口复核同哈希。并发会话同期给覆盖层加横/竖画线工具，一并纳入同源构建与契约测试。后端不切换，旧 release 保留可回退。

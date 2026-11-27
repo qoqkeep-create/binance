@@ -492,7 +492,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       const mainHeight = api.panes()[0]?.getHeight() ?? 0;
-      if (y > mainHeight || x < 0 || x > rect.width) { setCrosshair(null); return; }
+      if (y < 0 || y > mainHeight || x < 0 || x > rect.width) { setCrosshair(null); return; }
       const ts = api.timeScale();
       const logical = ts.coordinateToLogical(x);
       if (logical === null) { setCrosshair(null); return; }
@@ -502,11 +502,12 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       setCrosshair({ x: barX, y, price });
     };
     const onCrosshairLeave = () => setCrosshair(null);
-    container.addEventListener("mousemove", onCrosshairMove);
-    container.addEventListener("mouseleave", onCrosshairLeave);
+    // pointermove 不受 pointerdown preventDefault 抑制（兼容 mousemove 会停发），拖拽柄/工具期间十字线仍跟随鼠标。
+    window.addEventListener("pointermove", onCrosshairMove);
+    document.addEventListener("mouseleave", onCrosshairLeave);
     return () => {
-      container.removeEventListener("mousemove", onCrosshairMove);
-      container.removeEventListener("mouseleave", onCrosshairLeave);
+      window.removeEventListener("pointermove", onCrosshairMove);
+      document.removeEventListener("mouseleave", onCrosshairLeave);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
       container.removeEventListener("contextmenu", onContextMenu);

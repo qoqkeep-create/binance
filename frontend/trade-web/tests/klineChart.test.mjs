@@ -118,8 +118,8 @@ if (!source.includes("subscribeVisibleLogicalRangeChange(onRange)") || !source.i
 if (!source.includes("const gen = loadGenRef.current") || !source.includes("gen !== loadGenRef.current || symbolRef.current !== symbol")) {
   throw new Error("Older-history loads must be discarded across symbol/interval changes to avoid cross-symbol cache poisoning");
 }
-if (!source.includes("Math.round(logical) as Logical") || !source.includes("kline-crosshair-v") || !source.includes("vertLine: { visible: false, labelVisible: false }")) {
-  throw new Error("Crosshair must snap at bar midpoints (round) with self-drawn lines, not library ceil-at-center");
+if (!source.includes("Math.round(logical) as Logical") || !source.includes("kline-crosshair-v") || !source.includes("vertLine: { visible: false, labelVisible: false }") || !source.includes('window.addEventListener("pointermove", onCrosshairMove)')) {
+  throw new Error("Crosshair must snap at bar midpoints (round), self-drawn, and follow pointermove even while dragging tools");
 }
 if (!source.includes("if (!candles.length)") || !source.includes("retryTimer = setTimeout(() => fetchHistory(attemptNo + 1)") || !source.includes("if (retryTimer) clearTimeout(retryTimer)")) {
   throw new Error("Empty cold-start history must keep the veil and retry with backoff, never render/cache empty");
