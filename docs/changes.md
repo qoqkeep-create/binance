@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：中左滑点最小跨度一根K线、细条命中容错
+
+夹持 60s 不在网格→取整后左右同根、宽塌 8px 贴右线＝"突破变无限长"；最小跨度改 timeGrid().interval（leftX/leftFree/rightX＋sanitizeDraft），命中测试 Math.max(x2,x1+8) 与渲染一致。实测旧细条可选中、拖 500px span 锁 900s。release minspan-3fe6f0d 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-27：测量工具跨周期三底层缺陷修复（快照闭包/重绘键/整数网格）
 
 切高周期消失＋切回不可拖的根因：监听闭包捕获 data() 快照（改 timeGrid 实时读）、rAF 键缺数据身份（加 length＋首末时间）、logicalToCoordinate 非整数返回 0（timeToX Math.round 到最近根）。实测 1H 下 left=286/width=30、切回可选中可拖。契约测试锁定。release intgrid-7e5d9f1 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。遗留债备案：全局存储跨币种、价格轴 rAF 轮询。

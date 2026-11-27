@@ -82,14 +82,14 @@ function clampEntryToEdges(position: PositionTool, price: number): number {
   const hi = Math.max(position.targetPrice, position.stopPrice) - span * 0.05;
   return Math.min(hi, Math.max(lo, price));
 }
-function sanitizeDraft(draft: Draft): PositionTool {
+function sanitizeDraft(draft: Draft, minSpan = 60): PositionTool {
   const minDistance = Math.max(0.00000001, draft.entryPrice * 0.002);
   const distance = Math.max(minDistance, Math.abs(draft.targetPrice - draft.entryPrice));
   const targetPrice = draft.direction === "long" ? draft.entryPrice + distance : draft.entryPrice - distance;
   const stopPrice = draft.direction === "long" ? draft.entryPrice - distance : draft.entryPrice + distance;
   const startTime = Math.min(draft.startTime, draft.endTime);
   const endTime = Math.max(draft.startTime, draft.endTime);
-  return { id: newId(), direction: draft.direction, startTime, endTime: endTime > startTime ? endTime : startTime + 60, entryPrice: draft.entryPrice, targetPrice, stopPrice, createdAt: Date.now() };
+  return { id: newId(), direction: draft.direction, startTime, endTime: endTime >= startTime + minSpan ? endTime : startTime + minSpan, entryPrice: draft.entryPrice, targetPrice, stopPrice, createdAt: Date.now() };
 }
 
 export default function PositionToolOverlay({ currentPrice, readOnly = false, activeTool, onActiveToolChange, activeLineTool, onActiveLineToolChange, api, clearSignal = 0 }: PositionToolOverlayProps) {
@@ -224,7 +224,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         const yBottom = priceToY(Math.min(pos.entryPrice, pos.targetPrice, pos.stopPrice));
         const px = pixelPoint(event);
         if (x1 === null || x2 === null || yTop === null || yBottom === null || !px) return false;
-        return px.x >= x1 && px.x <= x2 && px.y >= yTop && px.y <= yBottom;
+        return px.x >= x1 && px.x <= Math.max(x2, x1 + 8) && px.y >= yTop && px.y <= yBottom;
       });
       if (hit) {
         event.preventDefault();
@@ -257,11 +257,12 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     const point = dataPoint(event);
     if (live.dragHandle) {
       if (!point) return;
+      const minSpan = timeGrid()?.interval ?? 60;
       updatePosition(live.dragHandle.id, (position) => {
         switch (live.dragHandle!.handle) {
-          case "leftX": return { ...position, startTime: Math.min(point.t, position.endTime - 60) };
-          case "rightX": return { ...position, endTime: Math.max(point.t, position.startTime + 60) };
-          case "leftFree": return { ...position, startTime: Math.min(point.t, position.endTime - 60), entryPrice: clampEntryToEdges(position, point.p) };
+          case "leftX": return { ...position, startTime: Math.min(point.t, position.endTime - minSpan) };
+          case "rightX": return { ...position, endTime: Math.max(point.t, position.startTime + minSpan) };
+          case "leftFree": return { ...position, startTime: Math.min(point.t, position.endTime - minSpan), entryPrice: clampEntryToEdges(position, point.p) };
           case "entryY": return { ...position, entryPrice: clampEntryToEdges(position, point.p) };
           case "targetY": return { ...position, targetPrice: point.p };
           default: return { ...position, stopPrice: point.p };
@@ -306,7 +307,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
         finished = { ...finished, endTime: finished.startTime + bars * interval, targetPrice: finished.entryPrice + distance, stopPrice: finished.entryPrice - distance };
       }
     }
-    const completed = finished ? sanitizeDraft(finished) : null;
+    const completed = finished ? sanitizeDraft(finished, timeGrid()?.interval ?? 60) : null;
     if (completed) {
       setToolState((state) => ({ ...state, positions: [...state.positions.slice(-11), completed] }));
       setSelectedId(completed.id);
@@ -328,7 +329,7 @@ export default function PositionToolOverlay({ currentPrice, readOnly = false, ac
     setSelectedId(id);
     setDragHandle({ id, handle });
   }
-  const previewPosition = draft ? sanitizeDraft(draft) : null;
+  const previewPosition = draft ? sanitizeDraft(draft, timeGrid()?.interval ?? 60) : null;
   const renderedPositions = previewPosition ? [...toolState.positions, previewPosition] : toolState.positions;
   const selectedLine = chartLines.find((line) => line.id === selectedLineId) ?? null;
 
