@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 账户止损/策略改行＋iOS 口径弹窗（交易模块复用）＋导航芯片降高 Web 发布（2026-11-27，北京时间）
+
+用户四件：① 账户止损只显「止损金额＋金额＋右箭头」，点击弹窗做完整设定（完全参考 iOS）；② 账户止盈策略行显当前启用策略＋右箭头，弹窗看已有策略，「新建」关闭弹窗并滚动到内联创建表单；③ 交易模块止损金额/止盈策略复用同两弹窗；④ 主导航选中绿芯片高度略降。实现：新增 `AccountDialogs.tsx`（StopLossDialog：50～300 滑杆＋大字金额盒＋"当前"芯片＋三条说明＋pending 倒计时横幅可取消＋完成横幅＋确定按钮未变化禁用，GET/POST /account/stop-loss 与 /cancel；StrategyDialog：列表启用/编辑/删除＋新建策略；AccountRow 通用行）；Pages 账户两 section 改行＋弹窗，内联编辑表单保留供新建/编辑滚动（id=account-strategy-editor）；TradePanel 风险盒/策略链改开弹窗（新建→onNavigate 滚动账户）；导航 padding 4→7px（芯片 48→41px）。实测：行「止损金额200 U」「止盈策略未启用」无弹窗外滑杆；弹窗标题/金额盒/3 说明/滑杆/确定齐全；250 保存→完成横幅＋行更新；策略新建→弹窗关＋编辑器入视口；交易模块两入口同弹窗；芯片 41px/顶栏 56px。Web release **`trade-web-20261127-acctdlg-449f478`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `d9b9bb9c…`／`4b5e8db4…`／`2eec5043…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定。后端不切换，旧 release 保留可回退。
+
 ## 十字线穿透副图＋止损额保存字段修正 Web 发布（2026-11-27，北京时间）
 
 用户两报：① 十字线不能穿透 MACD/StochRSI 副图；② 止损额调 200 保存报"必填项"。根因①：自绘十字线边界限制 y≤主图高且价格只取主图序列；改 pane 感知——竖线全容器高（CSS height:100%），横线/价签按鼠标所在 pane（getHTMLElement rect 命中）取该 pane 首序列 coordinateToPrice；价签主图＝分档价＋涨跌幅、MACD＝4 位小数、Stoch＝2 位小数。根因②：后端序列化器字段为 **amount**（必填 50–300），web 误发 `stop_loss_amount`→恒报必填；改发 `{ amount: String(amount) }`。实测：MACD pane 价签 -0.0006、竖线高 655＝容器全高；Stoch 价签 56.48；滑杆 200 保存→「止损额已保存」、行显 200 U。Web release **`trade-web-20261127-crosspane-0277255`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS/CSS 哈希 `995fc9ef…`／`f1861d21…`／`84a0b4f0…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 pane 命中与 amount 字段。后端不切换，旧 release 保留可回退。

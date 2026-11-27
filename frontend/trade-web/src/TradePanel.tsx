@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ClipboardPaste, Settings2, X } from "lucide-react";
 import { tradeApi, type AccountInfo } from "./lib/tradeApi";
 import { getCopiedPrice } from "./lib/priceClipboard";
+import { StopLossDialog, StrategyDialog } from "./AccountDialogs";
 
 const FEE_RATE = 0.001;
 const MAKER_KEYS = {
@@ -43,6 +44,8 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
   const [maker, setMaker] = useState<MakerPrefs>(readMakerPrefs);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const [strategyDialogOpen, setStrategyDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const attemptKeyRef = useRef<string | null>(null);
 
@@ -148,13 +151,13 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
     </label>
     <div className="trade-field">
       <span>止损金额</span>
-      <button type="button" className="trade-risk-box" onClick={() => onNavigate("stop-loss")} aria-label="设置止损金额">
+      <button type="button" className="trade-risk-box" onClick={() => setStopDialogOpen(true)} aria-label="设置止损金额">
         <span>{risk} U</span><ChevronRight size={13} aria-hidden="true" />
       </button>
     </div>
     <div className="trade-strategy">
       <span>止盈策略</span>
-      <button type="button" className="trade-strategy-link" onClick={() => onNavigate("strategy")}>
+      <button type="button" className="trade-strategy-link" onClick={() => setStrategyDialogOpen(true)}>
         <strong>{strategyState === "loading" ? "读取中…" : strategyState === "error" ? "读取失败" : strategy?.name ?? "未启用"}</strong>
         <ChevronRight size={13} aria-hidden="true" />
       </button>
@@ -170,6 +173,8 @@ export default function TradePanel({ symbol, price, visible, onNavigate, stopPri
       <label className="trade-maker-row"><span>预挂止盈用 Maker</span><input type="checkbox" checked={maker.takeProfit} onChange={(event) => setMakerPref("takeProfit", event.target.checked)} /></label>
       <div className="trade-maker-row is-fixed"><span>止损</span><strong>触发后市价</strong></div>
     </div>}
+    <StopLossDialog open={stopDialogOpen} onClose={() => setStopDialogOpen(false)} onSaved={() => void load()} />
+    <StrategyDialog open={strategyDialogOpen} onClose={() => setStrategyDialogOpen(false)} onCreate={() => { setStrategyDialogOpen(false); onNavigate("strategy"); }} />
     {confirmOpen && <div className="pg-confirm-backdrop">
       <div className="pg-confirm" role="dialog" aria-modal="true">
         <header><strong>确认{orderType === "market" ? "开仓" : "挂单"}</strong><button type="button" aria-label="关闭" onClick={() => setConfirmOpen(false)}><X size={15} /></button></header>

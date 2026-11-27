@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：账户止损/策略行＋iOS 口径弹窗（交易复用）、导航芯片降高
+
+AccountDialogs.tsx：StopLossDialog（滑杆/金额盒/当前芯片/三说明/pending 取消/完成横幅/确定禁用未变化）＋StrategyDialog（启用/编辑/删除/新建）＋AccountRow；账户两行开弹窗、新建滚动内联表单；TradePanel 复用；导航 padding 7px（芯片 41px）。实测全链路＋截图。release acctdlg-449f478 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。
+
 ## 2026-11-27：十字线穿透副图（pane 感知价签）、止损额保存改发 amount 字段
 
 十字线竖线全高、横线/价签取鼠标所在 pane 价格轴（MACD 4dp/Stoch 2dp/主图分档＋pct）；setStopLoss 误发 stop_loss_amount 致后端必填报错，改 { amount: String }。实测副图价签与竖线全高、200 保存成功。release crosspane-0277255 上线 47.80.22.243（首尔服务器）＋ba 三哈希一致。

@@ -11,11 +11,11 @@ if (!panel.includes("const FEE_RATE = 0.001") || !panel.includes("risk / (ratio 
 if (!panel.includes("const isLong = stop < entry")) {
   throw new Error("Side must auto-derive: stop below entry = long, above = short");
 }
-if (!panel.includes('onNavigate("stop-loss")') || !panel.includes("trade-risk-box") || !panel.includes('onNavigate("strategy")')) {
-  throw new Error("Stop-loss amount box and strategy row must navigate to the real account settings sections");
+if (!panel.includes("trade-risk-box") || !panel.includes("setStopDialogOpen(true)") || !panel.includes("<StopLossDialog") || !panel.includes("<StrategyDialog") || !panel.includes('onNavigate("strategy")')) {
+  throw new Error("Stop-loss box and strategy row must open the shared dialogs; create scrolls to account form");
 }
 const pages = readFileSync(fileURLToPath(new URL("../src/Pages.tsx", import.meta.url)), "utf8");
-if (!pages.includes('min={50} max={300} step={1}') || !pages.includes('id="account-stop-loss"') || !pages.includes('id="account-strategy"')) {
+if (!pages.includes('id="account-stop-loss"') || !pages.includes('id="account-strategy"') || !pages.includes('id="account-strategy-editor"')) {
   throw new Error("Account page must host the 50-300 step-1 stop-loss slider and strategy list anchors");
 }
 if (!panel.includes("输入止损价") || panel.indexOf("trade-settings-btn") < panel.indexOf("trade-submit")) {
@@ -29,6 +29,11 @@ if (!apiSrc.includes('setStopLoss: (amount: number) => post<unknown>("/account/s
   throw new Error("Stop-loss save must post the backend-required amount field, not stop_loss_amount");
 }
 const cssSrc = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+const dialogsSrc = readFileSync(fileURLToPath(new URL("../src/AccountDialogs.tsx", import.meta.url)), "utf8");
+const pagesSrc2 = readFileSync(fileURLToPath(new URL("../src/Pages.tsx", import.meta.url)), "utf8");
+if (!dialogsSrc.includes("单笔止损金额") || !dialogsSrc.includes("确认后止损额立即生效") || !dialogsSrc.includes("pending_amount") || !dialogsSrc.includes("step={1}") || !dialogsSrc.includes("min={minimum} max={maximum}") || !pagesSrc2.includes("<AccountRow label=\"止损金额\"") || !pagesSrc2.includes("<AccountRow label=\"止盈策略\"") || !pagesSrc2.includes("<StopLossDialog") || !pagesSrc2.includes("<StrategyDialog") || !panel.includes("<StopLossDialog") || !panel.includes("<StrategyDialog") || !cssSrc.includes(".acct-dialog { width: min(420px, 92vw);") || !cssSrc.includes("padding: 7px 0;")) {
+  throw new Error("Account rows open iOS-parity stop-loss / strategy dialogs reused by trade panel; nav chip slightly shorter");
+}
 if (panel.includes("trade-side-row") || panel.includes("止损价低于现价为多") || !panel.includes('className={`trade-submit ${isLong ? "is-long" : "is-short"}`}') || !cssSrc.includes(".trade-submit.is-short { background: var(--red); color: #ffffff; }")) {
   throw new Error("No long/short hint row; submit button itself shows 市价开多/开空 and colors green/red");
 }

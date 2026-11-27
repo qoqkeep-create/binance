@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, ShieldAlert, X } from "lucide-react";
 import { useAccount } from "./AccountProvider";
+import { AccountRow, StopLossDialog, StrategyDialog } from "./AccountDialogs";
 import { tradeApi, isLongSide, type PositionRow, type PositionStrategyLevel, type MarginInfo, type HistoryRow, type OrderRow, type AccountInfo, type Profile, type ApiInfo } from "./lib/tradeApi";
 
 const num = (value: number | string | null | undefined) => {
@@ -256,7 +257,8 @@ export function AccountPage({ focus }: { focus?: { kind: "stop-loss" | "strategy
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const [strategyDialogOpen, setStrategyDialogOpen] = useState(false);
   const [strategies, setStrategies] = useState<Array<{ id: string; name: string; is_active: boolean; levels: StrategyLevel[] }>>([]);
   const [editing, setEditing] = useState<{ id?: string; name: string; levels: StrategyLevel[] } | null>(null);
   const [bindOpen, setBindOpen] = useState(false);
@@ -298,20 +300,6 @@ export function AccountPage({ focus }: { focus?: { kind: "stop-loss" | "strategy
     });
     return () => cancelAnimationFrame(frame);
   }, [focus, state]);
-
-  async function saveStopLoss() {
-    setSaving(true);
-    setNotice("");
-    try {
-      await tradeApi.setStopLoss(stopLoss);
-      setNotice("止损额已保存");
-      await load(false);
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function runBusy(fn: () => Promise<unknown>, ok: string) {
     setBusy(true);
@@ -371,17 +359,8 @@ export function AccountPage({ focus }: { focus?: { kind: "stop-loss" | "strategy
         </div>}
       </section>
       <section className="pg-card" id="account-strategy">
-        <header><strong>止盈止损策略</strong><button type="button" disabled={busy} onClick={() => setEditing({ name: "", levels: [emptyLevel()] })}>新建</button></header>
-        {strategies.length === 0 && <div className="pg-empty"><span>暂无策略</span></div>}
-        {strategies.map((s) => <div key={s.id} className="pg-strategy-row">
-          <span className="pg-strategy-name">{s.name}{s.is_active && <em className="pg-tag is-active">启用中</em>}</span>
-          <span className="pg-strategy-actions">
-            {!s.is_active && <button type="button" disabled={busy} onClick={() => void runBusy(() => tradeApi.strategySetActive(s.id), "已启用")}>启用</button>}
-            <button type="button" disabled={busy} onClick={() => setEditing({ id: s.id, name: s.name, levels: s.levels?.length ? s.levels : [emptyLevel()] })}>编辑</button>
-            <button type="button" className="is-danger" disabled={busy} onClick={() => void runBusy(() => tradeApi.strategyDelete(s.id), "已删除")}>删除</button>
-          </span>
-        </div>)}
-        {editing && <div className="pg-strategy-editor">
+        <AccountRow label="止盈策略" value={strategies.find((s) => s.is_active)?.name ?? "未启用"} onClick={() => setStrategyDialogOpen(true)} ariaLabel="查看止盈策略" />
+        {editing && <div className="pg-strategy-editor" id="account-strategy-editor">
           <label className="trade-field"><span>策略名称</span><input value={editing.name} onChange={(e) => setEditing((cur) => cur && { ...cur, name: e.target.value })} /></label>
           {editing.levels.map((level, index) => <div key={index} className="pg-level-row">
             <label><span>止盈RR</span><input type="number" step="0.1" value={level.profitRR} onChange={(e) => setEditing((cur) => cur && { ...cur, levels: cur.levels.map((l, i) => i === index ? { ...l, profitRR: Number(e.target.value) } : l) })} /></label>
@@ -397,10 +376,10 @@ export function AccountPage({ focus }: { focus?: { kind: "stop-loss" | "strategy
         </div>}
       </section>
       <section className="pg-card" id="account-stop-loss">
-        <header><strong>单笔止损额 (U)</strong></header>
-        <input type="range" min={50} max={300} step={1} value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} />
-        <div className="pg-row"><span>{stopLoss} U</span><button type="button" disabled={saving} onClick={() => void saveStopLoss()}>{saving ? "保存中…" : "保存"}</button></div>
+        <AccountRow label="止损金额" value={`${stopLoss} U`} onClick={() => setStopDialogOpen(true)} ariaLabel="设定止损金额" />
       </section>
+      <StopLossDialog open={stopDialogOpen} onClose={() => setStopDialogOpen(false)} onSaved={() => void load(false)} />
+      <StrategyDialog open={strategyDialogOpen} onClose={() => setStrategyDialogOpen(false)} onCreate={() => { setStrategyDialogOpen(false); setEditing({ name: "", levels: [emptyLevel()] }); requestAnimationFrame(() => document.getElementById("account-strategy-editor")?.scrollIntoView({ behavior: "smooth", block: "center" })); }} onEdit={(row) => { setStrategyDialogOpen(false); const levels = row.levels as StrategyLevel[]; setEditing({ id: row.id, name: row.name, levels: levels?.length ? levels : [emptyLevel()] }); requestAnimationFrame(() => document.getElementById("account-strategy-editor")?.scrollIntoView({ behavior: "smooth", block: "center" })); }} />
       <section className="pg-card">
         <div className="pg-row"><span>退出登录</span><button type="button" className="is-danger" onClick={() => { void logout().catch(() => undefined).finally(() => window.location.reload()); }}>退出</button></div>
       </section>

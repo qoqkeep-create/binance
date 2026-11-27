@@ -223,7 +223,7 @@ const realtime = readFileSync(fileURLToPath(new URL("../src/lib/realtime.ts", im
 if (!realtime.includes("sub.tickerSymbols?.length ? sub.tickerSymbols.includes(symbol) : sub.symbol === symbol") || !app.includes("pendingTickersRef")) {
   throw new Error("Left market list must refresh continuously from the shared WS ticker fanout, throttled");
 }
-if (!styles.includes(".main-nav { align-self: stretch; display: flex; align-items: stretch; gap: 4px; padding: 4px 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {
+if (!styles.includes(".main-nav { align-self: stretch; display: flex; align-items: stretch; gap: 4px; padding: 7px 0; border: 0;") || !styles.includes("white-space: nowrap; }")) {
   throw new Error("Main nav must sit on the topbar background without its own box and keep buttons single-line");
 }
 if (!klineCss.includes("background: rgba(240, 243, 247, 0.1)") || !klineCss.includes('.kline-stage[data-chart-theme="light"] .kline-loading')) {
