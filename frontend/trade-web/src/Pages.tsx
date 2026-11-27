@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, ShieldAlert, X } from "lucide-react";
 import { useAccount } from "./AccountProvider";
-import { tradeApi, type PositionRow, type PositionStrategyLevel, type MarginInfo, type HistoryRow, type OrderRow, type AccountInfo, type Profile, type ApiInfo } from "./lib/tradeApi";
+import { tradeApi, isLongSide, type PositionRow, type PositionStrategyLevel, type MarginInfo, type HistoryRow, type OrderRow, type AccountInfo, type Profile, type ApiInfo } from "./lib/tradeApi";
 
 const num = (value: number | string | null | undefined) => {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -10,10 +10,8 @@ const num = (value: number | string | null | undefined) => {
 const fmt = (value: number | string | null | undefined, digits = 2) => num(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 interface StrategyLevel { profitRR: number; reducePosition: number; stopLossType: "none" | "fixedRR" | "absoluteRR"; stopLossRR: number; stopLossAbsoluteRR: number }
 const emptyLevel = (): StrategyLevel => ({ profitRR: 1, reducePosition: 50, stopLossType: "none", stopLossRR: 1, stopLossAbsoluteRR: 1 });
-const isLong = (side: string) => side === "0" || side === "long" || side === "BUY";
-
-function SideBadge({ side }: { side: string }) {
-  return <span className={`pg-side ${isLong(side) ? "is-long" : "is-short"}`}>{isLong(side) ? "多" : "空"}</span>;
+function SideBadge({ side }: { side: number | string }) {
+  return <span className={`pg-side ${isLongSide(side) ? "is-long" : "is-short"}`}>{isLongSide(side) ? "多" : "空"}</span>;
 }
 
 function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void }) {

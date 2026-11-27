@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## 持仓/历史/委托多空徽标修正（整数 side 0=多）Web 发布（2026-11-27，北京时间）
+
+用户报：开多单在 web 历史与持仓界面显示空单。根因：后端 `side` 为**整数** 0=多 1=空（positions/models.py），web `isLong` 只比字符串 `"0"`，`0 === "0"` 恒假→全部显示空；KlineChart 持仓三线盈亏符号同误。修：tradeApi 增统一 `isLongSide`（String(side).toLowerCase() ∈ {0,long,buy}），PositionRow/HistoryRow/OrderRow 类型改 `number | string`，Pages 徽标与 KlineChart 三线共用。实测（fetch 替身注入整数 side＋{code:200,data} 信封）：持仓 [多,空]、历史 [多,空]、委托 [多] 全对。Web release **`trade-web-20261127-sidefix-0e82157`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `67604a7f…`／`f995cdea…` 与本地单链构建一致，ba 复核同哈希。契约测试锁定 isLongSide 单源。后端不切换，旧 release 保留可回退。
+
 ## 单击落初始尺寸测量框恢复＋非整根时间渲染修复 Web 发布（2026-11-27，北京时间）
 
 用户报：点多头工具后在图上单击不再生成初始大小测量框（v2 重构改没）。两层根因：① 单击 draft 三价相等/时间零宽，sanitize 只补 0.2% 价距＋60s，15m 下压成 8px 细条≈不可见；② `timeToCoordinate` 对**非整根时间**（＋60s 落在两根之间）返回 null→整个工具不渲染；右缘单击时＋18% 宽换算进留白区 coordinateToTime 亦 null。修：单击（未拖动）落初始框＝**可见根数×18% 整根宽**（按周期秒换算）＋主图高上下各 15% 价距（RR 1.00）；渲染/命中改 `timeToIndex(t, true)` 最近根索引＋logicalToCoordinate，任意存储时间都可见。实测：中部单击宽 17.1%/高 30%、右半数据区单击 14 根宽/高 30% 均落框并自动选中、工具按钮复位；空头单击方向正确。Web release **`trade-web-20261127-chart-lines-v2`** 原子切换（目标 **47.80.22.243（首尔服务器）**），index/JS 哈希 `e5a3b2df…`／`f1a408a0…` 与本地单链构建一致，ba 复核同哈希；该 release 为完整同源构建，含横线／竖线工具。契约测试锁定 timeToIndex＋bars*interval。后端不切换，旧 release 保留可回退。

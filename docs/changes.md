@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-27：持仓/历史/委托多空徽标修正（整数 side 0=多 1=空）
+
+根因：后端 side 整数，web 只比字符串 "0" 致全显空。tradeApi 统一 isLongSide（0/long/buy 归一化），三 Row 类型改 number|string，Pages 徽标与 KlineChart 持仓三线盈亏符号共用。替身实测持仓/历史/委托徽标 多/空 正确。契约测试锁定单源。release sidefix-0e82157 上线 47.80.22.243（首尔服务器）＋ba 哈希一致。
+
 ## 2026-11-27：单击落初始尺寸测量框恢复、非整根时间渲染修复
 
 单击（未拖动）落初始框：宽＝可见根数×18% 整根、高＝主图上下各 15%（RR 1.00）；渲染/命中改 timeToIndex(findNearest)＋logicalToCoordinate，修＋60s 非整根时间 timeToCoordinate null 致工具不渲染、右缘换算进留白 null 两层根因。实测中部/右半单击均落框选中、空头方向正确。契约测试锁定。release chart-lines-v2 上线 47.80.22.243（首尔服务器）＋ba 哈希一致（同源超集含画线工具）。

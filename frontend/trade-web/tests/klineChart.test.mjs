@@ -200,6 +200,10 @@ const pagesSrc = readFileSync(fileURLToPath(new URL("../src/Pages.tsx", import.m
 if (pagesSrc.includes(">止盈</span>") || pagesSrc.indexOf("pg-tp-btn") > pagesSrc.indexOf("pg-close-btn")) {
   throw new Error("Take-profit button must sit left of 立即平仓 without a 止盈 title");
 }
+const tradeApiSrc = readFileSync(fileURLToPath(new URL("../src/lib/tradeApi.ts", import.meta.url)), "utf8");
+if (!tradeApiSrc.includes('export const isLongSide = (side: number | string) => ["0", "long", "buy"].includes(String(side).toLowerCase());') || !pagesSrc.includes("isLongSide(side)") || !source.includes("isLongSide(row.side)") || pagesSrc.includes('side === "0"')) {
+  throw new Error("Side badges must treat backend integer 0 as long (0=long 1=short), not string-only compare");
+}
 if (!klineCss.includes("font: 12px var(--font-ui);") || !klineCss.includes("font: 13px var(--font-ui);")) {
   throw new Error("自动/手动/指标 labels must be one font level larger");
 }

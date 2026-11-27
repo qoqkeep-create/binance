@@ -29,7 +29,7 @@ const post = <T>(path: string, body: unknown, headers?: Record<string, string>) 
 
 export interface PositionStrategyLevel { profitRR: number; reducePosition: number; stopLossType: string; stopLossRR: number | null; stopLossAbsoluteRR: number | null }
 export interface PositionRow {
-  id: number; symbol: string; side: string; leverage: number; position_amount: number | string;
+  id: number; symbol: string; side: number | string; leverage: number; position_amount: number | string;
   margin: number | string; pnl: number | string; pnl_ratio: number | string; open_price: number | string;
   current_price: number | string; market_stop_price: number | string | null; manual_take_profit_price: number | string | null;
   estimated_total_fee: number | string; position_origin: string; opened_at: string; strategy_status?: number;
@@ -40,12 +40,12 @@ export interface MarginInfo {
   wallet_balance: number | string; margin_balance: number | string; available_balance: number | string;
 }
 export interface HistoryRow {
-  id: number; symbol: string; side: string; pnl: number | string; pnl_ratio: number | string;
+  id: number; symbol: string; side: number | string; pnl: number | string; pnl_ratio: number | string;
   open_price: number | string; close_price: number | string; position_amount: number | string;
   fee: number | string; funding_fee: number | string; opened_at: string; closed_at: string; settlement_status?: string;
 }
 export interface OrderRow {
-  id: number; symbol: string; side: string; status_text: string; kind: string; leverage: number;
+  id: number; symbol: string; side: number | string; status_text: string; kind: string; leverage: number;
   price: number | string; stop_price: number | string; amount: number | string; filled_amount: number | string;
   filled_qty: number | string; avg_price: number | string; can_cancel: boolean; can_chase: boolean; created_at: string;
 }
@@ -55,6 +55,9 @@ export interface AccountInfo {
 }
 export interface Profile { bound: boolean; display_name: string; position_mode: string; avatar_url: string | null; email?: string; username?: string }
 export interface ApiInfo { alias: string; status: number; api_key_masked: string }
+
+// 后端 side 为整数 0=多 1=空；交易所字符串 BUY/SELL、long/short 并存，统一判定。
+export const isLongSide = (side: number | string) => ["0", "long", "buy"].includes(String(side).toLowerCase());
 
 export const tradeApi = {
   positions: (signal?: AbortSignal) => get<PositionRow[]>("/position/list", signal),

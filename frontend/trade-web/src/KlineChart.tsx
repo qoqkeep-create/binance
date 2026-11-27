@@ -9,7 +9,7 @@ import {
 } from "lightweight-charts";
 import { useAccount, usePreference } from "./AccountProvider";
 import { getKlines, type Candle } from "./lib/binance";
-import { tradeApi, type PositionRow } from "./lib/tradeApi";
+import { tradeApi, isLongSide, type PositionRow } from "./lib/tradeApi";
 import { setCopiedPrice } from "./lib/priceClipboard";
 import { priceScaleFormatter, minMoveFor } from "./lib/priceFormat";
 import { intervalSeconds } from "./lib/analysisIndicators";
@@ -199,7 +199,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
       const stop = Number(row.market_stop_price);
       const notional = Number(row.position_amount);
       if (Number.isFinite(entry) && entry > 0 && Number.isFinite(notional)) {
-        const long = row.side === "0" || row.side === "long" || row.side === "BUY";
+        const long = isLongSide(row.side);
         const loss = Number.isFinite(stop) && stop > 0 ? notional * Math.abs(entry - stop) / entry : 0;
         const close = liveClose !== undefined && Number.isFinite(liveClose) ? liveClose : entry;
         const pnl = (close - entry) / entry * notional * (long ? 1 : -1);
