@@ -9,7 +9,7 @@ export interface RealtimeSubscription {
   handler: (event: StreamEvent) => void;
 }
 
-type WireEnvelope = { type?: string; channel?: string; sequence?: number; data?: Record<string, unknown> };
+type WireEnvelope = { type?: string; channel?: string; sequence?: number; closedSequence?: number; data?: Record<string, unknown> };
 type SocketKind = "ticker" | "kline";
 
 interface SocketState {
@@ -35,6 +35,7 @@ class MarketRealtime {
   private latencySamples: number[] = [];
   private requestId = 0;
   private klineSequences = new Map<string, number>();
+  private closedKlineSequences = new Map<string, number>();
 
   subscribe(sub: RealtimeSubscription): () => void {
     this.subs.add(sub);
@@ -115,7 +116,10 @@ class MarketRealtime {
     socket.onopen = () => {
       if (generation !== state.generation) return;
       state.backoff = 1000;
-      if (kind === "kline") this.klineSequences.clear();
+      if (kind === "kline") {
+        this.klineSequences.clear();
+        this.closedKlineSequences.clear();
+      }
       this.sendSubscribe(kind, socket);
       state.pingTimer = window.setInterval(() => {
         socket.send(JSON.stringify({ type: "ping", requestId: `ping-${++this.requestId}`, timestamp: Date.now() }));
@@ -142,7 +146,10 @@ class MarketRealtime {
       if (generation !== state.generation) return;
       state.socket = undefined;
       state.pingTimer = undefined;
-      if (kind === "kline") this.klineSequences.clear();
+      if (kind === "kline") {
+        this.klineSequences.clear();
+        this.closedKlineSequences.clear();
+      }
       if (kind === "ticker") this.latencySamples = [];
       this.broadcast({ type: "disconnected" });
       const delay = state.backoff;
@@ -189,14 +196,21 @@ class MarketRealtime {
     const interval = String(data.interval ?? "1m");
     const closed = data.closed === true;
     const sequence = Number(envelope.sequence);
-    const sequenceKey = `${symbol}:${interval}:${closed ? "closed" : "forming"}`;
+    const sequenceKey = `${symbol}:${interval}`;
     const previous = this.klineSequences.get(sequenceKey);
     if (Number.isFinite(sequence) && sequence > 0) {
       if (previous !== undefined && sequence <= previous) return;
-      if (closed && previous !== undefined && sequence > previous + 1) {
-        this.broadcast({ type: "gap", symbol, interval, expected: previous + 1, received: sequence });
-      }
       this.klineSequences.set(sequenceKey, sequence);
+    }
+    const closedSequence = Number(envelope.closedSequence);
+    const previousClosed = this.closedKlineSequences.get(sequenceKey);
+    if (closed && Number.isFinite(closedSequence) && closedSequence > 0) {
+      if (previousClosed !== undefined && closedSequence > previousClosed + 1) {
+        this.broadcast({ type: "gap", symbol, interval, expected: previousClosed + 1, received: closedSequence });
+      }
+      if (previousClosed === undefined || closedSequence > previousClosed) {
+        this.closedKlineSequences.set(sequenceKey, closedSequence);
+      }
     }
     for (const sub of this.subs) {
       if (sub.symbol !== "*" && sub.symbol !== symbol) continue;

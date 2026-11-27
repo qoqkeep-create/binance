@@ -20,8 +20,8 @@ if (!source.includes('this.klineSequences.clear()')) {
 if (!source.includes('type: "gap"')) {
   throw new Error("closed kline sequence gaps must be surfaced to the chart");
 }
-if (!source.includes('closed ? "closed" : "forming"')) {
-  throw new Error("forming and closed kline sequences must be tracked independently");
+if (!source.includes("closedKlineSequences") || !source.includes("closedSequence")) {
+  throw new Error("closed kline sequence gaps must use a separate closedSequence field while preserving global ordering");
 }
 
 console.log("realtime transport contract checks passed");

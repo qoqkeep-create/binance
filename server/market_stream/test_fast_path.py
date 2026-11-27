@@ -63,10 +63,14 @@ class LiveFastPathTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
 
-    def test_closed_kline_sequence_has_its_own_scope(self):
-        self.assertNotEqual(
+    def test_closed_kline_sequence_keeps_global_scope_and_adds_closed_scope(self):
+        self.assertEqual(
             bus.sequence_key("market.kline", "BTCUSDT:1m", candle()),
             bus.sequence_key("market.kline", "BTCUSDT:1m", candle(closed=True)),
+        )
+        self.assertNotEqual(
+            bus.sequence_key("market.kline", "BTCUSDT:1m", candle()),
+            bus.closed_sequence_key("market.kline", "BTCUSDT:1m", candle(closed=True)),
         )
         self.assertEqual(
             bus.sequence_key("market.ticker", "BTCUSDT", {"symbol": "BTCUSDT"}),

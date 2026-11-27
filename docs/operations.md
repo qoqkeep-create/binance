@@ -1,5 +1,13 @@
 # 整合环境部署与运维
 
+## Web 实时行情分流发布（2026-11-28，北京时间）
+
+完整工作区提交 **`744fb64`** 已部署到 **47.80.22.243（首尔服务器）**。后端 release 为 **`integrated-quick-744fb64`**，api、market、worker、scheduler 四个容器均 healthy，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。数据库、Redis 和 MySQL 未替换，没有应用 migration，也没有执行真实交易或资金操作。
+
+Web 静态 release 为 **`trade-web-20261128-realtime-744fb64`**，已原子切换到 `/opt/trade-tools-integrated/web/integrated/market`。IP 入口和 `ba.wow211.com` 均返回 200，index 哈希 `1576fcc3…`，JS 哈希 `fbdbd930…`，CSS 哈希 `b27473e1…`，线上 JS 已包含 `market.ticker.batch`。上一 Web release `trade-web-20261128-kline3m-e6d66fc` 保留可回退。
+
+本次发布包含 Web ticker 批量事件、ticker／K 线双 WebSocket、ASGI K 线优先队列、closed K 线 sequence 缺口恢复和前端尾部重绘合并。iOS 客户端未随本次发布，旧 `market.ticker` 协议由后端 fanout 兼容展开。后端保留原 K 线全局 sequence，并额外发送 `closedSequence`，避免影响旧 iOS ingress。
+
 ## 3 分钟 K 线桶宽修复（1m 根不再追加进 3m 图）Web 发布（2026-11-28，北京时间）
 
 用户确认截图为 3 分钟周期，要求按分析方案直接实现并全量提交推送部署。根因：`lib/analysisIndicators.ts` 的 `intervalSeconds` 缺 `3m`，`KlineChart` 两处 `intervalSeconds[selectedInterval] ?? 60` 静默按 60 秒取桶；实时层只订阅 1m（`lib/realtime.ts` 固定 `intervals: ["1m"]`，大周期客户端聚合），于是同一 3m 桶内的 540/600 各成一根，180 秒历史间距右侧接上 60 秒间距＝右侧蜡烛挤叠。修复：新增 `knownIntervals`/`chartIntervals`/`isChartInterval`，`intervalSeconds` 改 `Record<KnownInterval, number>` 并补 `"3m": 180`；`KlineChart` 的 `INTERVALS`/`ChartPreference.interval`/`intervalRef` 收为 `ChartInterval`，两处 `?? 60` 删除；`analysisSnapshot` 的 `indicatorIntervals` 标 `SourceInterval[]` 并去掉冗余断言，`buildIndicatorRow` 参数收为 `KnownInterval`。缺周期自此是编译错误（独立样例实证 TS2741 与 TS2322＋TS7053）。测试：`candleMerge.test.ts` 首次走派生路径（9 个图表周期桶宽逐一核对、540/600 同桶只剩一根、3m/5m/15m 整桶 1m 只加一根且全部落周期边界＋时间严格递增、ticker 种子根同边界）；`klineChart.test.mjs` 契约锁定新声明并禁止 `?? 60`；把 3m 故意改成 60 秒后测试报 `3m must map to 180s, got 60` 且 exit=1（红灯确认）。提交 **`e6d66fc`**，`npm test` 全绿、`npm run build`、`tsc --noEmit`、`git diff --check` 通过。

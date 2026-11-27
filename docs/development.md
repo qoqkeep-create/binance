@@ -2,7 +2,7 @@
 
 ## Web 实时行情分流与缺口恢复（2026-11-28，本地）
 
-Web `marketRealtime` 改为共享订阅状态下的 ticker／K 线双 WebSocket。ticker 连接订阅 `market.ticker.batch`，每个快照只发送一条批量消息，前端仍按 500ms 合并更新左侧列表。K 线连接只订阅当前交易对的 1m 实时流。ASGI 每连接出站队列对 K 线、历史和私有事件优先，旧逐交易对 ticker 使用 latest-wins。K 线 closed 事件使用独立 sequence 作用域，客户端检测跳号后沿用图表现有历史读取路径恢复。
+Web `marketRealtime` 改为共享订阅状态下的 ticker／K 线双 WebSocket。ticker 连接订阅 `market.ticker.batch`，每个快照只发送一条批量消息，前端仍按 500ms 合并更新左侧列表。K 线连接只订阅当前交易对的 1m 实时流。ASGI 每连接出站队列对 K 线、历史和私有事件优先，旧逐交易对 ticker 使用 latest-wins。K 线保留全局 sequence，并为 closed 事件增加独立 `closedSequence`，客户端检测 closed 跳号后沿用图表现有历史读取路径恢复，iOS 旧 ingress 继续使用全局连续 sequence。
 
 验证命令和结果如下。
 

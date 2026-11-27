@@ -10,7 +10,7 @@
 
 Web 实时客户端现在使用两个物理 `/ws/v1` 连接。ticker 连接订阅 `market.ticker.batch`，每个全量快照只发送一条批量消息，K 线连接只承载当前订阅交易对的 1m 流。切换交易对或周期时只更新订阅帧，不重建另一条连接。服务端每条连接的出站缓冲区优先发送 K 线、历史和私有事件，旧版逐交易对 ticker 按交易对保留最新一条，ticker 突发不会占满 K 线发送空间。iOS 继续使用既有 `market.ticker` 单连接协议，由 fanout 展开批量消息兼容。
 
-K 线 forming 与 closed 事件使用独立的 Redis sequence 作用域。Web 客户端只对 closed sequence 跳号触发恢复，避免形成中间更新被合并时误报缺口。恢复沿用 `KlineChart` 的现有历史请求与缓存交接，最多每秒触发一次，旧画面在新快照准备好前继续显示。
+K 线保持原有全局 `sequence` 作用域，并为 closed 事件增加独立的 `closedSequence` 字段。Web 客户端只对 `closedSequence` 跳号触发恢复，避免形成中间更新被合并时误报缺口，iOS 旧 ingress 继续看到连续的全局 sequence。恢复沿用 `KlineChart` 的现有历史请求与缓存交接，最多每秒触发一次，旧画面在新快照准备好前继续显示。
 
 本地验证范围包括 Web `npm test`、`npm run build`，Django `market_stream.test_coordination`、`market_stream.test_fast_path` 与 `market_stream.test_fanout`。线上 47.80.22.243（首尔服务器）尚未部署本轮改动，仍需登录后的浏览器端到端采样确认 Binance eventTime、WebSocket 收到时间、队列等待和 `renderData` 时间。
 

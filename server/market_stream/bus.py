@@ -10,7 +10,13 @@ MARKET_CHANNELS = {"market.kline", "market.ticker", "market.ticker.batch", "mark
 PUBLISH_SEQUENCED = """
 local sequence = redis.call('INCR', KEYS[1])
 redis.call('EXPIRE', KEYS[1], 86400)
-redis.call('PUBLISH', ARGV[1], ARGV[2] .. sequence .. '}')
+local suffix = ''
+if ARGV[3] == '1' then
+    local closed = redis.call('INCR', KEYS[2])
+    redis.call('EXPIRE', KEYS[2], 86400)
+    suffix = ',\"closedSequence\":' .. closed
+end
+redis.call('PUBLISH', ARGV[1], ARGV[2] .. sequence .. suffix .. '}')
 return sequence
 """
 
@@ -61,6 +67,10 @@ def publish_private_batch(entries):
 
 
 def sequence_key(channel, key, data):
+    return f"integrated:sequence:{channel}:{key}"
+
+
+def closed_sequence_key(channel, key, data):
     suffix = ":closed" if channel == "market.kline" and data.get("closed") is True else ""
     return f"integrated:sequence:{channel}:{key}{suffix}"
 
@@ -78,6 +88,7 @@ def _publish_batch(entries):
             if user_id is not None:
                 payload.update(_user=str(user_id), _mode=mode)
             prefix = json.dumps(payload, separators=(",", ":"))[:-1] + ',"sequence":'
-            pipe.eval(PUBLISH_SEQUENCED, 1, sequence_key(channel, key, data),
-                      delivery_topic(payload), prefix)
+            pipe.eval(PUBLISH_SEQUENCED, 2, sequence_key(channel, key, data),
+                      closed_sequence_key(channel, key, data), delivery_topic(payload), prefix,
+                      "1" if channel == "market.kline" and data.get("closed") is True else "0")
         pipe.execute()
