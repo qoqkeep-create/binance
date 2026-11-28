@@ -182,11 +182,11 @@ export function HistoryPage() {
       if (target === "history") {
         const data = await tradeApi.history(f, p, signal);
         setHistory((prev) => append ? [...prev, ...data.items] : data.items);
-        setHasMore(data.pagination.has_more);
+        setHasMore(data.pagination.has_next);
       } else {
         const data = await tradeApi.orders(p, signal);
         setOrders((prev) => append ? [...prev, ...data.items] : data.items);
-        setHasMore(data.pagination.has_more);
+        setHasMore(data.pagination.has_next);
       }
       setPage(p);
       setState("ready");

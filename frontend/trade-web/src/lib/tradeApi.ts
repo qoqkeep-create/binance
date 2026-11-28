@@ -62,10 +62,10 @@ export const isLongSide = (side: number | string) => ["0", "long", "buy"].includ
 export const tradeApi = {
   positions: (signal?: AbortSignal) => get<PositionRow[]>("/position/list", signal),
   margin: (signal?: AbortSignal) => get<MarginInfo>("/position/margin?fresh=1", signal),
-  history: (filter: string, page: number, signal?: AbortSignal) =>
-    get<{ items: HistoryRow[]; pagination: { page: number; page_size: number; total: number; has_more: boolean } }>(`/position/history?filter=${filter}&page=${page}&page_size=20`, signal),
+  history: (filter: string, page: number, signal?: AbortSignal, pageSize = 20) =>
+    get<{ items: HistoryRow[]; pagination: { page: number; page_size: number; total: number; has_next: boolean; has_previous: boolean } }>(`/position/history?filter=${filter}&page=${page}&page_size=${pageSize}`, signal),
   orders: (page: number, signal?: AbortSignal) =>
-    get<{ items: OrderRow[]; pagination: { page: number; page_size: number; total: number; has_more: boolean } }>(`/trade/order/list?page=${page}&page_size=20`, signal),
+    get<{ items: OrderRow[]; pagination: { page: number; page_size: number; total: number; has_next: boolean; has_previous: boolean } }>(`/trade/order/list?page=${page}&page_size=20`, signal),
   accountInfo: (fresh: boolean, signal?: AbortSignal) => get<AccountInfo>(`/account/info${fresh ? "?fresh=1" : ""}`, signal),
   profile: (signal?: AbortSignal) => get<Profile>("/account/profile", signal),
   apiInfo: (signal?: AbortSignal) => get<ApiInfo>("/api/info", signal),

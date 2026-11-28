@@ -30,6 +30,9 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
   const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
 
   const loadList = useCallback(async (target: DockTab, signal?: AbortSignal) => {
     if (target === "positions") return;
@@ -39,8 +42,10 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
         const data = await tradeApi.orders(1, signal);
         setOrders(data.items.slice(0, 4));
       } else {
-        const data = await tradeApi.history("all", 1, signal);
-        setHistory(data.items.slice(0, 4));
+        const data = await tradeApi.history("all", 1, signal, 10);
+        setHistory(data.items);
+        setHistoryPage(data.pagination.page);
+        setHistoryHasMore(data.pagination.has_next);
       }
       setListState("ready");
     } catch (error) {
@@ -49,6 +54,22 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
       setListState("error");
     }
   }, []);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (tab !== "history" || !historyHasMore || historyLoadingMore) return;
+    setHistoryLoadingMore(true);
+    try {
+      const nextPage = historyPage + 1;
+      const data = await tradeApi.history("all", nextPage, undefined, 10);
+      setHistory((current) => [...current, ...data.items]);
+      setHistoryPage(data.pagination.page);
+      setHistoryHasMore(data.pagination.has_next);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "更多历史加载失败");
+    } finally {
+      setHistoryLoadingMore(false);
+    }
+  }, [historyHasMore, historyLoadingMore, historyPage, tab]);
 
   useEffect(() => {
     if (!open || tab === "positions") return;
@@ -122,20 +143,21 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
         {listState === "loading" && <p className="positions-dock-empty"><LoaderCircle size={14} className="spin" /> 正在加载委托…</p>}
         {listState === "error" && <p className="positions-dock-empty">委托加载失败，请切换页签重试</p>}
         {listState === "ready" && orders.length === 0 && <p className="positions-dock-empty">暂无委托</p>}
-        {listState === "ready" && orders.map((row) => <article key={row.id} className="positions-dock-card">
-          <header><span className="pd-card-symbol"><button type="button" onClick={() => onOpenSymbol(row.symbol)}>{row.symbol.replace(/USDT$/, "")}/USDT</button><span className={`pd-side ${isLongSide(row.side) ? "long" : "short"}`}>{isLongSide(row.side) ? "多" : "空"}</span></span><span className="pg-tag">{row.status_text}</span></header>
+        {listState === "ready" && orders.map((row) => <article key={row.id} className="positions-dock-card is-order">
+          <header><span className="pd-card-symbol"><button type="button" className="pd-card-symbol-name" onClick={() => onOpenSymbol(row.symbol)}><strong>{row.symbol.replace(/USDT$/, "")}</strong><small>/USDT</small></button><span className={`pd-side ${isLongSide(row.side) ? "long" : "short"}`}>{isLongSide(row.side) ? "多" : "空"}</span></span><span className="pg-tag">{row.status_text}</span></header>
           <div className="positions-dock-card-grid"><span>类型 <strong>{orderKind(row.kind)}</strong></span><span>杠杆 <strong>x{row.leverage}</strong></span><span>委托价 <strong>{fmt(row.price, 4)}</strong></span><span>成交均价 <strong>{row.avg_price ? fmt(row.avg_price, 4) : "—"}</strong></span><span>委托金额 <strong>{fmt(row.amount)} U</strong></span><span>时间 <strong>{row.created_at}</strong></span></div>
           <footer>{row.can_cancel && <button type="button" className="order-action is-danger" disabled={actionId === row.id} onClick={() => void runOrderAction(row, "limit-cancel")}>{actionId === row.id ? "处理中…" : "撤单"}</button>}{row.can_chase && <button type="button" className="order-action" disabled={actionId === row.id} onClick={() => void runOrderAction(row, "limit-chase")}>追单</button>}</footer>
         </article>)}
       </div>}
-      {tab === "history" && <div className="positions-dock-list positions-dock-cards">
+      {tab === "history" && <div className="positions-dock-list positions-dock-cards" onScroll={(event) => { const element = event.currentTarget; if (element.scrollTop + element.clientHeight >= element.scrollHeight - 24) void loadMoreHistory(); }}>
         {listState === "loading" && <p className="positions-dock-empty"><LoaderCircle size={14} className="spin" /> 正在加载历史…</p>}
         {listState === "error" && <p className="positions-dock-empty">历史加载失败，请切换页签重试</p>}
         {listState === "ready" && history.length === 0 && <p className="positions-dock-empty">暂无历史记录</p>}
         {listState === "ready" && history.map((row) => { const pnl = num(row.pnl); return <article key={row.id} className="positions-dock-card">
-          <header><span className="pd-card-symbol"><button type="button" onClick={() => onOpenSymbol(row.symbol)}>{row.symbol.replace(/USDT$/, "")}/USDT</button><span className={`pd-side ${isLongSide(row.side) ? "long" : "short"}`}>{isLongSide(row.side) ? "多" : "空"}</span></span><span className={pnl >= 0 ? "pd-up" : "pd-down"}>{pnl >= 0 ? "+" : "-"}{fmt(Math.abs(pnl))} U</span></header>
+          <header><span className="pd-card-symbol"><button type="button" className="pd-card-symbol-name" onClick={() => onOpenSymbol(row.symbol)}><strong>{row.symbol.replace(/USDT$/, "")}</strong><small>/USDT</small></button><span className={`pd-side ${isLongSide(row.side) ? "long" : "short"}`}>{isLongSide(row.side) ? "多" : "空"}</span></span><span className={pnl >= 0 ? "pd-up" : "pd-down"}>{pnl >= 0 ? "+" : "-"}{fmt(Math.abs(pnl))} U</span></header>
           <div className="positions-dock-card-grid"><span>盈亏比 <strong>{fmt(num(row.pnl_ratio) * 100)}%</strong></span><span>开仓价 <strong>{fmt(row.open_price, 4)}</strong></span><span>平仓价 <strong>{fmt(row.close_price, 4)}</strong></span><span>持仓额 <strong>{fmt(row.position_amount)} U</strong></span><span>手续费 <strong>{fmt(num(row.fee) + num(row.funding_fee))} U</strong></span><span>时间 <strong>{row.closed_at}</strong></span></div>
         </article>; })}
+        {historyLoadingMore && <p className="positions-dock-loading-more"><LoaderCircle size={13} className="spin" /> 加载更多…</p>}
       </div>}
       {notice && <p className="positions-dock-notice">{notice}</p>}
     </div>

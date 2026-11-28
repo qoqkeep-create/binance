@@ -509,25 +509,31 @@ html[data-theme="light"] .pg-close-btn { color: #ffffff; }
 .positions-dock-tab { min-width: 66px; padding: 0 12px; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: 12px var(--font-ui); }
 .positions-dock-tab:hover { color: var(--text); }
 .positions-dock-tab.active { color: var(--green); border-bottom-color: var(--green); font-weight: 600; }
-.positions-dock-body { max-height: calc(min(46vh, 430px) - 36px); overflow: hidden; background: var(--panel); }
-.positions-dock-list { height: 136px; }
-.positions-dock-cards { height: 136px; padding: 0 12px; overflow: auto; }
+.positions-dock { height: min(182px, 58vh); max-height: none; }
+.positions-dock-body { height: calc(100% - 36px); max-height: none; overflow: hidden; background: var(--panel); }
+.positions-dock-list { flex: 1; height: auto; }
+.positions-dock-cards { flex: 1; height: auto; padding: 0 12px; overflow: auto; }
 .positions-dock-card { display: grid; grid-template-columns: minmax(150px, 1.15fr) repeat(6, minmax(80px, 1fr)) minmax(104px, .8fr); align-items: center; gap: 10px; padding: 7px 12px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); color: var(--text); }
+.positions-dock-card.is-order { grid-template-columns: minmax(150px, 1.15fr) minmax(72px, .75fr) repeat(6, minmax(80px, 1fr)) minmax(104px, .8fr); }
 .positions-dock-card header { display: contents; }
 .pd-card-symbol { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-.positions-dock-card header button { padding: 0; background: transparent; color: var(--text); font: 600 12px var(--font-ui); }
+.positions-dock-card header button { padding: 0; background: transparent; color: var(--text); font: 600 11px var(--font-ui); }
 .positions-dock-card header button:hover { color: var(--green); }
+.pd-card-symbol-name { display: inline-flex; align-items: baseline; gap: 2px; }
+.pd-card-symbol-name strong { color: var(--text); font: 600 11px var(--font-ui); }
+.pd-card-symbol-name small { color: var(--muted); font: 500 9px var(--font-ui); }
 .positions-dock-card header > .pd-up, .positions-dock-card header > .pd-down { margin-left: 0; font: 600 12px var(--font-ui); }
 .positions-dock-card-grid { display: contents; color: var(--muted-dark); font: 11px var(--font-ui); }
 .positions-dock-card-grid span { display: flex; flex-direction: row; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; }
 .positions-dock-card-grid strong { overflow: hidden; color: var(--text); font: 500 11px var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
 .positions-dock-card footer { display: flex; justify-content: flex-start; gap: 6px; }
+.positions-dock-loading-more { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; padding: 5px; color: var(--muted); font: 10px var(--font-ui); }
 .order-action { padding: 3px 9px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--green); font: 11px var(--font-ui); }
 .order-action:hover { border-color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
 .order-action.is-danger { color: var(--red); }
 .order-action:disabled { opacity: .55; }
-@media (max-width: 1100px) { .positions-dock-card { grid-template-columns: minmax(140px, 1.2fr) repeat(6, minmax(70px, 1fr)) minmax(96px, .8fr); gap: 7px; } }
-@media (max-width: 900px) { .positions-dock-card { grid-template-columns: minmax(140px, 1.2fr) repeat(3, minmax(80px, 1fr)) minmax(96px, .8fr); }.positions-dock-card-grid span:nth-child(n+4) { display: none; } }
-@media (max-width: 700px) { .positions-dock { max-height: min(58vh, 460px); }.positions-dock-body { max-height: calc(min(58vh, 460px) - 36px); }.positions-dock-cards { height: 136px; }.positions-dock-card { grid-template-columns: minmax(130px, 1.2fr) repeat(2, minmax(90px, 1fr)) minmax(84px, .8fr); gap: 6px; }.positions-dock-card-grid span:nth-child(n+3) { display: none; }.positions-dock-head, .positions-dock-row { font-size: 10px; }.chart-trade-toggle { min-width: 50px; padding-inline: 7px; } }
+@media (max-width: 1100px) { .positions-dock-card { grid-template-columns: minmax(140px, 1.2fr) repeat(6, minmax(70px, 1fr)) minmax(96px, .8fr); gap: 7px; }.positions-dock-card.is-order { grid-template-columns: minmax(140px, 1.2fr) minmax(68px, .75fr) repeat(6, minmax(70px, 1fr)) minmax(96px, .8fr); } }
+@media (max-width: 900px) { .positions-dock-card { grid-template-columns: minmax(140px, 1.2fr) repeat(3, minmax(80px, 1fr)) minmax(96px, .8fr); }.positions-dock-card.is-order { grid-template-columns: minmax(140px, 1.2fr) minmax(68px, .75fr) repeat(3, minmax(80px, 1fr)) minmax(96px, .8fr); }.positions-dock-card-grid span:nth-child(n+4) { display: none; } }
+@media (max-width: 700px) { .positions-dock { height: min(182px, 58vh); max-height: none; }.positions-dock-body { height: calc(100% - 36px); max-height: none; }.positions-dock-cards { height: auto; }.positions-dock-card { grid-template-columns: minmax(130px, 1.2fr) repeat(2, minmax(90px, 1fr)) minmax(84px, .8fr); gap: 6px; }.positions-dock-card.is-order { grid-template-columns: minmax(130px, 1.2fr) minmax(62px, .72fr) repeat(2, minmax(90px, 1fr)) minmax(84px, .8fr); }.positions-dock-card-grid span:nth-child(n+3) { display: none; }.positions-dock-head, .positions-dock-row { font-size: 10px; }.chart-trade-toggle { min-width: 50px; padding-inline: 7px; } }
 
 .trade-static { flex-direction: row; align-items: center; justify-content: space-between; }.trade-static strong { color: var(--text); font: 600 14px var(--font-ui); font-variant-numeric: tabular-nums; }.trade-fee-row { padding: 2px 0; }.trade-info { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }.trade-info > div { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }.trade-info span { color: var(--muted-dark); font: 10px var(--font-ui); }.trade-info strong { color: var(--text); font: 500 12px var(--font-ui); font-variant-numeric: tabular-nums; }.insight-panel, .pg-scroll { scrollbar-width: none; }.insight-panel::-webkit-scrollbar, .pg-scroll::-webkit-scrollbar { display: none; }
