@@ -1,5 +1,9 @@
 # 变更与验收记录
 
+## 2026-11-28：iOS K 线实时链路改造上线
+
+提交 `253f84b` 已部署到 47.80.22.243（首尔服务器）的后端 release `integrated-quick-253f84b`，四容器 healthy、health 三项通过。iOS 行情页将实时消费拆为控制／K 线／ticker 三条 lane；`MarketRealtimeStore` actor 做 symbol、eventTime 与重复包校验，forming 最新值优先、已收盘桶不被旧 forming 重开；`KlineIngressState` 兼容 `closedSequence` 收盘缺口恢复，旧无 `closedSequence` 包保持严格序列契约；`ChartFrameScheduler` 16ms 合并 forming 帧、收盘/恢复帧立即发布。验证：iOS 27.2 RefreshTest 模拟器编译通过，新增 `MarketRealtimeStoreTests`＋`ChartEngineCoreTests` 183 项 0 失败；Web 测试与构建通过。Web 静态沿用 `trade-web-20261128-linehit-97cda87`。全部提交已推送 GitHub（远程 HEAD 253f84b），客户端未上传 TestFlight、未实机验收。
+
 ## 2026-11-28：Web 划线工具命中区放大上线
 
 提交 `97cda87` 已发布到 47.80.22.243（首尔服务器）的 Web 静态入口 `trade-web-20261128-linehit-97cda87`。划线的横／竖线元素零高／零宽，原来只有 1～6px 边框可点，现新增 14px 隐形 `::before` 命中条带，指针靠近线两侧约 6px 内即可选中／拖动，可见线位置不变。内置浏览器注入验证命中范围与事件派发，`npm test`／`npm run build` 通过；IP 与 `ba.wow211.com` 双入口资源一致，health 三项通过。
