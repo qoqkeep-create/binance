@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, LoaderCircle, X } from "lucide-react";
+import { LoaderCircle, X } from "lucide-react";
 import { tradeApi, isLongSide, type HistoryRow, type OrderRow, type PositionRow } from "./lib/tradeApi";
 import { TpLevels } from "./Pages";
 
@@ -37,10 +37,10 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
     try {
       if (target === "orders") {
         const data = await tradeApi.orders(1, signal);
-        setOrders(data.items);
+        setOrders(data.items.slice(0, 4));
       } else {
         const data = await tradeApi.history("all", 1, signal);
-        setHistory(data.items);
+        setHistory(data.items.slice(0, 4));
       }
       setListState("ready");
     } catch (error) {
@@ -96,7 +96,6 @@ export function PositionsDock({ rows, prices, open, onToggle, onOpenSymbol, onCh
           {value === "positions" ? `持仓${rows.length ? ` ${rows.length}` : ""}` : value === "orders" ? "委托" : "历史"}
         </button>)}
       </div>
-      <button type="button" className="positions-dock-close" aria-expanded={true} aria-label="收起交易抽屉" onClick={onToggle}><ChevronDown size={14} /></button>
     </div>
     <div className="positions-dock-body">
       {tab === "positions" && <><div className="positions-dock-head" role="row">
