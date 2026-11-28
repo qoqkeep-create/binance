@@ -1,4 +1,4 @@
-import { mergeTicker, mergeCandle, mergeBucketKline } from "../src/lib/candleMerge.js";
+import { mergeTicker, mergeCandle, mergeBucketKline, sourceClosesBucket } from "../src/lib/candleMerge.js";
 import { chartIntervals, intervalSeconds, type ChartInterval } from "../src/lib/analysisIndicators.js";
 import type { Candle } from "../src/lib/binance.js";
 
@@ -79,6 +79,11 @@ const inside3m = mergeBucketKline(
 );
 if (inside3m.length !== 4) throw new Error(`two 1m events inside one 3m bucket must stay a single bar, got ${inside3m.length - 3}`);
 if (inside3m[3].open !== 11.2 || inside3m[3].high !== 12.9 || inside3m[3].low !== 10.6 || inside3m[3].close !== 12.5) throw new Error("3m tail bar must keep the first 1m open and union extremes");
+
+// A closed 1m source inside a 1h bucket must keep the 1h bucket forming until
+// the final source minute closes. This guards the missing latest 1h candle.
+if (sourceClosesBucket(3_600, 3_600, 3_660, 60, true)) throw new Error("early 1m close must not close the 1h bucket");
+if (!sourceClosesBucket(3_600, 3_600, 7_140, 60, true)) throw new Error("final 1m close must close the 1h bucket");
 
 // 每个大周期：整桶 1m 事件只加一根蜡烛，且全部落在周期边界、时间严格递增。
 for (const interval of ["3m", "5m", "15m"] as ChartInterval[]) {

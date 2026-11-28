@@ -1,5 +1,15 @@
 import type { Candle } from "./binance.js";
 
+export function sourceClosesBucket(
+  bucketTime: number,
+  bucketSeconds: number,
+  sourceTime: number,
+  sourceSeconds: number,
+  closed: boolean,
+): boolean {
+  return closed && sourceTime + sourceSeconds >= bucketTime + bucketSeconds;
+}
+
 export function mergeCandle(candles: Candle[], candle: Candle): Candle[] {
   if (!candles.length) return [candle];
   const last = candles[candles.length - 1];

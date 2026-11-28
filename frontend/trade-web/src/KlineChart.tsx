@@ -15,7 +15,7 @@ import { priceScaleFormatter, minMoveFor } from "./lib/priceFormat";
 import { intervalSeconds, isChartInterval, type ChartInterval } from "./lib/analysisIndicators";
 import { marketRealtime } from "./lib/realtime";
 import { buildChartIndicators } from "./lib/chartIndicators";
-import { mergeCandle, mergeTicker, mergeBucketKline } from "./lib/candleMerge";
+import { mergeCandle, mergeTicker, mergeBucketKline, sourceClosesBucket } from "./lib/candleMerge";
 import { getCachedKlines, putCachedKlines } from "./lib/klineCache";
 import { DEFAULT_INDICATORS, mergeIndicatorSettings, type IndicatorSettings } from "./lib/indicatorSettings";
 import { createSupertrendBandView, type BandPoint, type BandFillConfig } from "./lib/supertrendBand";
@@ -677,14 +677,17 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
         const width = intervalSeconds[selectedInterval];
         const incoming = event.candle;
         const bucket = selectedInterval === "1m" ? incoming.time : Math.floor(incoming.time / width) * width;
+        const bucketClosed = selectedInterval === "1m"
+          ? event.closed
+          : sourceClosesBucket(bucket, width, incoming.time, 60, event.closed);
         // 收盘水位：已收盘的桶拒绝迟到的 forming/ticker 改写，否则收盘后实体被拉长＝与交易所原生K线不一致。
-        if (event.closed) closedThroughRef.current = Math.max(closedThroughRef.current, bucket);
+        if (bucketClosed) closedThroughRef.current = Math.max(closedThroughRef.current, bucket);
         else if (bucket <= closedThroughRef.current) return;
         if (selectedInterval === "1m") {
           candlesRef.current = mergeCandle(candlesRef.current, incoming);
         } else {
           // 后端仅推 1m 实时 K 线；大周期客户端聚合到对应桶，保证尾根实时且带影线。
-          candlesRef.current = mergeBucketKline(candlesRef.current, incoming, bucket, event.closed);
+          candlesRef.current = mergeBucketKline(candlesRef.current, incoming, bucket, bucketClosed);
         }
         scheduleTail();
       } else if (event.type === "ticker") {

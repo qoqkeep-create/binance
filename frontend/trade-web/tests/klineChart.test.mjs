@@ -134,14 +134,14 @@ const cacheSrc = readFileSync(fileURLToPath(new URL("../src/lib/klineCache.ts", 
 if (!cacheSrc.includes("if (candles.length) putCachedKlines")) {
   throw new Error("Prefetch must not cache empty cold-start snapshots");
 }
-if (!source.includes("closedThroughRef.current = Math.max(closedThroughRef.current, bucket)") || !source.includes("if (bucket <= closedThroughRef.current) return;") || !source.includes("mergeBucketKline(candlesRef.current, incoming, bucket, event.closed)")) {
-  throw new Error("Closed-bucket watermark must reject late forming/ticker writes so closed candles stay exchange-native");
+if (!source.includes("closedThroughRef.current = Math.max(closedThroughRef.current, bucket)") || !source.includes("if (bucket <= closedThroughRef.current) return;") || !source.includes("const bucketClosed") || !source.includes("mergeBucketKline(candlesRef.current, incoming, bucket, bucketClosed)")) {
+  throw new Error("Closed-bucket watermark must close larger periods only after their final source minute");
 }
 const merge = readFileSync(fileURLToPath(new URL("../src/lib/candleMerge.ts", import.meta.url)), "utf8");
 if (!merge.includes("mergeTicker(candles: Candle[], price: number, bucketTime: number)") || !merge.includes("if (bucketTime < last.time) return candles;") || !merge.includes("bucketTime > last.time")) {
   throw new Error("Ticker merge must target the current time bucket only and seed a new bar at roll, never mutate closed history");
 }
-if (!source.includes("mergeBucketKline(candlesRef.current, incoming, bucket, event.closed)") || !source.includes("Math.floor(ts / 1000 / width) * width") || !merge.includes("volume: closed ? last.volume + incoming.volume : last.volume") || !merge.includes("if (last.seeded)") || !merge.includes("open: last.close")) {
+if (!source.includes("mergeBucketKline(candlesRef.current, incoming, bucket, bucketClosed)") || !source.includes("Math.floor(ts / 1000 / width) * width") || !merge.includes("volume: closed ? last.volume + incoming.volume : last.volume") || !merge.includes("if (last.seeded)") || !merge.includes("open: last.close")) {
   throw new Error("Bucket merge must count closed 1m only, seed open at previous close, and let first real 1m take over seeded open/high/low");
 }
 if (!source.includes("last - bars * 0.8 + 0.5") || !source.includes("last + bars * 0.2 - 0.5")) {
