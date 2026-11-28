@@ -12,6 +12,12 @@ Web K 线工具栏移除刷新按钮，新增带图标的“交易”按钮和�
 
 提交 `26af399` 已发布到静态 release `trade-web-20261129-trade-drawer-rows-26af399`，IP 与 `ba.wow211.com` 双入口资源返回 200，后端保持不变。
 
+## 2026-11-29：Web 交易抽屉历史分页与样式统一
+
+历史页签改为每批读取 10 条，列表支持上下滚动，接近底部时继续请求下一页并追加到当前列表，直到后端 `pagination.has_next` 为 false。修正了前端误读 `has_more` 导致分页永远停止的问题，历史页面也同步使用后端真实分页字段。委托仍最多展示 4 条。持仓、委托和历史共用固定抽屉高度，委托操作列固定在单行末列。委托与历史的交易对改为左侧列表同款的主币种＋缩小 `/USDT` 显示，主币种字号与持仓对齐。后端接口和交易逻辑未改动。
+
+提交 `05ad966` 已推送到 `codex/integrated-ios`，Web 静态 release `trade-web-20261129-trade-drawer-history-05ad966` 已部署到 **47.80.22.243（首尔服务器）**。IP 与 `ba.wow211.com` 双入口的 index/JS/CSS 哈希分别为 `c6efe8efbdb3e3e6`、`7b97002acc79aac2`、`057874dd24bcd9bb`，健康接口 database、migrations、scheduler 均为 true。后端保持上一版，旧 Web release 保留回滚。
+
 ## 2026-11-28：Web 静态同步发布
 
 提交 `22065f2` 对应的 Web 静态包已发布到 **47.80.22.243（首尔服务器）** 的 `trade-web-20261128-iosrt-22065f2`，原子切换 `/integrated/market/`。IP 与 `ba.wow211.com` 双入口返回 200，资源 hash 为 index `aec9d54a…`、JS `7ca4ae9b…`、CSS `e0fe3ed4…`，健康检查三项通过。上一版 `trade-web-20261128-linehit-97cda87` 保留回滚。

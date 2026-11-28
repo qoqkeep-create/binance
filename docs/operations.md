@@ -8,6 +8,12 @@
 
 提交 `26af399` 已更新为 **`trade-web-20261129-trade-drawer-rows-26af399`**。委托／历史与持仓统一字体和抽屉高度，最多显示 4 条，移除抽屉右上角收起按钮，交易箭头按展开状态切换方向。后端未切换，上一版 `trade-web-20261129-trade-drawer-flow-8cf25d7` 保留回滚。
 
+## Web 交易抽屉历史分页发布（2026-11-29，北京时间）
+
+提交 **`05ad966`** 已推送 `codex/integrated-ios`，静态 release **`trade-web-20261129-trade-drawer-history-05ad966`** 已原子切换到 **47.80.22.243（首尔服务器）** 的 `/opt/trade-tools-integrated/web/integrated/market`。历史抽屉首批 10 条，滚动到底部按 `pagination.has_next` 分页追加，委托继续最多 4 条。持仓、委托、历史固定相同抽屉高度，委托操作按钮与持仓保持同一行末列，交易对使用主币种＋缩小 `/USDT`。同时修正历史页对后端 `has_next` 字段的读取。后端容器和交易逻辑未切换，上一版 `trade-web-20261129-trade-drawer-rows-26af399` 保留回滚。
+
+IP 与 `ba.wow211.com` 双入口均返回 200，index/JS/CSS SHA-256 前 16 位分别为 `c6efe8efbdb3e3e6`、`7b97002acc79aac2`、`057874dd24bcd9bb`。`/integrated/v1/health` 的 database、migrations、scheduler 均为 true，Nginx 配置检查和 reload 通过。
+
 ## Web 静态同步发布（2026-11-28，北京时间）
 
 提交 `22065f2` 对应的静态包已部署到 **47.80.22.243（首尔服务器）** 的 `trade-web-20261128-iosrt-22065f2`，通过 `/opt/trade-tools-integrated/web/integrated/market` 原子切换。IP 与 `ba.wow211.com` 双入口 index/JS/CSS 哈希分别为 `aec9d54a…`、`7ca4ae9b…`、`e0fe3ed4…`，页面与资源均返回 200，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。上一版 `trade-web-20261128-linehit-97cda87` 保留回滚。
