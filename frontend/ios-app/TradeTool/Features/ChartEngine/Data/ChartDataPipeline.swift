@@ -135,6 +135,7 @@ actor ChartDataPipeline {
     func accept(
         payload: RealtimeKlineEventPayload,
         sequence: Int64,
+        closedSequence: Int64? = nil,
         epoch eventEpoch: KlineStreamEpoch
     ) -> ChartDataPipelineIngressResult {
         guard payload.symbol.uppercased() == stream.symbol,
@@ -156,7 +157,8 @@ actor ChartDataPipeline {
                 closure: payload.closed
                     ? .closed
                     : .provisional
-            )
+            ),
+            closedSequence: closedSequence
         )
         let disposition = ingress.accept(event)
         let shouldDrain: Bool

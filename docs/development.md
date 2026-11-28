@@ -1,5 +1,29 @@
 # 开发与验证
 
+## iOS K 线实时链路全面改造（2026-11-28，本地）
+
+`RealtimeClient` 支持按 lane 过滤事件，行情页分别消费控制、K 线和 ticker 流。K 线 lane 使用较大的有界缓冲并在丢弃时触发既有 REST 恢复，ticker lane 使用单值有界缓冲，账户和其他页面继续使用原 `events()` 行为。`MarketRealtimeStore` actor 在图表入口做 symbol、eventTime 和重复包校验。`KlineIngressState` 兼容新 `closedSequence`，收盘水位缺口仍进入恢复状态。`ChartFrameScheduler` 在 16 ms 刷新窗口内合并 forming 帧，收盘帧和恢复帧立即提交。
+
+验证使用 iOS 27.2 `RefreshTest` 模拟器。
+
+```bash
+xcodebuild build-for-testing -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool \
+  -destination 'platform=iOS Simulator,id=6109F846-093F-4FBD-A19C-BD17028E9D63' \
+  -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+
+xcodebuild test -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool \
+  -destination 'platform=iOS Simulator,id=6109F846-093F-4FBD-A19C-BD17028E9D63' \
+  -only-testing:TradeToolTests/MarketRealtimeStoreTests \
+  -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+
+xcodebuild test -project frontend/ios-app/TradeTool.xcodeproj -scheme TradeTool \
+  -destination 'platform=iOS Simulator,id=6109F846-093F-4FBD-A19C-BD17028E9D63' \
+  -only-testing:TradeToolTests/ChartEngineCoreTests \
+  -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+以上构建与两个测试集合均通过。另有 `ServerSwitchingTests` 的首个 ready、快照交接、重连保留旧帧和周期切换取消旧请求 4 项通过。结果不替代真实 iPhone、TestFlight 或生产网络验收。
+
 ## Web 实时行情分流与缺口恢复（2026-11-28，本地）
 
 Web `marketRealtime` 改为共享订阅状态下的 ticker／K 线双 WebSocket。ticker 连接订阅 `market.ticker.batch`，每个快照只发送一条批量消息，前端仍按 500ms 合并更新左侧列表。K 线连接只订阅当前交易对的 1m 实时流。ASGI 每连接出站队列对 K 线、历史和私有事件优先，旧逐交易对 ticker 使用 latest-wins。K 线保留全局 sequence，并为 closed 事件增加独立 `closedSequence`，客户端检测 closed 跳号后沿用图表现有历史读取路径恢复，iOS 旧 ingress 继续使用全局连续 sequence。

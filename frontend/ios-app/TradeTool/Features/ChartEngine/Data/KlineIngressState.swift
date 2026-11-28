@@ -6,6 +6,23 @@ struct KlineIngressEvent: Equatable, Sendable {
     let sequence: Int64
     let eventTime: Int64
     let candle: ChartCandle
+    let closedSequence: Int64?
+
+    init(
+        epoch: KlineStreamEpoch,
+        stream: ChartStreamKey,
+        sequence: Int64,
+        eventTime: Int64,
+        candle: ChartCandle,
+        closedSequence: Int64? = nil
+    ) {
+        self.epoch = epoch
+        self.stream = stream
+        self.sequence = sequence
+        self.eventTime = eventTime
+        self.candle = candle
+        self.closedSequence = closedSequence
+    }
 }
 
 enum KlineRecoveryReason: Equatable, Sendable {
@@ -47,6 +64,7 @@ struct KlineIngressState: Sendable {
     private(set) var epoch: KlineStreamEpoch?
     private(set) var stream: ChartStreamKey?
     private(set) var lastReceivedSequence: Int64?
+    private(set) var lastClosedSequence: Int64?
     private(set) var lastAppliedRevision: UInt64 = 0
     private(set) var newestOpenTime: Int64?
     private(set) var pendingLiveUpsert: KlineIngressEvent?
@@ -73,6 +91,7 @@ struct KlineIngressState: Sendable {
         self.epoch = epoch
         self.stream = stream
         lastReceivedSequence = nil
+        lastClosedSequence = nil
         lastAppliedRevision = 0
         newestOpenTime = nil
         pendingLiveUpsert = nil
@@ -106,20 +125,48 @@ struct KlineIngressState: Sendable {
 
             let (expected, overflow) =
                 lastReceivedSequence.addingReportingOverflow(1)
-            guard !overflow, event.sequence == expected else {
-                self.lastReceivedSequence = event.sequence
-                return requireRecovery(
-                    .sequenceGap(
-                        expected: overflow
-                            ? lastReceivedSequence
-                            : expected,
-                        received: event.sequence
-                    ),
-                    preserving: event
-                )
+            // The server sequence advances for every forming update. A
+            // coalescing client may intentionally skip intermediate forming
+            // packets, so only a legacy packet without closedSequence keeps
+            // the old strict sequence contract. Closed packets use their
+            // dedicated sequence to detect a missing trusted close.
+            if event.closedSequence == nil {
+                guard !overflow, event.sequence == expected else {
+                    self.lastReceivedSequence = event.sequence
+                    return requireRecovery(
+                        .sequenceGap(
+                            expected: overflow
+                                ? lastReceivedSequence
+                                : expected,
+                            received: event.sequence
+                        ),
+                        preserving: event
+                    )
+                }
             }
         }
         lastReceivedSequence = event.sequence
+
+        if let closedSequence = event.closedSequence {
+            guard closedSequence > 0 else {
+                setRecovery(.invalidCandle)
+                return .recoveryRequired(.invalidCandle)
+            }
+            if let lastClosedSequence {
+                let (expected, overflow) = lastClosedSequence.addingReportingOverflow(1)
+                guard !overflow, closedSequence == expected else {
+                    self.lastClosedSequence = closedSequence
+                    return requireRecovery(
+                        .sequenceGap(
+                            expected: overflow ? lastClosedSequence : expected,
+                            received: closedSequence
+                        ),
+                        preserving: event
+                    )
+                }
+            }
+            lastClosedSequence = closedSequence
+        }
 
         if event.candle.closure == .closed {
             return acceptTrustedClose(event)

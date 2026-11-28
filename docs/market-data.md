@@ -2,6 +2,14 @@
 
 整合环境使用 Python 采集和推送，SwiftUI / Metal 显示。接口和当前性能样本见 [整合说明](INTEGRATION.md)。
 
+## Web 1 小时最新 forming K 线（2026-11-28）
+
+高周期图只在当前桶最后一根源 1 分钟线收盘时推进关闭水位。第一根源 1 分钟线收盘后，后续源线仍可更新当前 1 小时 forming 桶，因此不会再出现最新一根 K 线消失。`frontend/trade-web/tests/candleMerge.test.ts` 固定早期收盘与最终收盘的边界，线上 **47.80.22.243（首尔服务器）** 与 `ba.wow211.com` 使用同一静态资源 hash，健康检查三项通过。
+
+## iOS K 线实时链路（2026-11-28，本地）
+
+iOS 将图表实时消费拆为控制、K 线和 ticker 三条 lane。K 线 lane 的 forming 事件进入 `MarketRealtimeStore` 做最新值去重，再进入现有 `ChartDataPipeline`；闭合 K 线保留顺序，`closedSequence` 缺口触发原快照恢复。ticker lane 使用单值有界缓冲，不会占用 K 线的恢复队列。`ChartFrameScheduler` 只合并高频 forming 帧，收盘与恢复帧立即发布。该链路保持现有 REST 历史读取、指标计算和 Metal 渲染接口，真实手机网络与 TestFlight 仍需单独验收。
+
 ## Web 行情接入（2026-11-25，本地）
 
 `frontend/trade-web` 与 iOS 并列使用 `market_stream` 的 `/api/market/tickers|symbols|klines` 和 `/ws/v1`，不在浏览器直连 Binance。Web K 线保留 `items` 的毫秒时间和字符串／数字字段映射，分析助手的 `12h` 周期已加入后端共享周期目录；WSS 浏览器鉴权使用 `bearer.<JWT>` subprotocol，token 不进入请求 URL。Web K 线自 2026-11-26 起改用 `lightweight-charts` v5 自绘（替换 TradingView 托管 iframe）：主图蜡烛＋EMA 21/55/144＋Supertrend 10×6，副图 MACD 12/26/9（柱=2×(DIF−DEA)）与 StochRSI 14/14/3/3，参数与配色对齐 iOS；副图自适应比例主图 70%／两副图各 15%、首屏 64 根、切币／切周期单次 `setData` 加载，Supertrend 带可配填充与反转断开，指标启用／参数／颜色经顶部「指标」面板配置并随偏好保存，历史走 `/api/market/klines`、尾根实时走 `/ws/v1`。Web 已完成本地构建、替身测试与本地浏览器验收，尚未部署静态产物或做线上验收。

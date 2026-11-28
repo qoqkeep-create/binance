@@ -151,9 +151,58 @@ struct RealtimeServerMessage: Decodable, Sendable {
     let event: String?
     let key: String?
     let sequence: Int64?
+    let closedSequence: Int64?
     let timestamp: Int64
     let data: JSONValue?
     let error: RealtimeServerError?
+
+    init(
+        version: Int,
+        type: String,
+        requestId: String?,
+        channel: String?,
+        event: String?,
+        key: String?,
+        sequence: Int64?,
+        closedSequence: Int64? = nil,
+        timestamp: Int64,
+        data: JSONValue?,
+        error: RealtimeServerError?
+    ) {
+        self.version = version
+        self.type = type
+        self.requestId = requestId
+        self.channel = channel
+        self.event = event
+        self.key = key
+        self.sequence = sequence
+        self.closedSequence = closedSequence
+        self.timestamp = timestamp
+        self.data = data
+        self.error = error
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, type, requestId, channel, event, key, sequence,
+             closedSequence, timestamp, data, error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            version: try container.decode(Int.self, forKey: .version),
+            type: try container.decode(String.self, forKey: .type),
+            requestId: try container.decodeIfPresent(String.self, forKey: .requestId),
+            channel: try container.decodeIfPresent(String.self, forKey: .channel),
+            event: try container.decodeIfPresent(String.self, forKey: .event),
+            key: try container.decodeIfPresent(String.self, forKey: .key),
+            sequence: try container.decodeIfPresent(Int64.self, forKey: .sequence),
+            closedSequence: try container.decodeIfPresent(Int64.self, forKey: .closedSequence),
+            timestamp: try container.decode(Int64.self, forKey: .timestamp),
+            data: try container.decodeIfPresent(JSONValue.self, forKey: .data),
+            error: try container.decodeIfPresent(RealtimeServerError.self, forKey: .error)
+        )
+    }
 
     func decodeData<Value: Decodable>(
         as type: Value.Type
@@ -163,6 +212,48 @@ struct RealtimeServerMessage: Decodable, Sendable {
             return nil
         }
         return try? JSONDecoder().decode(type, from: encoded)
+    }
+}
+
+/// Selective delivery keeps high-volume market lanes from competing with
+/// control and account events in a single client buffer. The server still
+/// owns subscription filtering. This filter only avoids decoding and enqueue
+/// work for unrelated messages on the device.
+enum RealtimeEventFilter: Sendable {
+    case all
+    case chartControl(symbol: String)
+    case chartKline(symbol: String)
+    case chartTicker(symbol: String)
+
+    func accepts(_ message: RealtimeServerMessage) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .chartControl(let symbol):
+            guard message.type == "event" else { return true }
+            // The server has already applied the symbol filter. Avoid a second
+            // JSON encode/decode pass here and let the chart lane validate the
+            // payload once at its consumer boundary.
+            return message.channel == "market.history"
+                && matchesSymbol(message, symbol: symbol)
+        case .chartKline(let symbol):
+            return message.type == "event"
+                && message.channel == "market.kline"
+                && matchesSymbol(message, symbol: symbol)
+        case .chartTicker(let symbol):
+            return message.type == "event"
+                && message.channel == "market.ticker"
+                && matchesSymbol(message, symbol: symbol)
+        }
+    }
+
+    private func matchesSymbol(
+        _ message: RealtimeServerMessage,
+        symbol: String
+    ) -> Bool {
+        guard let key = message.key, !key.isEmpty else { return true }
+        let keySymbol = key.split(separator: ":", maxSplits: 1).first.map(String.init) ?? key
+        return keySymbol.caseInsensitiveCompare(symbol) == .orderedSame
     }
 }
 
@@ -367,7 +458,8 @@ final class RealtimeClient: ObservableObject {
         bufferingPolicy:
             AsyncStream<RealtimeServerMessage>
             .Continuation.BufferingPolicy = .unbounded,
-        onDropped: (() -> Void)? = nil
+        onDropped: (() -> Void)? = nil,
+        filter: RealtimeEventFilter = .all
     ) -> AsyncStream<RealtimeServerMessage> {
         let observerID = UUID()
         return AsyncStream(
@@ -375,7 +467,8 @@ final class RealtimeClient: ObservableObject {
         ) { continuation in
             observers[observerID] = RealtimeEventObserver(
                 continuation: continuation,
-                onDropped: onDropped
+                onDropped: onDropped,
+                filter: filter
             )
             continuation.onTermination = { [weak self] _ in
                 Task { @MainActor in
@@ -727,6 +820,7 @@ final class RealtimeClient: ObservableObject {
         _ message: RealtimeServerMessage
     ) {
         for observer in observers.values {
+            guard observer.filter.accepts(message) else { continue }
             switch observer.continuation.yield(message) {
             case .enqueued:
                 break
@@ -998,4 +1092,5 @@ private struct RealtimeEventObserver {
     let continuation:
         AsyncStream<RealtimeServerMessage>.Continuation
     let onDropped: (() -> Void)?
+    let filter: RealtimeEventFilter
 }

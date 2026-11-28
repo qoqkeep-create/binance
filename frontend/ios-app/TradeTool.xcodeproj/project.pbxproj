@@ -36,6 +36,7 @@
 		010000000000000000000018 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000019 /* Localizable.strings */; };
 		010000000000000000000019 /* MarketListSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001F /* MarketListSettingsView.swift */; };
 		01000000000000000000001A /* RealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000020 /* RealtimeClient.swift */; };
+		A1E000000000000000000001 /* MarketRealtimeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E000000000000000000002 /* MarketRealtimeStore.swift */; };
 		01000000000000000000001B /* MarketWatchlistStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000021 /* MarketWatchlistStore.swift */; };
 		01000000000000000000001C /* MarketSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000022 /* MarketSearchView.swift */; };
 		01000000000000000000001D /* MarketKline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000023 /* MarketKline.swift */; };
@@ -65,6 +66,7 @@
 		010000000000000000000037 /* ChartMetricKitSubscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003D /* ChartMetricKitSubscriber.swift */; };
 		010000000000000000000038 /* ChartStressHarnessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003E /* ChartStressHarnessView.swift */; };
 		010000000000000000000039 /* ChartDataPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000003F /* ChartDataPipeline.swift */; };
+		A1E000000000000000000003 /* ChartFrameScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E000000000000000000004 /* ChartFrameScheduler.swift */; };
 		01000000000000000000003A /* ChartSceneBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* ChartSceneBuilder.swift */; };
 		01000000000000000000003B /* KlineChartSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000041 /* KlineChartSceneView.swift */; };
 		01000000000000000000003C /* ChartIndicatorPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000042 /* ChartIndicatorPlugin.swift */; };
@@ -91,6 +93,7 @@
 		A1C000000000000000000001 /* PositionMargin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000002 /* PositionMargin.swift */; };
 		A1D000000000000000000001 /* PositionNativePager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000002 /* PositionNativePager.swift */; };
 		A1D000000000000000000003 /* PositionPagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000004 /* PositionPagerTests.swift */; };
+		A1E000000000000000000005 /* MarketRealtimeStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E000000000000000000006 /* MarketRealtimeStoreTests.swift */; };
 		0B0000000000000000000001 /* ChartEngineCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B0000000000000000000002 /* ChartEngineCoreTests.swift */; };
 		0C0000000000000000000001 /* ChartEngineOnscreenStressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0000000000000000000002 /* ChartEngineOnscreenStressTests.swift */; };
 		0D0000000000000000000001 /* ChartCalibrationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0000000000000000000002 /* ChartCalibrationUITests.swift */; };
@@ -198,6 +201,7 @@
 		02000000000000000000001E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		02000000000000000000001F /* MarketListSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketListSettingsView.swift; sourceTree = "<group>"; };
 		020000000000000000000020 /* RealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeClient.swift; sourceTree = "<group>"; };
+		A1E000000000000000000002 /* MarketRealtimeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketRealtimeStore.swift; sourceTree = "<group>"; };
 		020000000000000000000021 /* MarketWatchlistStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketWatchlistStore.swift; sourceTree = "<group>"; };
 		020000000000000000000022 /* MarketSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSearchView.swift; sourceTree = "<group>"; };
 		020000000000000000000023 /* MarketKline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketKline.swift; sourceTree = "<group>"; };
@@ -227,6 +231,7 @@
 		02000000000000000000003D /* ChartMetricKitSubscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartMetricKitSubscriber.swift; sourceTree = "<group>"; };
 		02000000000000000000003E /* ChartStressHarnessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartStressHarnessView.swift; sourceTree = "<group>"; };
 		02000000000000000000003F /* ChartDataPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDataPipeline.swift; sourceTree = "<group>"; };
+		A1E000000000000000000004 /* ChartFrameScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartFrameScheduler.swift; sourceTree = "<group>"; };
 		020000000000000000000040 /* ChartSceneBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSceneBuilder.swift; sourceTree = "<group>"; };
 		020000000000000000000041 /* KlineChartSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineChartSceneView.swift; sourceTree = "<group>"; };
 		020000000000000000000042 /* ChartIndicatorPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorPlugin.swift; sourceTree = "<group>"; };
@@ -268,6 +273,7 @@
 		A1C000000000000000000002 /* PositionMargin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionMargin.swift; sourceTree = "<group>"; };
 		A1D000000000000000000002 /* PositionNativePager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionNativePager.swift; sourceTree = "<group>"; };
 		A1D000000000000000000004 /* PositionPagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionPagerTests.swift; sourceTree = "<group>"; };
+		A1E000000000000000000006 /* MarketRealtimeStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketRealtimeStoreTests.swift; sourceTree = "<group>"; };
 		33600721399D7B8EDD04A732 /* USDTComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTComponents.swift; sourceTree = "<group>"; };
 		7BCF3E6D5E3FC0FD8C1EC182 /* USDTRecordsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTRecordsViews.swift; sourceTree = "<group>"; };
 		7E911C2F23F3AB2939EFCDDB /* USDTAccountViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USDTAccountViews.swift; sourceTree = "<group>"; };
@@ -395,6 +401,7 @@
 				02000000000000000000000F /* APIEnvelope.swift */,
 				020000000000000000000010 /* APIInterceptor.swift */,
 				020000000000000000000020 /* RealtimeClient.swift */,
+				A1E000000000000000000002 /* MarketRealtimeStore.swift */,
 			);
 			path = Networking;
 			sourceTree = "<group>";
@@ -543,6 +550,7 @@
 			children = (
 				02000000000000000000002A /* CandleStore.swift */,
 				02000000000000000000003F /* ChartDataPipeline.swift */,
+				A1E000000000000000000004 /* ChartFrameScheduler.swift */,
 				020000000000000000000028 /* KlineIngressState.swift */,
 				020000000000000000000029 /* RealtimeKlineIngress.swift */,
 			);
@@ -641,6 +649,7 @@
 				120000000000000000000005 /* ServerSwitchingTests.swift */,
 				A17000000000000000000004 /* FloatingPositionsTests.swift */,
 				A1D000000000000000000004 /* PositionPagerTests.swift */,
+				A1E000000000000000000006 /* MarketRealtimeStoreTests.swift */,
 				A18000000000000000000004 /* PositionTrendAdviceTests.swift */,
 				A19000000000000000000004 /* PositionLiveValuationTests.swift */,
 				A1B000000000000000000006 /* PositionLiveActivityTests.swift */,
@@ -912,6 +921,7 @@
 				01000000000000000000000E /* APIEnvelope.swift in Sources */,
 				01000000000000000000000F /* APIInterceptor.swift in Sources */,
 				01000000000000000000001A /* RealtimeClient.swift in Sources */,
+				A1E000000000000000000001 /* MarketRealtimeStore.swift in Sources */,
 				010000000000000000000010 /* AppToastCenter.swift in Sources */,
 				D15A00000000000000000001 /* DisplayNumber.swift in Sources */,
 				010000000000000000000011 /* AppContainer.swift in Sources */,
@@ -927,6 +937,7 @@
 				010000000000000000000023 /* RealtimeKlineIngress.swift in Sources */,
 				010000000000000000000024 /* CandleStore.swift in Sources */,
 				010000000000000000000039 /* ChartDataPipeline.swift in Sources */,
+				A1E000000000000000000003 /* ChartFrameScheduler.swift in Sources */,
 				01000000000000000000003C /* ChartIndicatorPlugin.swift in Sources */,
 				010000000000000000000025 /* ChartInvalidation.swift in Sources */,
 				010000000000000000000026 /* ChartRenderBatch.swift in Sources */,
@@ -975,6 +986,7 @@
 				130000000000000000000005 /* ServerSwitchingTests.swift in Sources */,
 				A17000000000000000000003 /* FloatingPositionsTests.swift in Sources */,
 				A1D000000000000000000003 /* PositionPagerTests.swift in Sources */,
+				A1E000000000000000000005 /* MarketRealtimeStoreTests.swift in Sources */,
 				A18000000000000000000003 /* PositionTrendAdviceTests.swift in Sources */,
 				A19000000000000000000003 /* PositionLiveValuationTests.swift in Sources */,
 				A1B000000000000000000007 /* PositionLiveActivityTests.swift in Sources */,

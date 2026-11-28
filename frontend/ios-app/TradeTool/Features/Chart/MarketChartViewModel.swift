@@ -94,6 +94,10 @@ final class MarketChartViewModel: ObservableObject {
     private let chartIndicatorSelectionStore: ChartIndicatorSelectionStore
     private let chartIndicatorParametersStore: ChartIndicatorParametersStore
     private var realtimeTask: Task<Void, Never>?
+    private var realtimeKlineTask: Task<Void, Never>?
+    private var realtimeTickerTask: Task<Void, Never>?
+    private let realtimeStore: MarketRealtimeStore
+    private var frameScheduler: ChartFrameScheduler!
     private var intervalTask: Task<Void, Never>?
     private var historyRequestID = UUID()
     private var historyRefreshPending = false
@@ -202,6 +206,7 @@ final class MarketChartViewModel: ObservableObject {
         self.market = market
         self.apiClient = apiClient
         self.realtimeClient = realtimeClient
+        self.realtimeStore = MarketRealtimeStore(symbol: market.symbol)
         self.diagnosticUpload = diagnosticUpload
         self.cacheTimeProvider = cacheTimeProvider
         self.recoveryWait = recoveryWait
@@ -210,6 +215,9 @@ final class MarketChartViewModel: ObservableObject {
         self.chartIndicatorParametersStore = chartIndicatorParametersStore
         chartIndicatorSelection = chartIndicatorSelectionStore.load()
         chartIndicatorParameters = chartIndicatorParametersStore.load()
+        self.frameScheduler = ChartFrameScheduler { [weak self] frame in
+            self?.chartDataFrame = frame
+        }
     }
 
     func start() {
@@ -220,16 +228,36 @@ final class MarketChartViewModel: ObservableObject {
         startLoadDiagnostics()
         hasRealtimeConnection = realtimeClient.state == .connected
         configureChartPipeline(for: interval)
-        let events = realtimeClient.events(
-            bufferingPolicy: .bufferingNewest(64)
-        ) { [weak self] in
-            self?.handleRealtimeBufferDrop()
-        }
+        let controlEvents = realtimeClient.events(
+            bufferingPolicy: .unbounded,
+            filter: .chartControl(symbol: market.symbol)
+        )
+        let klineEvents = realtimeClient.events(
+            bufferingPolicy: .bufferingNewest(256),
+            onDropped: { [weak self] in self?.handleRealtimeBufferDrop() },
+            filter: .chartKline(symbol: market.symbol)
+        )
+        let tickerEvents = realtimeClient.events(
+            bufferingPolicy: .bufferingNewest(1),
+            filter: .chartTicker(symbol: market.symbol)
+        )
         realtimeTask = Task { [weak self] in
-            for await message in events {
+            for await message in controlEvents {
                 guard !Task.isCancelled else {
                     return
                 }
+                await self?.receive(message)
+            }
+        }
+        realtimeKlineTask = Task { [weak self] in
+            for await message in klineEvents {
+                guard !Task.isCancelled else { return }
+                await self?.receive(message)
+            }
+        }
+        realtimeTickerTask = Task { [weak self] in
+            for await message in tickerEvents {
+                guard !Task.isCancelled else { return }
                 await self?.receive(message)
             }
         }
@@ -273,6 +301,10 @@ final class MarketChartViewModel: ObservableObject {
         finishLoadDiagnostics(outcome: "cancelled")
         realtimeTask?.cancel()
         realtimeTask = nil
+        realtimeKlineTask?.cancel()
+        realtimeKlineTask = nil
+        realtimeTickerTask?.cancel()
+        realtimeTickerTask = nil
         intervalTask?.cancel()
         intervalTask = nil
         historyRequestID = UUID()
@@ -298,6 +330,7 @@ final class MarketChartViewModel: ObservableObject {
         foregroundSnapshotReservation = nil
         chartIndicatorUpdateTask?.cancel()
         chartIndicatorUpdateTask = nil
+        frameScheduler.cancel()
         pendingChartPriceUpdate = nil
         chartPipelineSessionID = UUID()
         chartPipeline = nil
@@ -685,6 +718,7 @@ final class MarketChartViewModel: ObservableObject {
                     return
                 }
                 if let frame = result.frame {
+                    self.frameScheduler.cancel()
                     self.chartDataFrame = frame
                 } else {
                     self.hasMoreHistory = false
@@ -827,6 +861,7 @@ final class MarketChartViewModel: ObservableObject {
                 guard !Task.isCancelled, historyRequestID == requestID else { return }
                 if limit == 1_500 { candles = Array(sorted.suffix(500)) }
                 armHistoryPresentationGate()
+                frameScheduler.cancel()
                 chartDataFrame = frame
                 if !awaitsRecoveryPresentation {
                     recoveryState = isRealtimeDisconnected ? .disconnected : .idle
@@ -1040,24 +1075,30 @@ final class MarketChartViewModel: ObservableObject {
             guard let payload = message.decodeData(
                 as: RealtimeKlineEventPayload.self
             ),
-            payload.symbol == market.symbol else {
+            payload.symbol.caseInsensitiveCompare(market.symbol) == .orderedSame,
+            let sequence = message.sequence else {
                 return
             }
+            guard let update = await realtimeStore.ingestKline(
+                payload,
+                sequence: sequence,
+                closedSequence: message.closedSequence
+            ) else { return }
             let isSelectedInterval =
-                payload.interval == interval.rawValue
+                update.payload.interval == interval.rawValue
             let suppliesLivePrice = MarketChartRealtimeFeedPolicy
                 .suppliesLivePrice(
-                    sourceInterval: payload.interval,
+                    sourceInterval: update.payload.interval,
                     selectedInterval: interval
                 )
             guard isSelectedInterval || suppliesLivePrice else {
                 return
             }
-            if payload.interval
+            if update.payload.interval
                 == MarketKlineInterval.oneMinute.rawValue {
                 await updateRealtimePrice(
-                    payload.closePrice,
-                    eventTime: payload.eventTime
+                    update.payload.closePrice,
+                    eventTime: update.payload.eventTime
                 )
             }
             guard isSelectedInterval else {
@@ -1065,17 +1106,21 @@ final class MarketChartViewModel: ObservableObject {
             }
             await handleChartKline(
                 message: message,
-                payload: payload
+                payload: update.payload,
+                sequence: update.sequence,
+                closedSequence: update.closedSequence
             )
 
         case "market.ticker":
             guard let payload = message.decodeData(
                 as: MarketTickerPayload.self
             ),
-            payload.symbol == market.symbol else {
+            payload.symbol.caseInsensitiveCompare(market.symbol) == .orderedSame else {
                 return
             }
-            await updateTicker(payload)
+            if let payload = await realtimeStore.ingestTicker(payload) {
+                await updateTicker(payload)
+            }
 
         default:
             return
@@ -1210,6 +1255,7 @@ final class MarketChartViewModel: ObservableObject {
         for interval: MarketKlineInterval,
         restoring cached: CachedInterval? = nil
     ) {
+        frameScheduler.cancel()
         foregroundSnapshotReservation = nil
         cancelRecoveryDeadline()
         resetHistoryPresentationGate()
@@ -1258,6 +1304,7 @@ final class MarketChartViewModel: ObservableObject {
             hasMoreHistory = cached.hasMoreHistory
             isLoading = false
             lastError = nil
+            frameScheduler.cancel()
             chartDataFrame = ChartDataFrame(stream: cached.frame.stream, epoch: epoch,
                 candles: cached.frame.candles, indicators: cached.frame.indicators,
                 recoveryRequest: nil, readyTime: ProcessInfo.processInfo.systemUptime)
@@ -1280,6 +1327,7 @@ final class MarketChartViewModel: ObservableObject {
                     self.reload()
                     return
                 }
+                self.frameScheduler.cancel()
                 self.chartDataFrame = frame
                 if let price = self.realtimePrice, let eventTime = self.latestPriceEventTime,
                    self.cacheBucket(for: interval,
@@ -1356,7 +1404,7 @@ final class MarketChartViewModel: ObservableObject {
                 return
             }
             if let frame = result.frame {
-                self.chartDataFrame = frame
+                self.publishRealtimeFrame(frame, priority: .immediate)
             }
             self.scheduleChartRecoveryIfNeeded(
                 result.recoveryRequest,
@@ -1419,11 +1467,12 @@ final class MarketChartViewModel: ObservableObject {
 
     private func handleChartKline(
         message: RealtimeServerMessage,
-        payload: RealtimeKlineEventPayload
+        payload: RealtimeKlineEventPayload,
+        sequence: Int64,
+        closedSequence: Int64?
     ) async {
         guard let pipeline = chartPipeline,
-              let epoch = chartPipelineEpoch,
-              let sequence = message.sequence else {
+              let epoch = chartPipelineEpoch else {
             handleRealtimeBufferDrop()
             return
         }
@@ -1438,6 +1487,7 @@ final class MarketChartViewModel: ObservableObject {
         let result = await pipeline.accept(
             payload: payload,
             sequence: sequence,
+            closedSequence: closedSequence,
             epoch: epoch
         )
         guard chartPipelineSessionID == sessionID,
@@ -1457,7 +1507,10 @@ final class MarketChartViewModel: ObservableObject {
                 return
             }
             if let frame = drained.frame {
-                chartDataFrame = frame
+                publishRealtimeFrame(
+                    frame,
+                    priority: payload.closed ? .immediate : .coalesced
+                )
                 upsert(payload.candle)
             }
             scheduleChartRecoveryIfNeeded(
@@ -1648,11 +1701,21 @@ final class MarketChartViewModel: ObservableObject {
             return
         }
         if let frame = result.frame {
-            chartDataFrame = frame
+            publishRealtimeFrame(frame)
             upsertLiveTail(from: frame)
         } else if result.recoveryRequest != nil {
             pendingChartPriceUpdate = MarketChartPriceUpdate(price: price, eventTime: eventTime)
         }
+    }
+
+    /// Coalesce forming ticker/K-line frames into one main-actor publication
+    /// per display interval. Closed/recovery snapshots continue to publish
+    /// immediately through their existing installation paths.
+    private func publishRealtimeFrame(
+        _ frame: ChartDataFrame,
+        priority: ChartFrameScheduler.Priority = .coalesced
+    ) {
+        frameScheduler.submit(frame, priority: priority)
     }
 
     private func initialFrame(
