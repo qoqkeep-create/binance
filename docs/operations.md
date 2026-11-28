@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web 静态同步发布（2026-11-28，北京时间）
+
+提交 `22065f2` 对应的静态包已部署到 **47.80.22.243（首尔服务器）** 的 `trade-web-20261128-iosrt-22065f2`，通过 `/opt/trade-tools-integrated/web/integrated/market` 原子切换。IP 与 `ba.wow211.com` 双入口 index/JS/CSS 哈希分别为 `aec9d54a…`、`7ca4ae9b…`、`e0fe3ed4…`，页面与资源均返回 200，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。上一版 `trade-web-20261128-linehit-97cda87` 保留回滚。
+
 ## iOS K 线实时链路改造发布（2026-11-28，北京时间）
 
 完整提交 **`253f84b`** 已部署到 **47.80.22.243（首尔服务器）**，后端 release 为 **`integrated-quick-253f84b`**，api、market、worker、scheduler 四容器均 healthy，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。iOS 行情页实时消费拆为控制／K 线／ticker 三条 lane（`RealtimeClient` 按 lane 过滤），`MarketRealtimeStore` actor 做 symbol、eventTime 与重复包校验，`KlineIngressState` 兼容新 `closedSequence` 收盘水位缺口恢复，`ChartFrameScheduler` 在 16ms 窗口内合并 forming 帧、收盘与恢复帧立即发布。验证：iOS 27.2 `RefreshTest` 模拟器编译通过，`MarketRealtimeStoreTests`＋`ChartEngineCoreTests` 183 项通过、0 失败；Web `npm test`／`npm run build` 通过。Web 静态沿用 `trade-web-20261128-linehit-97cda87`（IP 与 `ba.wow211.com` 双入口 index/JS/CSS 哈希 `aec9d54a…`／`7ca4ae9b…`／`e0fe3ed4…`）。客户端本身未上传 TestFlight、未实机验收；本 release 全部提交已推送 GitHub（远程 HEAD 253f84b）。
