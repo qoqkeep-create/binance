@@ -1,5 +1,11 @@
 # 开发与验证
 
+## Web 顶部交易抽屉与三页签（2026-11-29，本地）
+
+`PositionsDock` 改为 K 线顶部覆盖式抽屉，使用“持仓／委托／历史”页签。委托页复用 `/v1/trade/order/list`，撤单与追单继续通过既有 `limit-cancel`、`limit-chase` 幂等命令，历史页复用 `/v1/position/history`。K 线工具栏移除刷新按钮并由 App 注入“交易”开关按钮，底部状态栏不再承载抽屉开关。
+
+`frontend/trade-web` 的 `npm test` 与 `npm run build` 通过。构建仍有既有 JavaScript 包体超过 500KB 的提示，不影响构建成功。未修改后端交易逻辑，未执行真实撤单、追单或平仓。
+
 ## iOS K 线实时链路全面改造（2026-11-28，本地）
 
 `RealtimeClient` 支持按 lane 过滤事件，行情页分别消费控制、K 线和 ticker 流。K 线 lane 使用较大的有界缓冲并在丢弃时触发既有 REST 恢复，ticker lane 使用单值有界缓冲，账户和其他页面继续使用原 `events()` 行为。`MarketRealtimeStore` actor 在图表入口做 symbol、eventTime 和重复包校验。`KlineIngressState` 兼容新 `closedSequence`，收盘水位缺口仍进入恢复状态。`ChartFrameScheduler` 在 16 ms 刷新窗口内合并 forming 帧，收盘帧和恢复帧立即提交。

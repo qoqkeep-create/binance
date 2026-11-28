@@ -4,7 +4,7 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   Bell,
-  ChevronUp,
+  ChevronDown,
   CircleHelp,
   Cpu,
   LayoutDashboard,
@@ -87,7 +87,6 @@ function TerminalApp() {
   const [positionCount, setPositionCount] = useState(0);
   const [dockOpen, setDockOpen] = useState(false);
   const wsRef = useRef<HTMLElement | null>(null);
-  const [chartCenterX, setChartCenterX] = useState(0);
   const [dockPositions, setDockPositions] = useState<PositionRow[]>([]);
   const [diagOpen, setDiagOpen] = useState(false);
   const [tlsProbe, setTlsProbe] = useState<{ ok: boolean; ms: number } | null>(null);
@@ -238,16 +237,6 @@ function TerminalApp() {
     return () => { window.clearInterval(flush); unsubscribe(); };
   }, [user]);
 
-  useEffect(() => {
-    const el = wsRef.current;
-    if (!el) return;
-    const measure = () => { const r = el.getBoundingClientRect(); setChartCenterX(r.left + r.width / 2); };
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    measure();
-    window.addEventListener("resize", measure);
-    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
-  }, [panelVisible, showAssistant, activeNav]);
   // 主导航首项与 K 线区左缘竖直对齐：按实测差值补 margin，随布局变化重算。
   useLayoutEffect(() => {
     const align = () => {
@@ -329,7 +318,7 @@ function TerminalApp() {
           <div className="rail-footer"><div><span className={`status-light ${marketStatus === "ready" ? "is-live" : ""}`} /> Binance Futures</div><span>{activeMarkets.length} 个合约</span></div>
         </aside>
         <main className="chart-workspace" ref={wsRef}>
-          <div className="chart-underlay" inert={showAssistant ? true : undefined}><KlineChart symbol={selectedSymbol} insightToggle={!showAssistant && <button className="insight-toggle" type="button" aria-label={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} title={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} aria-pressed={showInsightPanel} onClick={() => setShowInsightPanel((show) => !show)}>{showInsightPanel ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>} theme={theme} onSymbolChange={setSelectedSymbol} onStopPrice={(p) => setStopPriceRequest({ value: priceScaleFormatter(p), at: Date.now() })} /></div>
+          <div className="chart-underlay" inert={showAssistant ? true : undefined}><KlineChart symbol={selectedSymbol} tradeToggle={<button type="button" className={`chart-trade-toggle ${dockOpen ? "active" : ""}`} aria-label={dockOpen ? "收起交易抽屉" : "打开交易抽屉"} aria-expanded={dockOpen} title={dockOpen ? "收起交易抽屉" : "打开交易抽屉"} onClick={() => setDockOpen((open) => !open)}>交易 <ChevronDown size={13} aria-hidden="true" /></button>} insightToggle={!showAssistant && <button className="insight-toggle" type="button" aria-label={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} title={showInsightPanel ? "收起盘面速览" : "显示盘面速览"} aria-pressed={showInsightPanel} onClick={() => setShowInsightPanel((show) => !show)}>{showInsightPanel ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}</button>} theme={theme} onSymbolChange={setSelectedSymbol} onStopPrice={(p) => setStopPriceRequest({ value: priceScaleFormatter(p), at: Date.now() })} /></div>
           <PositionsDock rows={dockPositions} prices={priceMap} open={dockOpen} onToggle={() => setDockOpen((open) => !open)} onOpenSymbol={setSelectedSymbol} onChanged={() => void refreshPositions()} />
           {showAssistant && <ContractAnalysisAssistant key={selectedSymbol} symbol={selectedSymbol} baseAsset={selected?.baseAsset ?? selectedSymbol.replace(/USDT$/, "")} structuresContainer={structuresContainer} returnFocusTo={assistantOpener.current} onClose={() => setShowAssistant(false)} />}
         </main>
@@ -389,7 +378,7 @@ function TerminalApp() {
       {activeNav === "历史" && <div className="pg-scroll"><HistoryPage /></div>}
       {activeNav === "账户" && <div className="pg-scroll"><AccountPage focus={accountFocus} /></div>}
       {(activeNav === "信号" || activeNav === "引擎") && <section className="empty-state"><div className="empty-orbit"><Cpu size={34} /></div><h1>{activeNav}模块即将上线</h1><p>核心数据层已连接 Binance Futures。切换回行情查看实时盘面。</p><button onClick={() => setActiveNav("行情")}><LayoutDashboard size={15} /> 返回行情</button></section>}
-      <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span>{!dockOpen && <button type="button" className="positions-dock-toggle statusbar-dock-toggle" style={{ left: chartCenterX }} aria-expanded={false} aria-label="展开持仓列表" onClick={() => setDockOpen(true)}><ChevronUp size={13} /> 持仓</button>}<span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
+      <footer className="statusbar"><span><Wifi size={13} /> 币安 API <strong>{marketStatus === "ready" ? "已同步" : marketStatus === "loading" ? "同步中" : "同步失败"}</strong></span><span><Activity size={13} /> WebSocket <strong className={connection === "live" ? "positive" : ""}>{connectionLabel}</strong></span><span className="statusbar-right">ORBITAL TERMINAL <b>v0.1.0</b></span></footer>
     </div>
   );
 }

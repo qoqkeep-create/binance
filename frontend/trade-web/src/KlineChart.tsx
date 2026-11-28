@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Minus, MoveVertical, RefreshCw, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
+import { Minus, MoveVertical, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
@@ -93,9 +93,10 @@ const formatCrosshairTime = (seconds: number) => {
   return `${crosshairWeekdays[d.getDay()]} ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-export default function KlineChart({ symbol, insightToggle, theme = "dark", onStopPrice }: {
+export default function KlineChart({ symbol, insightToggle, tradeToggle, theme = "dark", onStopPrice }: {
   symbol: string;
   insightToggle?: ReactNode;
+  tradeToggle?: ReactNode;
   theme?: "dark" | "light";
   onSymbolChange?: (symbol: string) => void;
   onStopPrice?: (price: number) => void;
@@ -807,7 +808,7 @@ export default function KlineChart({ symbol, insightToggle, theme = "dark", onSt
           </div>
         </div>
         <div className="toolbar-right">
-          <button type="button" className="chart-refresh" aria-label="刷新 K 线" title="刷新 K 线" disabled={refreshing} onClick={() => void refreshChart()}><RefreshCw size={14} className={refreshing ? "spin" : ""} /></button>
+          {tradeToggle}
           <button type="button" className={`view-mode ${viewMode === "auto" ? "active" : ""}`} aria-pressed={viewMode === "auto"} title={viewMode === "auto" ? "自动缩放已开启，点击切为手动" : "当前手动缩放，点击切为自动"} onClick={() => { if (viewMode === "auto") { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); } else { viewModeApplyRef.current("auto"); resetView(); } }}>自动</button>
           <button type="button" className="indicator-master" aria-label="指标设置" title="指标设置" aria-expanded={showSettings} onClick={() => setShowSettings(true)}>
             <SlidersHorizontal size={13} /> 指标
