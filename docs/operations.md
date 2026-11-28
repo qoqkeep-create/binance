@@ -1,5 +1,9 @@
 # 整合环境部署与运维
 
+## Web 顶部交易抽屉发布（2026-11-29，北京时间）
+
+提交 `3d1f707` 已部署到 **47.80.22.243（首尔服务器）** 的静态 release `trade-web-20261129-trade-drawer-3d1f707`，原子切换 `/opt/trade-tools-integrated/web/integrated/market`。IP 与 `ba.wow211.com` 双入口页面和资源均返回 200，index/JS/CSS hash 分别为 `a9f3ea13…`、`e5fe82d8…`、`544303b8…`。后端未切换，上一版 `trade-web-20261128-iosrt-22065f2` 保留回滚。
+
 ## Web 静态同步发布（2026-11-28，北京时间）
 
 提交 `22065f2` 对应的静态包已部署到 **47.80.22.243（首尔服务器）** 的 `trade-web-20261128-iosrt-22065f2`，通过 `/opt/trade-tools-integrated/web/integrated/market` 原子切换。IP 与 `ba.wow211.com` 双入口 index/JS/CSS 哈希分别为 `aec9d54a…`、`7ca4ae9b…`、`e0fe3ed4…`，页面与资源均返回 200，`/integrated/v1/health` 的 database、migrations、scheduler 均为 true。上一版 `trade-web-20261128-linehit-97cda87` 保留回滚。
