@@ -1,5 +1,19 @@
 # 变更与验收记录
 
+## 2026-11-28：Web 划线工具命中区放大上线
+
+提交 `97cda87` 已发布到 47.80.22.243（首尔服务器）的 Web 静态入口 `trade-web-20261128-linehit-97cda87`。划线的横／竖线元素零高／零宽，原来只有 1～6px 边框可点，现新增 14px 隐形 `::before` 命中条带，指针靠近线两侧约 6px 内即可选中／拖动，可见线位置不变。内置浏览器注入验证命中范围与事件派发，`npm test`／`npm run build` 通过；IP 与 `ba.wow211.com` 双入口资源一致，health 三项通过。
+
+## 2026-11-28：iOS K 线实时链路全面改造（本地）
+
+iOS 行情页现在将实时消息分为控制、K 线和 ticker 三条独立 lane。新增 `MarketRealtimeStore` actor 负责按交易对去重、forming 最新值优先和旧 ticker 丢弃，K 线仍保留收盘顺序；`closedSequence` 只用于收盘缺口恢复，旧后端没有该字段时继续使用原 sequence 兼容路径。新增 `ChartFrameScheduler` 将 forming 更新按显示刷新周期合并，收盘、指标切换和恢复帧立即提交，避免 ticker 高频更新阻塞 Metal 首帧。
+
+新增 `MarketRealtimeStoreTests` 覆盖旧 K 线／ticker 丢弃、forming 合并语义和收盘序列缺口；该测试与 `ChartEngineCoreTests` 均通过。iOS `build-for-testing` 通过，未上传 TestFlight、未部署客户端或执行真实交易。物理 iPhone、弱网和后台长时间恢复仍需新包验收。
+
+## 2026-11-28：Web 高周期最新 forming K 线缺失修复
+
+提交 `6c50464` 已发布到 47.80.22.243（首尔服务器）的 Web 静态入口。根因是 1m 源 K 线第一次收盘就推进了高周期 `closedThrough`，导致当前 1h 桶后续 forming 更新被过滤。现在只有高周期桶的最后一根源 1m 收盘时才关闭该桶，IP 与 `ba.wow211.com` 双入口资源一致，health 三项通过。
+
 ## 2026-11-28：K 线 live Redis 发布分块上线
 
 提交 `87da79d` 已发布到 47.80.22.243（首尔服务器）的 `integrated-quick-87da79d`。live K 线发布拆成每批 32 条，降低全市场 1m 事件批次对选中交易对的等待。Web 静态资源沿用 `trade-web-20261128-realtime-cf8756b`，health 三项通过。

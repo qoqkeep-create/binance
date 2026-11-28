@@ -1,5 +1,13 @@
 # 整合环境部署与运维
 
+## 划线工具命中区放大 Web 发布（2026-11-28，北京时间）
+
+提交 **`97cda87`** 已切换到 **`trade-web-20261128-linehit-97cda87`**，目标为 **47.80.22.243（首尔服务器）**。划线的横／竖线原本是零高／零宽元素，可点击区只有 1～6px 的边框本身；新增 `::before` 隐形命中条带（横线上下各 7px、竖线左右各 7px，共 14px）后，指针落在线上或两侧约 6px 内都能选中／拖动，可见边框坐标不变。本地内置浏览器注入同结构元素验证：横／竖线在 −5～+8px 偏移均可命中（原为 2px），事件正确落到宿主元素监听器；`npm test`、`npm run build`、`git diff --check` 通过。发布：IP 与 `ba.wow211.com` 双入口 index/JS/CSS 哈希 `aec9d54a…`／`7ca4ae9b…`／`e0fe3ed4…` 与本地一致，`/integrated/v1/health` 三项 true。后端不切换，上一 release `trade-web-20261128-1hforming-6c50464` 记入 `backups/previous-web-market-20261128-linehit` 可回退。
+
+## Web 高周期 forming 尾根修复发布（2026-11-28，北京时间）
+
+Web 静态提交 **`6c50464`** 已切换到 **`trade-web-20261128-1hforming-6c50464`**，目标为 **47.80.22.243（首尔服务器）**。IP 和 `ba.wow211.com` 双入口均返回最新 JS `DwNFGGI6`，健康检查通过。修复规则是只有聚合周期最后一根源 1m 收盘时才关闭 1h／4h 等高周期桶，之前的早期 1m close 不再锁住当前高周期尾根。后端沿用 healthy 的 `integrated-quick-87da79d`。
+
 ## K 线 live 发布分块优化（2026-11-28，北京时间）
 
 针对选中交易对在全市场 live 发布批次中等待过久的问题，提交 **`87da79d`** 已部署到 **47.80.22.243（首尔服务器）** 的 **`integrated-quick-87da79d`**。市场采集器现在把 live K 线 Redis 发布拆成每批 32 条，减少单次 Redis pipeline 对选中交易对的阻塞。四个应用容器 healthy，health 三项通过。Web 静态资源沿用上一版 `trade-web-20261128-realtime-cf8756b`，没有重新切换静态产物。
