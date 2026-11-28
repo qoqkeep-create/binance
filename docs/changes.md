@@ -6,6 +6,8 @@ Web K 线工具栏移除刷新按钮，新增带图标的“交易”按钮和�
 
 提交 `3d1f707` 已发布到 **47.80.22.243（首尔服务器）** 的 Web 静态 release `trade-web-20261129-trade-drawer-3d1f707`。IP 与 `ba.wow211.com` 双入口页面和资源返回 200，index/JS/CSS hash 分别为 `a9f3ea13…`、`e5fe82d8…`、`544303b8…`。后端未切换，上一版 `trade-web-20261128-iosrt-22065f2` 保留回滚。
 
+后续提交 `8cf25d7` 修正抽屉布局，将抽屉放入工具栏下方的 K 线正常流，单行化委托／历史信息列，统一操作列位置并为“交易”“自动”补充图标。静态 release 已更新为 `trade-web-20261129-trade-drawer-flow-8cf25d7`，上一版保留回滚。
+
 ## 2026-11-28：Web 静态同步发布
 
 提交 `22065f2` 对应的 Web 静态包已发布到 **47.80.22.243（首尔服务器）** 的 `trade-web-20261128-iosrt-22065f2`，原子切换 `/integrated/market/`。IP 与 `ba.wow211.com` 双入口返回 200，资源 hash 为 index `aec9d54a…`、JS `7ca4ae9b…`、CSS `e0fe3ed4…`，健康检查三项通过。上一版 `trade-web-20261128-linehit-97cda87` 保留回滚。
