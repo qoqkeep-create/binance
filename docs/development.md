@@ -2,7 +2,7 @@
 
 ## Web 顶部交易抽屉与三页签（2026-11-29，本地）
 
-`PositionsDock` 改为 K 线顶部覆盖式抽屉，使用“持仓／委托／历史”页签。委托页复用 `/v1/trade/order/list`，撤单与追单继续通过既有 `limit-cancel`、`limit-chase` 幂等命令，历史页复用 `/v1/position/history`。K 线工具栏移除刷新按钮并由 App 注入“交易”开关按钮，底部状态栏不再承载抽屉开关。
+`PositionsDock` 插入 K 线工具栏下方的正常布局流，使用“持仓／委托／历史”页签。展开时由 K 线 stage 自然收缩，工具栏保持独立。委托页复用 `/v1/trade/order/list`，撤单与追单继续通过既有 `limit-cancel`、`limit-chase` 幂等命令，历史页复用 `/v1/position/history`。K 线工具栏移除刷新按钮并由 App 注入带图标的“交易”开关按钮，自动缩放按钮补充图标，底部状态栏不再承载抽屉开关。委托和历史使用单行信息列，操作列与持仓对齐。
 
 `frontend/trade-web` 的 `npm test` 与 `npm run build` 通过。构建仍有既有 JavaScript 包体超过 500KB 的提示，不影响构建成功。未修改后端交易逻辑，未执行真实撤单、追单或平仓。
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Minus, MoveVertical, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowLeftRight, Maximize2, Minus, MoveVertical, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import {
   createChart, ColorType, CrosshairMode, LineStyle,
   CandlestickSeries, LineSeries,
@@ -93,10 +93,11 @@ const formatCrosshairTime = (seconds: number) => {
   return `${crosshairWeekdays[d.getDay()]} ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-export default function KlineChart({ symbol, insightToggle, tradeToggle, theme = "dark", onStopPrice }: {
+export default function KlineChart({ symbol, insightToggle, tradeToggle, tradeDrawer, theme = "dark", onStopPrice }: {
   symbol: string;
   insightToggle?: ReactNode;
   tradeToggle?: ReactNode;
+  tradeDrawer?: ReactNode;
   theme?: "dark" | "light";
   onSymbolChange?: (symbol: string) => void;
   onStopPrice?: (price: number) => void;
@@ -809,7 +810,7 @@ export default function KlineChart({ symbol, insightToggle, tradeToggle, theme =
         </div>
         <div className="toolbar-right">
           {tradeToggle}
-          <button type="button" className={`view-mode ${viewMode === "auto" ? "active" : ""}`} aria-pressed={viewMode === "auto"} title={viewMode === "auto" ? "自动缩放已开启，点击切为手动" : "当前手动缩放，点击切为自动"} onClick={() => { if (viewMode === "auto") { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); } else { viewModeApplyRef.current("auto"); resetView(); } }}>自动</button>
+          <button type="button" className={`view-mode ${viewMode === "auto" ? "active" : ""}`} aria-pressed={viewMode === "auto"} title={viewMode === "auto" ? "自动缩放已开启，点击切为手动" : "当前手动缩放，点击切为自动"} onClick={() => { if (viewMode === "auto") { viewModeRef.current = "manual"; setViewMode("manual"); viewModeApplyRef.current("manual"); } else { viewModeApplyRef.current("auto"); resetView(); } }}><Maximize2 size={12} aria-hidden="true" />自动</button>
           <button type="button" className="indicator-master" aria-label="指标设置" title="指标设置" aria-expanded={showSettings} onClick={() => setShowSettings(true)}>
             <SlidersHorizontal size={13} /> 指标
           </button>
@@ -821,6 +822,7 @@ export default function KlineChart({ symbol, insightToggle, tradeToggle, theme =
           <button type="button" onClick={() => setClearConfirmOpen(false)}>取消</button>
         </div>}
       </div>
+      {tradeDrawer}
       <div className="kline-stage" data-chart-theme={theme} style={{ "--position-tool-main-height": mainPaneHeight > 0 ? `${mainPaneHeight}px` : "100%" } as CSSProperties}>
         {status === "loading" && <div className="kline-loading" role="status" aria-label="K 线加载中"><span className="kline-bars" aria-hidden="true"><i /><i /><i /><i /></span></div>}
         {status === "error" && <div className="chart-widget-notice chart-widget-error"><p role="status">K 线加载失败</p><button className="chart-restore" type="button" onClick={() => setAttempt((previous) => previous + 1)}>重试</button></div>}
