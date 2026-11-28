@@ -13,6 +13,8 @@
 .chart-line-tool { position:absolute; z-index:3; pointer-events:auto; }
 .chart-line-tool.horizontal { left:0; right:0; height:0; cursor:pointer; }
 .chart-line-tool.vertical { top:0; bottom:0; width:0; cursor:pointer; }
+.chart-line-tool.horizontal::before { content:""; position:absolute; left:0; right:0; top:-7px; height:14px; }
+.chart-line-tool.vertical::before { content:""; position:absolute; top:0; bottom:0; left:-7px; width:14px; }
 .chart-line-tool.is-selected { filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)); }
 .chart-line-editor { position:absolute; z-index:8; display:flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--line-bright); border-radius:5px; background:var(--bg-elevated); box-shadow:0 8px 22px #0005; pointer-events:auto; white-space:nowrap; }
 .chart-line-editor > button { display:inline-flex; align-items:center; gap:3px; min-height:24px; padding:4px 6px; border:1px solid var(--line); border-radius:3px; color:var(--muted); background:transparent; font-size:9px; }
